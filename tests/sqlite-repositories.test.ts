@@ -68,7 +68,9 @@ describe("sqlite repositories", () => {
       await expect(
         database.repositories?.sites.listByWorkspaceId(workspace.id)
       ).resolves.toEqual(
-        expect.arrayContaining([expect.objectContaining({ name: "Example Site" })])
+        expect.arrayContaining([
+          expect.objectContaining({ name: "Example Site" })
+        ])
       );
     } finally {
       database.close();
@@ -177,6 +179,29 @@ describe("sqlite repositories", () => {
       await database.repositories?.discoverySnapshots.save(snapshot);
       await database.repositories?.chatThreads.save(thread);
       await database.repositories?.requests.save(request);
+      database.connection
+        .prepare(
+          `INSERT INTO action_plans (
+             id, request_id, site_id, summary, assumptions_json, open_questions_json,
+             approval_required, risk_level, target_entity_refs_json, created_at, updated_at
+           ) VALUES (
+             @id, @requestId, @siteId, @summary, @assumptionsJson, @openQuestionsJson,
+             @approvalRequired, @riskLevel, @targetEntityRefsJson, @createdAt, @updatedAt
+           )`
+        )
+        .run({
+          id: "plan-1",
+          requestId: request.id,
+          siteId: site.id,
+          summary: "Review homepage changes",
+          assumptionsJson: JSON.stringify([]),
+          openQuestionsJson: JSON.stringify([]),
+          approvalRequired: 1,
+          riskLevel: "medium",
+          targetEntityRefsJson: JSON.stringify(["site:site-1"]),
+          createdAt: now,
+          updatedAt: now
+        });
       await database.repositories?.approvals.save(approval);
       await database.repositories?.auditEntries.append(auditEntry);
 
@@ -193,7 +218,9 @@ describe("sqlite repositories", () => {
         database.repositories?.requests.listByThreadId(thread.id)
       ).resolves.toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ userPrompt: "Update the homepage hero copy." })
+          expect.objectContaining({
+            userPrompt: "Update the homepage hero copy."
+          })
         ])
       );
       await expect(

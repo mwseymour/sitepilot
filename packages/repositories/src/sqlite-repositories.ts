@@ -131,7 +131,15 @@ class SqliteWorkspaceRepository implements WorkspaceRepository {
          description = excluded.description,
          owner_user_profile_id = excluded.owner_user_profile_id,
          updated_at = excluded.updated_at`,
-      workspace
+      {
+        id: workspace.id,
+        name: workspace.name,
+        slug: workspace.slug,
+        description: workspace.description ?? null,
+        ownerUserProfileId: workspace.ownerUserProfileId,
+        createdAt: workspace.createdAt,
+        updatedAt: workspace.updatedAt
+      }
     );
   }
 }
@@ -151,7 +159,9 @@ class SqliteSiteRepository implements SiteRepository {
           environment: Site["environment"];
           activation_status: Site["activationStatus"];
           active_config_id: Site["activeConfigId"] | null;
-          latest_discovery_snapshot_id: Site["latestDiscoverySnapshotId"] | null;
+          latest_discovery_snapshot_id:
+            | Site["latestDiscoverySnapshotId"]
+            | null;
           created_at: string;
           updated_at: string;
         }
@@ -181,7 +191,9 @@ class SqliteSiteRepository implements SiteRepository {
     };
   }
 
-  public async listByWorkspaceId(workspaceId: Site["workspaceId"]): Promise<Site[]> {
+  public async listByWorkspaceId(
+    workspaceId: Site["workspaceId"]
+  ): Promise<Site[]> {
     const rows = this.connection
       .prepare<
         { workspaceId: string },
@@ -193,7 +205,9 @@ class SqliteSiteRepository implements SiteRepository {
           environment: Site["environment"];
           activation_status: Site["activationStatus"];
           active_config_id: Site["activeConfigId"] | null;
-          latest_discovery_snapshot_id: Site["latestDiscoverySnapshotId"] | null;
+          latest_discovery_snapshot_id:
+            | Site["latestDiscoverySnapshotId"]
+            | null;
           created_at: string;
           updated_at: string;
         }
@@ -239,7 +253,18 @@ class SqliteSiteRepository implements SiteRepository {
          active_config_id = excluded.active_config_id,
          latest_discovery_snapshot_id = excluded.latest_discovery_snapshot_id,
          updated_at = excluded.updated_at`,
-      site
+      {
+        id: site.id,
+        workspaceId: site.workspaceId,
+        name: site.name,
+        baseUrl: site.baseUrl,
+        environment: site.environment,
+        activationStatus: site.activationStatus,
+        activeConfigId: site.activeConfigId ?? null,
+        latestDiscoverySnapshotId: site.latestDiscoverySnapshotId ?? null,
+        createdAt: site.createdAt,
+        updatedAt: site.updatedAt
+      }
     );
   }
 }
@@ -351,7 +376,9 @@ class SqliteSiteConfigRepository implements SiteConfigRepository {
       {
         ...config,
         isActive: asBooleanInteger(config.isActive),
-        requiredSectionsComplete: asBooleanInteger(config.requiredSectionsComplete),
+        requiredSectionsComplete: asBooleanInteger(
+          config.requiredSectionsComplete
+        ),
         documentJson: serializeJson(config.document)
       }
     );
@@ -505,7 +532,9 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
     };
   }
 
-  public async listBySiteId(siteId: ChatThread["siteId"]): Promise<ChatThread[]> {
+  public async listBySiteId(
+    siteId: ChatThread["siteId"]
+  ): Promise<ChatThread[]> {
     const rows = this.connection
       .prepare<
         { siteId: string },
@@ -551,7 +580,15 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
          type = excluded.type,
          archived_at = excluded.archived_at,
          updated_at = excluded.updated_at`,
-      thread
+      {
+        id: thread.id,
+        siteId: thread.siteId,
+        title: thread.title,
+        type: thread.type,
+        archivedAt: thread.archivedAt ?? null,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt
+      }
     );
   }
 }
@@ -601,7 +638,9 @@ class SqliteRequestRepository implements RequestRepository {
     };
   }
 
-  public async listByThreadId(threadId: Request["threadId"]): Promise<Request[]> {
+  public async listByThreadId(
+    threadId: Request["threadId"]
+  ): Promise<Request[]> {
     const rows = this.connection
       .prepare<
         { threadId: string },
@@ -660,8 +699,16 @@ class SqliteRequestRepository implements RequestRepository {
          latest_execution_run_id = excluded.latest_execution_run_id,
          updated_at = excluded.updated_at`,
       {
-        ...request,
-        requestedByJson: serializeJson(request.requestedBy)
+        id: request.id,
+        siteId: request.siteId,
+        threadId: request.threadId,
+        requestedByJson: serializeJson(request.requestedBy),
+        status: request.status,
+        userPrompt: request.userPrompt,
+        latestPlanId: request.latestPlanId ?? null,
+        latestExecutionRunId: request.latestExecutionRunId ?? null,
+        createdAt: request.createdAt,
+        updatedAt: request.updatedAt
       }
     );
   }
@@ -670,7 +717,9 @@ class SqliteRequestRepository implements RequestRepository {
 class SqliteApprovalRepository implements ApprovalRepository {
   public constructor(private readonly connection: Database.Database) {}
 
-  public async getById(id: ApprovalRequest["id"]): Promise<ApprovalRequest | null> {
+  public async getById(
+    id: ApprovalRequest["id"]
+  ): Promise<ApprovalRequest | null> {
     const row = this.connection
       .prepare<
         { id: string },
@@ -768,8 +817,15 @@ class SqliteApprovalRepository implements ApprovalRepository {
          expires_at = excluded.expires_at,
          updated_at = excluded.updated_at`,
       {
-        ...approvalRequest,
-        requestedByJson: serializeJson(approvalRequest.requestedBy)
+        id: approvalRequest.id,
+        requestId: approvalRequest.requestId,
+        planId: approvalRequest.planId,
+        siteId: approvalRequest.siteId,
+        status: approvalRequest.status,
+        requestedByJson: serializeJson(approvalRequest.requestedBy),
+        expiresAt: approvalRequest.expiresAt ?? null,
+        createdAt: approvalRequest.createdAt,
+        updatedAt: approvalRequest.updatedAt
       }
     );
   }
@@ -811,7 +867,9 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
     return rows.map((row) => this.mapAuditEntry(row));
   }
 
-  public async listBySiteId(siteId: AuditEntry["siteId"]): Promise<AuditEntry[]> {
+  public async listBySiteId(
+    siteId: AuditEntry["siteId"]
+  ): Promise<AuditEntry[]> {
     const rows = this.connection
       .prepare<
         { siteId: string },
@@ -857,9 +915,15 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
          metadata_json = excluded.metadata_json,
          updated_at = excluded.updated_at`,
       {
-        ...entry,
+        id: entry.id,
+        siteId: entry.siteId,
+        requestId: entry.requestId ?? null,
+        actionId: entry.actionId ?? null,
+        eventType: entry.eventType,
         actorJson: serializeJson(entry.actor),
-        metadataJson: serializeJson(entry.metadata)
+        metadataJson: serializeJson(entry.metadata),
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt
       }
     );
   }
@@ -881,7 +945,9 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
       requestId: row.request_id ?? undefined,
       actionId: row.action_id ?? undefined,
       eventType: row.event_type,
-      actor: parseJson<ActorRef | { kind: "system" | "assistant" }>(row.actor_json),
+      actor: parseJson<ActorRef | { kind: "system" | "assistant" }>(
+        row.actor_json
+      ),
       metadata: parseJson(row.metadata_json),
       createdAt: row.created_at,
       updatedAt: row.updated_at
@@ -903,4 +969,3 @@ export function createSqliteRepositoryRegistry(
     auditEntries: new SqliteAuditEntryRepository(connection)
   };
 }
-

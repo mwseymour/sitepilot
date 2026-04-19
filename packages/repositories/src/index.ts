@@ -17,7 +17,6 @@ export type {
   SqliteDatabaseConfig
 } from "./sqlite.js";
 export {
-  createSqliteRepositoryRegistry,
   initializeDatabase,
   listUserTables,
   openSqliteDatabase,
