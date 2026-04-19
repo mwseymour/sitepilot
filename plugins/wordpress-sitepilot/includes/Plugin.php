@@ -13,6 +13,7 @@ use SitePilot\Admin\Settings_Page;
 use SitePilot\Mcp\Abilities_Registrar;
 use SitePilot\Mcp\Server_Registrar;
 use SitePilot\Rest\Protocol_Routes;
+use SitePilot\Rest\Registration_Routes;
 
 /**
  * Loads REST routes, admin UI, MCP adapter integration, and abilities.
@@ -25,6 +26,7 @@ final class Plugin {
 
 	public static function on_plugins_loaded(): void {
 		Protocol_Routes::register();
+		Registration_Routes::register();
 		Settings_Page::register();
 
 		if ( class_exists( \WP\MCP\Core\McpAdapter::class ) ) {

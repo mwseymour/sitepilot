@@ -70,6 +70,10 @@ export class McpHttpClient {
       clientInfo?: { name: string; version: string };
     } = {}
   ): Promise<unknown> {
+    if (this.sessionId) {
+      return;
+    }
+
     const body = this.buildRequest("initialize", {
       protocolVersion: params.protocolVersion ?? "2025-06-18",
       clientInfo: params.clientInfo ?? DEFAULT_CLIENT_INFO
@@ -96,7 +100,8 @@ export class McpHttpClient {
     }
 
     if (typeof parsed === "object" && parsed !== null && "error" in parsed) {
-      const err = (parsed as { error: { code: number; message: string } }).error;
+      const err = (parsed as { error: { code: number; message: string } })
+        .error;
       throw new Error(`MCP HTTP JSON-RPC error ${err.code}: ${err.message}`);
     }
 
@@ -169,12 +174,15 @@ export class McpHttpClient {
     protocolVersion: string;
     clientInfo: { name: string; version: string };
   }): Promise<unknown> {
-    return this.connect(params);
+    return this.connect({
+      protocolVersion: params.protocolVersion,
+      clientInfo: params.clientInfo
+    });
   }
 
   async listTools(): Promise<ToolsListResult> {
     const raw = await this.postRpc<unknown>("tools/list", {});
-    return toolsListResultSchema.parse(raw);
+    return toolsListResultSchema.parse(raw) as ToolsListResult;
   }
 
   /**

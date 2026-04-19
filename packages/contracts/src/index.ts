@@ -23,6 +23,10 @@ export {
   listSitesRequestSchema,
   listWorkspacesRequestSchema,
   providerStatusResponseSchema,
+  registerSiteErrorResponseSchema,
+  registerSiteRequestSchema,
+  registerSiteResponseSchema,
+  registerSiteSuccessResponseSchema,
   shellInfoResponseSchema,
   siteListResponseSchema,
   siteSummarySchema
@@ -32,6 +36,7 @@ export type {
   IpcRequest,
   IpcResponse,
   ProviderStatusResponse,
+  RegisterSiteResponse,
   ShellInfoResponse,
   SiteListResponse,
   SitePilotDesktopApi
@@ -41,13 +46,15 @@ export {
   protocolHealthSchema,
   registrationCredentialSchema,
   signedRequestHeadersSchema,
+  siteRegistrationHandshakeRequestSchema,
   siteRegistrationSchema
 } from "./protocol.js";
 export type {
   PluginCapability,
   ProtocolHealth,
   SignedRequestHeaders,
-  SiteRegistration
+  SiteRegistration,
+  SiteRegistrationHandshakeRequest
 } from "./protocol.js";
 export {
   actionPlanSchema,

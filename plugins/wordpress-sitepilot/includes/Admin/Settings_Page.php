@@ -9,6 +9,8 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Admin;
 
+use SitePilot\Registration\Store;
+
 /**
  * Registers Settings → SitePilot.
  */
@@ -36,6 +38,8 @@ final class Settings_Page {
 		$health_url   = rest_url( 'sitepilot/v1/health' );
 		$protocol_url = rest_url( 'sitepilot/v1/protocol' );
 		$mcp_url      = rest_url( 'sitepilot/mcp' );
+		$register_url = rest_url( 'sitepilot/v1/register' );
+		$reg_code     = Store::ensure_registration_code();
 
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'SitePilot', 'sitepilot' ) . '</h1>';
@@ -45,7 +49,11 @@ final class Settings_Page {
 		echo '<li><label>' . esc_html__( 'Health', 'sitepilot' ) . '</label> <code>' . esc_html( $health_url ) . '</code></li>';
 		echo '<li><label>' . esc_html__( 'Protocol', 'sitepilot' ) . '</label> <code>' . esc_html( $protocol_url ) . '</code></li>';
 		echo '<li><label>' . esc_html__( 'MCP (HTTP)', 'sitepilot' ) . '</label> <code>' . esc_html( $mcp_url ) . '</code></li>';
+		echo '<li><label>' . esc_html__( 'Register site (POST)', 'sitepilot' ) . '</label> <code>' . esc_html( $register_url ) . '</code></li>';
 		echo '</ul>';
+		echo '<h2>' . esc_html__( 'Desktop registration code', 'sitepilot' ) . '</h2>';
+		echo '<p>' . esc_html__( 'Enter this one-time code in the SitePilot desktop app when registering this site (HTTPS only).', 'sitepilot' ) . '</p>';
+		echo '<p><code style="font-size:14px;">' . esc_html( $reg_code ) . '</code></p>';
 		echo '<p>' . esc_html__( 'SitePilot protocol version:', 'sitepilot' ) . ' <strong>' . esc_html( SITEPILOT_PROTOCOL_VERSION ) . '</strong></p>';
 		echo '</div>';
 	}

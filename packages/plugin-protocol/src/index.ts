@@ -6,6 +6,11 @@ export { SeenNonceCache } from "./nonce.js";
 export { parseSignedRequestHeaders } from "./signed-request.js";
 export { buildSigningInput } from "./signing-input.js";
 export type { SigningInputParts } from "./signing-input.js";
+export {
+  fingerprintSharedSecret,
+  signSitePilotHmacRequest
+} from "./signing.js";
+export type { SignSitePilotHmacRequestParams } from "./signing.js";
 export { verifyRequestSignature } from "./signature.js";
 export type { VerifySignatureParams } from "./signature.js";
 export { validateTimestampWithinSkew } from "./timing.js";

@@ -1,11 +1,14 @@
 import { z } from "zod";
 
+import { siteEnvironmentSchema, urlSchema } from "./common.js";
+import { siteRegistrationSchema } from "./protocol.js";
 import { workspaceListResponseSchema } from "./schemas.js";
 
 export const ipcChannels = {
   getShellInfo: "app.getShellInfo",
   listWorkspaces: "workspace.list",
   listSites: "site.list",
+  registerSite: "site.register",
   getProviderStatus: "settings.getProviderStatus"
 } as const;
 
@@ -44,6 +47,35 @@ export const providerStatusResponseSchema = z.object({
   )
 });
 
+export const registerSiteRequestSchema = z.object({
+  baseUrl: z.string().url(),
+  registrationCode: z.string().min(1),
+  siteName: z.string().min(1),
+  workspaceId: z.string().min(1).optional(),
+  environment: siteEnvironmentSchema.optional(),
+  trustedAppOrigin: urlSchema.optional()
+});
+
+export const registerSiteSuccessResponseSchema = z.object({
+  ok: z.literal(true),
+  site: siteSummarySchema,
+  registration: siteRegistrationSchema,
+  mcpToolCount: z.number().int().nonnegative()
+});
+
+export const registerSiteErrorResponseSchema = z.object({
+  ok: z.literal(false),
+  code: z.string().min(1),
+  message: z.string().min(1)
+});
+
+export const registerSiteResponseSchema = z.discriminatedUnion("ok", [
+  registerSiteSuccessResponseSchema,
+  registerSiteErrorResponseSchema
+]);
+
+export type RegisterSiteResponse = z.infer<typeof registerSiteResponseSchema>;
+
 export const ipcContracts = {
   [ipcChannels.getShellInfo]: {
     request: z.object({}),
@@ -56,6 +88,10 @@ export const ipcContracts = {
   [ipcChannels.listSites]: {
     request: listSitesRequestSchema,
     response: siteListResponseSchema
+  },
+  [ipcChannels.registerSite]: {
+    request: registerSiteRequestSchema,
+    response: registerSiteResponseSchema
   },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
@@ -83,5 +119,8 @@ export interface SitePilotDesktopApi {
   listSites: (
     request?: IpcRequest<typeof ipcChannels.listSites>
   ) => Promise<SiteListResponse>;
+  registerSite: (
+    request: IpcRequest<typeof ipcChannels.registerSite>
+  ) => Promise<IpcResponse<typeof ipcChannels.registerSite>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
 }

@@ -8,6 +8,7 @@ export type {
   RepositoryRegistry,
   RequestRepository,
   SiteConfigRepository,
+  SiteConnectionRepository,
   SiteRepository,
   WorkspaceRepository
 } from "./interfaces.js";

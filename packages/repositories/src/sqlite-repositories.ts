@@ -9,6 +9,7 @@ import type {
   Request,
   Site,
   SiteConfigVersion,
+  SiteConnection,
   Workspace
 } from "@sitepilot/domain";
 
@@ -20,6 +21,7 @@ import type {
   RepositoryRegistry,
   RequestRepository,
   SiteConfigRepository,
+  SiteConnectionRepository,
   SiteRepository,
   WorkspaceRepository
 } from "./interfaces.js";
@@ -89,7 +91,7 @@ class SqliteWorkspaceRepository implements WorkspaceRepository {
   public async list(): Promise<Workspace[]> {
     const rows = this.connection
       .prepare<
-        never,
+        [],
         {
           id: Workspace["id"];
           name: string;
@@ -264,6 +266,95 @@ class SqliteSiteRepository implements SiteRepository {
         latestDiscoverySnapshotId: site.latestDiscoverySnapshotId ?? null,
         createdAt: site.createdAt,
         updatedAt: site.updatedAt
+      }
+    );
+  }
+}
+
+class SqliteSiteConnectionRepository implements SiteConnectionRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async getBySiteId(siteId: Site["id"]): Promise<SiteConnection | null> {
+    const row = this.connection
+      .prepare<
+        { siteId: string },
+        {
+          id: SiteConnection["id"];
+          site_id: SiteConnection["siteId"];
+          status: SiteConnection["status"];
+          protocol_version: string;
+          plugin_version: string;
+          client_identifier: string;
+          trusted_app_origin: string;
+          credential_fingerprint: string | null;
+          rotated_at: string | null;
+          revoked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, site_id, status, protocol_version, plugin_version, client_identifier,
+                trusted_app_origin, credential_fingerprint, rotated_at, revoked_at,
+                created_at, updated_at
+         FROM site_connections
+         WHERE site_id = @siteId`
+      )
+      .get({ siteId });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      siteId: row.site_id,
+      status: row.status,
+      protocolVersion: row.protocol_version,
+      pluginVersion: row.plugin_version,
+      clientIdentifier: row.client_identifier,
+      trustedAppOrigin: row.trusted_app_origin,
+      credentialFingerprint: row.credential_fingerprint ?? undefined,
+      rotatedAt: row.rotated_at ?? undefined,
+      revokedAt: row.revoked_at ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  public async save(connection: SiteConnection): Promise<void> {
+    upsert(
+      this.connection,
+      `INSERT INTO site_connections (
+         id, site_id, status, protocol_version, plugin_version, client_identifier,
+         trusted_app_origin, credential_fingerprint, rotated_at, revoked_at, created_at, updated_at
+       ) VALUES (
+         @id, @siteId, @status, @protocolVersion, @pluginVersion, @clientIdentifier,
+         @trustedAppOrigin, @credentialFingerprint, @rotatedAt, @revokedAt, @createdAt, @updatedAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         site_id = excluded.site_id,
+         status = excluded.status,
+         protocol_version = excluded.protocol_version,
+         plugin_version = excluded.plugin_version,
+         client_identifier = excluded.client_identifier,
+         trusted_app_origin = excluded.trusted_app_origin,
+         credential_fingerprint = excluded.credential_fingerprint,
+         rotated_at = excluded.rotated_at,
+         revoked_at = excluded.revoked_at,
+         updated_at = excluded.updated_at`,
+      {
+        id: connection.id,
+        siteId: connection.siteId,
+        status: connection.status,
+        protocolVersion: connection.protocolVersion,
+        pluginVersion: connection.pluginVersion,
+        clientIdentifier: connection.clientIdentifier,
+        trustedAppOrigin: connection.trustedAppOrigin,
+        credentialFingerprint: connection.credentialFingerprint ?? null,
+        rotatedAt: connection.rotatedAt ?? null,
+        revokedAt: connection.revokedAt ?? null,
+        createdAt: connection.createdAt,
+        updatedAt: connection.updatedAt
       }
     );
   }
@@ -939,18 +1030,21 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
     created_at: string;
     updated_at: string;
   }): AuditEntry {
-    return {
+    const base = {
       id: row.id,
       siteId: row.site_id,
-      requestId: row.request_id ?? undefined,
-      actionId: row.action_id ?? undefined,
       eventType: row.event_type,
       actor: parseJson<ActorRef | { kind: "system" | "assistant" }>(
         row.actor_json
       ),
-      metadata: parseJson(row.metadata_json),
+      metadata: parseJson(row.metadata_json) as AuditEntry["metadata"],
       createdAt: row.created_at,
       updatedAt: row.updated_at
+    };
+    return {
+      ...base,
+      ...(row.request_id !== null ? { requestId: row.request_id } : {}),
+      ...(row.action_id !== null ? { actionId: row.action_id } : {})
     };
   }
 }
@@ -961,6 +1055,7 @@ export function createSqliteRepositoryRegistry(
   return {
     workspaces: new SqliteWorkspaceRepository(connection),
     sites: new SqliteSiteRepository(connection),
+    siteConnections: new SqliteSiteConnectionRepository(connection),
     siteConfigs: new SqliteSiteConfigRepository(connection),
     discoverySnapshots: new SqliteDiscoverySnapshotRepository(connection),
     chatThreads: new SqliteChatThreadRepository(connection),

@@ -4,11 +4,13 @@ import { describe, expect, it } from "vitest";
 import {
   buildSigningInput,
   compareProtocolCompatibility,
+  fingerprintSharedSecret,
   isCredentialRevoked,
   parseProtocolVersion,
   parseSignedRequestHeaders,
   parseSiteRegistration,
   SeenNonceCache,
+  signSitePilotHmacRequest,
   validateSignedRequest,
   validateTimestampWithinSkew,
   verifyRequestSignature
@@ -181,6 +183,44 @@ describe("plugin protocol — signing", () => {
         signatureHex: sig.toString("hex")
       })
     ).toBe(true);
+  });
+});
+
+describe("plugin protocol — client signing", () => {
+  it("round-trips HMAC headers via verifyRequestSignature", () => {
+    const secret = Buffer.from("registration-secret");
+    const bodyBuffer = Buffer.from('{"jsonrpc":"2.0","id":1}', "utf8");
+    const headers = signSitePilotHmacRequest({
+      method: "POST",
+      path: "/wp-json/sitepilot/mcp",
+      siteId: "site-1",
+      clientId: "client-1",
+      bodyBuffer,
+      sharedSecret: secret,
+      requestId: "req-1",
+      nonce: "123456789012",
+      timestampIso: "2026-04-19T12:00:00.000Z"
+    });
+    const payloadSha = headers["x-sitepilot-payload-sha256"];
+    const signingInput = buildSigningInput({
+      method: "POST",
+      path: "/wp-json/sitepilot/mcp",
+      siteId: "site-1",
+      requestId: "req-1",
+      clientId: "client-1",
+      timestamp: "2026-04-19T12:00:00.000Z",
+      nonce: "123456789012",
+      payloadSha256Hex: payloadSha
+    });
+    expect(
+      verifyRequestSignature({
+        algorithm: "hmac_sha256",
+        sharedSecret: secret,
+        signingInput,
+        signatureHex: headers["x-sitepilot-signature"]
+      })
+    ).toBe(true);
+    expect(fingerprintSharedSecret(secret)).toHaveLength(64);
   });
 });
 

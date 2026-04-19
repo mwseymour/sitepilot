@@ -29,4 +29,13 @@ if ( is_readable( SITEPILOT_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
 
 require_once SITEPILOT_PLUGIN_DIR . 'includes/Plugin.php';
 
+register_activation_hook(
+	SITEPILOT_PLUGIN_FILE,
+	static function (): void {
+		if ( class_exists( \SitePilot\Registration\Store::class ) ) {
+			\SitePilot\Registration\Store::ensure_registration_code();
+		}
+	}
+);
+
 SitePilot\Plugin::init();

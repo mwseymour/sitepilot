@@ -5,7 +5,8 @@ import {
   ipcContracts,
   shellInfoResponseSchema,
   type IpcResponse,
-  type SitePilotDesktopApi
+  type SitePilotDesktopApi,
+  type SiteRegistration
 } from "@sitepilot/contracts";
 
 describe("ipc contracts", () => {
@@ -32,6 +33,21 @@ describe("ipc contracts", () => {
   });
 
   it("matches the preload bridge API shape", async () => {
+    const registration: SiteRegistration = {
+      siteId: "site-1",
+      workspaceId: "ws-1",
+      trustedAppOrigin: "https://sitepilot.desktop",
+      clientIdentifier: "client-1",
+      protocolVersion: "1.0.0",
+      pluginVersion: "0.1.0",
+      createdAt: "2026-04-19T12:00:00.000Z",
+      status: "verified",
+      credential: {
+        algorithm: "hmac_sha256",
+        sharedSecretFingerprint: "a".repeat(64)
+      }
+    };
+
     const api: SitePilotDesktopApi = {
       getShellInfo: async () =>
         shellInfoResponseSchema.parse({
@@ -41,11 +57,31 @@ describe("ipc contracts", () => {
         }),
       listWorkspaces: async () => ({ workspaces: [] }),
       listSites: async () => ({ sites: [] }),
+      registerSite: async () => ({
+        ok: true,
+        site: {
+          id: "site-1",
+          workspaceId: "ws-1",
+          name: "Example",
+          baseUrl: "https://example.com",
+          environment: "production",
+          activationStatus: "config_required"
+        },
+        registration,
+        mcpToolCount: 2
+      }),
       getProviderStatus: async () => ({ configuredProviders: [] })
     };
 
     await expect(api.getShellInfo()).resolves.toMatchObject({
       appName: "SitePilot"
     });
+    await expect(
+      api.registerSite({
+        baseUrl: "https://example.com",
+        registrationCode: "x",
+        siteName: "Example"
+      })
+    ).resolves.toMatchObject({ ok: true });
   });
 });

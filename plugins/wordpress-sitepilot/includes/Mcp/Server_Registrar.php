@@ -12,6 +12,7 @@ namespace SitePilot\Mcp;
 use WP\MCP\Core\McpAdapter;
 use WP\MCP\Infrastructure\ErrorHandling\ErrorLogMcpErrorHandler;
 use WP\MCP\Infrastructure\Observability\NullMcpObservabilityHandler;
+use SitePilot\Mcp\Mcp_Permission;
 use WP\MCP\Transport\HttpTransport;
 
 /**
@@ -47,9 +48,7 @@ final class Server_Registrar {
 			),
 			array(),
 			array(),
-			static function (): bool {
-				return is_user_logged_in() && current_user_can( 'read' );
-			}
+			array( Mcp_Permission::class, 'check_access' )
 		);
 
 		if ( is_wp_error( $result ) ) {

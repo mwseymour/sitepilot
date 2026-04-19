@@ -282,5 +282,13 @@ export const sqliteMigrations: SqliteMigration[] = [
         FOREIGN KEY (request_id) REFERENCES requests(id)
       )`
     ]
+  },
+  {
+    id: "002_site_connections_unique_site_id",
+    description: "Ensure at most one connection row per site.",
+    statements: [
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_site_connections_site_id
+        ON site_connections(site_id)`
+    ]
   }
 ];

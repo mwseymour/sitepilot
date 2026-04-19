@@ -4,6 +4,7 @@ import {
   idSchema,
   isoTimestampSchema,
   siteConnectionStatusSchema,
+  siteEnvironmentSchema,
   urlSchema
 } from "./common.js";
 
@@ -23,6 +24,24 @@ export const siteRegistrationSchema = z.object({
   createdAt: isoTimestampSchema,
   status: siteConnectionStatusSchema,
   credential: registrationCredentialSchema
+});
+
+/**
+ * One-time desktop → WordPress registration (HTTPS). The shared secret is
+ * transmitted only in this request; the plugin stores it server-side for
+ * signature verification; the desktop stores it only in secure storage.
+ */
+export const siteRegistrationHandshakeRequestSchema = z.object({
+  registrationCode: z.string().min(1),
+  siteId: idSchema,
+  workspaceId: idSchema,
+  trustedAppOrigin: urlSchema,
+  clientIdentifier: z.string().min(1),
+  protocolVersion: z.string().min(1),
+  siteName: z.string().min(1),
+  siteBaseUrl: urlSchema,
+  environment: siteEnvironmentSchema,
+  sharedSecretBase64: z.string().min(1)
 });
 
 export const signedRequestHeadersSchema = z.object({
@@ -53,6 +72,9 @@ export const protocolHealthSchema = z.object({
 });
 
 export type SiteRegistration = z.infer<typeof siteRegistrationSchema>;
+export type SiteRegistrationHandshakeRequest = z.infer<
+  typeof siteRegistrationHandshakeRequestSchema
+>;
 export type SignedRequestHeaders = z.infer<typeof signedRequestHeadersSchema>;
 export type PluginCapability = z.infer<typeof pluginCapabilitySchema>;
 export type ProtocolHealth = z.infer<typeof protocolHealthSchema>;

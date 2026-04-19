@@ -6,6 +6,7 @@ import type {
   Request,
   Site,
   SiteConfigVersion,
+  SiteConnection,
   Workspace
 } from "@sitepilot/domain";
 
@@ -19,6 +20,11 @@ export interface SiteRepository {
   getById(id: Site["id"]): Promise<Site | null>;
   listByWorkspaceId(workspaceId: Site["workspaceId"]): Promise<Site[]>;
   save(site: Site): Promise<void>;
+}
+
+export interface SiteConnectionRepository {
+  getBySiteId(siteId: Site["id"]): Promise<SiteConnection | null>;
+  save(connection: SiteConnection): Promise<void>;
 }
 
 export interface SiteConfigRepository {
@@ -70,6 +76,7 @@ export interface AuditEntryRepository {
 export interface RepositoryRegistry {
   workspaces: WorkspaceRepository;
   sites: SiteRepository;
+  siteConnections: SiteConnectionRepository;
   siteConfigs: SiteConfigRepository;
   discoverySnapshots: DiscoverySnapshotRepository;
   chatThreads: ChatThreadRepository;

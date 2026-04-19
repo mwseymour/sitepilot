@@ -7,6 +7,10 @@ import {
   type IpcRequest,
   type IpcResponse
 } from "@sitepilot/contracts";
+import type { Workspace } from "@sitepilot/domain";
+
+import { getDatabase } from "./app-database.js";
+import { registerSiteWithWordPress } from "./register-site.js";
 
 function parseRequest<TChannel extends IpcChannel>(
   channel: TChannel,
@@ -33,35 +37,59 @@ export function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle(ipcChannels.listWorkspaces, (_event, payload) => {
+  ipcMain.handle(ipcChannels.listWorkspaces, async (_event, payload) => {
     parseRequest(ipcChannels.listWorkspaces, payload);
 
+    const db = getDatabase();
+    const workspaces = await db.repositories.workspaces.list();
+
     return parseResponse(ipcChannels.listWorkspaces, {
-      workspaces: [
-        {
-          id: "workspace-1",
-          name: "Default Workspace",
-          slug: "default-workspace"
-        }
-      ]
+      workspaces: workspaces.map((w) => ({
+        id: w.id,
+        name: w.name,
+        slug: w.slug
+      }))
     });
   });
 
-  ipcMain.handle(ipcChannels.listSites, (_event, payload) => {
+  ipcMain.handle(ipcChannels.listSites, async (_event, payload) => {
     const request = parseRequest(ipcChannels.listSites, payload);
 
+    const db = getDatabase();
+    const workspaceId = (request.workspaceId ??
+      "workspace-1") as Workspace["id"];
+    const sites = await db.repositories.sites.listByWorkspaceId(workspaceId);
+
     return parseResponse(ipcChannels.listSites, {
-      sites: [
-        {
-          id: "site-1",
-          workspaceId: request.workspaceId ?? "workspace-1",
-          name: "Example Production Site",
-          baseUrl: "https://example.com",
-          environment: "production",
-          activationStatus: "config_required"
-        }
-      ]
+      sites: sites.map((s) => ({
+        id: s.id,
+        workspaceId: s.workspaceId,
+        name: s.name,
+        baseUrl: s.baseUrl,
+        environment: s.environment,
+        activationStatus: s.activationStatus
+      }))
     });
+  });
+
+  ipcMain.handle(ipcChannels.registerSite, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.registerSite, payload);
+    const forward: Parameters<typeof registerSiteWithWordPress>[0] = {
+      baseUrl: request.baseUrl,
+      registrationCode: request.registrationCode,
+      siteName: request.siteName
+    };
+    if (request.workspaceId !== undefined) {
+      forward.workspaceId = request.workspaceId;
+    }
+    if (request.environment !== undefined) {
+      forward.environment = request.environment;
+    }
+    if (request.trustedAppOrigin !== undefined) {
+      forward.trustedAppOrigin = request.trustedAppOrigin;
+    }
+    const result = await registerSiteWithWordPress(forward);
+    return parseResponse(ipcChannels.registerSite, result);
   });
 
   ipcMain.handle(ipcChannels.getProviderStatus, (_event, payload) => {

@@ -21,7 +21,7 @@ export interface DatabaseContext {
   connection: Database.Database;
   filePath: string;
   migrations: AppliedMigrationRecord[];
-  repositories?: RepositoryRegistry;
+  repositories: RepositoryRegistry;
   close(): void;
 }
 
@@ -47,7 +47,7 @@ function ensureMigrationTable(connection: Database.Database): void {
 function getAppliedMigrationIds(connection: Database.Database): Set<string> {
   const rows = connection
     .prepare<
-      { id: string },
+      [],
       { id: string }
     >("SELECT id FROM schema_migrations ORDER BY applied_at ASC")
     .all();
@@ -94,10 +94,7 @@ export function runSqliteMigrations(
   }
 
   return connection
-    .prepare<
-      { id: string; description: string; applied_at: string },
-      AppliedMigrationRecord
-    >(
+    .prepare<[], AppliedMigrationRecord>(
       `SELECT id, description, applied_at as appliedAt
        FROM schema_migrations
        ORDER BY applied_at ASC`
@@ -139,7 +136,7 @@ export function initializeDatabase(
 
 export function listUserTables(connection: Database.Database): string[] {
   const rows = connection
-    .prepare<{ name: string }, { name: string }>(
+    .prepare<[], { name: string }>(
       `SELECT name
        FROM sqlite_master
        WHERE type = 'table'

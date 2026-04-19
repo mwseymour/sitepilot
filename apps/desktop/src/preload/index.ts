@@ -23,6 +23,7 @@ const desktopApi: SitePilotDesktopApi = {
   getShellInfo: () => invokeIpc(ipcChannels.getShellInfo, {}),
   listWorkspaces: () => invokeIpc(ipcChannels.listWorkspaces, {}),
   listSites: (request = {}) => invokeIpc(ipcChannels.listSites, request),
+  registerSite: (request) => invokeIpc(ipcChannels.registerSite, request),
   getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {})
 };
 
