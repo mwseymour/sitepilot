@@ -20,7 +20,8 @@
     "@sitepilot/repositories": "0.1.0",
     "@sitepilot/services": "0.1.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.14.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.2",

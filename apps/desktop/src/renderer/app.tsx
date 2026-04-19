@@ -1,60 +1,33 @@
-import { useEffect, useState } from "react";
+import type { ReactElement } from "react";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+
+import { HomePage } from "./pages/HomePage.js";
+import { ApprovalsPage } from "./pages/site/ApprovalsPage.js";
+import { AuditPage } from "./pages/site/AuditPage.js";
+import { ConfigPage } from "./pages/site/ConfigPage.js";
+import { ChatPage } from "./pages/site/ChatPage.js";
+import { DiagnosticsPage } from "./pages/site/DiagnosticsPage.js";
+import { OverviewPage } from "./pages/site/OverviewPage.js";
+import { SiteWorkspaceLayout } from "./site-workspace/SiteWorkspaceLayout.js";
 
 import "./styles.css";
 
-export function App(): JSX.Element {
-  const [shellInfo, setShellInfo] = useState<{
-    appName: string;
-    appVersion: string;
-    rendererVersion: string;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void window.sitePilotDesktop.getShellInfo().then((response) => {
-      if (!cancelled) {
-        setShellInfo(response);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+export function App(): ReactElement {
   return (
-    <main className="app-shell">
-      <section className="hero-card">
-        <p className="eyebrow">Desktop Control Plane</p>
-        <h1>SitePilot</h1>
-        <p className="lede">
-          Local-first orchestration for WordPress site management with a secure
-          Electron shell.
-        </p>
-      </section>
-
-      <section className="status-grid">
-        <article className="status-card">
-          <h2>Renderer</h2>
-          <p>{shellInfo?.rendererVersion ?? "Loading..."}</p>
-        </article>
-        <article className="status-card">
-          <h2>Bridge</h2>
-          <p>
-            Typed preload API exposed with context isolation enabled and
-            request/response validation on both sides.
-          </p>
-        </article>
-        <article className="status-card">
-          <h2>Privilege Model</h2>
-          <p>Node integration disabled and renderer sandbox enabled.</p>
-        </article>
-        <article className="status-card">
-          <h2>App Version</h2>
-          <p>{shellInfo?.appVersion ?? "Loading..."}</p>
-        </article>
-      </section>
-    </main>
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/site/:siteId" element={<SiteWorkspaceLayout />}>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="overview" element={<OverviewPage />} />
+          <Route path="chat" element={<ChatPage />} />
+          <Route path="config" element={<ConfigPage />} />
+          <Route path="approvals" element={<ApprovalsPage />} />
+          <Route path="audit" element={<AuditPage />} />
+          <Route path="diagnostics" element={<DiagnosticsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </HashRouter>
   );
 }

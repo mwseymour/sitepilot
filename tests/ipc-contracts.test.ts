@@ -101,6 +101,34 @@ describe("ipc contracts", () => {
           updatedAt: "2026-04-19T12:00:00.000Z"
         }
       }),
+      generateSiteConfigDraft: async () => ({
+        ok: false,
+        code: "discovery_missing",
+        message: "Run discovery before generating a site config draft."
+      }),
+      getSiteWorkspace: async () => ({
+        ok: true,
+        site: {
+          id: "site-1",
+          workspaceId: "ws-1",
+          name: "Example",
+          baseUrl: "https://example.com",
+          environment: "production",
+          activationStatus: "config_required"
+        },
+        siteConfig: null,
+        discoveryRevision: null
+      }),
+      saveSiteConfig: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      confirmSiteConfig: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
       getProviderStatus: async () => ({ configuredProviders: [] })
     };
 

@@ -28,6 +28,13 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.runSiteDiagnostics, request),
   refreshSiteDiscovery: (request) =>
     invokeIpc(ipcChannels.refreshSiteDiscovery, request),
+  generateSiteConfigDraft: (request) =>
+    invokeIpc(ipcChannels.generateSiteConfigDraft, request),
+  getSiteWorkspace: (request) =>
+    invokeIpc(ipcChannels.getSiteWorkspace, request),
+  saveSiteConfig: (request) => invokeIpc(ipcChannels.saveSiteConfig, request),
+  confirmSiteConfig: (request) =>
+    invokeIpc(ipcChannels.confirmSiteConfig, request),
   getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {})
 };
 

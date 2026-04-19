@@ -8,7 +8,7 @@ import {
   urlSchema
 } from "./common.js";
 import { siteRegistrationSchema } from "./protocol.js";
-import { workspaceListResponseSchema } from "./schemas.js";
+import { siteConfigSchema, workspaceListResponseSchema } from "./schemas.js";
 
 export const ipcChannels = {
   getShellInfo: "app.getShellInfo",
@@ -17,6 +17,10 @@ export const ipcChannels = {
   registerSite: "site.register",
   runSiteDiagnostics: "site.runDiagnostics",
   refreshSiteDiscovery: "site.refreshDiscovery",
+  generateSiteConfigDraft: "site.generateConfigDraft",
+  getSiteWorkspace: "site.getWorkspace",
+  saveSiteConfig: "site.saveConfig",
+  confirmSiteConfig: "site.confirmConfig",
   getProviderStatus: "settings.getProviderStatus"
 } as const;
 
@@ -44,6 +48,8 @@ export const siteSummarySchema = z.object({
 export const siteListResponseSchema = z.object({
   sites: z.array(siteSummarySchema)
 });
+
+export type SiteSummary = z.infer<typeof siteSummarySchema>;
 
 export const providerStatusResponseSchema = z.object({
   configuredProviders: z.array(
@@ -152,6 +158,87 @@ export type RefreshDiscoveryResponse = z.infer<
   typeof refreshDiscoveryResponseSchema
 >;
 
+export const generateSiteConfigDraftResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      siteConfig: siteConfigSchema
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]
+);
+
+export type GenerateSiteConfigDraftResponse = z.infer<
+  typeof generateSiteConfigDraftResponseSchema
+>;
+
+export const siteWorkspaceStateSchema = z.object({
+  site: siteSummarySchema,
+  siteConfig: siteConfigSchema.nullable(),
+  discoveryRevision: z.number().int().nonnegative().nullable()
+});
+
+export const getSiteWorkspaceResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true) }).merge(siteWorkspaceStateSchema),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type GetSiteWorkspaceResponse = z.infer<
+  typeof getSiteWorkspaceResponseSchema
+>;
+
+export const saveSiteConfigRequestSchema = z.object({
+  siteId: idSchema,
+  siteConfig: siteConfigSchema
+});
+
+export const saveSiteConfigResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    siteConfig: siteConfigSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type SaveSiteConfigResponse = z.infer<
+  typeof saveSiteConfigResponseSchema
+>;
+
+export const confirmSiteConfigRequestSchema = z.object({
+  siteId: idSchema,
+  configId: idSchema
+});
+
+export const confirmSiteConfigResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    site: siteSummarySchema,
+    siteConfig: siteConfigSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type ConfirmSiteConfigResponse = z.infer<
+  typeof confirmSiteConfigResponseSchema
+>;
+
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
@@ -180,6 +267,22 @@ export const ipcContracts = {
   [ipcChannels.refreshSiteDiscovery]: {
     request: siteIdRequestSchema,
     response: refreshDiscoveryResponseSchema
+  },
+  [ipcChannels.generateSiteConfigDraft]: {
+    request: siteIdRequestSchema,
+    response: generateSiteConfigDraftResponseSchema
+  },
+  [ipcChannels.getSiteWorkspace]: {
+    request: siteIdRequestSchema,
+    response: getSiteWorkspaceResponseSchema
+  },
+  [ipcChannels.saveSiteConfig]: {
+    request: saveSiteConfigRequestSchema,
+    response: saveSiteConfigResponseSchema
+  },
+  [ipcChannels.confirmSiteConfig]: {
+    request: confirmSiteConfigRequestSchema,
+    response: confirmSiteConfigResponseSchema
   },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
@@ -216,5 +319,17 @@ export interface SitePilotDesktopApi {
   refreshSiteDiscovery: (
     request: IpcRequest<typeof ipcChannels.refreshSiteDiscovery>
   ) => Promise<IpcResponse<typeof ipcChannels.refreshSiteDiscovery>>;
+  generateSiteConfigDraft: (
+    request: IpcRequest<typeof ipcChannels.generateSiteConfigDraft>
+  ) => Promise<IpcResponse<typeof ipcChannels.generateSiteConfigDraft>>;
+  getSiteWorkspace: (
+    request: IpcRequest<typeof ipcChannels.getSiteWorkspace>
+  ) => Promise<IpcResponse<typeof ipcChannels.getSiteWorkspace>>;
+  saveSiteConfig: (
+    request: IpcRequest<typeof ipcChannels.saveSiteConfig>
+  ) => Promise<IpcResponse<typeof ipcChannels.saveSiteConfig>>;
+  confirmSiteConfig: (
+    request: IpcRequest<typeof ipcChannels.confirmSiteConfig>
+  ) => Promise<IpcResponse<typeof ipcChannels.confirmSiteConfig>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
 }

@@ -7,11 +7,17 @@ import {
   type IpcRequest,
   type IpcResponse
 } from "@sitepilot/contracts";
-import type { Workspace } from "@sitepilot/domain";
+import type { SiteConfigId, SiteId, Workspace } from "@sitepilot/domain";
 
 import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { getDatabase } from "./app-database.js";
 import { refreshDiscoveryForSite } from "./discovery-service.js";
+import { generateAndPersistSiteConfigDraft } from "./site-config-draft.js";
+import {
+  confirmSiteConfigActivation,
+  getSiteWorkspaceState,
+  saveSiteConfigDocument
+} from "./site-workspace-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 
 function parseRequest<TChannel extends IpcChannel>(
@@ -84,6 +90,44 @@ export function registerIpcHandlers(): void {
     const request = parseRequest(ipcChannels.refreshSiteDiscovery, payload);
     const result = await refreshDiscoveryForSite(request.siteId);
     return parseResponse(ipcChannels.refreshSiteDiscovery, result);
+  });
+
+  ipcMain.handle(
+    ipcChannels.generateSiteConfigDraft,
+    async (_event, payload) => {
+      const request = parseRequest(
+        ipcChannels.generateSiteConfigDraft,
+        payload
+      );
+      const result = await generateAndPersistSiteConfigDraft(
+        request.siteId as SiteId
+      );
+      return parseResponse(ipcChannels.generateSiteConfigDraft, result);
+    }
+  );
+
+  ipcMain.handle(ipcChannels.getSiteWorkspace, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.getSiteWorkspace, payload);
+    const result = await getSiteWorkspaceState(request.siteId as SiteId);
+    return parseResponse(ipcChannels.getSiteWorkspace, result);
+  });
+
+  ipcMain.handle(ipcChannels.saveSiteConfig, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.saveSiteConfig, payload);
+    const result = await saveSiteConfigDocument(
+      request.siteId as SiteId,
+      request.siteConfig
+    );
+    return parseResponse(ipcChannels.saveSiteConfig, result);
+  });
+
+  ipcMain.handle(ipcChannels.confirmSiteConfig, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.confirmSiteConfig, payload);
+    const result = await confirmSiteConfigActivation(
+      request.siteId as SiteId,
+      request.configId as SiteConfigId
+    );
+    return parseResponse(ipcChannels.confirmSiteConfig, result);
   });
 
   ipcMain.handle(ipcChannels.registerSite, async (_event, payload) => {

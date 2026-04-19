@@ -8,18 +8,16 @@ Handoff after completing **T15** (connectivity diagnostics) and **T16** (discove
 
 ### Completed tasks
 
-
 | Task    | Summary                                                                                                                                                                                                                                                                                                                 |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **T15** | Typed IPC `site.runDiagnostics`: health reachability, protocol metadata + semver compatibility (`compareProtocolCompatibility`), signed MCP `initialize`, `tools/list` + tool names, plugin version from protocol. Shared helpers in `site-site-context.ts` (load site, secret, fetch protocol, build `McpHttpClient`). |
 | **T16** | IPC `site.refreshDiscovery`: MCP `sitepilot/site-discovery` tool call, `normalizeMcpToolResult` in `@sitepilot/mcp-client`, new WordPress ability `sitepilot/site-discovery` (`Site_Discovery.php`), persisted `DiscoverySnapshot` + `sites.latest_discovery_snapshot_id` update.                                       |
 
-
 ### Locked architecture (do not regress)
 
 - Renderer must use only typed IPC; no SQLite, secrets, or raw plugin HTTP in the renderer.
 - Shared secrets remain in **secure storage**; SQLite holds **metadata** only (`DiscoverySnapshot.summary` is JSON; no secrets).
-- MCP session flow unchanged: `**initialize` → `Mcp-Session-Id` → subsequent JSON-RPC** (`McpHttpClient`).
+- MCP session flow unchanged: `**initialize` → `Mcp-Session-Id` → subsequent JSON-RPC\*\* (`McpHttpClient`).
 - WordPress MCP transport permission: **logged-in `read`** **or** **valid SitePilot HMAC** (`Mcp_Permission`).
 
 ---
@@ -28,7 +26,6 @@ Handoff after completing **T15** (connectivity diagnostics) and **T16** (discove
 
 ### Desktop (main)
 
-
 | Path                                                | Role                                                                                         |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `apps/desktop/src/main/site-site-context.ts`        | `loadRegisteredSiteContext`, `fetchProtocolMetadata`, `createMcpClientForSite` (signed MCP). |
@@ -36,18 +33,14 @@ Handoff after completing **T15** (connectivity diagnostics) and **T16** (discove
 | `apps/desktop/src/main/discovery-service.ts`        | `refreshDiscoveryForSite(siteId)` → `RefreshDiscoveryResponse`.                              |
 | `apps/desktop/src/main/ipc.ts`                      | Handlers for `site.runDiagnostics`, `site.refreshDiscovery`.                                 |
 
-
 ### Contracts / MCP
-
 
 | Path                                     | Role                                                                                                                          |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `packages/contracts/src/ipc.ts`          | `connectivityDiagnosticsSchema`, `siteIdRequestSchema`, `persistedDiscoverySnapshotSchema`, `refreshDiscoveryResponseSchema`. |
 | `packages/mcp-client/src/tool-result.ts` | `normalizeMcpToolResult` (WordPress `structuredContent` / `content` shapes).                                                  |
 
-
 ### WordPress plugin
-
 
 | Path                                                               | Role                                                                                                                |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
@@ -55,20 +48,19 @@ Handoff after completing **T15** (connectivity diagnostics) and **T16** (discove
 | `plugins/wordpress-sitepilot/includes/Mcp/Abilities_Registrar.php` | Registers `sitepilot/site-discovery` ability.                                                                       |
 | `plugins/wordpress-sitepilot/includes/Mcp/Server_Registrar.php`    | MCP server tools include `sitepilot/site-discovery`.                                                                |
 
-
 ---
 
 ## 3. Requirements & environment
 
 - **WordPress** 6.9+, **PHP** 8.1+.
-- `**composer install`** in `plugins/wordpress-sitepilot` before PHP work.
+- `**composer install`\*\* in `plugins/wordpress-sitepilot` before PHP work.
 - **Node**: `npm run typecheck`, `lint`, `test`, `format`, `npm run build -w @sitepilot/desktop`.
 
 ---
 
 ## 4. What T17 will need (preview)
 
-- Consume `DiscoverySnapshot` (especially `summary.discovery`) and map into `**SiteConfig`** draft via `siteConfigSchema` / `packages/contracts`.
+- Consume `DiscoverySnapshot` (especially `summary.discovery`) and map into `**SiteConfig`\*\* draft via `siteConfigSchema` / `packages/contracts`.
 - Respect activation gating (T18) — draft only until user confirms.
 
 ---
@@ -99,4 +91,4 @@ cd plugins/wordpress-sitepilot && composer install && composer validate --no-che
 
 ---
 
-*End of T16 handoff.*
+_End of T16 handoff._
