@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },
   "dependencies": {
+    "@sitepilot/services": "0.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
