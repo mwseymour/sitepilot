@@ -1,4 +1,4 @@
-import type { SitePilotDesktopApi } from "../preload/index.js";
+import type { SitePilotDesktopApi } from "@sitepilot/contracts";
 
 declare global {
   interface Window {

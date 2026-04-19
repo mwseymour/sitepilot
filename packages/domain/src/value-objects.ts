@@ -65,4 +65,3 @@ export interface LocalizedTextBlock {
   format: "plain_text" | "markdown" | "html";
   value: string;
 }
-

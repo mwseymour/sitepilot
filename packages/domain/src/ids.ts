@@ -26,4 +26,3 @@ export type RollbackRecordId = Brand<string, "RollbackRecordId">;
 export type ProviderProfileId = Brand<string, "ProviderProfileId">;
 export type NotificationId = Brand<string, "NotificationId">;
 export type AttachmentId = Brand<string, "AttachmentId">;
-

@@ -26,6 +26,7 @@ export default [
     },
     rules: {
       "no-undef": "off",
+      "no-unused-vars": "off",
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-unused-vars": [

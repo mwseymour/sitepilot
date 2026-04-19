@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from "electron";
+import { registerIpcHandlers } from "./ipc.js";
 import {
   createMainWindowOptions,
   resolveRendererEntry
@@ -13,6 +14,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 }
 
 function registerLifecycle(): void {
+  registerIpcHandlers();
+
   void app.whenReady().then(async () => {
     await createMainWindow();
 
