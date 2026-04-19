@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "files": [],
+  "references": [
+    { "path": "./apps/desktop" },
+    { "path": "./packages/domain" },
+    { "path": "./packages/contracts" },
+    { "path": "./packages/repositories" },
+    { "path": "./packages/services" },
+    { "path": "./packages/provider-adapters" },
+    { "path": "./packages/mcp-client" },
+    { "path": "./packages/plugin-protocol" },
+    { "path": "./packages/validation" },
+    { "path": "./packages/logging" },
+    { "path": "./packages/test-utils" }
+  ]
+}

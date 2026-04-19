@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "paths": {
+      "@sitepilot/contracts": ["packages/contracts/src/index.ts"],
+      "@sitepilot/domain": ["packages/domain/src/index.ts"],
+      "@sitepilot/logging": ["packages/logging/src/index.ts"],
+      "@sitepilot/mcp-client": ["packages/mcp-client/src/index.ts"],
+      "@sitepilot/plugin-protocol": ["packages/plugin-protocol/src/index.ts"],
+      "@sitepilot/provider-adapters": [
+        "packages/provider-adapters/src/index.ts"
+      ],
+      "@sitepilot/repositories": ["packages/repositories/src/index.ts"],
+      "@sitepilot/services": ["packages/services/src/index.ts"],
+      "@sitepilot/test-utils": ["packages/test-utils/src/index.ts"],
+      "@sitepilot/validation": ["packages/validation/src/index.ts"]
+    },
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true
+  }
+}
