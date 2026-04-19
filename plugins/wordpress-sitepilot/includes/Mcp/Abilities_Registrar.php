@@ -119,5 +119,49 @@ final class Abilities_Registrar {
 				),
 			)
 		);
+
+		wp_register_ability(
+			'sitepilot/site-discovery',
+			array(
+				'label'               => __( 'Site discovery', 'sitepilot' ),
+				'description'         => __( 'Returns post types, taxonomies, menus, theme, plugins, and SEO hints for discovery snapshots.', 'sitepilot' ),
+				'category'            => 'sitepilot',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'wordpress' => array( 'type' => 'object' ),
+						'site'      => array( 'type' => 'object' ),
+						'theme'     => array( 'type' => 'object' ),
+						'post_types' => array( 'type' => 'object' ),
+						'taxonomies' => array( 'type' => 'object' ),
+						'nav_menus'  => array( 'type' => 'array' ),
+						'active_plugins' => array( 'type' => 'array' ),
+						'seo'        => array( 'type' => 'object' ),
+						'warnings'   => array( 'type' => 'array' ),
+					),
+					'required'   => array( 'wordpress', 'site', 'theme', 'post_types', 'taxonomies', 'nav_menus', 'active_plugins', 'seo', 'warnings' ),
+				),
+				'execute_callback'    => static function ( array $input ) {
+					unset( $input );
+					return Site_Discovery::collect();
+				},
+				'permission_callback' => static function ( $input = array() ) {
+					unset( $input );
+					return current_user_can( 'read' );
+				},
+				'meta'                => array(
+					'annotations' => array(
+						'readonly'    => true,
+						'destructive' => false,
+						'idempotent'  => true,
+					),
+				),
+			)
+		);
 	}
 }

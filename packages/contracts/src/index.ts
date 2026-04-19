@@ -18,24 +18,30 @@ export {
   urlSchema
 } from "./common.js";
 export {
+  connectivityDiagnosticsSchema,
   ipcChannels,
   ipcContracts,
   listSitesRequestSchema,
   listWorkspacesRequestSchema,
+  persistedDiscoverySnapshotSchema,
   providerStatusResponseSchema,
+  refreshDiscoveryResponseSchema,
   registerSiteErrorResponseSchema,
   registerSiteRequestSchema,
   registerSiteResponseSchema,
   registerSiteSuccessResponseSchema,
   shellInfoResponseSchema,
+  siteIdRequestSchema,
   siteListResponseSchema,
   siteSummarySchema
 } from "./ipc.js";
 export type {
+  ConnectivityDiagnosticsResult,
   IpcChannel,
   IpcRequest,
   IpcResponse,
   ProviderStatusResponse,
+  RefreshDiscoveryResponse,
   RegisterSiteResponse,
   ShellInfoResponse,
   SiteListResponse,

@@ -9,7 +9,9 @@ import {
 } from "@sitepilot/contracts";
 import type { Workspace } from "@sitepilot/domain";
 
+import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { getDatabase } from "./app-database.js";
+import { refreshDiscoveryForSite } from "./discovery-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 
 function parseRequest<TChannel extends IpcChannel>(
@@ -70,6 +72,18 @@ export function registerIpcHandlers(): void {
         activationStatus: s.activationStatus
       }))
     });
+  });
+
+  ipcMain.handle(ipcChannels.runSiteDiagnostics, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.runSiteDiagnostics, payload);
+    const result = await runConnectivityDiagnostics(request.siteId);
+    return parseResponse(ipcChannels.runSiteDiagnostics, result);
+  });
+
+  ipcMain.handle(ipcChannels.refreshSiteDiscovery, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.refreshSiteDiscovery, payload);
+    const result = await refreshDiscoveryForSite(request.siteId);
+    return parseResponse(ipcChannels.refreshSiteDiscovery, result);
   });
 
   ipcMain.handle(ipcChannels.registerSite, async (_event, payload) => {

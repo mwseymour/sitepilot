@@ -16,7 +16,7 @@ use SitePilot\Mcp\Mcp_Permission;
 use WP\MCP\Transport\HttpTransport;
 
 /**
- * Exposes `sitepilot/ping` and `sitepilot/site-summary` on the SitePilot MCP route.
+ * Exposes SitePilot read-only abilities on the SitePilot MCP route.
  */
 final class Server_Registrar {
 
@@ -45,6 +45,7 @@ final class Server_Registrar {
 			array(
 				'sitepilot/ping',
 				'sitepilot/site-summary',
+				'sitepilot/site-discovery',
 			),
 			array(),
 			array(),

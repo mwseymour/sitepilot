@@ -70,6 +70,37 @@ describe("ipc contracts", () => {
         registration,
         mcpToolCount: 2
       }),
+      runSiteDiagnostics: async () => ({
+        siteId: "site-1",
+        checkedAt: "2026-04-19T12:00:00.000Z",
+        overallOk: true,
+        checks: {
+          health: { ok: true, httpStatus: 200, latencyMs: 10 },
+          protocolMetadata: {
+            ok: true,
+            protocolVersion: "1.0.0",
+            pluginVersion: "0.1.0",
+            compatibilityOk: true,
+            latencyMs: 5
+          },
+          authentication: { ok: true },
+          mcpTools: { ok: true, toolNames: ["sitepilot/ping"] },
+          pluginVersion: { ok: true, version: "0.1.0" }
+        }
+      }),
+      refreshSiteDiscovery: async () => ({
+        ok: true,
+        snapshot: {
+          id: "snap-1",
+          siteId: "site-1",
+          revision: 1,
+          warnings: [],
+          capabilities: ["sitepilot/ping"],
+          summary: { discovery: {} },
+          createdAt: "2026-04-19T12:00:00.000Z",
+          updatedAt: "2026-04-19T12:00:00.000Z"
+        }
+      }),
       getProviderStatus: async () => ({ configuredProviders: [] })
     };
 

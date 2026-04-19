@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import { siteEnvironmentSchema, urlSchema } from "./common.js";
+import {
+  idSchema,
+  isoTimestampSchema,
+  jsonValueSchema,
+  siteEnvironmentSchema,
+  urlSchema
+} from "./common.js";
 import { siteRegistrationSchema } from "./protocol.js";
 import { workspaceListResponseSchema } from "./schemas.js";
 
@@ -9,6 +15,8 @@ export const ipcChannels = {
   listWorkspaces: "workspace.list",
   listSites: "site.list",
   registerSite: "site.register",
+  runSiteDiagnostics: "site.runDiagnostics",
+  refreshSiteDiscovery: "site.refreshDiscovery",
   getProviderStatus: "settings.getProviderStatus"
 } as const;
 
@@ -76,6 +84,78 @@ export const registerSiteResponseSchema = z.discriminatedUnion("ok", [
 
 export type RegisterSiteResponse = z.infer<typeof registerSiteResponseSchema>;
 
+export const siteIdRequestSchema = z.object({
+  siteId: idSchema
+});
+
+export const connectivityDiagnosticsSchema = z.object({
+  siteId: idSchema,
+  checkedAt: isoTimestampSchema,
+  overallOk: z.boolean(),
+  checks: z.object({
+    health: z.object({
+      ok: z.boolean(),
+      httpStatus: z.number().int().optional(),
+      latencyMs: z.number().int().optional(),
+      message: z.string().optional()
+    }),
+    protocolMetadata: z.object({
+      ok: z.boolean(),
+      protocolVersion: z.string().optional(),
+      pluginVersion: z.string().optional(),
+      compatibilityOk: z.boolean().optional(),
+      compatibilityReason: z.string().optional(),
+      latencyMs: z.number().int().optional(),
+      message: z.string().optional()
+    }),
+    authentication: z.object({
+      ok: z.boolean(),
+      message: z.string().optional()
+    }),
+    mcpTools: z.object({
+      ok: z.boolean(),
+      toolNames: z.array(z.string()),
+      message: z.string().optional()
+    }),
+    pluginVersion: z.object({
+      ok: z.boolean(),
+      version: z.string().optional(),
+      message: z.string().optional()
+    })
+  })
+});
+
+export const persistedDiscoverySnapshotSchema = z.object({
+  id: idSchema,
+  siteId: idSchema,
+  revision: z.number().int().nonnegative(),
+  warnings: z.array(z.string()),
+  capabilities: z.array(z.string()),
+  summary: z.record(jsonValueSchema),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema
+});
+
+export const refreshDiscoveryResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    snapshot: persistedDiscoverySnapshotSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type RefreshDiscoveryResponse = z.infer<
+  typeof refreshDiscoveryResponseSchema
+>;
+
+export type ConnectivityDiagnosticsResult = z.infer<
+  typeof connectivityDiagnosticsSchema
+>;
+
 export const ipcContracts = {
   [ipcChannels.getShellInfo]: {
     request: z.object({}),
@@ -92,6 +172,14 @@ export const ipcContracts = {
   [ipcChannels.registerSite]: {
     request: registerSiteRequestSchema,
     response: registerSiteResponseSchema
+  },
+  [ipcChannels.runSiteDiagnostics]: {
+    request: siteIdRequestSchema,
+    response: connectivityDiagnosticsSchema
+  },
+  [ipcChannels.refreshSiteDiscovery]: {
+    request: siteIdRequestSchema,
+    response: refreshDiscoveryResponseSchema
   },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
@@ -122,5 +210,11 @@ export interface SitePilotDesktopApi {
   registerSite: (
     request: IpcRequest<typeof ipcChannels.registerSite>
   ) => Promise<IpcResponse<typeof ipcChannels.registerSite>>;
+  runSiteDiagnostics: (
+    request: IpcRequest<typeof ipcChannels.runSiteDiagnostics>
+  ) => Promise<IpcResponse<typeof ipcChannels.runSiteDiagnostics>>;
+  refreshSiteDiscovery: (
+    request: IpcRequest<typeof ipcChannels.refreshSiteDiscovery>
+  ) => Promise<IpcResponse<typeof ipcChannels.refreshSiteDiscovery>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
 }
