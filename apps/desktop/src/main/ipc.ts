@@ -1,15 +1,20 @@
 import { app, ipcMain } from "electron";
 
 import {
+  actionPlanSchema,
   ipcChannels,
   ipcContracts,
+  requestSchema,
   type IpcChannel,
   type IpcRequest,
   type IpcResponse
 } from "@sitepilot/contracts";
 import type {
+  ActionId,
+  ActionPlanId,
   ApprovalRequestId,
   ChatThreadId,
+  Request,
   RequestId,
   SiteConfigId,
   SiteId,
@@ -41,6 +46,8 @@ import { buildPlannerContextForThread } from "./planner-context-service.js";
 import { generateActionPlanForRequest } from "./plan-generation-service.js";
 import { readProviderStatus } from "./provider-status-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
+import { getRequestBundleForThread } from "./request-bundle-service.js";
+import { executePlanAction } from "./execution-orchestrator-service.js";
 
 function parseRequest<TChannel extends IpcChannel>(
   channel: TChannel,
@@ -54,6 +61,25 @@ function parseResponse<TChannel extends IpcChannel>(
   payload: unknown
 ): IpcResponse<TChannel> {
   return ipcContracts[channel].response.parse(payload);
+}
+
+function contractRequestPayload(entity: Request) {
+  return requestSchema.parse({
+    id: entity.id,
+    siteId: entity.siteId,
+    threadId: entity.threadId,
+    requestedBy: entity.requestedBy,
+    status: entity.status,
+    userPrompt: entity.userPrompt,
+    ...(entity.latestPlanId !== undefined
+      ? { latestPlanId: entity.latestPlanId }
+      : {}),
+    ...(entity.latestExecutionRunId !== undefined
+      ? { latestExecutionRunId: entity.latestExecutionRunId }
+      : {}),
+    createdAt: entity.createdAt,
+    updatedAt: entity.updatedAt
+  });
 }
 
 export function registerIpcHandlers(): void {
@@ -307,5 +333,77 @@ export function registerIpcHandlers(): void {
     parseRequest(ipcChannels.getProviderStatus, payload);
     const status = await readProviderStatus();
     return parseResponse(ipcChannels.getProviderStatus, status);
+  });
+
+  ipcMain.handle(ipcChannels.getRequestBundle, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.getRequestBundle, payload);
+    const bundle = await getRequestBundleForThread({
+      siteId: req.siteId as SiteId,
+      threadId: req.threadId as ChatThreadId,
+      requestId: req.requestId as RequestId
+    });
+    if (!bundle.ok) {
+      return parseResponse(ipcChannels.getRequestBundle, bundle);
+    }
+    return parseResponse(ipcChannels.getRequestBundle, {
+      ok: true,
+      request: contractRequestPayload(bundle.request),
+      plan: bundle.plan === null ? null : actionPlanSchema.parse(bundle.plan),
+      pendingApproval:
+        bundle.pendingApproval === null
+          ? null
+          : {
+              id: bundle.pendingApproval.id,
+              requestId: bundle.pendingApproval.requestId,
+              planId: bundle.pendingApproval.planId,
+              siteId: bundle.pendingApproval.siteId,
+              status: bundle.pendingApproval.status,
+              ...(bundle.pendingApproval.expiresAt !== undefined
+                ? { expiresAt: bundle.pendingApproval.expiresAt }
+                : {})
+            },
+      lastExecution:
+        bundle.lastExecution === null
+          ? null
+          : {
+              id: bundle.lastExecution.id,
+              status: bundle.lastExecution.status,
+              idempotencyKey: bundle.lastExecution.idempotencyKey,
+              ...(bundle.lastExecution.completedAt !== undefined
+                ? { completedAt: bundle.lastExecution.completedAt }
+                : {})
+            }
+    });
+  });
+
+  ipcMain.handle(ipcChannels.executePlanAction, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.executePlanAction, payload);
+    const result = await executePlanAction({
+      siteId: req.siteId as SiteId,
+      requestId: req.requestId as RequestId,
+      planId: req.planId as ActionPlanId,
+      actionId: req.actionId as ActionId,
+      dryRun: req.dryRun,
+      ...(req.idempotencyKey !== undefined
+        ? { idempotencyKey: req.idempotencyKey }
+        : {})
+    });
+    if (!result.ok) {
+      return parseResponse(ipcChannels.executePlanAction, result);
+    }
+    return parseResponse(ipcChannels.executePlanAction, {
+      ok: true,
+      dryRun: result.dryRun,
+      mcpResult: result.mcpResult,
+      ...(result.skipped !== undefined ? { skipped: result.skipped } : {}),
+      ...(result.reused !== undefined ? { reused: result.reused } : {}),
+      ...(result.toolName !== undefined ? { toolName: result.toolName } : {}),
+      ...(result.executionRunId !== undefined
+        ? { executionRunId: result.executionRunId }
+        : {}),
+      ...(result.toolInvocationId !== undefined
+        ? { toolInvocationId: result.toolInvocationId }
+        : {})
+    });
   });
 }

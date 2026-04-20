@@ -7,11 +7,13 @@ import type {
   ChatThread,
   ClarificationRound,
   DiscoverySnapshot,
+  ExecutionRun,
   ProviderUsageEvent,
   Request,
   Site,
   SiteConfigVersion,
   SiteConnection,
+  ToolInvocation,
   Workspace
 } from "@sitepilot/domain";
 
@@ -84,6 +86,9 @@ export interface ApprovalRepository {
   listPendingBySiteId(
     siteId: ApprovalRequest["siteId"]
   ): Promise<ApprovalRequest[]>;
+  listByRequestId(
+    requestId: ApprovalRequest["requestId"]
+  ): Promise<ApprovalRequest[]>;
   save(approvalRequest: ApprovalRequest): Promise<void>;
   appendDecision(decision: ApprovalDecision): Promise<void>;
 }
@@ -96,10 +101,24 @@ export interface AuditEntryRepository {
 
 export interface ActionPlanRepository {
   saveFromContract(plan: ContractActionPlan): Promise<void>;
+  getById(planId: ContractActionPlan["id"]): Promise<ContractActionPlan | null>;
 }
 
 export interface ProviderUsageRepository {
   append(event: ProviderUsageEvent): Promise<void>;
+}
+
+export interface ExecutionRunRepository {
+  getById(id: ExecutionRun["id"]): Promise<ExecutionRun | null>;
+  getByIdempotencyKey(key: string): Promise<ExecutionRun | null>;
+  save(run: ExecutionRun): Promise<void>;
+}
+
+export interface ToolInvocationRepository {
+  save(invocation: ToolInvocation): Promise<void>;
+  listByExecutionRunId(
+    runId: ToolInvocation["executionRunId"]
+  ): Promise<ToolInvocation[]>;
 }
 
 export interface RepositoryRegistry {
@@ -116,4 +135,6 @@ export interface RepositoryRegistry {
   providerUsage: ProviderUsageRepository;
   approvals: ApprovalRepository;
   auditEntries: AuditEntryRepository;
+  executionRuns: ExecutionRunRepository;
+  toolInvocations: ToolInvocationRepository;
 }

@@ -52,6 +52,10 @@ const desktopApi: SitePilotDesktopApi = {
   decideApproval: (request) => invokeIpc(ipcChannels.decideApproval, request),
   listAuditEntries: (request) =>
     invokeIpc(ipcChannels.listAuditEntries, request),
+  getRequestBundle: (request) =>
+    invokeIpc(ipcChannels.getRequestBundle, request),
+  executePlanAction: (request) =>
+    invokeIpc(ipcChannels.executePlanAction, request),
   getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {})
 };
 

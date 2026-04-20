@@ -18,6 +18,21 @@ final class Signed_Request_Verifier {
 
 	private const NONCE_TTL_SECONDS = 300;
 
+	/**
+	 * Site id header from the last successful MCP signature verification (request-scoped).
+	 *
+	 * @var string
+	 */
+	private static $authenticated_site_id = '';
+
+	public static function get_authenticated_site_id(): string {
+		return self::$authenticated_site_id;
+	}
+
+	public static function reset_request_context(): void {
+		self::$authenticated_site_id = '';
+	}
+
 	public static function verify_mcp_request( \WP_REST_Request $request ): bool {
 		$path = self::canonical_mcp_path();
 		return self::verify_internal( $request, $path );
@@ -34,6 +49,8 @@ final class Signed_Request_Verifier {
 	}
 
 	private static function verify_internal( \WP_REST_Request $request, string $path ): bool {
+		self::$authenticated_site_id = '';
+
 		$site_id = (string) $request->get_header( 'x-sitepilot-site-id' );
 		if ( $site_id === '' ) {
 			return false;
@@ -105,6 +122,8 @@ final class Signed_Request_Verifier {
 			return false;
 		}
 		set_transient( $nonce_key, 1, self::NONCE_TTL_SECONDS );
+
+		self::$authenticated_site_id = $site_id;
 
 		return true;
 	}

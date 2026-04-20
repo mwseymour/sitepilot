@@ -8,12 +8,14 @@ export type {
   ChatThreadRepository,
   ClarificationRoundRepository,
   DiscoverySnapshotRepository,
+  ExecutionRunRepository,
   ProviderUsageRepository,
   RepositoryRegistry,
   RequestRepository,
   SiteConfigRepository,
   SiteConnectionRepository,
   SiteRepository,
+  ToolInvocationRepository,
   WorkspaceRepository
 } from "./interfaces.js";
 export type {

@@ -119,6 +119,8 @@ export type {
   ActionPlan,
   ApprovalPayload,
   AuditEntry,
+  ChatMessagePayload,
+  ChatThreadPayload,
   ClarificationRoundPayload,
   DiscoverySnapshot,
   PlannerContext,

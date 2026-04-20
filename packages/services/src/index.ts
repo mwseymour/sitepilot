@@ -8,6 +8,8 @@ export {
   buildLlmActionPlan,
   buildStubActionPlan
 } from "./generate-action-plan.js";
+export { actionToMcpToolCall } from "./mcp-action-map.js";
+export type { McpToolCall } from "./mcp-action-map.js";
 export type {
   SecretKey,
   SecretNamespace,

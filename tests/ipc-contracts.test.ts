@@ -163,6 +163,16 @@ describe("ipc contracts", () => {
         message: "Not used in this contract shape test."
       }),
       listAuditEntries: async () => ({ ok: true, entries: [] }),
+      getRequestBundle: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      executePlanAction: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
       getProviderStatus: async () => ({ configuredProviders: [] })
     };
 

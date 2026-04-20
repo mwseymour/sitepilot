@@ -274,6 +274,8 @@ export const plannerContextSchema = z.object({
 });
 
 export type SiteConfig = z.infer<typeof siteConfigSchema>;
+export type ChatThreadPayload = z.infer<typeof chatThreadSchema>;
+export type ChatMessagePayload = z.infer<typeof chatMessageSchema>;
 export type Action = z.infer<typeof actionSchema>;
 export type ActionPlan = z.infer<typeof actionPlanSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;

@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 
-import type { chatMessageSchema, chatThreadSchema } from "@sitepilot/contracts";
-import type { z } from "zod";
+import type {
+  ChatMessagePayload,
+  ChatThreadPayload,
+  SitePilotDesktopApi
+} from "@sitepilot/contracts";
+import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 
-type ThreadRow = z.infer<typeof chatThreadSchema>;
-type MessageRow = z.infer<typeof chatMessageSchema>;
+type ThreadRow = ChatThreadPayload;
+type MessageRow = ChatMessagePayload;
+
+type RequestBundleOk = Extract<
+  Awaited<ReturnType<SitePilotDesktopApi["getRequestBundle"]>>,
+  { ok: true }
+>;
 
 function roleLabel(m: MessageRow): string {
   if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
@@ -27,7 +36,12 @@ export function ChatPage(): ReactElement | null {
   const [err, setErr] = useState<string | null>(null);
   const [plannerJson, setPlannerJson] = useState<string | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
-  const [planOutput, setPlanOutput] = useState<string | null>(null);
+  const [planValidationJson, setPlanValidationJson] = useState<string | null>(
+    null
+  );
+  const [bundle, setBundle] = useState<RequestBundleOk | null>(null);
+  const [execBusy, setExecBusy] = useState(false);
+  const [lastExecHint, setLastExecHint] = useState<string | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -75,6 +89,29 @@ export function ChatPage(): ReactElement | null {
       setMessages([]);
     }
   }, [selectedThreadId, loadMessages]);
+
+  const loadBundle = useCallback(async () => {
+    if (!selectedThreadId || lastRequestId === null) {
+      setBundle(null);
+      return;
+    }
+    const res = await window.sitePilotDesktop.getRequestBundle({
+      siteId,
+      threadId: selectedThreadId,
+      requestId: lastRequestId
+    });
+    if (!res.ok) {
+      setErr(res.message);
+      setBundle(null);
+      return;
+    }
+    setErr(null);
+    setBundle(res);
+  }, [siteId, selectedThreadId, lastRequestId]);
+
+  useEffect(() => {
+    void loadBundle();
+  }, [loadBundle]);
 
   async function onCreateThread(): Promise<void> {
     setBusy(true);
@@ -131,7 +168,8 @@ export function ChatPage(): ReactElement | null {
       return;
     }
     setLastRequestId(res.request.id);
-    setPlanOutput(null);
+    setPlanValidationJson(null);
+    setLastExecHint(null);
     setRequestPrompt("");
     await loadMessages(selectedThreadId);
     await loadThreads();
@@ -151,12 +189,11 @@ export function ChatPage(): ReactElement | null {
     setBusy(false);
     if (!res.ok) {
       setErr(res.message);
-      setPlanOutput(null);
+      setPlanValidationJson(null);
       return;
     }
-    setPlanOutput(
-      JSON.stringify({ plan: res.plan, validation: res.validation }, null, 2)
-    );
+    setPlanValidationJson(JSON.stringify(res.validation, null, 2));
+    await loadBundle();
   }
 
   async function onBuildPlannerContext(): Promise<void> {
@@ -176,6 +213,45 @@ export function ChatPage(): ReactElement | null {
       return;
     }
     setPlannerJson(JSON.stringify(res.context, null, 2));
+  }
+
+  async function onExecuteAction(
+    actionId: string,
+    dryRun: boolean
+  ): Promise<void> {
+    if (!bundle?.plan || lastRequestId === null) {
+      return;
+    }
+    setExecBusy(true);
+    setErr(null);
+    setLastExecHint(null);
+    const res = await window.sitePilotDesktop.executePlanAction({
+      siteId,
+      requestId: lastRequestId,
+      planId: bundle.plan.id,
+      actionId,
+      dryRun
+    });
+    setExecBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    if (res.skipped) {
+      setLastExecHint(
+        `Skipped: ${res.mcpResult.reason as string} (${String(res.mcpResult.actionType)})`
+      );
+    } else if (res.reused) {
+      setLastExecHint("Reused completed execution (same idempotency key).");
+    } else {
+      setLastExecHint(
+        `${dryRun ? "Dry-run" : "Executed"}${res.toolName ? ` · ${res.toolName}` : ""} · ok`
+      );
+    }
+    await loadBundle();
+    if (selectedThreadId) {
+      await loadMessages(selectedThreadId);
+    }
   }
 
   if (loading) {
@@ -308,8 +384,113 @@ export function ChatPage(): ReactElement | null {
                   Last request id: <code>{lastRequestId}</code>
                 </p>
               ) : null}
-              {planOutput ? (
-                <pre className="diag-json">{planOutput}</pre>
+              {bundle ? (
+                <div className="chat-bundle-panel">
+                  <h4>Request status</h4>
+                  <p className="small-print">
+                    <span className="badge">{bundle.request.status}</span>
+                    {bundle.pendingApproval ? (
+                      <>
+                        {" "}
+                        <span className="badge badge-warn">
+                          Pending approval
+                        </span>{" "}
+                        <Link
+                          className="small-print"
+                          to={`/site/${siteId}/approvals`}
+                        >
+                          Open approvals
+                        </Link>
+                      </>
+                    ) : null}
+                  </p>
+                  {bundle.lastExecution ? (
+                    <p className="muted small-print">
+                      Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
+                      <code className="break-all">
+                        {bundle.lastExecution.idempotencyKey}
+                      </code>
+                    </p>
+                  ) : null}
+                  {bundle.plan ? (
+                    <>
+                      <h4>Planned actions</h4>
+                      <ul className="chat-action-list">
+                        {bundle.plan.proposedActions.map((action) => {
+                          const spec = actionToMcpToolCall(
+                            action.type,
+                            action.input,
+                            true
+                          );
+                          const remote = spec !== null;
+                          return (
+                            <li key={action.id} className="chat-action-row">
+                              <div>
+                                <strong>{action.type}</strong>
+                                {remote ? (
+                                  <span className="muted small-print">
+                                    {" "}
+                                    → {spec.toolName}
+                                  </span>
+                                ) : (
+                                  <span className="muted small-print">
+                                    {" "}
+                                    (no MCP tool — local / interpret only)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="chat-action-buttons">
+                                {remote ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-small"
+                                      disabled={execBusy || busy}
+                                      onClick={() =>
+                                        void onExecuteAction(action.id, true)
+                                      }
+                                    >
+                                      Dry-run
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary btn-small"
+                                      disabled={
+                                        execBusy ||
+                                        busy ||
+                                        bundle.request.status !== "approved"
+                                      }
+                                      onClick={() =>
+                                        void onExecuteAction(action.id, false)
+                                      }
+                                    >
+                                      Execute
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {bundle.request.status !== "approved" ? (
+                        <p className="muted small-print">
+                          Execute stays disabled until the request is approved.
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="muted small-print">
+                      No plan yet — generate an action plan above.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+              {lastExecHint ? (
+                <p className="small-print workspace-note">{lastExecHint}</p>
+              ) : null}
+              {planValidationJson ? (
+                <pre className="diag-json">{planValidationJson}</pre>
               ) : null}
             </div>
             <div className="chat-planner-panel">

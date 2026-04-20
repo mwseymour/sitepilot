@@ -1,6 +1,10 @@
 import type Database from "better-sqlite3";
 
-import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
+import {
+  actionPlanSchema,
+  type Action as ContractAction,
+  type ActionPlan as ContractActionPlan
+} from "@sitepilot/contracts";
 import type {
   ActorRef,
   ApprovalDecision,
@@ -10,11 +14,13 @@ import type {
   ChatThread,
   ClarificationRound,
   DiscoverySnapshot,
+  ExecutionRun,
   ProviderUsageEvent,
   Request,
   Site,
   SiteConfigVersion,
   SiteConnection,
+  ToolInvocation,
   Workspace
 } from "@sitepilot/domain";
 
@@ -26,12 +32,14 @@ import type {
   ChatThreadRepository,
   ClarificationRoundRepository,
   DiscoverySnapshotRepository,
+  ExecutionRunRepository,
   ProviderUsageRepository,
   RepositoryRegistry,
   RequestRepository,
   SiteConfigRepository,
   SiteConnectionRepository,
   SiteRepository,
+  ToolInvocationRepository,
   WorkspaceRepository
 } from "./interfaces.js";
 
@@ -1168,6 +1176,119 @@ class SqliteActionPlanRepository implements ActionPlanRepository {
 
     run();
   }
+
+  public async getById(
+    planId: ContractActionPlan["id"]
+  ): Promise<ContractActionPlan | null> {
+    type PlanRow = {
+      id: string;
+      request_id: string;
+      site_id: string;
+      summary: string;
+      assumptions_json: string;
+      open_questions_json: string;
+      approval_required: number;
+      risk_level: string;
+      target_entity_refs_json: string;
+      dependencies_json: string;
+      validation_warnings_json: string;
+      rollback_notes_json: string;
+      created_at: string;
+      updated_at: string;
+    };
+
+    const row = this.connection
+      .prepare<{ id: string }, PlanRow>(
+        `SELECT id, request_id, site_id, summary, assumptions_json, open_questions_json,
+                approval_required, risk_level, target_entity_refs_json,
+                dependencies_json, validation_warnings_json, rollback_notes_json,
+                created_at, updated_at
+         FROM action_plans WHERE id = @id`
+      )
+      .get({ id: planId });
+
+    if (!row) {
+      return null;
+    }
+
+    type ActionRow = {
+      id: string;
+      plan_id: string;
+      request_id: string;
+      type: string;
+      risk_level: string;
+      dry_run_capable: number;
+      rollback_supported: number;
+      input_json: string;
+      created_at: string;
+      updated_at: string;
+    };
+
+    const actionRows = this.connection
+      .prepare<{ planId: string }, ActionRow>(
+        `SELECT id, plan_id, request_id, type, risk_level, dry_run_capable, rollback_supported,
+                input_json, created_at, updated_at
+         FROM actions WHERE plan_id = @planId
+         ORDER BY created_at ASC`
+      )
+      .all({ planId });
+
+    const proposedActions: ContractActionPlan["proposedActions"] =
+      actionRows.map((ar) => {
+        const raw = parseJson<Record<string, unknown>>(ar.input_json);
+        const metaRaw = raw._sitepilotMeta;
+        const input = { ...raw };
+        delete input._sitepilotMeta;
+        const meta =
+          metaRaw !== null &&
+          typeof metaRaw === "object" &&
+          !Array.isArray(metaRaw)
+            ? (metaRaw as Record<string, unknown>)
+            : {};
+        const version =
+          typeof meta.version === "number" && Number.isFinite(meta.version)
+            ? meta.version
+            : 1;
+        const targetEntityRefs = Array.isArray(meta.targetEntityRefs)
+          ? (meta.targetEntityRefs as string[])
+          : [];
+        const permissionRequirement =
+          typeof meta.permissionRequirement === "string"
+            ? meta.permissionRequirement
+            : "read_site";
+        return {
+          id: ar.id,
+          type: ar.type,
+          version,
+          input: input as ContractAction["input"],
+          targetEntityRefs,
+          permissionRequirement,
+          riskLevel: ar.risk_level as ContractAction["riskLevel"],
+          dryRunCapable: asBoolean(ar.dry_run_capable),
+          rollbackSupported: asBoolean(ar.rollback_supported)
+        };
+      });
+
+    const draft = {
+      id: row.id,
+      requestId: row.request_id,
+      siteId: row.site_id,
+      requestSummary: row.summary,
+      assumptions: parseJson(row.assumptions_json) as string[],
+      openQuestions: parseJson(row.open_questions_json) as string[],
+      targetEntities: parseJson(row.target_entity_refs_json) as string[],
+      proposedActions,
+      dependencies: parseJson(row.dependencies_json) as string[],
+      approvalRequired: asBoolean(row.approval_required),
+      riskLevel: row.risk_level,
+      rollbackNotes: parseJson(row.rollback_notes_json) as string[],
+      validationWarnings: parseJson(row.validation_warnings_json) as string[],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+
+    return actionPlanSchema.parse(draft);
+  }
 }
 
 class SqliteProviderUsageRepository implements ProviderUsageRepository {
@@ -1242,6 +1363,45 @@ class SqliteApprovalRepository implements ApprovalRepository {
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
+  }
+
+  public async listByRequestId(
+    requestId: ApprovalRequest["requestId"]
+  ): Promise<ApprovalRequest[]> {
+    const rows = this.connection
+      .prepare<
+        { requestId: string },
+        {
+          id: ApprovalRequest["id"];
+          request_id: ApprovalRequest["requestId"];
+          plan_id: ApprovalRequest["planId"];
+          site_id: ApprovalRequest["siteId"];
+          status: ApprovalRequest["status"];
+          requested_by_json: string;
+          expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, request_id, plan_id, site_id, status, requested_by_json,
+                expires_at, created_at, updated_at
+         FROM approval_requests
+         WHERE request_id = @requestId
+         ORDER BY created_at DESC`
+      )
+      .all({ requestId });
+
+    return rows.map((row) => ({
+      id: row.id,
+      requestId: row.request_id,
+      planId: row.plan_id,
+      siteId: row.site_id,
+      status: row.status,
+      requestedBy: parseJson(row.requested_by_json),
+      expiresAt: row.expires_at ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
   }
 
   public async listPendingBySiteId(
@@ -1471,6 +1631,215 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
   }
 }
 
+class SqliteExecutionRunRepository implements ExecutionRunRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async getById(id: ExecutionRun["id"]): Promise<ExecutionRun | null> {
+    const row = this.connection
+      .prepare<
+        { id: string },
+        {
+          id: ExecutionRun["id"];
+          request_id: ExecutionRun["requestId"];
+          plan_id: ExecutionRun["planId"];
+          site_id: ExecutionRun["siteId"];
+          status: ExecutionRun["status"];
+          idempotency_key: string;
+          started_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, request_id, plan_id, site_id, status, idempotency_key,
+                started_at, completed_at, created_at, updated_at
+         FROM execution_runs WHERE id = @id`
+      )
+      .get({ id });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      requestId: row.request_id,
+      planId: row.plan_id,
+      siteId: row.site_id,
+      status: row.status,
+      idempotencyKey: row.idempotency_key,
+      startedAt: row.started_at ?? undefined,
+      completedAt: row.completed_at ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  public async getByIdempotencyKey(key: string): Promise<ExecutionRun | null> {
+    const row = this.connection
+      .prepare<
+        { key: string },
+        {
+          id: ExecutionRun["id"];
+          request_id: ExecutionRun["requestId"];
+          plan_id: ExecutionRun["planId"];
+          site_id: ExecutionRun["siteId"];
+          status: ExecutionRun["status"];
+          idempotency_key: string;
+          started_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, request_id, plan_id, site_id, status, idempotency_key,
+                started_at, completed_at, created_at, updated_at
+         FROM execution_runs WHERE idempotency_key = @key`
+      )
+      .get({ key });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      requestId: row.request_id,
+      planId: row.plan_id,
+      siteId: row.site_id,
+      status: row.status,
+      idempotencyKey: row.idempotency_key,
+      startedAt: row.started_at ?? undefined,
+      completedAt: row.completed_at ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  public async save(run: ExecutionRun): Promise<void> {
+    upsert(
+      this.connection,
+      `INSERT INTO execution_runs (
+         id, request_id, plan_id, site_id, status, idempotency_key,
+         started_at, completed_at, created_at, updated_at
+       ) VALUES (
+         @id, @requestId, @planId, @siteId, @status, @idempotencyKey,
+         @startedAt, @completedAt, @createdAt, @updatedAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         request_id = excluded.request_id,
+         plan_id = excluded.plan_id,
+         site_id = excluded.site_id,
+         status = excluded.status,
+         idempotency_key = excluded.idempotency_key,
+         started_at = excluded.started_at,
+         completed_at = excluded.completed_at,
+         updated_at = excluded.updated_at`,
+      {
+        id: run.id,
+        requestId: run.requestId,
+        planId: run.planId,
+        siteId: run.siteId,
+        status: run.status,
+        idempotencyKey: run.idempotencyKey,
+        startedAt: run.startedAt ?? null,
+        completedAt: run.completedAt ?? null,
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt
+      }
+    );
+  }
+}
+
+class SqliteToolInvocationRepository implements ToolInvocationRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async save(invocation: ToolInvocation): Promise<void> {
+    upsert(
+      this.connection,
+      `INSERT INTO tool_invocations (
+         id, execution_run_id, action_id, tool_name, status, input_json, output_json, error_code,
+         created_at, updated_at
+       ) VALUES (
+         @id, @executionRunId, @actionId, @toolName, @status, @inputJson, @outputJson, @errorCode,
+         @createdAt, @updatedAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         execution_run_id = excluded.execution_run_id,
+         action_id = excluded.action_id,
+         tool_name = excluded.tool_name,
+         status = excluded.status,
+         input_json = excluded.input_json,
+         output_json = excluded.output_json,
+         error_code = excluded.error_code,
+         updated_at = excluded.updated_at`,
+      {
+        id: invocation.id,
+        executionRunId: invocation.executionRunId,
+        actionId: invocation.actionId ?? null,
+        toolName: invocation.toolName,
+        status: invocation.status,
+        inputJson: serializeJson(invocation.input),
+        outputJson:
+          invocation.output !== undefined
+            ? serializeJson(invocation.output)
+            : null,
+        errorCode: invocation.errorCode ?? null,
+        createdAt: invocation.createdAt,
+        updatedAt: invocation.updatedAt
+      }
+    );
+  }
+
+  public async listByExecutionRunId(
+    runId: ToolInvocation["executionRunId"]
+  ): Promise<ToolInvocation[]> {
+    const rows = this.connection
+      .prepare<
+        { runId: string },
+        {
+          id: ToolInvocation["id"];
+          execution_run_id: ToolInvocation["executionRunId"];
+          action_id: ToolInvocation["actionId"] | null;
+          tool_name: string;
+          status: ToolInvocation["status"];
+          input_json: string;
+          output_json: string | null;
+          error_code: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, execution_run_id, action_id, tool_name, status, input_json, output_json,
+                error_code, created_at, updated_at
+         FROM tool_invocations
+         WHERE execution_run_id = @runId
+         ORDER BY created_at ASC`
+      )
+      .all({ runId });
+
+    return rows.map((row) => {
+      const base = {
+        id: row.id,
+        executionRunId: row.execution_run_id,
+        toolName: row.tool_name,
+        status: row.status,
+        input: parseJson(row.input_json) as ToolInvocation["input"],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+      return {
+        ...base,
+        ...(row.action_id !== null ? { actionId: row.action_id } : {}),
+        ...(row.output_json !== null
+          ? { output: parseJson(row.output_json) as ToolInvocation["output"] }
+          : {}),
+        ...(row.error_code !== null ? { errorCode: row.error_code } : {})
+      };
+    });
+  }
+}
+
 export function createSqliteRepositoryRegistry(
   connection: Database.Database
 ): RepositoryRegistry {
@@ -1487,6 +1856,8 @@ export function createSqliteRepositoryRegistry(
     actionPlans: new SqliteActionPlanRepository(connection),
     providerUsage: new SqliteProviderUsageRepository(connection),
     approvals: new SqliteApprovalRepository(connection),
-    auditEntries: new SqliteAuditEntryRepository(connection)
+    auditEntries: new SqliteAuditEntryRepository(connection),
+    executionRuns: new SqliteExecutionRunRepository(connection),
+    toolInvocations: new SqliteToolInvocationRepository(connection)
   };
 }

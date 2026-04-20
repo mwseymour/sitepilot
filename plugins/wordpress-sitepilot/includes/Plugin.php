@@ -11,7 +11,9 @@ namespace SitePilot;
 
 use SitePilot\Admin\Settings_Page;
 use SitePilot\Mcp\Abilities_Registrar;
+use SitePilot\Mcp\Write_Abilities;
 use SitePilot\Mcp\Server_Registrar;
+use SitePilot\Security\Signed_Request_Verifier;
 use SitePilot\Rest\Protocol_Routes;
 use SitePilot\Rest\Registration_Routes;
 
@@ -29,12 +31,15 @@ final class Plugin {
 		Registration_Routes::register();
 		Settings_Page::register();
 
+		add_action( 'shutdown', array( Signed_Request_Verifier::class, 'reset_request_context' ), 999 );
+
 		if ( class_exists( \WP\MCP\Core\McpAdapter::class ) ) {
 			\WP\MCP\Core\McpAdapter::instance();
 		}
 
 		if ( function_exists( 'wp_register_ability' ) ) {
 			Abilities_Registrar::register_hooks();
+			Write_Abilities::register_hooks();
 			Server_Registrar::register_hooks();
 		}
 	}

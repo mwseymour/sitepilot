@@ -10,7 +10,8 @@
     "@sitepilot/validation": "0.1.0"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mcp-action-map": "./src/mcp-action-map.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

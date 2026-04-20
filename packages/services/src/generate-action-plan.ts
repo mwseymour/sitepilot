@@ -34,7 +34,12 @@ export function buildStubActionPlan(input: {
 }): ActionPlan {
   const summary = lastUserPlainText(input.context);
   const planId = randomUUID() as ActionPlanId;
-  const actionId = randomUUID() as ActionId;
+  const interpretId = randomUUID() as ActionId;
+  const draftPostId = randomUUID() as ActionId;
+  const draftTitle =
+    summary.length > 80
+      ? `Draft: ${summary.slice(0, 77)}…`
+      : `Draft: ${summary}`;
 
   const draft: ActionPlan = {
     id: planId,
@@ -48,7 +53,7 @@ export function buildStubActionPlan(input: {
     targetEntities: [],
     proposedActions: [
       {
-        id: actionId,
+        id: interpretId,
         type: "interpret_request",
         version: 1,
         input: { summary },
@@ -57,6 +62,21 @@ export function buildStubActionPlan(input: {
         riskLevel: "low",
         dryRunCapable: true,
         rollbackSupported: true
+      },
+      {
+        id: draftPostId,
+        type: "create_draft_post",
+        version: 1,
+        input: {
+          title: draftTitle,
+          content: summary,
+          post_type: "post"
+        },
+        targetEntityRefs: [],
+        permissionRequirement: "edit_posts",
+        riskLevel: "low",
+        dryRunCapable: true,
+        rollbackSupported: false
       }
     ],
     dependencies: [],

@@ -45,6 +45,8 @@ export const ipcChannels = {
   listPendingApprovals: "approvals.listPending",
   decideApproval: "approvals.decide",
   listAuditEntries: "audit.listEntries",
+  getRequestBundle: "chat.getRequestBundle",
+  executePlanAction: "execution.executePlanAction",
   getProviderStatus: "settings.getProviderStatus"
 } as const;
 
@@ -473,6 +475,61 @@ export const listAuditEntriesResponseSchema = z.discriminatedUnion("ok", [
 export type ApprovalSummary = z.infer<typeof approvalSummarySchema>;
 export type AuditLogEntry = z.infer<typeof ipcAuditEntrySchema>;
 
+export const getRequestBundleRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  requestId: idSchema
+});
+
+export const requestBundleLastExecutionSchema = z.object({
+  id: idSchema,
+  status: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  completedAt: isoTimestampSchema.optional()
+});
+
+export const getRequestBundleResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    request: requestSchema,
+    plan: actionPlanSchema.nullable(),
+    pendingApproval: approvalSummarySchema.nullable(),
+    lastExecution: requestBundleLastExecutionSchema.nullable()
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const executePlanActionRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema,
+  planId: idSchema,
+  actionId: idSchema,
+  dryRun: z.boolean(),
+  idempotencyKey: z.string().min(1).optional()
+});
+
+export const executePlanActionResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    dryRun: z.boolean(),
+    mcpResult: z.record(jsonValueSchema),
+    skipped: z.boolean().optional(),
+    reused: z.boolean().optional(),
+    toolName: z.string().optional(),
+    executionRunId: idSchema.optional(),
+    toolInvocationId: idSchema.optional()
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
@@ -558,6 +615,14 @@ export const ipcContracts = {
     request: listAuditEntriesRequestSchema,
     response: listAuditEntriesResponseSchema
   },
+  [ipcChannels.getRequestBundle]: {
+    request: getRequestBundleRequestSchema,
+    response: getRequestBundleResponseSchema
+  },
+  [ipcChannels.executePlanAction]: {
+    request: executePlanActionRequestSchema,
+    response: executePlanActionResponseSchema
+  },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
     response: providerStatusResponseSchema
@@ -635,5 +700,11 @@ export interface SitePilotDesktopApi {
   listAuditEntries: (
     request: IpcRequest<typeof ipcChannels.listAuditEntries>
   ) => Promise<IpcResponse<typeof ipcChannels.listAuditEntries>>;
+  getRequestBundle: (
+    request: IpcRequest<typeof ipcChannels.getRequestBundle>
+  ) => Promise<IpcResponse<typeof ipcChannels.getRequestBundle>>;
+  executePlanAction: (
+    request: IpcRequest<typeof ipcChannels.executePlanAction>
+  ) => Promise<IpcResponse<typeof ipcChannels.executePlanAction>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
 }
