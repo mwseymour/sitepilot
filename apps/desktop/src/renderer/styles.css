@@ -458,7 +458,9 @@ h2 {
   color: #e2e8f0;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .chat-thread-pill:hover {

@@ -51,9 +51,21 @@ export {
   createChatRequestRequestSchema,
   createChatRequestResponseSchema,
   buildPlannerContextRequestSchema,
-  buildPlannerContextResponseSchema
+  buildPlannerContextResponseSchema,
+  planValidationOutcomeSchema,
+  generateActionPlanRequestSchema,
+  generateActionPlanResponseSchema,
+  approvalSummarySchema,
+  listPendingApprovalsResponseSchema,
+  decideApprovalRequestSchema,
+  decideApprovalResponseSchema,
+  ipcAuditEntrySchema,
+  listAuditEntriesRequestSchema,
+  listAuditEntriesResponseSchema
 } from "./ipc.js";
 export type {
+  ApprovalSummary,
+  AuditLogEntry,
   ConnectivityDiagnosticsResult,
   IpcChannel,
   IpcRequest,

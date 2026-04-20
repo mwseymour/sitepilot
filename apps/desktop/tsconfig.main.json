@@ -13,7 +13,9 @@
     { "path": "../../packages/domain" },
     { "path": "../../packages/mcp-client" },
     { "path": "../../packages/plugin-protocol" },
+    { "path": "../../packages/provider-adapters" },
     { "path": "../../packages/repositories" },
-    { "path": "../../packages/services" }
+    { "path": "../../packages/services" },
+    { "path": "../../packages/validation" }
   ]
 }

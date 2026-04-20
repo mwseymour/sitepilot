@@ -26,6 +26,8 @@ export function ChatPage(): ReactElement | null {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [plannerJson, setPlannerJson] = useState<string | null>(null);
+  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
+  const [planOutput, setPlanOutput] = useState<string | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -128,9 +130,33 @@ export function ChatPage(): ReactElement | null {
       setErr(res.message);
       return;
     }
+    setLastRequestId(res.request.id);
+    setPlanOutput(null);
     setRequestPrompt("");
     await loadMessages(selectedThreadId);
     await loadThreads();
+  }
+
+  async function onGeneratePlan(): Promise<void> {
+    if (!selectedThreadId || lastRequestId === null) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.generateActionPlan({
+      siteId,
+      threadId: selectedThreadId,
+      requestId: lastRequestId
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      setPlanOutput(null);
+      return;
+    }
+    setPlanOutput(
+      JSON.stringify({ plan: res.plan, validation: res.validation }, null, 2)
+    );
   }
 
   async function onBuildPlannerContext(): Promise<void> {
@@ -269,6 +295,22 @@ export function ChatPage(): ReactElement | null {
               >
                 Create request
               </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy || lastRequestId === null}
+                onClick={() => void onGeneratePlan()}
+              >
+                Generate action plan
+              </button>
+              {lastRequestId ? (
+                <p className="muted small-print">
+                  Last request id: <code>{lastRequestId}</code>
+                </p>
+              ) : null}
+              {planOutput ? (
+                <pre className="diag-json">{planOutput}</pre>
+              ) : null}
             </div>
             <div className="chat-planner-panel">
               <h3>Planner context (debug)</h3>

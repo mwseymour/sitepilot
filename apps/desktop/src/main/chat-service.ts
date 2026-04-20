@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   ActorRef,
+  AuditEntryId,
   ChatMessage,
   ChatThread,
   ClarificationRound,
@@ -17,7 +18,7 @@ import { analyzeClarification } from "@sitepilot/services";
 
 import { getDatabase } from "./app-database.js";
 
-const DEFAULT_OPERATOR: ActorRef = {
+export const DEFAULT_OPERATOR: ActorRef = {
   userProfileId: "local-operator" as UserProfileId,
   appRole: "requester",
   siteRoles: ["request"]
@@ -27,10 +28,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-async function requireActiveSite(siteId: SiteId): Promise<
-  | { ok: true }
-  | { ok: false; code: string; message: string }
-> {
+async function requireActiveSite(
+  siteId: SiteId
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
   const db = getDatabase();
   const site = await db.repositories.sites.getById(siteId);
   if (!site) {
@@ -56,7 +56,11 @@ async function loadThreadForSite(
   const db = getDatabase();
   const thread = await db.repositories.chatThreads.getById(threadId);
   if (!thread) {
-    return { ok: false, code: "thread_not_found", message: "Thread not found." };
+    return {
+      ok: false,
+      code: "thread_not_found",
+      message: "Thread not found."
+    };
   }
   if (thread.siteId !== siteId) {
     return {
@@ -216,6 +220,17 @@ export async function createTypedRequestForThread(
 
   await db.repositories.requests.save(request);
 
+  await db.repositories.auditEntries.append({
+    id: randomUUID() as AuditEntryId,
+    siteId,
+    requestId: request.id,
+    eventType: "request_created",
+    actor: DEFAULT_OPERATOR,
+    metadata: { promptLength: userPrompt.length },
+    createdAt: ts,
+    updatedAt: ts
+  });
+
   const userMessage: ChatMessage = {
     id: randomUUID() as ChatMessageId,
     threadId,
@@ -256,6 +271,17 @@ export async function createTypedRequestForThread(
       updatedAt: ts
     };
     await db.repositories.clarificationRounds.save(clarificationRound);
+
+    await db.repositories.auditEntries.append({
+      id: randomUUID() as AuditEntryId,
+      siteId,
+      requestId: request.id,
+      eventType: "clarification_requested",
+      actor: { kind: "assistant" },
+      metadata: { questionCount: analysis.questions.length },
+      createdAt: ts,
+      updatedAt: ts
+    });
 
     const clarifyBody = `More detail is needed before planning:\n${analysis.questions
       .map((q: string, i: number) => `${i + 1}. ${q}`)

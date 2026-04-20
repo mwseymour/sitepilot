@@ -35,6 +35,7 @@ describe("sqlite bootstrap", () => {
           "audit_entries",
           "chat_threads",
           "discovery_snapshots",
+          "provider_usage_events",
           "requests",
           "schema_migrations",
           "site_config_versions",

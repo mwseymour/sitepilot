@@ -1,15 +1,20 @@
 import { z } from "zod";
 
 import {
+  actorSchema,
+  approvalStateSchema,
+  auditEventTypeSchema,
   idSchema,
   isoTimestampSchema,
   jsonValueSchema,
   siteEnvironmentSchema,
+  systemActorSchema,
   threadTypeSchema,
   urlSchema
 } from "./common.js";
 import { siteRegistrationSchema } from "./protocol.js";
 import {
+  actionPlanSchema,
   chatMessageSchema,
   chatThreadSchema,
   clarificationRoundSchema,
@@ -36,6 +41,10 @@ export const ipcChannels = {
   postChatMessage: "chat.postMessage",
   createChatRequest: "chat.createRequest",
   buildPlannerContext: "planner.buildContext",
+  generateActionPlan: "planner.generateActionPlan",
+  listPendingApprovals: "approvals.listPending",
+  decideApproval: "approvals.decide",
+  listAuditEntries: "audit.listEntries",
   getProviderStatus: "settings.getProviderStatus"
 } as const;
 
@@ -352,6 +361,118 @@ export const buildPlannerContextResponseSchema = z.discriminatedUnion("ok", [
   })
 ]);
 
+export const planValidationOutcomeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("pass") }),
+  z.object({
+    kind: z.literal("warnings"),
+    messages: z.array(z.string())
+  }),
+  z.object({
+    kind: z.literal("blocked_clarification"),
+    messages: z.array(z.string())
+  }),
+  z.object({
+    kind: z.literal("blocked_approval"),
+    messages: z.array(z.string())
+  }),
+  z.object({
+    kind: z.literal("blocked"),
+    messages: z.array(z.string())
+  })
+]);
+
+export const generateActionPlanRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  requestId: idSchema
+});
+
+export const generateActionPlanResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    plan: actionPlanSchema,
+    validation: planValidationOutcomeSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const approvalSummarySchema = z.object({
+  id: idSchema,
+  requestId: idSchema,
+  planId: idSchema,
+  siteId: idSchema,
+  status: approvalStateSchema,
+  expiresAt: isoTimestampSchema.optional()
+});
+
+export const listPendingApprovalsResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    approvals: z.array(approvalSummarySchema)
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const decideApprovalRequestSchema = z.object({
+  siteId: idSchema,
+  approvalRequestId: idSchema,
+  decision: z.enum(["approved", "rejected", "revision_requested"]),
+  note: z.string().optional()
+});
+
+export const decideApprovalResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    approval: approvalSummarySchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const ipcAuditEntrySchema = z.object({
+  id: idSchema,
+  siteId: idSchema,
+  requestId: idSchema.optional(),
+  actionId: idSchema.optional(),
+  eventType: auditEventTypeSchema,
+  actor: z.union([actorSchema, systemActorSchema]),
+  metadata: z.record(jsonValueSchema),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema
+});
+
+export const listAuditEntriesRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema.optional(),
+  limit: z.number().int().positive().max(500).optional()
+});
+
+export const listAuditEntriesResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    entries: z.array(ipcAuditEntrySchema)
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type ApprovalSummary = z.infer<typeof approvalSummarySchema>;
+export type AuditLogEntry = z.infer<typeof ipcAuditEntrySchema>;
+
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
@@ -421,6 +542,22 @@ export const ipcContracts = {
     request: buildPlannerContextRequestSchema,
     response: buildPlannerContextResponseSchema
   },
+  [ipcChannels.generateActionPlan]: {
+    request: generateActionPlanRequestSchema,
+    response: generateActionPlanResponseSchema
+  },
+  [ipcChannels.listPendingApprovals]: {
+    request: siteIdRequestSchema,
+    response: listPendingApprovalsResponseSchema
+  },
+  [ipcChannels.decideApproval]: {
+    request: decideApprovalRequestSchema,
+    response: decideApprovalResponseSchema
+  },
+  [ipcChannels.listAuditEntries]: {
+    request: listAuditEntriesRequestSchema,
+    response: listAuditEntriesResponseSchema
+  },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
     response: providerStatusResponseSchema
@@ -486,5 +623,17 @@ export interface SitePilotDesktopApi {
   buildPlannerContext: (
     request: IpcRequest<typeof ipcChannels.buildPlannerContext>
   ) => Promise<IpcResponse<typeof ipcChannels.buildPlannerContext>>;
+  generateActionPlan: (
+    request: IpcRequest<typeof ipcChannels.generateActionPlan>
+  ) => Promise<IpcResponse<typeof ipcChannels.generateActionPlan>>;
+  listPendingApprovals: (
+    request: IpcRequest<typeof ipcChannels.listPendingApprovals>
+  ) => Promise<IpcResponse<typeof ipcChannels.listPendingApprovals>>;
+  decideApproval: (
+    request: IpcRequest<typeof ipcChannels.decideApproval>
+  ) => Promise<IpcResponse<typeof ipcChannels.decideApproval>>;
+  listAuditEntries: (
+    request: IpcRequest<typeof ipcChannels.listAuditEntries>
+  ) => Promise<IpcResponse<typeof ipcChannels.listAuditEntries>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
 }

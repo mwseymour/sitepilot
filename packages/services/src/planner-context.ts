@@ -5,9 +5,7 @@ import {
 } from "@sitepilot/contracts";
 import type { ChatMessage, DiscoverySnapshot } from "@sitepilot/domain";
 
-function messageRole(
-  m: ChatMessage
-): "user" | "assistant" | "system" {
+function messageRole(m: ChatMessage): "user" | "assistant" | "system" {
   if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
     return m.author.kind === "assistant" ? "assistant" : "system";
   }

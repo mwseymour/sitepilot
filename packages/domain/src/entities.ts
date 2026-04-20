@@ -27,6 +27,7 @@ import type {
   ExecutionRunId,
   NotificationId,
   ProviderProfileId,
+  ProviderUsageEventId,
   RequestId,
   RollbackRecordId,
   SiteConfigId,
@@ -243,6 +244,20 @@ export interface ProviderProfile extends EntityTimestamps {
   label: string;
   baseUrl?: UrlString;
   modelDefaults: string[];
+}
+
+/** Append-only provider telemetry row (T23). */
+export interface ProviderUsageEvent {
+  id: ProviderUsageEventId;
+  workspaceId?: WorkspaceId;
+  siteId?: SiteId;
+  requestId?: RequestId;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  createdAt: IsoTimestamp;
 }
 
 export interface Notification extends EntityTimestamps {

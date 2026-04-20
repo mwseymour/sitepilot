@@ -1,13 +1,16 @@
 import type Database from "better-sqlite3";
 
+import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
 import type {
   ActorRef,
+  ApprovalDecision,
   ApprovalRequest,
   AuditEntry,
   ChatMessage,
   ChatThread,
   ClarificationRound,
   DiscoverySnapshot,
+  ProviderUsageEvent,
   Request,
   Site,
   SiteConfigVersion,
@@ -16,12 +19,14 @@ import type {
 } from "@sitepilot/domain";
 
 import type {
+  ActionPlanRepository,
   ApprovalRepository,
   AuditEntryRepository,
   ChatMessageRepository,
   ChatThreadRepository,
   ClarificationRoundRepository,
   DiscoverySnapshotRepository,
+  ProviderUsageRepository,
   RepositoryRegistry,
   RequestRepository,
   SiteConfigRepository,
@@ -1069,6 +1074,131 @@ class SqliteRequestRepository implements RequestRepository {
   }
 }
 
+class SqliteActionPlanRepository implements ActionPlanRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async saveFromContract(plan: ContractActionPlan): Promise<void> {
+    const run = this.connection.transaction(() => {
+      upsert(
+        this.connection,
+        `INSERT INTO action_plans (
+           id, request_id, site_id, summary, assumptions_json, open_questions_json,
+           approval_required, risk_level, target_entity_refs_json,
+           dependencies_json, validation_warnings_json, rollback_notes_json,
+           created_at, updated_at
+         ) VALUES (
+           @id, @requestId, @siteId, @summary, @assumptionsJson, @openQuestionsJson,
+           @approvalRequired, @riskLevel, @targetEntityRefsJson,
+           @dependenciesJson, @validationWarningsJson, @rollbackNotesJson,
+           @createdAt, @updatedAt
+         )
+         ON CONFLICT(id) DO UPDATE SET
+           request_id = excluded.request_id,
+           site_id = excluded.site_id,
+           summary = excluded.summary,
+           assumptions_json = excluded.assumptions_json,
+           open_questions_json = excluded.open_questions_json,
+           approval_required = excluded.approval_required,
+           risk_level = excluded.risk_level,
+           target_entity_refs_json = excluded.target_entity_refs_json,
+           dependencies_json = excluded.dependencies_json,
+           validation_warnings_json = excluded.validation_warnings_json,
+           rollback_notes_json = excluded.rollback_notes_json,
+           updated_at = excluded.updated_at`,
+        {
+          id: plan.id,
+          requestId: plan.requestId,
+          siteId: plan.siteId,
+          summary: plan.requestSummary,
+          assumptionsJson: serializeJson(plan.assumptions),
+          openQuestionsJson: serializeJson(plan.openQuestions),
+          approvalRequired: asBooleanInteger(plan.approvalRequired),
+          riskLevel: plan.riskLevel,
+          targetEntityRefsJson: serializeJson(plan.targetEntities),
+          dependenciesJson: serializeJson(plan.dependencies),
+          validationWarningsJson: serializeJson(plan.validationWarnings),
+          rollbackNotesJson: serializeJson(plan.rollbackNotes),
+          createdAt: plan.createdAt,
+          updatedAt: plan.updatedAt
+        }
+      );
+
+      for (const action of plan.proposedActions) {
+        const inputPayload = {
+          ...action.input,
+          _sitepilotMeta: {
+            version: action.version,
+            targetEntityRefs: action.targetEntityRefs,
+            permissionRequirement: action.permissionRequirement
+          }
+        };
+        upsert(
+          this.connection,
+          `INSERT INTO actions (
+             id, plan_id, request_id, type, risk_level, dry_run_capable,
+             rollback_supported, input_json, created_at, updated_at
+           ) VALUES (
+             @id, @planId, @requestId, @type, @riskLevel, @dryRunCapable,
+             @rollbackSupported, @inputJson, @createdAt, @updatedAt
+           )
+           ON CONFLICT(id) DO UPDATE SET
+             plan_id = excluded.plan_id,
+             request_id = excluded.request_id,
+             type = excluded.type,
+             risk_level = excluded.risk_level,
+             dry_run_capable = excluded.dry_run_capable,
+             rollback_supported = excluded.rollback_supported,
+             input_json = excluded.input_json,
+             updated_at = excluded.updated_at`,
+          {
+            id: action.id,
+            planId: plan.id,
+            requestId: plan.requestId,
+            type: action.type,
+            riskLevel: action.riskLevel,
+            dryRunCapable: asBooleanInteger(action.dryRunCapable),
+            rollbackSupported: asBooleanInteger(action.rollbackSupported),
+            inputJson: serializeJson(inputPayload),
+            createdAt: plan.createdAt,
+            updatedAt: plan.updatedAt
+          }
+        );
+      }
+    });
+
+    run();
+  }
+}
+
+class SqliteProviderUsageRepository implements ProviderUsageRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async append(event: ProviderUsageEvent): Promise<void> {
+    this.connection
+      .prepare(
+        `INSERT INTO provider_usage_events (
+           id, workspace_id, site_id, request_id, provider, model,
+           input_tokens, output_tokens, estimated_cost_usd, created_at
+         ) VALUES (
+           @id, @workspaceId, @siteId, @requestId, @provider, @model,
+           @inputTokens, @outputTokens, @estimatedCostUsd, @createdAt
+         )`
+      )
+      .run({
+        id: event.id,
+        workspaceId: event.workspaceId ?? null,
+        siteId: event.siteId ?? null,
+        requestId: event.requestId ?? null,
+        provider: event.provider,
+        model: event.model,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        estimatedCostUsd: event.estimatedCostUsd,
+        createdAt: event.createdAt
+      });
+  }
+}
+
 class SqliteApprovalRepository implements ApprovalRepository {
   public constructor(private readonly connection: Database.Database) {}
 
@@ -1117,9 +1247,21 @@ class SqliteApprovalRepository implements ApprovalRepository {
   public async listPendingBySiteId(
     siteId: ApprovalRequest["siteId"]
   ): Promise<ApprovalRequest[]> {
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `UPDATE approval_requests
+         SET status = 'expired', updated_at = @now
+         WHERE site_id = @siteId
+           AND status = 'pending'
+           AND expires_at IS NOT NULL
+           AND expires_at < @now`
+      )
+      .run({ siteId, now });
+
     const rows = this.connection
       .prepare<
-        { siteId: string },
+        { siteId: string; now: string },
         {
           id: ApprovalRequest["id"];
           request_id: ApprovalRequest["requestId"];
@@ -1135,10 +1277,12 @@ class SqliteApprovalRepository implements ApprovalRepository {
         `SELECT id, request_id, plan_id, site_id, status, requested_by_json,
                 expires_at, created_at, updated_at
          FROM approval_requests
-         WHERE site_id = @siteId AND status = 'pending'
+         WHERE site_id = @siteId
+           AND status = 'pending'
+           AND (expires_at IS NULL OR expires_at >= @now)
          ORDER BY created_at ASC`
       )
-      .all({ siteId });
+      .all({ siteId, now });
 
     return rows.map((row) => ({
       id: row.id,
@@ -1183,6 +1327,28 @@ class SqliteApprovalRepository implements ApprovalRepository {
         updatedAt: approvalRequest.updatedAt
       }
     );
+  }
+
+  public async appendDecision(decision: ApprovalDecision): Promise<void> {
+    this.connection
+      .prepare(
+        `INSERT INTO approval_decisions (
+           id, approval_request_id, decided_by_json, decision, note,
+           created_at, updated_at
+         ) VALUES (
+           @id, @approvalRequestId, @decidedByJson, @decision, @note,
+           @createdAt, @updatedAt
+         )`
+      )
+      .run({
+        id: decision.id,
+        approvalRequestId: decision.approvalRequestId,
+        decidedByJson: serializeJson(decision.decidedBy),
+        decision: decision.decision,
+        note: decision.note ?? null,
+        createdAt: decision.createdAt,
+        updatedAt: decision.updatedAt
+      });
   }
 }
 
@@ -1244,7 +1410,7 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
                 created_at, updated_at
          FROM audit_entries
          WHERE site_id = @siteId
-         ORDER BY created_at ASC`
+         ORDER BY created_at DESC`
       )
       .all({ siteId });
 
@@ -1252,24 +1418,17 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
   }
 
   public async append(entry: AuditEntry): Promise<void> {
-    upsert(
-      this.connection,
-      `INSERT INTO audit_entries (
-         id, site_id, request_id, action_id, event_type, actor_json, metadata_json,
-         created_at, updated_at
-       ) VALUES (
-         @id, @siteId, @requestId, @actionId, @eventType, @actorJson, @metadataJson,
-         @createdAt, @updatedAt
-       )
-       ON CONFLICT(id) DO UPDATE SET
-         site_id = excluded.site_id,
-         request_id = excluded.request_id,
-         action_id = excluded.action_id,
-         event_type = excluded.event_type,
-         actor_json = excluded.actor_json,
-         metadata_json = excluded.metadata_json,
-         updated_at = excluded.updated_at`,
-      {
+    this.connection
+      .prepare(
+        `INSERT INTO audit_entries (
+           id, site_id, request_id, action_id, event_type, actor_json, metadata_json,
+           created_at, updated_at
+         ) VALUES (
+           @id, @siteId, @requestId, @actionId, @eventType, @actorJson, @metadataJson,
+           @createdAt, @updatedAt
+         )`
+      )
+      .run({
         id: entry.id,
         siteId: entry.siteId,
         requestId: entry.requestId ?? null,
@@ -1279,8 +1438,7 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
         metadataJson: serializeJson(entry.metadata),
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt
-      }
-    );
+      });
   }
 
   private mapAuditEntry(row: {
@@ -1326,6 +1484,8 @@ export function createSqliteRepositoryRegistry(
     chatMessages: new SqliteChatMessageRepository(connection),
     requests: new SqliteRequestRepository(connection),
     clarificationRounds: new SqliteClarificationRoundRepository(connection),
+    actionPlans: new SqliteActionPlanRepository(connection),
+    providerUsage: new SqliteProviderUsageRepository(connection),
     approvals: new SqliteApprovalRepository(connection),
     auditEntries: new SqliteAuditEntryRepository(connection)
   };

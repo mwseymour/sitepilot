@@ -24,5 +24,6 @@ export type ToolInvocationId = Brand<string, "ToolInvocationId">;
 export type AuditEntryId = Brand<string, "AuditEntryId">;
 export type RollbackRecordId = Brand<string, "RollbackRecordId">;
 export type ProviderProfileId = Brand<string, "ProviderProfileId">;
+export type ProviderUsageEventId = Brand<string, "ProviderUsageEventId">;
 export type NotificationId = Brand<string, "NotificationId">;
 export type AttachmentId = Brand<string, "AttachmentId">;

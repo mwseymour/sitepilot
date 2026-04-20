@@ -8,9 +8,7 @@ export type ClarificationAnalysis = {
 };
 
 function tokenize(s: string): Set<string> {
-  return new Set(
-    (s.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []) as string[]
-  );
+  return new Set((s.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []) as string[]);
 }
 
 function jaccard(a: Set<string>, b: Set<string>): number {

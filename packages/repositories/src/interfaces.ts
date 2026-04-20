@@ -1,10 +1,13 @@
+import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
 import type {
+  ApprovalDecision,
   ApprovalRequest,
   AuditEntry,
   ChatMessage,
   ChatThread,
   ClarificationRound,
   DiscoverySnapshot,
+  ProviderUsageEvent,
   Request,
   Site,
   SiteConfigVersion,
@@ -82,12 +85,21 @@ export interface ApprovalRepository {
     siteId: ApprovalRequest["siteId"]
   ): Promise<ApprovalRequest[]>;
   save(approvalRequest: ApprovalRequest): Promise<void>;
+  appendDecision(decision: ApprovalDecision): Promise<void>;
 }
 
 export interface AuditEntryRepository {
   listByRequestId(requestId: AuditEntry["requestId"]): Promise<AuditEntry[]>;
   listBySiteId(siteId: AuditEntry["siteId"]): Promise<AuditEntry[]>;
   append(entry: AuditEntry): Promise<void>;
+}
+
+export interface ActionPlanRepository {
+  saveFromContract(plan: ContractActionPlan): Promise<void>;
+}
+
+export interface ProviderUsageRepository {
+  append(event: ProviderUsageEvent): Promise<void>;
 }
 
 export interface RepositoryRegistry {
@@ -100,6 +112,8 @@ export interface RepositoryRegistry {
   chatMessages: ChatMessageRepository;
   requests: RequestRepository;
   clarificationRounds: ClarificationRoundRepository;
+  actionPlans: ActionPlanRepository;
+  providerUsage: ProviderUsageRepository;
   approvals: ApprovalRepository;
   auditEntries: AuditEntryRepository;
 }

@@ -290,5 +290,33 @@ export const sqliteMigrations: SqliteMigration[] = [
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_site_connections_site_id
         ON site_connections(site_id)`
     ]
+  },
+  {
+    id: "003_plans_usage_audit_fields",
+    description:
+      "Action plan extra JSON fields, provider usage telemetry, audit ordering index.",
+    statements: [
+      `ALTER TABLE action_plans ADD COLUMN dependencies_json TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE action_plans ADD COLUMN validation_warnings_json TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE action_plans ADD COLUMN rollback_notes_json TEXT NOT NULL DEFAULT '[]'`,
+      `CREATE TABLE IF NOT EXISTS provider_usage_events (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT,
+        site_id TEXT,
+        request_id TEXT,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        estimated_cost_usd REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+        FOREIGN KEY (site_id) REFERENCES sites(id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_provider_usage_site_created
+        ON provider_usage_events(site_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_entries_request_created
+        ON audit_entries(request_id, created_at)`
+    ]
   }
 ];

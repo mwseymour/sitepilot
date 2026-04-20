@@ -1,12 +1,14 @@
 export const REPOSITORIES_PACKAGE_NAME = "@sitepilot/repositories";
 
 export type {
+  ActionPlanRepository,
   ApprovalRepository,
   AuditEntryRepository,
   ChatMessageRepository,
   ChatThreadRepository,
   ClarificationRoundRepository,
   DiscoverySnapshotRepository,
+  ProviderUsageRepository,
   RepositoryRegistry,
   RequestRepository,
   SiteConfigRepository,

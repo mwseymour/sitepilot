@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@sitepilot/contracts": "0.1.0",
+    "@sitepilot/domain": "0.1.0",
     "better-sqlite3": "^12.9.0"
   },
   "devDependencies": {

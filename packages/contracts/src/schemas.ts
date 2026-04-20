@@ -281,5 +281,7 @@ export type DiscoverySnapshot = z.infer<typeof discoverySnapshotSchema>;
 export type ApprovalPayload = z.infer<typeof approvalPayloadSchema>;
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
-export type ClarificationRoundPayload = z.infer<typeof clarificationRoundSchema>;
+export type ClarificationRoundPayload = z.infer<
+  typeof clarificationRoundSchema
+>;
 export type PlannerContext = z.infer<typeof plannerContextSchema>;

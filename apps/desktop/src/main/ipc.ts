@@ -7,8 +7,20 @@ import {
   type IpcRequest,
   type IpcResponse
 } from "@sitepilot/contracts";
-import type { ChatThreadId, SiteConfigId, SiteId, Workspace } from "@sitepilot/domain";
+import type {
+  ApprovalRequestId,
+  ChatThreadId,
+  RequestId,
+  SiteConfigId,
+  SiteId,
+  Workspace
+} from "@sitepilot/domain";
 
+import {
+  decideApprovalForSite,
+  listPendingApprovalsForSite
+} from "./approval-workflow-service.js";
+import { listAuditEntriesForSite } from "./audit-query-service.js";
 import {
   createChatThreadForSite,
   createTypedRequestForThread,
@@ -26,6 +38,8 @@ import {
   saveSiteConfigDocument
 } from "./site-workspace-service.js";
 import { buildPlannerContextForThread } from "./planner-context-service.js";
+import { generateActionPlanForRequest } from "./plan-generation-service.js";
+import { readProviderStatus } from "./provider-status-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 
 function parseRequest<TChannel extends IpcChannel>(
@@ -200,6 +214,75 @@ export function registerIpcHandlers(): void {
     return parseResponse(ipcChannels.buildPlannerContext, result);
   });
 
+  ipcMain.handle(ipcChannels.generateActionPlan, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.generateActionPlan, payload);
+    const result = await generateActionPlanForRequest(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.requestId as RequestId
+    );
+    return parseResponse(ipcChannels.generateActionPlan, result);
+  });
+
+  ipcMain.handle(ipcChannels.listPendingApprovals, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.listPendingApprovals, payload);
+    const result = await listPendingApprovalsForSite(request.siteId as SiteId);
+    return parseResponse(ipcChannels.listPendingApprovals, result);
+  });
+
+  ipcMain.handle(ipcChannels.decideApproval, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.decideApproval, payload);
+    const result = await decideApprovalForSite({
+      siteId: request.siteId as SiteId,
+      approvalRequestId: request.approvalRequestId as ApprovalRequestId,
+      decision: request.decision,
+      ...(request.note !== undefined ? { note: request.note } : {})
+    });
+    if (!result.ok) {
+      return parseResponse(ipcChannels.decideApproval, result);
+    }
+    const a = result.approval;
+    return parseResponse(ipcChannels.decideApproval, {
+      ok: true,
+      approval: {
+        id: a.id,
+        requestId: a.requestId,
+        planId: a.planId,
+        siteId: a.siteId,
+        status: a.status,
+        ...(a.expiresAt !== undefined ? { expiresAt: a.expiresAt } : {})
+      }
+    });
+  });
+
+  ipcMain.handle(ipcChannels.listAuditEntries, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.listAuditEntries, payload);
+    const result = await listAuditEntriesForSite({
+      siteId: request.siteId as SiteId,
+      ...(request.requestId !== undefined
+        ? { requestId: request.requestId as RequestId }
+        : {}),
+      ...(request.limit !== undefined ? { limit: request.limit } : {})
+    });
+    if (!result.ok) {
+      return parseResponse(ipcChannels.listAuditEntries, result);
+    }
+    return parseResponse(ipcChannels.listAuditEntries, {
+      ok: true,
+      entries: result.entries.map((e) => ({
+        id: e.id,
+        siteId: e.siteId,
+        eventType: e.eventType,
+        actor: e.actor,
+        metadata: e.metadata,
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+        ...(e.requestId !== undefined ? { requestId: e.requestId } : {}),
+        ...(e.actionId !== undefined ? { actionId: e.actionId } : {})
+      }))
+    });
+  });
+
   ipcMain.handle(ipcChannels.registerSite, async (_event, payload) => {
     const request = parseRequest(ipcChannels.registerSite, payload);
     const forward: Parameters<typeof registerSiteWithWordPress>[0] = {
@@ -220,11 +303,9 @@ export function registerIpcHandlers(): void {
     return parseResponse(ipcChannels.registerSite, result);
   });
 
-  ipcMain.handle(ipcChannels.getProviderStatus, (_event, payload) => {
+  ipcMain.handle(ipcChannels.getProviderStatus, async (_event, payload) => {
     parseRequest(ipcChannels.getProviderStatus, payload);
-
-    return parseResponse(ipcChannels.getProviderStatus, {
-      configuredProviders: []
-    });
+    const status = await readProviderStatus();
+    return parseResponse(ipcChannels.getProviderStatus, status);
   });
 }

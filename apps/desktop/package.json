@@ -17,8 +17,10 @@
     "@sitepilot/domain": "0.1.0",
     "@sitepilot/mcp-client": "0.1.0",
     "@sitepilot/plugin-protocol": "0.1.0",
+    "@sitepilot/provider-adapters": "0.1.0",
     "@sitepilot/repositories": "0.1.0",
     "@sitepilot/services": "0.1.0",
+    "@sitepilot/validation": "0.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.14.1"
