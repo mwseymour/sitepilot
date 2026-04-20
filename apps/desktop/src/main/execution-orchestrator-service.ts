@@ -71,7 +71,7 @@ async function resolveActionPostId(input: {
 
   let raw: unknown;
   try {
-    raw = await input.mcpClient.callTool("sitepilot/find-posts", lookupArgs);
+    raw = await input.mcpClient.callTool("sitepilot-find-posts", lookupArgs);
   } catch (error) {
     return {
       ok: false,

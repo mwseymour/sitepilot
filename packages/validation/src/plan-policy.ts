@@ -57,6 +57,7 @@ function canResolveActionViaPostLookup(
     .toLowerCase();
 
   const supportsLookup =
+    t === "update_post" ||
     t === "update_post_fields" ||
     t === "update_post_content" ||
     t === "edit_post_fields" ||
@@ -145,7 +146,8 @@ export function validateActionPlan(
     }
 
     if (
-      (t.includes("update_post_fields") ||
+      (t === "update_post" ||
+        t.includes("update_post_fields") ||
         t.includes("update_post_content") ||
         t.includes("edit_post_fields") ||
         t.includes("set_post_seo_meta")) &&

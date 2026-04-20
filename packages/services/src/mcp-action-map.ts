@@ -82,6 +82,7 @@ export function actionToMcpToolCall(
   }
 
   if (
+    t === "update_post" ||
     t === "update_post_fields" ||
     t === "update_post_content" ||
     t === "edit_post_fields" ||

@@ -59,7 +59,8 @@ function actionUnavailableReason(
     .toLowerCase();
 
   const canResolveViaLookup =
-    (normalized === "update_post_fields" ||
+    (normalized === "update_post" ||
+      normalized === "update_post_fields" ||
       normalized === "update_post_content" ||
       normalized === "edit_post_fields" ||
       normalized === "sitepilot_update_post_fields" ||
@@ -102,7 +103,8 @@ function actionUnavailableReason(
   }
 
   if (
-    (normalized === "update_post_fields" ||
+    (normalized === "update_post" ||
+      normalized === "update_post_fields" ||
       normalized === "update_post_content" ||
       normalized === "edit_post_fields" ||
       normalized === "sitepilot_update_post_fields" ||
@@ -116,6 +118,29 @@ function actionUnavailableReason(
   }
 
   return "no MCP tool mapping";
+}
+
+function actionCanResolveViaLookup(
+  actionType: string,
+  input: Record<string, unknown>
+): boolean {
+  const normalized = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+
+  return (
+    (normalized === "update_post" ||
+      normalized === "update_post_fields" ||
+      normalized === "update_post_content" ||
+      normalized === "edit_post_fields" ||
+      normalized === "sitepilot_update_post_fields" ||
+      normalized === "set_post_seo_meta" ||
+      normalized === "sitepilot_set_post_seo_meta") &&
+    actionUnavailableReason(actionType, input) ===
+      "target will be resolved via lookup"
+  );
 }
 
 export function ChatPage(): ReactElement | null {
@@ -234,7 +259,9 @@ export function ChatPage(): ReactElement | null {
   const executableActions = useMemo(
     () =>
       bundle?.plan?.proposedActions.filter(
-        (action) => actionToMcpToolCall(action.type, action.input, true) !== null
+        (action) =>
+          actionToMcpToolCall(action.type, action.input, true) !== null ||
+          actionCanResolveViaLookup(action.type, action.input)
       ) ?? [],
     [bundle?.plan]
   );

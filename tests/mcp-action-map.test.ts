@@ -55,6 +55,18 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("maps update_post aliases when post id present", () => {
+    const call = actionToMcpToolCall(
+      "update_post",
+      { post_id: 12, content: "Fresh body" },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: { post_id: 12, dry_run: false, content: "Fresh body" }
+    });
+  });
+
   it("maps sitepilot-update-post-fields tool ids", () => {
     const call = actionToMcpToolCall(
       "sitepilot-update-post-fields",

@@ -40,6 +40,7 @@ export function findNumericPostId(
 export function actionSupportsPostLookup(actionType: string): boolean {
   const t = normalizeActionType(actionType);
   return (
+    t === "update_post" ||
     t === "update_post_fields" ||
     t === "update_post_content" ||
     t === "edit_post_fields" ||

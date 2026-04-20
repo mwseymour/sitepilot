@@ -30,6 +30,14 @@ describe("post target resolution", () => {
     ).toBe(true);
   });
 
+  it("treats update_post aliases with lookup metadata as resolvable", () => {
+    expect(
+      canResolveActionViaPostLookup("update_post", {
+        lookup_status: "draft"
+      })
+    ).toBe(true);
+  });
+
   it("returns a resolved post id when lookup finds a unique match", () => {
     expect(
       resolvePostIdFromLookupResult({
