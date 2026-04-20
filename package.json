@@ -8,6 +8,9 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "npm run start -w @sitepilot/desktop",
+    "build:packages": "npm run build:main -w @sitepilot/desktop && npm run build:preload -w @sitepilot/desktop && tsc -b packages/logging/tsconfig.json --force",
+    "pretest": "npm run build:packages",
     "build": "npm run typecheck --workspaces --if-present",
     "format": "prettier --check .",
     "format:write": "prettier --write .",

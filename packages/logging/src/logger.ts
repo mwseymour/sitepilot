@@ -61,14 +61,17 @@ export function createLogger(
       level,
       namespace,
       message,
-      time: new Date().toISOString(),
-      context: redactContext(merged)
+      time: new Date().toISOString()
     };
+    const redacted = redactContext(merged);
+    if (redacted !== undefined) {
+      record.context = redacted;
+    }
     if (error) {
       record.error = {
         name: error.name,
         message: error.message,
-        stack: error.stack
+        ...(error.stack !== undefined ? { stack: error.stack } : {})
       };
     }
     sink(record);
@@ -88,9 +91,10 @@ export function createLogger(
       emit("error", message, context, error);
     },
     child(extraBindings) {
+      const nextBindings = mergeContext(bindings, extraBindings);
       return createLogger(namespace, {
         sink,
-        bindings: mergeContext(bindings, extraBindings)
+        ...(nextBindings !== undefined ? { bindings: nextBindings } : {})
       });
     }
   };

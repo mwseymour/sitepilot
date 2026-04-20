@@ -6,8 +6,8 @@
   "main": "dist/main/index.js",
   "scripts": {
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
-    "build:main": "tsc -b tsconfig.main.json",
-    "build:preload": "tsc -b tsconfig.preload.json",
+    "build:main": "tsc -b tsconfig.main.json --force",
+    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --sourcemap --external:electron --outfile=dist/preload/index.js",
     "build:renderer": "vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
@@ -31,6 +31,7 @@
     "@vitejs/plugin-react": "^4.4.1",
     "electron": "^35.2.0",
     "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.0",
     "vite": "^6.3.5"
   },
   "build": {
