@@ -4,7 +4,9 @@ import type {
   ActorRef,
   ApprovalRequest,
   AuditEntry,
+  ChatMessage,
   ChatThread,
+  ClarificationRound,
   DiscoverySnapshot,
   Request,
   Site,
@@ -16,7 +18,9 @@ import type {
 import type {
   ApprovalRepository,
   AuditEntryRepository,
+  ChatMessageRepository,
   ChatThreadRepository,
+  ClarificationRoundRepository,
   DiscoverySnapshotRepository,
   RepositoryRegistry,
   RequestRepository,
@@ -642,7 +646,7 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
         `SELECT id, site_id, title, type, archived_at, created_at, updated_at
          FROM chat_threads
          WHERE site_id = @siteId
-         ORDER BY created_at ASC`
+         ORDER BY updated_at DESC`
       )
       .all({ siteId });
 
@@ -679,6 +683,226 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
         archivedAt: thread.archivedAt ?? null,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt
+      }
+    );
+  }
+}
+
+class SqliteChatMessageRepository implements ChatMessageRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async getById(id: ChatMessage["id"]): Promise<ChatMessage | null> {
+    const row = this.connection
+      .prepare<
+        { id: string },
+        {
+          id: ChatMessage["id"];
+          thread_id: ChatMessage["threadId"];
+          site_id: ChatMessage["siteId"];
+          author_json: string;
+          body_json: string;
+          request_id: ChatMessage["requestId"] | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, thread_id, site_id, author_json, body_json, request_id,
+                created_at, updated_at
+         FROM chat_messages
+         WHERE id = @id`
+      )
+      .get({ id });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      threadId: row.thread_id,
+      siteId: row.site_id,
+      author: parseJson(row.author_json),
+      body: parseJson(row.body_json),
+      ...(row.request_id !== null ? { requestId: row.request_id } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  public async listByThreadId(
+    threadId: ChatMessage["threadId"]
+  ): Promise<ChatMessage[]> {
+    const rows = this.connection
+      .prepare<
+        { threadId: string },
+        {
+          id: ChatMessage["id"];
+          thread_id: ChatMessage["threadId"];
+          site_id: ChatMessage["siteId"];
+          author_json: string;
+          body_json: string;
+          request_id: ChatMessage["requestId"] | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, thread_id, site_id, author_json, body_json, request_id,
+                created_at, updated_at
+         FROM chat_messages
+         WHERE thread_id = @threadId
+         ORDER BY created_at ASC`
+      )
+      .all({ threadId });
+
+    return rows.map((row) => ({
+      id: row.id,
+      threadId: row.thread_id,
+      siteId: row.site_id,
+      author: parseJson(row.author_json),
+      body: parseJson(row.body_json),
+      ...(row.request_id !== null ? { requestId: row.request_id } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  public async save(message: ChatMessage): Promise<void> {
+    upsert(
+      this.connection,
+      `INSERT INTO chat_messages (
+         id, thread_id, site_id, author_json, body_json, request_id,
+         created_at, updated_at
+       ) VALUES (
+         @id, @threadId, @siteId, @authorJson, @bodyJson, @requestId,
+         @createdAt, @updatedAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         thread_id = excluded.thread_id,
+         site_id = excluded.site_id,
+         author_json = excluded.author_json,
+         body_json = excluded.body_json,
+         request_id = excluded.request_id,
+         updated_at = excluded.updated_at`,
+      {
+        id: message.id,
+        threadId: message.threadId,
+        siteId: message.siteId,
+        authorJson: serializeJson(message.author),
+        bodyJson: serializeJson(message.body),
+        requestId: message.requestId ?? null,
+        createdAt: message.createdAt,
+        updatedAt: message.updatedAt
+      }
+    );
+  }
+}
+
+class SqliteClarificationRoundRepository implements ClarificationRoundRepository {
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async getById(
+    id: ClarificationRound["id"]
+  ): Promise<ClarificationRound | null> {
+    const row = this.connection
+      .prepare<
+        { id: string },
+        {
+          id: ClarificationRound["id"];
+          request_id: ClarificationRound["requestId"];
+          site_id: ClarificationRound["siteId"];
+          questions_json: string;
+          answers_json: string;
+          resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, request_id, site_id, questions_json, answers_json, resolved_at,
+                created_at, updated_at
+         FROM clarification_rounds
+         WHERE id = @id`
+      )
+      .get({ id });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      requestId: row.request_id,
+      siteId: row.site_id,
+      questions: parseJson<string[]>(row.questions_json),
+      answers: parseJson<string[]>(row.answers_json),
+      ...(row.resolved_at !== null ? { resolvedAt: row.resolved_at } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  public async listByRequestId(
+    requestId: ClarificationRound["requestId"]
+  ): Promise<ClarificationRound[]> {
+    const rows = this.connection
+      .prepare<
+        { requestId: string },
+        {
+          id: ClarificationRound["id"];
+          request_id: ClarificationRound["requestId"];
+          site_id: ClarificationRound["siteId"];
+          questions_json: string;
+          answers_json: string;
+          resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, request_id, site_id, questions_json, answers_json, resolved_at,
+                created_at, updated_at
+         FROM clarification_rounds
+         WHERE request_id = @requestId
+         ORDER BY created_at ASC`
+      )
+      .all({ requestId });
+
+    return rows.map((row) => ({
+      id: row.id,
+      requestId: row.request_id,
+      siteId: row.site_id,
+      questions: parseJson<string[]>(row.questions_json),
+      answers: parseJson<string[]>(row.answers_json),
+      ...(row.resolved_at !== null ? { resolvedAt: row.resolved_at } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  public async save(round: ClarificationRound): Promise<void> {
+    upsert(
+      this.connection,
+      `INSERT INTO clarification_rounds (
+         id, request_id, site_id, questions_json, answers_json, resolved_at,
+         created_at, updated_at
+       ) VALUES (
+         @id, @requestId, @siteId, @questionsJson, @answersJson, @resolvedAt,
+         @createdAt, @updatedAt
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         request_id = excluded.request_id,
+         site_id = excluded.site_id,
+         questions_json = excluded.questions_json,
+         answers_json = excluded.answers_json,
+         resolved_at = excluded.resolved_at,
+         updated_at = excluded.updated_at`,
+      {
+        id: round.id,
+        requestId: round.requestId,
+        siteId: round.siteId,
+        questionsJson: serializeJson(round.questions),
+        answersJson: serializeJson(round.answers),
+        resolvedAt: round.resolvedAt ?? null,
+        createdAt: round.createdAt,
+        updatedAt: round.updatedAt
       }
     );
   }
@@ -755,6 +979,46 @@ class SqliteRequestRepository implements RequestRepository {
          ORDER BY created_at ASC`
       )
       .all({ threadId });
+
+    return rows.map((row) => ({
+      id: row.id,
+      siteId: row.site_id,
+      threadId: row.thread_id,
+      requestedBy: parseJson(row.requested_by_json),
+      status: row.status,
+      userPrompt: row.user_prompt,
+      latestPlanId: row.latest_plan_id ?? undefined,
+      latestExecutionRunId: row.latest_execution_run_id ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  public async listBySiteId(siteId: Request["siteId"]): Promise<Request[]> {
+    const rows = this.connection
+      .prepare<
+        { siteId: string },
+        {
+          id: Request["id"];
+          site_id: Request["siteId"];
+          thread_id: Request["threadId"];
+          requested_by_json: string;
+          status: Request["status"];
+          user_prompt: string;
+          latest_plan_id: Request["latestPlanId"] | null;
+          latest_execution_run_id: Request["latestExecutionRunId"] | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, site_id, thread_id, requested_by_json, status, user_prompt,
+                latest_plan_id, latest_execution_run_id, created_at, updated_at
+         FROM requests
+         WHERE site_id = @siteId
+         ORDER BY created_at DESC
+         LIMIT 200`
+      )
+      .all({ siteId });
 
     return rows.map((row) => ({
       id: row.id,
@@ -1059,7 +1323,9 @@ export function createSqliteRepositoryRegistry(
     siteConfigs: new SqliteSiteConfigRepository(connection),
     discoverySnapshots: new SqliteDiscoverySnapshotRepository(connection),
     chatThreads: new SqliteChatThreadRepository(connection),
+    chatMessages: new SqliteChatMessageRepository(connection),
     requests: new SqliteRequestRepository(connection),
+    clarificationRounds: new SqliteClarificationRoundRepository(connection),
     approvals: new SqliteApprovalRepository(connection),
     auditEntries: new SqliteAuditEntryRepository(connection)
   };

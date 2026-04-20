@@ -243,6 +243,36 @@ export const siteConnectionSchema = z.object({
   ...timestampsSchema.shape
 });
 
+export const clarificationRoundSchema = z.object({
+  id: idSchema,
+  requestId: idSchema,
+  siteId: idSchema,
+  questions: z.array(z.string()),
+  answers: z.array(z.string()),
+  resolvedAt: isoTimestampSchema.optional(),
+  ...timestampsSchema.shape
+});
+
+export const plannerContextSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  builtAt: isoTimestampSchema,
+  siteConfig: siteConfigSchema.nullable(),
+  discoverySummary: z.record(jsonValueSchema).nullable(),
+  messages: z.array(
+    z.object({
+      messageId: idSchema,
+      role: z.enum(["user", "assistant", "system"]),
+      format: z.enum(["plain_text", "markdown", "html"]),
+      text: z.string(),
+      createdAt: isoTimestampSchema,
+      requestId: idSchema.optional()
+    })
+  ),
+  targetSummaries: z.array(z.string()),
+  priorChanges: z.array(z.string())
+});
+
 export type SiteConfig = z.infer<typeof siteConfigSchema>;
 export type Action = z.infer<typeof actionSchema>;
 export type ActionPlan = z.infer<typeof actionPlanSchema>;
@@ -251,3 +281,5 @@ export type DiscoverySnapshot = z.infer<typeof discoverySnapshotSchema>;
 export type ApprovalPayload = z.infer<typeof approvalPayloadSchema>;
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
+export type ClarificationRoundPayload = z.infer<typeof clarificationRoundSchema>;
+export type PlannerContext = z.infer<typeof plannerContextSchema>;

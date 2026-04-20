@@ -35,6 +35,18 @@ const desktopApi: SitePilotDesktopApi = {
   saveSiteConfig: (request) => invokeIpc(ipcChannels.saveSiteConfig, request),
   confirmSiteConfig: (request) =>
     invokeIpc(ipcChannels.confirmSiteConfig, request),
+  listChatThreads: (request) =>
+    invokeIpc(ipcChannels.listChatThreads, request),
+  createChatThread: (request) =>
+    invokeIpc(ipcChannels.createChatThread, request),
+  listChatMessages: (request) =>
+    invokeIpc(ipcChannels.listChatMessages, request),
+  postChatMessage: (request) =>
+    invokeIpc(ipcChannels.postChatMessage, request),
+  createChatRequest: (request) =>
+    invokeIpc(ipcChannels.createChatRequest, request),
+  buildPlannerContext: (request) =>
+    invokeIpc(ipcChannels.buildPlannerContext, request),
   getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {})
 };
 

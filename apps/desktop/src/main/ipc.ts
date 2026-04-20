@@ -7,8 +7,15 @@ import {
   type IpcRequest,
   type IpcResponse
 } from "@sitepilot/contracts";
-import type { SiteConfigId, SiteId, Workspace } from "@sitepilot/domain";
+import type { ChatThreadId, SiteConfigId, SiteId, Workspace } from "@sitepilot/domain";
 
+import {
+  createChatThreadForSite,
+  createTypedRequestForThread,
+  listChatMessagesForThread,
+  listChatThreadsForSite,
+  postChatMessage
+} from "./chat-service.js";
 import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { getDatabase } from "./app-database.js";
 import { refreshDiscoveryForSite } from "./discovery-service.js";
@@ -18,6 +25,7 @@ import {
   getSiteWorkspaceState,
   saveSiteConfigDocument
 } from "./site-workspace-service.js";
+import { buildPlannerContextForThread } from "./planner-context-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 
 function parseRequest<TChannel extends IpcChannel>(
@@ -128,6 +136,68 @@ export function registerIpcHandlers(): void {
       request.configId as SiteConfigId
     );
     return parseResponse(ipcChannels.confirmSiteConfig, result);
+  });
+
+  ipcMain.handle(ipcChannels.listChatThreads, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.listChatThreads, payload);
+    const result = await listChatThreadsForSite(request.siteId as SiteId);
+    return parseResponse(ipcChannels.listChatThreads, result);
+  });
+
+  ipcMain.handle(ipcChannels.createChatThread, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.createChatThread, payload);
+    const result = await createChatThreadForSite(request.siteId as SiteId, {
+      title: request.title,
+      ...(request.type !== undefined ? { type: request.type } : {})
+    });
+    return parseResponse(ipcChannels.createChatThread, result);
+  });
+
+  ipcMain.handle(ipcChannels.listChatMessages, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.listChatMessages, payload);
+    const result = await listChatMessagesForThread(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId
+    );
+    return parseResponse(ipcChannels.listChatMessages, result);
+  });
+
+  ipcMain.handle(ipcChannels.postChatMessage, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.postChatMessage, payload);
+    const result = await postChatMessage(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.text
+    );
+    return parseResponse(ipcChannels.postChatMessage, result);
+  });
+
+  ipcMain.handle(ipcChannels.createChatRequest, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.createChatRequest, payload);
+    const result = await createTypedRequestForThread(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.userPrompt
+    );
+    if (!result.ok) {
+      return parseResponse(ipcChannels.createChatRequest, result);
+    }
+    return parseResponse(ipcChannels.createChatRequest, {
+      ok: true,
+      request: result.request,
+      ...(result.clarificationRound !== undefined
+        ? { clarificationRound: result.clarificationRound }
+        : {})
+    });
+  });
+
+  ipcMain.handle(ipcChannels.buildPlannerContext, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.buildPlannerContext, payload);
+    const result = await buildPlannerContextForThread(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId
+    );
+    return parseResponse(ipcChannels.buildPlannerContext, result);
   });
 
   ipcMain.handle(ipcChannels.registerSite, async (_event, payload) => {

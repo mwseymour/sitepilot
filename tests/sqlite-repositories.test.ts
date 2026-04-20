@@ -6,7 +6,9 @@ import { join } from "node:path";
 import type {
   ApprovalRequest,
   AuditEntry,
+  ChatMessage,
   ChatThread,
+  ClarificationRound,
   DiscoverySnapshot,
   Request,
   Site,
@@ -231,6 +233,102 @@ describe("sqlite repositories", () => {
       ).resolves.toEqual(
         expect.arrayContaining([
           expect.objectContaining({ eventType: "request_created" })
+        ])
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("round-trips chat messages and clarification rounds", async () => {
+    const database = createDatabase();
+
+    try {
+      const workspace: Workspace = {
+        id: "workspace-1" as Workspace["id"],
+        name: "Agency Workspace",
+        slug: "agency-workspace",
+        ownerUserProfileId: "user-1" as Workspace["ownerUserProfileId"],
+        createdAt: now,
+        updatedAt: now
+      };
+      const site: Site = {
+        id: "site-1" as Site["id"],
+        workspaceId: workspace.id,
+        name: "Example Site",
+        baseUrl: "https://example.com",
+        environment: "production",
+        activationStatus: "config_required",
+        createdAt: now,
+        updatedAt: now
+      };
+      const thread: ChatThread = {
+        id: "thread-1" as ChatThread["id"],
+        siteId: site.id,
+        title: "Chat",
+        type: "content_update",
+        createdAt: now,
+        updatedAt: now
+      };
+      const request: Request = {
+        id: "request-1" as Request["id"],
+        siteId: site.id,
+        threadId: thread.id,
+        requestedBy: {
+          userProfileId: "user-1" as Request["requestedBy"]["userProfileId"],
+          appRole: "manager",
+          siteRoles: ["request"]
+        },
+        status: "drafted",
+        userPrompt: "Do something.",
+        createdAt: now,
+        updatedAt: now
+      };
+      const message: ChatMessage = {
+        id: "msg-1" as ChatMessage["id"],
+        threadId: thread.id,
+        siteId: site.id,
+        author: { kind: "assistant" },
+        body: { format: "plain_text", value: "Clarification needed." },
+        requestId: request.id,
+        createdAt: now,
+        updatedAt: now
+      };
+      const round: ClarificationRound = {
+        id: "round-1" as ClarificationRound["id"],
+        requestId: request.id,
+        siteId: site.id,
+        questions: ["Which page?"],
+        answers: [],
+        createdAt: now,
+        updatedAt: now
+      };
+
+      await database.repositories?.workspaces.save(workspace);
+      await database.repositories?.sites.save(site);
+      await database.repositories?.chatThreads.save(thread);
+      await database.repositories?.requests.save(request);
+      await database.repositories?.chatMessages.save(message);
+      await database.repositories?.clarificationRounds.save(round);
+
+      await expect(
+        database.repositories?.chatMessages.listByThreadId(thread.id)
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: { format: "plain_text", value: "Clarification needed." },
+            requestId: request.id
+          })
+        ])
+      );
+      await expect(
+        database.repositories?.clarificationRounds.listByRequestId(request.id)
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            questions: ["Which page?"],
+            answers: []
+          })
         ])
       );
     } finally {

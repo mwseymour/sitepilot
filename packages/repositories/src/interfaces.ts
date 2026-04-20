@@ -1,7 +1,9 @@
 import type {
   ApprovalRequest,
   AuditEntry,
+  ChatMessage,
   ChatThread,
+  ClarificationRound,
   DiscoverySnapshot,
   Request,
   Site,
@@ -56,7 +58,22 @@ export interface ChatThreadRepository {
 export interface RequestRepository {
   getById(id: Request["id"]): Promise<Request | null>;
   listByThreadId(threadId: Request["threadId"]): Promise<Request[]>;
+  listBySiteId(siteId: Request["siteId"]): Promise<Request[]>;
   save(request: Request): Promise<void>;
+}
+
+export interface ChatMessageRepository {
+  getById(id: ChatMessage["id"]): Promise<ChatMessage | null>;
+  listByThreadId(threadId: ChatMessage["threadId"]): Promise<ChatMessage[]>;
+  save(message: ChatMessage): Promise<void>;
+}
+
+export interface ClarificationRoundRepository {
+  getById(id: ClarificationRound["id"]): Promise<ClarificationRound | null>;
+  listByRequestId(
+    requestId: ClarificationRound["requestId"]
+  ): Promise<ClarificationRound[]>;
+  save(round: ClarificationRound): Promise<void>;
 }
 
 export interface ApprovalRepository {
@@ -80,7 +97,9 @@ export interface RepositoryRegistry {
   siteConfigs: SiteConfigRepository;
   discoverySnapshots: DiscoverySnapshotRepository;
   chatThreads: ChatThreadRepository;
+  chatMessages: ChatMessageRepository;
   requests: RequestRepository;
+  clarificationRounds: ClarificationRoundRepository;
   approvals: ApprovalRepository;
   auditEntries: AuditEntryRepository;
 }

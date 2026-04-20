@@ -5,10 +5,19 @@ import {
   isoTimestampSchema,
   jsonValueSchema,
   siteEnvironmentSchema,
+  threadTypeSchema,
   urlSchema
 } from "./common.js";
 import { siteRegistrationSchema } from "./protocol.js";
-import { siteConfigSchema, workspaceListResponseSchema } from "./schemas.js";
+import {
+  chatMessageSchema,
+  chatThreadSchema,
+  clarificationRoundSchema,
+  plannerContextSchema,
+  requestSchema,
+  siteConfigSchema,
+  workspaceListResponseSchema
+} from "./schemas.js";
 
 export const ipcChannels = {
   getShellInfo: "app.getShellInfo",
@@ -21,6 +30,12 @@ export const ipcChannels = {
   getSiteWorkspace: "site.getWorkspace",
   saveSiteConfig: "site.saveConfig",
   confirmSiteConfig: "site.confirmConfig",
+  listChatThreads: "chat.listThreads",
+  createChatThread: "chat.createThread",
+  listChatMessages: "chat.listMessages",
+  postChatMessage: "chat.postMessage",
+  createChatRequest: "chat.createRequest",
+  buildPlannerContext: "planner.buildContext",
   getProviderStatus: "settings.getProviderStatus"
 } as const;
 
@@ -239,6 +254,104 @@ export type ConfirmSiteConfigResponse = z.infer<
   typeof confirmSiteConfigResponseSchema
 >;
 
+export const listChatThreadsResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    threads: z.array(chatThreadSchema)
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const createChatThreadRequestSchema = z.object({
+  siteId: idSchema,
+  title: z.string().min(1),
+  type: threadTypeSchema.optional()
+});
+
+export const createChatThreadResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    thread: chatThreadSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const siteThreadRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema
+});
+
+export const listChatMessagesResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    messages: z.array(chatMessageSchema)
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const postChatMessageRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  text: z.string().min(1)
+});
+
+export const postChatMessageResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    message: chatMessageSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const createChatRequestRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  userPrompt: z.string().min(1)
+});
+
+export const createChatRequestResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    request: requestSchema,
+    clarificationRound: clarificationRoundSchema.optional()
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const buildPlannerContextRequestSchema = siteThreadRequestSchema;
+
+export const buildPlannerContextResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    context: plannerContextSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
@@ -283,6 +396,30 @@ export const ipcContracts = {
   [ipcChannels.confirmSiteConfig]: {
     request: confirmSiteConfigRequestSchema,
     response: confirmSiteConfigResponseSchema
+  },
+  [ipcChannels.listChatThreads]: {
+    request: siteIdRequestSchema,
+    response: listChatThreadsResponseSchema
+  },
+  [ipcChannels.createChatThread]: {
+    request: createChatThreadRequestSchema,
+    response: createChatThreadResponseSchema
+  },
+  [ipcChannels.listChatMessages]: {
+    request: siteThreadRequestSchema,
+    response: listChatMessagesResponseSchema
+  },
+  [ipcChannels.postChatMessage]: {
+    request: postChatMessageRequestSchema,
+    response: postChatMessageResponseSchema
+  },
+  [ipcChannels.createChatRequest]: {
+    request: createChatRequestRequestSchema,
+    response: createChatRequestResponseSchema
+  },
+  [ipcChannels.buildPlannerContext]: {
+    request: buildPlannerContextRequestSchema,
+    response: buildPlannerContextResponseSchema
   },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
@@ -331,5 +468,23 @@ export interface SitePilotDesktopApi {
   confirmSiteConfig: (
     request: IpcRequest<typeof ipcChannels.confirmSiteConfig>
   ) => Promise<IpcResponse<typeof ipcChannels.confirmSiteConfig>>;
+  listChatThreads: (
+    request: IpcRequest<typeof ipcChannels.listChatThreads>
+  ) => Promise<IpcResponse<typeof ipcChannels.listChatThreads>>;
+  createChatThread: (
+    request: IpcRequest<typeof ipcChannels.createChatThread>
+  ) => Promise<IpcResponse<typeof ipcChannels.createChatThread>>;
+  listChatMessages: (
+    request: IpcRequest<typeof ipcChannels.listChatMessages>
+  ) => Promise<IpcResponse<typeof ipcChannels.listChatMessages>>;
+  postChatMessage: (
+    request: IpcRequest<typeof ipcChannels.postChatMessage>
+  ) => Promise<IpcResponse<typeof ipcChannels.postChatMessage>>;
+  createChatRequest: (
+    request: IpcRequest<typeof ipcChannels.createChatRequest>
+  ) => Promise<IpcResponse<typeof ipcChannels.createChatRequest>>;
+  buildPlannerContext: (
+    request: IpcRequest<typeof ipcChannels.buildPlannerContext>
+  ) => Promise<IpcResponse<typeof ipcChannels.buildPlannerContext>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
 }

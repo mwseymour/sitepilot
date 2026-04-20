@@ -129,6 +129,28 @@ describe("ipc contracts", () => {
         code: "stub",
         message: "Not used in this contract shape test."
       }),
+      listChatThreads: async () => ({ ok: true, threads: [] }),
+      createChatThread: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      listChatMessages: async () => ({ ok: true, messages: [] }),
+      postChatMessage: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      createChatRequest: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      buildPlannerContext: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
       getProviderStatus: async () => ({ configuredProviders: [] })
     };
 

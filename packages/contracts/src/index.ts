@@ -40,7 +40,18 @@ export {
   shellInfoResponseSchema,
   siteIdRequestSchema,
   siteListResponseSchema,
-  siteSummarySchema
+  siteSummarySchema,
+  listChatThreadsResponseSchema,
+  createChatThreadRequestSchema,
+  createChatThreadResponseSchema,
+  siteThreadRequestSchema,
+  listChatMessagesResponseSchema,
+  postChatMessageRequestSchema,
+  postChatMessageResponseSchema,
+  createChatRequestRequestSchema,
+  createChatRequestResponseSchema,
+  buildPlannerContextRequestSchema,
+  buildPlannerContextResponseSchema
 } from "./ipc.js";
 export type {
   ConnectivityDiagnosticsResult,
@@ -81,7 +92,9 @@ export {
   auditEntrySchema,
   chatMessageSchema,
   chatThreadSchema,
+  clarificationRoundSchema,
   discoverySnapshotSchema,
+  plannerContextSchema,
   requestSchema,
   siteConfigSchema,
   siteConnectionSchema,
@@ -94,7 +107,9 @@ export type {
   ActionPlan,
   ApprovalPayload,
   AuditEntry,
+  ClarificationRoundPayload,
   DiscoverySnapshot,
+  PlannerContext,
   SiteConfig,
   WorkspaceListResponse,
   WorkspaceSummary
