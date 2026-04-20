@@ -30,7 +30,7 @@ final class Write_Abilities {
 			'sitepilot/create-draft-post',
 			array(
 				'label'               => __( 'Create draft post', 'sitepilot' ),
-				'description'         => __( 'Creates a draft post of a registered post type (or previews creation when dry_run is true).', 'sitepilot' ),
+				'description'         => __( 'Creates a draft post of a registered post type (or previews creation when dry_run is true). Prefer Gutenberg block-serialized HTML in content (wp:paragraph, wp:image, wp:media-text, etc.), not a single custom HTML block with placeholder copy.', 'sitepilot' ),
 				'category'            => 'sitepilot',
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -82,7 +82,7 @@ final class Write_Abilities {
 			'sitepilot/update-post-fields',
 			array(
 				'label'               => __( 'Update post fields', 'sitepilot' ),
-				'description'         => __( 'Updates title, content, or excerpt on an existing post (preview when dry_run is true).', 'sitepilot' ),
+				'description'         => __( 'Updates title, content, or excerpt on an existing post (preview when dry_run is true). For the block editor, content should be Gutenberg-serialized blocks (HTML comments + block markup). Use wp:image with real https URLs when images are required; use wp:media-text or columns for alternating image/text layouts.', 'sitepilot' ),
 				'category'            => 'sitepilot',
 				'input_schema'        => array(
 					'type'                 => 'object',

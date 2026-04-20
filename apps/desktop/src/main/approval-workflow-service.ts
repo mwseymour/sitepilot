@@ -170,7 +170,7 @@ export async function decideApprovalForSite(input: {
         format: "plain_text",
         value: `Approval ${decisionLabel}.${
           input.decision === "approved"
-            ? " The plan is now unlocked for dry-run and execution from the Chat screen."
+            ? " The plan is now unlocked for execution from the Chat screen."
             : ""
         }`
       },

@@ -20,7 +20,11 @@ import {
   createOpenAiChatClient,
   estimateUsageCostUsd
 } from "@sitepilot/provider-adapters";
-import { buildLlmActionPlan, buildStubActionPlan } from "@sitepilot/services";
+import {
+  buildLlmActionPlan,
+  buildStubActionPlan,
+  enrichActionPlanWithPostLookupFromContext
+} from "@sitepilot/services";
 import { validateActionPlan } from "@sitepilot/validation";
 import type { PlanValidationOutcome } from "@sitepilot/validation";
 
@@ -198,6 +202,8 @@ export async function generateActionPlanForRequest(
       nowIso: ts
     });
   }
+
+  plan = enrichActionPlanWithPostLookupFromContext(plan, ctxResult.context);
 
   const validation = validateActionPlan(plan, {
     discoveryCapabilities: discovery?.capabilities ?? [],

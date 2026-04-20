@@ -163,7 +163,7 @@ async function buildThreadReply(
           requestId: request.id,
           text:
             runnableCount === 1
-              ? "This plan is ready. Use the Dry-run plan or Execute plan buttons in the Current request panel."
+              ? "This plan is ready. Use the Execute plan button in the Current request panel."
               : "This plan is ready. Use the action buttons in the Planned actions list to run each step."
         };
       }

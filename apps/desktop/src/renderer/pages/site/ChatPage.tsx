@@ -14,6 +14,10 @@ import type {
   SitePilotDesktopApi
 } from "@sitepilot/contracts";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
+import {
+  canResolveActionViaPostLookup,
+  findNumericPostId
+} from "@sitepilot/services/post-target-resolution";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 
@@ -24,6 +28,9 @@ type RequestBundleOk = Extract<
   Awaited<ReturnType<SitePilotDesktopApi["getRequestBundle"]>>,
   { ok: true }
 >;
+
+/** When false, dry-run entry points are hidden; execution still supports `dryRun` in code paths. */
+const SHOW_DRY_RUN_UI = false;
 
 function roleLabel(m: MessageRow): string {
   if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
@@ -58,62 +65,19 @@ function actionUnavailableReason(
     .replace(/[\s/_-]+/g, "_")
     .toLowerCase();
 
-  const canResolveViaLookup =
-    (normalized === "update_post" ||
-      normalized === "update_post_fields" ||
-      normalized === "update_post_content" ||
-      normalized === "edit_post_fields" ||
-      normalized === "sitepilot_update_post_fields" ||
-      normalized === "set_post_seo_meta" ||
-      normalized === "sitepilot_set_post_seo_meta") &&
-    input["post_id"] === undefined &&
-    input["postId"] === undefined &&
-    input["id"] === undefined &&
-    (typeof input["lookup_status"] === "string" ||
-      typeof input["lookupStatus"] === "string" ||
-      typeof input["target_status"] === "string" ||
-      typeof input["targetStatus"] === "string" ||
-      typeof input["post_status"] === "string" ||
-      typeof input["postStatus"] === "string" ||
-      typeof input["status"] === "string" ||
-      typeof input["lookup_slug"] === "string" ||
-      typeof input["lookupSlug"] === "string" ||
-      typeof input["target_slug"] === "string" ||
-      typeof input["targetSlug"] === "string" ||
-      typeof input["slug"] === "string" ||
-      typeof input["post_name"] === "string" ||
-      typeof input["postSlug"] === "string" ||
-      typeof input["lookup_title"] === "string" ||
-      typeof input["lookupTitle"] === "string" ||
-      typeof input["target_title"] === "string" ||
-      typeof input["targetTitle"] === "string" ||
-      typeof input["existing_title"] === "string" ||
-      typeof input["existingTitle"] === "string" ||
-      typeof input["lookup_search"] === "string" ||
-      typeof input["lookupSearch"] === "string" ||
-      typeof input["target_search"] === "string" ||
-      typeof input["targetSearch"] === "string" ||
-      typeof input["search"] === "string" ||
-      typeof input["query"] === "string");
+  const isPostTargetedWrite =
+    normalized === "update_post" ||
+    normalized === "update_post_fields" ||
+    normalized === "update_post_content" ||
+    normalized === "edit_post_fields" ||
+    normalized === "sitepilot_update_post_fields" ||
+    normalized === "set_post_seo_meta" ||
+    normalized === "sitepilot_set_post_seo_meta";
 
-  if (
-    canResolveViaLookup
-  ) {
-    return "target will be resolved via lookup";
-  }
-
-  if (
-    (normalized === "update_post" ||
-      normalized === "update_post_fields" ||
-      normalized === "update_post_content" ||
-      normalized === "edit_post_fields" ||
-      normalized === "sitepilot_update_post_fields" ||
-      normalized === "set_post_seo_meta" ||
-      normalized === "sitepilot_set_post_seo_meta") &&
-    input["post_id"] === undefined &&
-    input["postId"] === undefined &&
-    input["id"] === undefined
-  ) {
+  if (isPostTargetedWrite && findNumericPostId(input) === undefined) {
+    if (canResolveActionViaPostLookup(actionType, input)) {
+      return "target will be resolved via lookup";
+    }
     return "missing target post id";
   }
 
@@ -346,7 +310,9 @@ export function ChatPage(): ReactElement | null {
         setBusy(false);
         setLastExecHint(
           canRunPlanDirectly
-            ? "Use the Dry-run plan or Execute plan button above."
+            ? SHOW_DRY_RUN_UI
+              ? "Use the Dry-run plan or Execute plan button above."
+              : "Use the Execute plan button above."
             : "Use the action buttons in the planned actions list below."
         );
         return;
@@ -530,7 +496,9 @@ export function ChatPage(): ReactElement | null {
           title: "Add note",
           helper:
             canRunPlanDirectly
-              ? "Use the Dry-run plan or Execute plan buttons above. This box is only for optional notes."
+              ? SHOW_DRY_RUN_UI
+                ? "Use the Dry-run plan or Execute plan buttons above. This box is only for optional notes."
+                : "Use the Execute plan button above. This box is only for optional notes."
               : "Use the action buttons in the plan below. This box is only for optional notes.",
           placeholder: "Add a note for this thread…",
           actionLabel: "Add note"
@@ -673,22 +641,26 @@ export function ChatPage(): ReactElement | null {
                         {canRunPlanDirectly
                           ? bundle.request.status === "approved"
                             ? "The approved plan is ready to run."
-                            : "You can dry-run this plan now. Execution unlocks after approval."
+                            : SHOW_DRY_RUN_UI
+                              ? "You can dry-run this plan now. Execution unlocks after approval."
+                              : "Execution unlocks after approval."
                           : "This plan has multiple runnable actions. Use the action buttons below for now."}
                       </p>
                     </div>
                     {canRunPlanDirectly ? (
                       <div className="chat-plan-runbar-actions">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          disabled={execBusy || busy}
-                          onClick={() => void onRunPlan(true)}
-                        >
-                          {execBusy && execProgressLabel === "Running dry-run…"
-                            ? "Running dry-run…"
-                            : "Dry-run plan"}
-                        </button>
+                        {SHOW_DRY_RUN_UI ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={execBusy || busy}
+                            onClick={() => void onRunPlan(true)}
+                          >
+                            {execBusy && execProgressLabel === "Running dry-run…"
+                              ? "Running dry-run…"
+                              : "Dry-run plan"}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="btn btn-primary"
@@ -748,16 +720,18 @@ export function ChatPage(): ReactElement | null {
                             <div className="chat-action-buttons">
                               {remote ? (
                                 <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary btn-small"
-                                    disabled={execBusy || busy}
-                                    onClick={() =>
-                                      void onExecuteAction(action.id, true)
-                                    }
-                                  >
-                                    Dry-run
-                                  </button>
+                                  {SHOW_DRY_RUN_UI ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-small"
+                                      disabled={execBusy || busy}
+                                      onClick={() =>
+                                        void onExecuteAction(action.id, true)
+                                      }
+                                    >
+                                      Dry-run
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="btn btn-primary btn-small"

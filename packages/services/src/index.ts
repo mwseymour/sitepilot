@@ -17,6 +17,10 @@ export {
   findNumericPostId,
   resolvePostIdFromLookupResult
 } from "./post-target-resolution.js";
+export {
+  enrichActionPlanWithPostLookupFromContext,
+  inferPostLookupHintsFromCorpus
+} from "./plan-post-lookup-enrichment.js";
 export type {
   SecretKey,
   SecretNamespace,

@@ -18,7 +18,7 @@ import type {
 
 import { extractJsonObject } from "./json-extract.js";
 
-const PLANNER_PROMPT_VERSION = "sitepilot-plan-v1";
+const PLANNER_PROMPT_VERSION = "sitepilot-plan-v2";
 
 function lastUserPlainText(context: PlannerContext): string {
   const users = context.messages.filter((m) => m.role === "user");
@@ -127,8 +127,14 @@ export async function buildLlmActionPlan(input: {
 }
 Use the operator request and site context. Keep actions conservative.
 Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input.
-If an exact post_id is not known but the target can be uniquely discovered at execution time, include lookup fields such as lookup_status, lookup_slug, lookup_title, lookup_search, and lookup_post_type in the update action input.
-Do not propose update actions that lack both a concrete post_id and resolvable lookup fields.`;
+If an exact post_id is not known but the target can be uniquely discovered at execution time, include lookup fields such as lookup_status, lookup_slug, lookup_title, lookup_search, and lookup_post_type in the update action input (same object as post_id would use). Example: {"type":"update_post_fields","input":{"lookup_title":"Hello Matt","lookup_status":"draft","content":"..."}}.
+Do not propose update actions that lack both a concrete post_id and resolvable lookup fields.
+
+WordPress Gutenberg content rules for create_draft_post and update_post_fields (post_content / content field):
+- Store body content as block serialization: each block uses delimiters <!-- wp:blockname {json attrs} --> ...inner HTML... <!-- /wp:blockname -->. Do not wrap the whole article in a single wp:html block that only describes intent (e.g. never use placeholder text like "Content about X with alternating blocks").
+- Write full copy the user asked for in wp:paragraph blocks (or headings where appropriate). When the user requests photos or headshots, you MUST include wp:image blocks with real, public https:// URLs (for example direct Wikimedia Commons file URLs on upload.wikimedia.org). Use "id":0 in the block JSON when the file is not yet in the Media Library; include the same URL in the block attrs and in the <img src="...">.
+- For left/right alternating image+text, use wp:media-text: set "mediaPosition":"left" on one section and "mediaPosition":"right" on the next, each containing one image plus wp:paragraph bios. Alternatively use wp:columns with an image column and a text column.
+- The content value is embedded inside JSON: escape double quotes and newlines in the serialized blocks so the overall planner output remains valid JSON.`;
 
   const user = JSON.stringify(
     {

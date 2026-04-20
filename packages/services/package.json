@@ -17,6 +17,10 @@
     "./mcp-action-map": {
       "types": "./dist/mcp-action-map.d.ts",
       "default": "./dist/mcp-action-map.js"
+    },
+    "./post-target-resolution": {
+      "types": "./dist/post-target-resolution.d.ts",
+      "default": "./dist/post-target-resolution.js"
     }
   },
   "scripts": {
