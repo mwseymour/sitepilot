@@ -1,4 +1,7 @@
-import type { ProviderStatusResponse } from "@sitepilot/contracts";
+import type {
+  ProviderStatusResponse,
+  SitePlannerSettings
+} from "@sitepilot/contracts";
 import type { SiteId, WorkspaceId } from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
@@ -15,9 +18,62 @@ export type SettingsStateResult =
       ok: true;
       configuredProviders: ProviderStatusResponse["configuredProviders"];
       planner: PlannerPreferences;
+      sitePlannerSettings?: SitePlannerSettings;
       siteHasSigningSecret?: boolean;
     }
   | { ok: false; code: string; message: string };
+
+const DEFAULT_SITE_PLANNER_SETTINGS: SitePlannerSettings = {
+  bypassApprovalRequests: false
+};
+
+function sitePlannerSettingsKey(siteId: SiteId) {
+  return {
+    namespace: "app",
+    keyId: `planner_settings:site:${siteId}`
+  } as const;
+}
+
+function parseSitePlannerSettings(
+  raw: string | undefined
+): Partial<SitePlannerSettings> {
+  if (!raw) {
+    return {};
+  }
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    const record = value as Record<string, unknown>;
+    const out: Partial<SitePlannerSettings> = {};
+    if (typeof record.bypassApprovalRequests === "boolean") {
+      out.bypassApprovalRequests = record.bypassApprovalRequests;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function loadSitePlannerSettings(
+  storage: ReturnType<typeof getSecureStorage>,
+  siteId: SiteId
+): Promise<SitePlannerSettings> {
+  const raw = await storage.get(sitePlannerSettingsKey(siteId));
+  return {
+    ...DEFAULT_SITE_PLANNER_SETTINGS,
+    ...parseSitePlannerSettings(raw)
+  };
+}
+
+export async function saveSitePlannerSettings(
+  storage: ReturnType<typeof getSecureStorage>,
+  siteId: SiteId,
+  settings: SitePlannerSettings
+): Promise<void> {
+  await storage.set(sitePlannerSettingsKey(siteId), JSON.stringify(settings));
+}
 
 export async function getSettingsState(input: {
   workspaceId?: WorkspaceId;
@@ -49,6 +105,7 @@ export async function getSettingsState(input: {
   );
 
   let siteHasSigningSecret: boolean | undefined;
+  let sitePlannerSettings: SitePlannerSettings | undefined;
   if (input.siteId !== undefined) {
     const site = await getDatabase().repositories.sites.getById(input.siteId);
     if (!site) {
@@ -58,12 +115,14 @@ export async function getSettingsState(input: {
       namespace: "site",
       keyId: input.siteId
     });
+    sitePlannerSettings = await loadSitePlannerSettings(storage, input.siteId);
   }
 
   return {
     ok: true,
     configuredProviders: configured,
     planner,
+    ...(sitePlannerSettings !== undefined ? { sitePlannerSettings } : {}),
     ...(siteHasSigningSecret !== undefined ? { siteHasSigningSecret } : {})
   };
 }
@@ -116,5 +175,22 @@ export async function clearSiteSigningSecret(input: {
     return { ok: false, code: "site_not_found", message: "Site not found." };
   }
   await getSecureStorage().delete({ namespace: "site", keyId: input.siteId });
+  return { ok: true };
+}
+
+export async function setSitePlannerSettings(input: {
+  siteId: SiteId;
+  settings: SitePlannerSettings;
+}): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  const db = getDatabase();
+  const site = await db.repositories.sites.getById(input.siteId);
+  if (!site) {
+    return { ok: false, code: "site_not_found", message: "Site not found." };
+  }
+  await saveSitePlannerSettings(
+    getSecureStorage(),
+    input.siteId,
+    input.settings
+  );
   return { ok: true };
 }

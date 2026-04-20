@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actionToMcpToolCall } from "@sitepilot/services";
+import { actionToMcpToolCall } from "../packages/services/src/mcp-action-map.ts";
 
 describe("actionToMcpToolCall", () => {
   it("returns null for interpret_request", () => {
@@ -43,6 +43,42 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("passes structured blocks through to create_draft_post", () => {
+    const call = actionToMcpToolCall(
+      "create_draft_post",
+      {
+        title: "Hello",
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Body</p>",
+            innerContent: ["<p>Body</p>"]
+          }
+        ]
+      },
+      true
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-create-draft-post",
+      arguments: {
+        post_type: "post",
+        title: "Hello",
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Body</p>",
+            innerContent: ["<p>Body</p>"]
+          }
+        ],
+        dry_run: true
+      }
+    });
+  });
+
   it("maps update_post_fields when post id present", () => {
     const call = actionToMcpToolCall(
       "update_post_fields",
@@ -64,6 +100,41 @@ describe("actionToMcpToolCall", () => {
     expect(call).toEqual({
       toolName: "sitepilot-update-post-fields",
       arguments: { post_id: 12, dry_run: false, content: "Fresh body" }
+    });
+  });
+
+  it("passes structured blocks through to update_post_fields", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Fresh body</p>",
+            innerContent: ["<p>Fresh body</p>"]
+          }
+        ]
+      },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Fresh body</p>",
+            innerContent: ["<p>Fresh body</p>"]
+          }
+        ]
+      }
     });
   });
 

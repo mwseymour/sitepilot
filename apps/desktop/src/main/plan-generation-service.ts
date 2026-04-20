@@ -13,6 +13,7 @@ import type {
   ChatThreadId,
   ProviderUsageEventId,
   RequestId,
+  RequestStatus,
   SiteId
 } from "@sitepilot/domain";
 import {
@@ -35,9 +36,47 @@ import {
   loadPlannerPreferences,
   type PlannerPreferences
 } from "./planner-preferences-service.js";
+import { loadSitePlannerSettings } from "./settings-service.js";
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+export function applyApprovalBypass(
+  validation: PlanValidationOutcome,
+  bypassApprovalRequests: boolean
+): PlanValidationOutcome {
+  if (!bypassApprovalRequests || validation.kind !== "blocked_approval") {
+    return validation;
+  }
+  return {
+    kind: "warnings",
+    messages: [
+      "Site settings bypassed the approval gate for this plan.",
+      ...validation.messages
+    ]
+  };
+}
+
+export function deriveRequestStatusAfterPlanning(input: {
+  currentStatus: RequestStatus;
+  rawValidation: PlanValidationOutcome;
+  validation: PlanValidationOutcome;
+}): RequestStatus {
+  const approvalBypassApplied =
+    input.rawValidation.kind === "blocked_approval" &&
+    input.validation.kind !== "blocked_approval";
+
+  if (approvalBypassApplied) {
+    return "approved";
+  }
+  if (input.validation.kind === "blocked_approval") {
+    return "awaiting_approval";
+  }
+  if (input.currentStatus === "new" || input.currentStatus === "drafted") {
+    return "drafted";
+  }
+  return input.currentStatus;
 }
 
 type ChosenProvider =
@@ -121,6 +160,7 @@ export async function generateActionPlanForRequest(
   const ts = nowIso();
   const storage = getSecureStorage();
   const prefs = await loadPlannerPreferences(storage, site.workspaceId);
+  const sitePlannerSettings = await loadSitePlannerSettings(storage, siteId);
   const openaiKey = await storage.get({
     namespace: "provider",
     keyId: "openai"
@@ -205,10 +245,14 @@ export async function generateActionPlanForRequest(
 
   plan = enrichActionPlanWithPostLookupFromContext(plan, ctxResult.context);
 
-  const validation = validateActionPlan(plan, {
+  const rawValidation = validateActionPlan(plan, {
     discoveryCapabilities: discovery?.capabilities ?? [],
     siteConfigPublishRequiresApproval: publishRequires
   });
+  const validation = applyApprovalBypass(
+    rawValidation,
+    sitePlannerSettings.bypassApprovalRequests
+  );
 
   await db.repositories.actionPlans.saveFromContract(plan);
 
@@ -231,12 +275,14 @@ export async function generateActionPlanForRequest(
     });
   }
 
-  let requestStatus = request.status;
-  if (validation.kind === "blocked_approval") {
-    requestStatus = "awaiting_approval";
-  } else if (request.status === "new" || request.status === "drafted") {
-    requestStatus = "drafted";
-  }
+  const approvalBypassApplied =
+    rawValidation.kind === "blocked_approval" &&
+    validation.kind !== "blocked_approval";
+  const requestStatus = deriveRequestStatusAfterPlanning({
+    currentStatus: request.status,
+    rawValidation,
+    validation
+  });
 
   await db.repositories.requests.save({
     ...request,
@@ -253,7 +299,8 @@ export async function generateActionPlanForRequest(
     actor: { kind: "assistant" },
     metadata: {
       planId: plan.id,
-      plannerMode: usage?.provider ?? "stub"
+      plannerMode: usage?.provider ?? "stub",
+      approvalBypassApplied
     },
     createdAt: ts,
     updatedAt: ts
@@ -265,7 +312,10 @@ export async function generateActionPlanForRequest(
       : {
           planId: plan.id,
           validation: validation.kind,
-          messages: validation.messages
+          messages: validation.messages,
+          ...(approvalBypassApplied
+            ? { originalValidation: rawValidation.kind }
+            : {})
         };
 
   await db.repositories.auditEntries.append({
@@ -315,7 +365,9 @@ export async function generateActionPlanForRequest(
         ? `Validation: ${validation.messages.join(" ")}`
         : `Validation: ${validation.kind}.`;
   const approvalSummary =
-    validation.kind === "blocked_approval"
+    approvalBypassApplied
+      ? "Approval would normally be required, but the site approval bypass is enabled."
+      : validation.kind === "blocked_approval"
       ? "Approval is required before execution."
       : "No approval block detected for planning.";
 

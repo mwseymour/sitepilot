@@ -38,6 +38,10 @@ const desktopApi: SitePilotDesktopApi = {
   listChatThreads: (request) => invokeIpc(ipcChannels.listChatThreads, request),
   createChatThread: (request) =>
     invokeIpc(ipcChannels.createChatThread, request),
+  renameChatThread: (request) =>
+    invokeIpc(ipcChannels.renameChatThread, request),
+  deleteChatThread: (request) =>
+    invokeIpc(ipcChannels.deleteChatThread, request),
   listChatMessages: (request) =>
     invokeIpc(ipcChannels.listChatMessages, request),
   postChatMessage: (request) => invokeIpc(ipcChannels.postChatMessage, request),
@@ -68,6 +72,8 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.settingsClearProviderSecret, request),
   setPlannerPreferences: (request) =>
     invokeIpc(ipcChannels.settingsSetPlannerPreferences, request),
+  setSitePlannerSettings: (request) =>
+    invokeIpc(ipcChannels.settingsSetSitePlannerSettings, request),
   clearSiteSigningSecret: (request) =>
     invokeIpc(ipcChannels.settingsClearSiteSigningSecret, request),
   getCompatibilityInfo: () => invokeIpc(ipcChannels.getCompatibilityInfo, {}),

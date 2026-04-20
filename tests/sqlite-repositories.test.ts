@@ -335,4 +335,49 @@ describe("sqlite repositories", () => {
       database.close();
     }
   });
+
+  it("deletes chat threads by id", async () => {
+    const database = createDatabase();
+
+    try {
+      const workspace: Workspace = {
+        id: "workspace-1" as Workspace["id"],
+        name: "Agency Workspace",
+        slug: "agency-workspace",
+        ownerUserProfileId: "user-1" as Workspace["ownerUserProfileId"],
+        createdAt: now,
+        updatedAt: now
+      };
+      const site: Site = {
+        id: "site-1" as Site["id"],
+        workspaceId: workspace.id,
+        name: "Example Site",
+        baseUrl: "https://example.com",
+        environment: "production",
+        activationStatus: "active",
+        createdAt: now,
+        updatedAt: now
+      };
+      const thread: ChatThread = {
+        id: "thread-1" as ChatThread["id"],
+        siteId: site.id,
+        title: "Delete me",
+        type: "general_request",
+        createdAt: now,
+        updatedAt: now
+      };
+
+      await database.repositories?.workspaces.save(workspace);
+      await database.repositories?.sites.save(site);
+      await database.repositories?.chatThreads.save(thread);
+
+      await database.repositories?.chatThreads.deleteById(thread.id);
+
+      await expect(
+        database.repositories?.chatThreads.getById(thread.id)
+      ).resolves.toBeNull();
+    } finally {
+      database.close();
+    }
+  });
 });

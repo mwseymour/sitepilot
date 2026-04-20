@@ -30,6 +30,19 @@ function pickNumber(
   return undefined;
 }
 
+function pickArray(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): unknown[] | undefined {
+  for (const k of keys) {
+    const v = input[k];
+    if (Array.isArray(v)) {
+      return v;
+    }
+  }
+  return undefined;
+}
+
 export type McpToolCall = {
   toolName: string;
   arguments: Record<string, unknown>;
@@ -70,12 +83,19 @@ export function actionToMcpToolCall(
     }
     const postType = pickString(input, "postType", "post_type") ?? "post";
     const content = pickString(input, "content", "postContent", "post_content");
+    const blocks = pickArray(
+      input,
+      "blocks",
+      "contentBlocks",
+      "content_blocks"
+    );
     return {
       toolName: "sitepilot-create-draft-post",
       arguments: {
         post_type: postType,
         title,
         ...(content !== undefined ? { content } : {}),
+        ...(blocks !== undefined ? { blocks } : {}),
         dry_run: dryRun
       }
     };
@@ -98,12 +118,21 @@ export function actionToMcpToolCall(
     };
     const title = pickString(input, "title", "postTitle");
     const content = pickString(input, "content", "postContent");
+    const blocks = pickArray(
+      input,
+      "blocks",
+      "contentBlocks",
+      "content_blocks"
+    );
     const excerpt = pickString(input, "excerpt", "postExcerpt");
     if (title !== undefined) {
       args.title = title;
     }
     if (content !== undefined) {
       args.content = content;
+    }
+    if (blocks !== undefined) {
+      args.blocks = blocks;
     }
     if (excerpt !== undefined) {
       args.excerpt = excerpt;

@@ -60,6 +60,7 @@ export interface ChatThreadRepository {
   getById(id: ChatThread["id"]): Promise<ChatThread | null>;
   listBySiteId(siteId: ChatThread["siteId"]): Promise<ChatThread[]>;
   save(thread: ChatThread): Promise<void>;
+  deleteById(id: ChatThread["id"]): Promise<void>;
 }
 
 export interface RequestRepository {

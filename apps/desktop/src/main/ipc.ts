@@ -32,9 +32,11 @@ import {
   answerClarificationForRequest,
   createChatThreadForSite,
   createTypedRequestForThread,
+  deleteChatThreadForSite,
   listChatMessagesForThread,
   listChatThreadsForSite,
-  postChatMessage
+  postChatMessage,
+  renameChatThreadForSite
 } from "./chat-service.js";
 import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { getDatabase } from "./app-database.js";
@@ -59,6 +61,7 @@ import {
   clearSiteSigningSecret,
   getSettingsState,
   setPlannerPreferences,
+  setSitePlannerSettings,
   setProviderSecret
 } from "./settings-service.js";
 
@@ -204,6 +207,25 @@ export function registerIpcHandlers(): void {
       ...(request.type !== undefined ? { type: request.type } : {})
     });
     return parseResponse(ipcChannels.createChatThread, result);
+  });
+
+  ipcMain.handle(ipcChannels.renameChatThread, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.renameChatThread, payload);
+    const result = await renameChatThreadForSite(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.title
+    );
+    return parseResponse(ipcChannels.renameChatThread, result);
+  });
+
+  ipcMain.handle(ipcChannels.deleteChatThread, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.deleteChatThread, payload);
+    const result = await deleteChatThreadForSite(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId
+    );
+    return parseResponse(ipcChannels.deleteChatThread, result);
   });
 
   ipcMain.handle(ipcChannels.listChatMessages, async (_event, payload) => {
@@ -523,6 +545,24 @@ export function registerIpcHandlers(): void {
         preferences: req.preferences
       });
       return parseResponse(ipcChannels.settingsSetPlannerPreferences, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsSetSitePlannerSettings,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.settingsSetSitePlannerSettings,
+        payload
+      );
+      const result = await setSitePlannerSettings({
+        siteId: req.siteId as SiteId,
+        settings: req.settings
+      });
+      return parseResponse(
+        ipcChannels.settingsSetSitePlannerSettings,
+        result
+      );
     }
   );
 

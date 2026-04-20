@@ -111,6 +111,13 @@ export function ChatPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<
+    string | null
+  >(null);
+  const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingThreadTitle, setEditingThreadTitle] = useState("");
+  const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [requestPrompt, setRequestPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -127,6 +134,7 @@ export function ChatPage(): ReactElement | null {
     null
   );
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -167,10 +175,38 @@ export function ChatPage(): ReactElement | null {
   }, [data, loadThreads]);
 
   useEffect(() => {
-    if (threads.length > 0 && selectedThreadId === null) {
+    if (threads.length === 0) {
+      if (selectedThreadId !== null) {
+        setSelectedThreadId(null);
+      }
+      if (editingThreadId !== null) {
+        setEditingThreadId(null);
+        setEditingThreadTitle("");
+      }
+      return;
+    }
+    if (
+      selectedThreadId === null ||
+      !threads.some((thread) => thread.id === selectedThreadId)
+    ) {
       setSelectedThreadId(threads[0]?.id ?? null);
     }
-  }, [threads, selectedThreadId]);
+    if (
+      editingThreadId !== null &&
+      !threads.some((thread) => thread.id === editingThreadId)
+    ) {
+      setEditingThreadId(null);
+      setEditingThreadTitle("");
+    }
+  }, [editingThreadId, selectedThreadId, threads]);
+
+  useEffect(() => {
+    if (editingThreadId === null) {
+      return;
+    }
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [editingThreadId]);
 
   useEffect(() => {
     if (selectedThreadId) {
@@ -230,6 +266,71 @@ export function ChatPage(): ReactElement | null {
     [bundle?.plan]
   );
   const canRunPlanDirectly = executableActions.length === 1;
+  const selectedThread = threads.find((thread) => thread.id === selectedThreadId);
+
+  const cancelThreadRename = useCallback(() => {
+    setEditingThreadId(null);
+    setEditingThreadTitle("");
+    setRenamingThreadId(null);
+  }, []);
+
+  const startThreadRename = useCallback((thread: ThreadRow) => {
+    setSelectedThreadId(thread.id);
+    setPendingDeleteThreadId(null);
+    setEditingThreadId(thread.id);
+    setEditingThreadTitle(thread.title);
+    setErr(null);
+  }, []);
+
+  const submitThreadRename = useCallback(async (): Promise<void> => {
+    if (editingThreadId === null) {
+      return;
+    }
+
+    const title = editingThreadTitle.trim();
+    if (title.length === 0) {
+      setErr("Thread title cannot be empty.");
+      return;
+    }
+
+    const thread = threads.find((candidate) => candidate.id === editingThreadId);
+    if (!thread) {
+      cancelThreadRename();
+      return;
+    }
+
+    if (thread.title === title) {
+      cancelThreadRename();
+      return;
+    }
+
+    setRenamingThreadId(editingThreadId);
+    setErr(null);
+    const res = await window.sitePilotDesktop.renameChatThread({
+      siteId,
+      threadId: editingThreadId,
+      title
+    });
+    setRenamingThreadId(null);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+
+    setThreads((currentThreads) =>
+      currentThreads.map((currentThread) =>
+        currentThread.id === res.thread.id ? res.thread : currentThread
+      )
+    );
+    setSelectedThreadId(res.thread.id);
+    cancelThreadRename();
+  }, [
+    cancelThreadRename,
+    editingThreadId,
+    editingThreadTitle,
+    siteId,
+    threads
+  ]);
 
   async function onCreateThread(): Promise<void> {
     setBusy(true);
@@ -246,6 +347,44 @@ export function ChatPage(): ReactElement | null {
     }
     await loadThreads();
     setSelectedThreadId(res.thread.id);
+    startThreadRename(res.thread);
+  }
+
+  async function onDeleteThread(threadId: string): Promise<void> {
+    const nextSelectedThreadId =
+      selectedThreadId === threadId
+        ? threads.find((thread) => thread.id !== threadId)?.id ?? null
+        : selectedThreadId;
+
+    setDeletingThreadId(threadId);
+    setErr(null);
+    const res = await window.sitePilotDesktop.deleteChatThread({
+      siteId,
+      threadId
+    });
+    setDeletingThreadId(null);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+
+    if (selectedThreadId === threadId) {
+      setSelectedThreadId(nextSelectedThreadId);
+      setMessages([]);
+      setLastRequestId(null);
+      setBundle(null);
+      setPlannerJson(null);
+      setPlanValidationJson(null);
+      setLastExecHint(null);
+      setExecProgressLabel(null);
+      setRequestPrompt("");
+    }
+
+    setPendingDeleteThreadId(null);
+    if (editingThreadId === threadId) {
+      cancelThreadRename();
+    }
+    await loadThreads();
   }
 
   async function onSubmitPrompt(): Promise<void> {
@@ -561,20 +700,193 @@ export function ChatPage(): ReactElement | null {
         </div>
         <ul className="chat-thread-list">
           {threads.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                className={
-                  selectedThreadId === t.id
-                    ? "chat-thread-pill is-active"
-                    : "chat-thread-pill"
-                }
-                onClick={() => {
-                  setSelectedThreadId(t.id);
-                }}
-              >
-                {t.title}
-              </button>
+            <li key={t.id} className="chat-thread-row">
+              {editingThreadId === t.id ? (
+                <form
+                  className="chat-thread-edit-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitThreadRename();
+                  }}
+                >
+                  <input
+                    ref={renameInputRef}
+                    className="chat-thread-edit-input"
+                    value={editingThreadTitle}
+                    disabled={renamingThreadId === t.id}
+                    maxLength={200}
+                    onChange={(event) => {
+                      setEditingThreadTitle(event.target.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelThreadRename();
+                      }
+                    }}
+                  />
+                  <div className="chat-thread-edit-actions">
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-small"
+                      disabled={renamingThreadId === t.id}
+                    >
+                      {renamingThreadId === t.id ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      disabled={renamingThreadId === t.id}
+                      onClick={() => {
+                        cancelThreadRename();
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="chat-thread-row-main">
+                  <button
+                    type="button"
+                    className={
+                      selectedThreadId === t.id
+                        ? "chat-thread-pill is-active"
+                        : "chat-thread-pill"
+                    }
+                    onClick={() => {
+                      setPendingDeleteThreadId(null);
+                      if (editingThreadId !== null) {
+                        cancelThreadRename();
+                      }
+                      setSelectedThreadId(t.id);
+                    }}
+                  >
+                    <span className="chat-thread-pill-label">{t.title}</span>
+                  </button>
+                  <div className="chat-thread-row-actions">
+                    <button
+                      type="button"
+                      className="chat-thread-rename"
+                      aria-label={`Rename ${t.title}`}
+                      disabled={
+                        busy || deletingThreadId !== null || renamingThreadId !== null
+                      }
+                      onClick={() => {
+                        startThreadRename(t);
+                      }}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        className="chat-thread-action-icon"
+                      >
+                        <path
+                          d="M4 20h4l10-10a2.12 2.12 0 1 0-4-4L4 16v4Z"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="m13.5 6.5 4 4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-thread-delete"
+                      aria-label={`Delete ${t.title}`}
+                      disabled={busy || deletingThreadId !== null}
+                      onClick={() => {
+                        if (editingThreadId !== null) {
+                          cancelThreadRename();
+                        }
+                        setPendingDeleteThreadId((current) =>
+                          current === t.id ? null : t.id
+                        );
+                      }}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        className="chat-thread-action-icon"
+                      >
+                        <path
+                          d="M4 7h16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="M10 11v6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="M14 11v6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+              {pendingDeleteThreadId === t.id ? (
+                <div className="chat-thread-confirm">
+                  <p className="small-print">
+                    Delete this thread and its request history?
+                  </p>
+                  <div className="chat-thread-confirm-actions">
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-small"
+                      disabled={deletingThreadId !== null}
+                      onClick={() => void onDeleteThread(t.id)}
+                    >
+                      {deletingThreadId === t.id ? "Deleting…" : "Confirm"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      disabled={deletingThreadId !== null}
+                      onClick={() => {
+                        setPendingDeleteThreadId(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -585,6 +897,14 @@ export function ChatPage(): ReactElement | null {
           <p className="muted">Create a thread to start messaging.</p>
         ) : (
           <>
+            <header className="chat-main-header">
+              <div>
+                <h2>{selectedThread?.title ?? "Thread"}</h2>
+                <p className="muted small-print">
+                  {selectedThread?.type.replaceAll("_", " ") ?? "general request"}
+                </p>
+              </div>
+            </header>
             <div ref={messagesRef} className="chat-messages">
               {messages.map((m) => (
                 <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>

@@ -700,6 +700,12 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
       }
     );
   }
+
+  public async deleteById(id: ChatThread["id"]): Promise<void> {
+    this.connection
+      .prepare(`DELETE FROM chat_threads WHERE id = @id`)
+      .run({ id });
+  }
 }
 
 class SqliteChatMessageRepository implements ChatMessageRepository {

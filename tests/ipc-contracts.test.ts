@@ -30,6 +30,12 @@ describe("ipc contracts", () => {
     });
 
     expect(response.sites[0]?.name).toBe("Example Site");
+    expect(
+      ipcContracts[ipcChannels.deleteChatThread].response.parse({
+        ok: true,
+        threadId: "thread-1"
+      })
+    ).toMatchObject({ ok: true, threadId: "thread-1" });
   });
 
   it("matches the preload bridge API shape", async () => {
@@ -135,6 +141,11 @@ describe("ipc contracts", () => {
         code: "stub",
         message: "Not used in this contract shape test."
       }),
+      deleteChatThread: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
       listChatMessages: async () => ({ ok: true, messages: [] }),
       postChatMessage: async () => ({
         ok: false,
@@ -190,6 +201,11 @@ describe("ipc contracts", () => {
         message: "Not used in this contract shape test."
       }),
       setPlannerPreferences: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      setSitePlannerSettings: async () => ({
         ok: false,
         code: "stub",
         message: "Not used in this contract shape test."

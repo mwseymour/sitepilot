@@ -83,6 +83,10 @@ export const siteConfigSchema = z.object({
   ...timestampsSchema.shape
 });
 
+export const sitePlannerSettingsSchema = z.object({
+  bypassApprovalRequests: z.boolean()
+});
+
 export const actionSchema = z.object({
   id: idSchema,
   type: z.string().min(1),
@@ -287,3 +291,4 @@ export type ClarificationRoundPayload = z.infer<
   typeof clarificationRoundSchema
 >;
 export type PlannerContext = z.infer<typeof plannerContextSchema>;
+export type SitePlannerSettings = z.infer<typeof sitePlannerSettingsSchema>;

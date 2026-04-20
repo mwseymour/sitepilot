@@ -44,6 +44,9 @@ export {
   listChatThreadsResponseSchema,
   createChatThreadRequestSchema,
   createChatThreadResponseSchema,
+  renameChatThreadRequestSchema,
+  renameChatThreadResponseSchema,
+  deleteChatThreadResponseSchema,
   siteThreadRequestSchema,
   listChatMessagesResponseSchema,
   postChatMessageRequestSchema,
@@ -74,6 +77,7 @@ export type {
   IpcChannel,
   IpcRequest,
   IpcResponse,
+  PlannerPreferencesPayload,
   ProviderStatusResponse,
   RefreshDiscoveryResponse,
   GenerateSiteConfigDraftResponse,
@@ -113,6 +117,7 @@ export {
   plannerContextSchema,
   requestSchema,
   siteConfigSchema,
+  sitePlannerSettingsSchema,
   siteConnectionSchema,
   toolInvocationSchema,
   workspaceListResponseSchema,
@@ -129,6 +134,7 @@ export type {
   DiscoverySnapshot,
   PlannerContext,
   SiteConfig,
+  SitePlannerSettings,
   WorkspaceListResponse,
   WorkspaceSummary
 } from "./schemas.js";

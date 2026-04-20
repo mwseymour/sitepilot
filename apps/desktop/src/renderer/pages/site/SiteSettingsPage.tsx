@@ -7,7 +7,10 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 
-import type { PlannerPreferencesPayload } from "@sitepilot/contracts";
+import type {
+  PlannerPreferencesPayload,
+  SitePlannerSettings
+} from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 
@@ -20,6 +23,8 @@ export function SiteSettingsPage(): ReactElement {
   const [planner, setPlanner] = useState<PlannerPreferencesPayload | null>(
     null
   );
+  const [sitePlannerSettings, setSitePlannerSettings] =
+    useState<SitePlannerSettings | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -36,6 +41,9 @@ export function SiteSettingsPage(): ReactElement {
     }
     setErr(null);
     setPlanner(state.planner);
+    setSitePlannerSettings(
+      state.sitePlannerSettings ?? { bypassApprovalRequests: false }
+    );
     setHasSecret(state.siteHasSigningSecret ?? false);
   }, [data, siteId]);
 
@@ -120,6 +128,25 @@ export function SiteSettingsPage(): ReactElement {
       return;
     }
     setHint("Workspace planner preferences saved.");
+    await load();
+  }
+
+  async function onSaveSitePlannerSettings(): Promise<void> {
+    if (!sitePlannerSettings) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.setSitePlannerSettings({
+      siteId,
+      settings: sitePlannerSettings
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setHint("Site approval bypass setting saved.");
     await load();
   }
 
@@ -226,6 +253,37 @@ export function SiteSettingsPage(): ReactElement {
             onClick={() => void onSaveWorkspacePlanner()}
           >
             Save workspace planner preferences
+          </button>
+        </section>
+      ) : null}
+
+      {sitePlannerSettings ? (
+        <section className="settings-site-section">
+          <h2>Approvals (site)</h2>
+          <p className="muted small-print">
+            Lets this site skip approval queues when plan validation would
+            otherwise require operator approval.
+          </p>
+          <label className="settings-field">
+            <span>Approval bypass</span>
+            <input
+              type="checkbox"
+              checked={sitePlannerSettings.bypassApprovalRequests}
+              disabled={busy}
+              onChange={(e) => {
+                setSitePlannerSettings({
+                  bypassApprovalRequests: e.target.checked
+                });
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void onSaveSitePlannerSettings()}
+          >
+            Save site approval setting
           </button>
         </section>
       ) : null}

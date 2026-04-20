@@ -237,6 +237,237 @@ export async function createChatThreadForSite(
   return { ok: true, thread };
 }
 
+export type RenameThreadResult =
+  | { ok: true; thread: ChatThread }
+  | { ok: false; code: string; message: string };
+
+export async function renameChatThreadForSite(
+  siteId: SiteId,
+  threadId: ChatThreadId,
+  title: string
+): Promise<RenameThreadResult> {
+  const gate = await requireActiveSite(siteId);
+  if (!gate.ok) {
+    return gate;
+  }
+
+  const t = await loadThreadForSite(threadId, siteId);
+  if (!t.ok) {
+    return t;
+  }
+
+  const nextTitle = title.trim();
+  if (nextTitle.length === 0) {
+    return {
+      ok: false,
+      code: "thread_title_required",
+      message: "Thread title cannot be empty."
+    };
+  }
+
+  const thread =
+    t.thread.title === nextTitle ? t.thread : { ...t.thread, title: nextTitle };
+  await getDatabase().repositories.chatThreads.save(thread);
+  return { ok: true, thread };
+}
+
+export type DeleteThreadResult =
+  | { ok: true; threadId: ChatThreadId }
+  | { ok: false; code: string; message: string };
+
+export async function deleteChatThreadForSite(
+  siteId: SiteId,
+  threadId: ChatThreadId
+): Promise<DeleteThreadResult> {
+  const gate = await requireActiveSite(siteId);
+  if (!gate.ok) {
+    return gate;
+  }
+
+  const db = getDatabase();
+  const t = await loadThreadForSite(threadId, siteId);
+  if (!t.ok) {
+    return t;
+  }
+
+  const deleteThread = db.connection.transaction(() => {
+    const requestIds = db.connection
+      .prepare<{ threadId: string }, { id: string }>(
+        `SELECT id
+         FROM requests
+         WHERE thread_id = @threadId`
+      )
+      .all({ threadId })
+      .map((row) => row.id);
+
+    const planIds =
+      requestIds.length > 0
+        ? db.connection
+            .prepare<{ threadId: string }, { id: string }>(
+              `SELECT action_plans.id
+               FROM action_plans
+               INNER JOIN requests
+                 ON requests.id = action_plans.request_id
+               WHERE requests.thread_id = @threadId`
+            )
+            .all({ threadId })
+            .map((row) => row.id)
+        : [];
+
+    const approvalIds =
+      requestIds.length > 0
+        ? db.connection
+            .prepare<{ threadId: string }, { id: string }>(
+              `SELECT approval_requests.id
+               FROM approval_requests
+               INNER JOIN requests
+                 ON requests.id = approval_requests.request_id
+               WHERE requests.thread_id = @threadId`
+            )
+            .all({ threadId })
+            .map((row) => row.id)
+        : [];
+
+    const executionRunIds =
+      requestIds.length > 0
+        ? db.connection
+            .prepare<{ threadId: string }, { id: string }>(
+              `SELECT execution_runs.id
+               FROM execution_runs
+               INNER JOIN requests
+                 ON requests.id = execution_runs.request_id
+               WHERE requests.thread_id = @threadId`
+            )
+            .all({ threadId })
+            .map((row) => row.id)
+        : [];
+
+    db.connection
+      .prepare(`DELETE FROM chat_messages WHERE thread_id = @threadId`)
+      .run({ threadId });
+
+    if (requestIds.length > 0) {
+      db.connection
+        .prepare(
+          `DELETE FROM clarification_rounds
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM audit_entries
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM audit_entries
+           WHERE action_id IN (
+             SELECT actions.id
+             FROM actions
+             INNER JOIN requests
+               ON requests.id = actions.request_id
+             WHERE requests.thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM attachments
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM provider_usage_events
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM rollback_records
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+    }
+
+    if (approvalIds.length > 0) {
+      const placeholders = approvalIds.map(() => "?").join(", ");
+      db.connection
+        .prepare(
+          `DELETE FROM approval_decisions
+           WHERE approval_request_id IN (${placeholders})`
+        )
+        .run(...approvalIds);
+      db.connection
+        .prepare(
+          `DELETE FROM approval_requests
+           WHERE id IN (${placeholders})`
+        )
+        .run(...approvalIds);
+    }
+
+    if (executionRunIds.length > 0) {
+      const placeholders = executionRunIds.map(() => "?").join(", ");
+      db.connection
+        .prepare(
+          `DELETE FROM tool_invocations
+           WHERE execution_run_id IN (${placeholders})`
+        )
+        .run(...executionRunIds);
+      db.connection
+        .prepare(
+          `DELETE FROM execution_runs
+           WHERE id IN (${placeholders})`
+        )
+        .run(...executionRunIds);
+    }
+
+    if (planIds.length > 0) {
+      const placeholders = planIds.map(() => "?").join(", ");
+      db.connection
+        .prepare(
+          `DELETE FROM actions
+           WHERE plan_id IN (${placeholders})`
+        )
+        .run(...planIds);
+      db.connection
+        .prepare(
+          `DELETE FROM action_plans
+           WHERE id IN (${placeholders})`
+        )
+        .run(...planIds);
+    }
+
+    if (requestIds.length > 0) {
+      const placeholders = requestIds.map(() => "?").join(", ");
+      db.connection
+        .prepare(
+          `DELETE FROM requests
+           WHERE id IN (${placeholders})`
+        )
+        .run(...requestIds);
+    }
+
+    db.connection
+      .prepare(`DELETE FROM chat_threads WHERE id = @threadId`)
+      .run({ threadId });
+  });
+
+  deleteThread();
+  return { ok: true, threadId };
+}
+
 export type ListMessagesResult =
   | { ok: true; messages: ChatMessage[] }
   | { ok: false; code: string; message: string };

@@ -21,6 +21,7 @@ import {
   plannerContextSchema,
   requestSchema,
   siteConfigSchema,
+  sitePlannerSettingsSchema,
   workspaceListResponseSchema
 } from "./schemas.js";
 
@@ -37,6 +38,8 @@ export const ipcChannels = {
   confirmSiteConfig: "site.confirmConfig",
   listChatThreads: "chat.listThreads",
   createChatThread: "chat.createThread",
+  renameChatThread: "chat.renameThread",
+  deleteChatThread: "chat.deleteThread",
   listChatMessages: "chat.listMessages",
   postChatMessage: "chat.postMessage",
   createChatRequest: "chat.createRequest",
@@ -54,6 +57,7 @@ export const ipcChannels = {
   settingsSetProviderSecret: "settings.setProviderSecret",
   settingsClearProviderSecret: "settings.clearProviderSecret",
   settingsSetPlannerPreferences: "settings.setPlannerPreferences",
+  settingsSetSitePlannerSettings: "settings.setSitePlannerSettings",
   settingsClearSiteSigningSecret: "settings.clearSiteSigningSecret",
   getCompatibilityInfo: "app.getCompatibilityInfo",
   exportBuildSiteBundle: "export.buildSiteBundle",
@@ -306,10 +310,40 @@ export const createChatThreadResponseSchema = z.discriminatedUnion("ok", [
   })
 ]);
 
+export const renameChatThreadRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  title: z.string().min(1)
+});
+
+export const renameChatThreadResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    thread: chatThreadSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
 export const siteThreadRequestSchema = z.object({
   siteId: idSchema,
   threadId: idSchema
 });
+
+export const deleteChatThreadResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    threadId: idSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
 
 export const listChatMessagesResponseSchema = z.discriminatedUnion("ok", [
   z.object({
@@ -533,6 +567,7 @@ export const settingsGetStateResponseSchema = z.discriminatedUnion("ok", [
     ok: z.literal(true),
     configuredProviders: providerStatusResponseSchema.shape.configuredProviders,
     planner: plannerPreferencesSchema,
+    sitePlannerSettings: sitePlannerSettingsSchema.optional(),
     siteHasSigningSecret: z.boolean().optional()
   }),
   z.object({
@@ -559,6 +594,11 @@ export const settingsOkOnlyResponseSchema = z.discriminatedUnion("ok", [
 export const settingsSetPlannerPreferencesRequestSchema = z.object({
   workspaceId: idSchema.optional(),
   preferences: plannerPreferencesSchema
+});
+
+export const settingsSetSitePlannerSettingsRequestSchema = z.object({
+  siteId: idSchema,
+  settings: sitePlannerSettingsSchema
 });
 
 export const settingsClearSiteSigningSecretRequestSchema = z.object({
@@ -714,6 +754,14 @@ export const ipcContracts = {
     request: createChatThreadRequestSchema,
     response: createChatThreadResponseSchema
   },
+  [ipcChannels.renameChatThread]: {
+    request: renameChatThreadRequestSchema,
+    response: renameChatThreadResponseSchema
+  },
+  [ipcChannels.deleteChatThread]: {
+    request: siteThreadRequestSchema,
+    response: deleteChatThreadResponseSchema
+  },
   [ipcChannels.listChatMessages]: {
     request: siteThreadRequestSchema,
     response: listChatMessagesResponseSchema
@@ -782,6 +830,10 @@ export const ipcContracts = {
     request: settingsSetPlannerPreferencesRequestSchema,
     response: settingsOkOnlyResponseSchema
   },
+  [ipcChannels.settingsSetSitePlannerSettings]: {
+    request: settingsSetSitePlannerSettingsRequestSchema,
+    response: settingsOkOnlyResponseSchema
+  },
   [ipcChannels.settingsClearSiteSigningSecret]: {
     request: settingsClearSiteSigningSecretRequestSchema,
     response: settingsOkOnlyResponseSchema
@@ -847,6 +899,12 @@ export interface SitePilotDesktopApi {
   createChatThread: (
     request: IpcRequest<typeof ipcChannels.createChatThread>
   ) => Promise<IpcResponse<typeof ipcChannels.createChatThread>>;
+  renameChatThread: (
+    request: IpcRequest<typeof ipcChannels.renameChatThread>
+  ) => Promise<IpcResponse<typeof ipcChannels.renameChatThread>>;
+  deleteChatThread: (
+    request: IpcRequest<typeof ipcChannels.deleteChatThread>
+  ) => Promise<IpcResponse<typeof ipcChannels.deleteChatThread>>;
   listChatMessages: (
     request: IpcRequest<typeof ipcChannels.listChatMessages>
   ) => Promise<IpcResponse<typeof ipcChannels.listChatMessages>>;
@@ -896,6 +954,11 @@ export interface SitePilotDesktopApi {
   setPlannerPreferences: (
     request: IpcRequest<typeof ipcChannels.settingsSetPlannerPreferences>
   ) => Promise<IpcResponse<typeof ipcChannels.settingsSetPlannerPreferences>>;
+  setSitePlannerSettings: (
+    request: IpcRequest<typeof ipcChannels.settingsSetSitePlannerSettings>
+  ) => Promise<
+    IpcResponse<typeof ipcChannels.settingsSetSitePlannerSettings>
+  >;
   clearSiteSigningSecret: (
     request: IpcRequest<typeof ipcChannels.settingsClearSiteSigningSecret>
   ) => Promise<IpcResponse<typeof ipcChannels.settingsClearSiteSigningSecret>>;
