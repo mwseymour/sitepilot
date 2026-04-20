@@ -125,7 +125,8 @@ export async function buildLlmActionPlan(input: {
   "rollbackNotes": string[],
   "validationWarnings": string[]
 }
-Use the operator request and site context. Keep actions conservative.`;
+Use the operator request and site context. Keep actions conservative.
+Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input. Do not propose update actions without a concrete target id.`;
 
   const user = JSON.stringify(
     {

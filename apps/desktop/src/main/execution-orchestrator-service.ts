@@ -5,6 +5,7 @@ import type {
   ActionId,
   ActionPlanId,
   AuditEntryId,
+  ChatMessageId,
   ExecutionRun,
   ExecutionRunId,
   RequestId,
@@ -41,6 +42,31 @@ export type ExecutePlanActionResult =
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+async function appendExecutionMessage(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  author: { kind: "assistant" } | { kind: "system" };
+  text: string;
+}): Promise<void> {
+  const db = getDatabase();
+  const request = await db.repositories.requests.getById(input.requestId);
+  if (!request || request.siteId !== input.siteId) {
+    return;
+  }
+
+  const ts = nowIso();
+  await db.repositories.chatMessages.save({
+    id: randomUUID() as ChatMessageId,
+    threadId: request.threadId,
+    siteId: input.siteId,
+    requestId: input.requestId,
+    author: input.author,
+    body: { format: "plain_text", value: input.text },
+    createdAt: ts,
+    updatedAt: ts
+  });
 }
 
 async function reuseCompletedRun(
@@ -118,6 +144,12 @@ export async function executePlanAction(
   const spec = actionToMcpToolCall(action.type, action.input, input.dryRun);
 
   if (!spec) {
+    await appendExecutionMessage({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      author: { kind: "system" },
+      text: `Skipped action "${action.type}" because no MCP tool mapping is defined for it.`
+    });
     return {
       ok: true,
       dryRun: input.dryRun,
@@ -139,6 +171,12 @@ export async function executePlanAction(
     try {
       raw = await mcp.client.callTool(spec.toolName, spec.arguments);
     } catch (error) {
+      await appendExecutionMessage({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        author: { kind: "system" },
+        text: `Dry-run failed for ${spec.toolName}: ${error instanceof Error ? error.message : "MCP tool call failed."}`
+      });
       return {
         ok: false,
         code: "mcp_call_failed",
@@ -146,6 +184,12 @@ export async function executePlanAction(
           error instanceof Error ? error.message : "MCP tool call failed."
       };
     }
+    await appendExecutionMessage({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      author: { kind: "assistant" },
+      text: `Dry-run completed for ${spec.toolName}.`
+    });
     return {
       ok: true,
       dryRun: true,
@@ -277,6 +321,12 @@ export async function executePlanAction(
       createdAt: failTs,
       updatedAt: failTs
     });
+    await appendExecutionMessage({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      author: { kind: "system" },
+      text: `Execution failed for ${spec.toolName}: ${message}`
+    });
     return {
       ok: false,
       code: "mcp_call_failed",
@@ -324,6 +374,12 @@ export async function executePlanAction(
       },
       createdAt: failTs,
       updatedAt: failTs
+    });
+    await appendExecutionMessage({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      author: { kind: "system" },
+      text: `Execution failed for ${spec.toolName}: the site reported the action did not succeed.`
     });
     return {
       ok: false,
@@ -417,6 +473,13 @@ export async function executePlanAction(
       updatedAt: doneTs
     });
   }
+
+  await appendExecutionMessage({
+    siteId: input.siteId,
+    requestId: input.requestId,
+    author: { kind: "assistant" },
+    text: `${input.dryRun ? "Dry-run completed" : "Execution completed"} for ${spec.toolName}.`
+  });
 
   return {
     ok: true,

@@ -9,6 +9,7 @@ import type {
   ApprovalRequest,
   ApprovalRequestId,
   AuditEntryId,
+  ChatMessageId,
   ChatThreadId,
   ProviderUsageEventId,
   RequestId,
@@ -296,6 +297,35 @@ export async function generateActionPlanForRequest(
       updatedAt: ts
     });
   }
+
+  const actionSummary = plan.proposedActions
+    .slice(0, 5)
+    .map((action, index) => `${index + 1}. ${action.type}`)
+    .join("\n");
+  const validationSummary =
+    validation.kind === "pass"
+      ? "Plan validation passed."
+      : validation.messages.length > 0
+        ? `Validation: ${validation.messages.join(" ")}`
+        : `Validation: ${validation.kind}.`;
+  const approvalSummary =
+    validation.kind === "blocked_approval"
+      ? "Approval is required before execution."
+      : "No approval block detected for planning.";
+
+  await db.repositories.chatMessages.save({
+    id: randomUUID() as ChatMessageId,
+    threadId,
+    siteId,
+    requestId,
+    author: { kind: "assistant" },
+    body: {
+      format: "plain_text",
+      value: `Action plan generated with ${plan.proposedActions.length} action${plan.proposedActions.length === 1 ? "" : "s"}.\n${validationSummary}\n${approvalSummary}${actionSummary.length > 0 ? `\n\nPlanned actions:\n${actionSummary}` : ""}`
+    },
+    createdAt: ts,
+    updatedAt: ts
+  });
 
   return { ok: true, plan, validation };
 }

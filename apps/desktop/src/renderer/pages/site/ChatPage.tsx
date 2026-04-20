@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement
+} from "react";
 import { Link } from "react-router-dom";
 
 import type {
@@ -25,12 +32,54 @@ function roleLabel(m: MessageRow): string {
   return "You";
 }
 
+function roleClassName(m: MessageRow): string {
+  if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
+    return m.author.kind === "assistant"
+      ? "chat-msg-assistant"
+      : "chat-msg-system";
+  }
+  return "chat-msg-user";
+}
+
+function roleIcon(m: MessageRow): string {
+  if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
+    return m.author.kind === "assistant" ? "AI" : "SYS";
+  }
+  return "YOU";
+}
+
+function actionUnavailableReason(
+  actionType: string,
+  input: Record<string, unknown>
+): string {
+  const normalized = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+
+  if (
+    (normalized === "update_post_fields" ||
+      normalized === "update_post_content" ||
+      normalized === "edit_post_fields" ||
+      normalized === "sitepilot_update_post_fields" ||
+      normalized === "set_post_seo_meta" ||
+      normalized === "sitepilot_set_post_seo_meta") &&
+    input["post_id"] === undefined &&
+    input["postId"] === undefined &&
+    input["id"] === undefined
+  ) {
+    return "missing target post id";
+  }
+
+  return "no MCP tool mapping";
+}
+
 export function ChatPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
-  const [composer, setComposer] = useState("");
   const [requestPrompt, setRequestPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -42,6 +91,10 @@ export function ChatPage(): ReactElement | null {
   const [bundle, setBundle] = useState<RequestBundleOk | null>(null);
   const [execBusy, setExecBusy] = useState(false);
   const [lastExecHint, setLastExecHint] = useState<string | null>(null);
+  const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
+    null
+  );
+  const messagesRef = useRef<HTMLDivElement | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -65,6 +118,11 @@ export function ChatPage(): ReactElement | null {
       }
       setErr(null);
       setMessages(res.messages);
+      const latestRequestId =
+        [...res.messages]
+          .reverse()
+          .find((message) => message.requestId !== undefined)?.requestId ?? null;
+      setLastRequestId(latestRequestId);
     },
     [siteId]
   );
@@ -113,6 +171,32 @@ export function ChatPage(): ReactElement | null {
     void loadBundle();
   }, [loadBundle]);
 
+  useEffect(() => {
+    const node = messagesRef.current;
+    if (!node) {
+      return;
+    }
+    node.scrollTo({
+      top: node.scrollHeight,
+      behavior: "smooth"
+    });
+  }, [
+    messages,
+    bundle?.request.status,
+    bundle?.plan?.id,
+    execProgressLabel,
+    lastExecHint
+  ]);
+
+  const executableActions = useMemo(
+    () =>
+      bundle?.plan?.proposedActions.filter(
+        (action) => actionToMcpToolCall(action.type, action.input, true) !== null
+      ) ?? [],
+    [bundle?.plan]
+  );
+  const canRunPlanDirectly = executableActions.length === 1;
+
   async function onCreateThread(): Promise<void> {
     setBusy(true);
     setErr(null);
@@ -130,37 +214,93 @@ export function ChatPage(): ReactElement | null {
     setSelectedThreadId(res.thread.id);
   }
 
-  async function onSendMessage(): Promise<void> {
-    if (!selectedThreadId || composer.trim().length === 0) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.postChatMessage({
-      siteId,
-      threadId: selectedThreadId,
-      text: composer.trim()
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    setComposer("");
-    await loadMessages(selectedThreadId);
-    await loadThreads();
-  }
-
-  async function onCreateRequest(): Promise<void> {
+  async function onSubmitPrompt(): Promise<void> {
     if (!selectedThreadId || requestPrompt.trim().length === 0) {
       return;
     }
+
+    const text = requestPrompt.trim();
     setBusy(true);
     setErr(null);
+
+    if (bundle?.request.status === "clarifying") {
+      const res = await window.sitePilotDesktop.answerClarification({
+        siteId,
+        threadId: selectedThreadId,
+        requestId: bundle.request.id,
+        answer: text
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      setRequestPrompt("");
+      await loadMessages(selectedThreadId);
+      await loadBundle();
+      return;
+    }
+
+    if (
+      bundle &&
+      (bundle.request.status === "new" || bundle.request.status === "drafted")
+    ) {
+      const res = await window.sitePilotDesktop.amendRequest({
+        siteId,
+        threadId: selectedThreadId,
+        requestId: bundle.request.id,
+        text
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      setRequestPrompt("");
+      setPlanValidationJson(null);
+      await loadMessages(selectedThreadId);
+      await loadBundle();
+      return;
+    }
+
+    if (
+      bundle &&
+      (bundle.request.status === "awaiting_approval" ||
+        bundle.request.status === "approved" ||
+        bundle.request.status === "executing")
+    ) {
+      if (
+        bundle.request.status === "approved" &&
+        /^(execute|run|go|dry[\s-]?run)$/i.test(text)
+      ) {
+        setBusy(false);
+        setLastExecHint(
+          canRunPlanDirectly
+            ? "Use the Dry-run plan or Execute plan button above."
+            : "Use the action buttons in the planned actions list below."
+        );
+        return;
+      }
+      const res = await window.sitePilotDesktop.postChatMessage({
+        siteId,
+        threadId: selectedThreadId,
+        text
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      setRequestPrompt("");
+      await loadMessages(selectedThreadId);
+      await loadBundle();
+      return;
+    }
+
     const res = await window.sitePilotDesktop.createChatRequest({
       siteId,
       threadId: selectedThreadId,
-      userPrompt: requestPrompt.trim()
+      userPrompt: text
     });
     setBusy(false);
     if (!res.ok) {
@@ -194,6 +334,7 @@ export function ChatPage(): ReactElement | null {
     }
     setPlanValidationJson(JSON.stringify(res.validation, null, 2));
     await loadBundle();
+    await loadMessages(selectedThreadId);
   }
 
   async function onBuildPlannerContext(): Promise<void> {
@@ -225,6 +366,7 @@ export function ChatPage(): ReactElement | null {
     setExecBusy(true);
     setErr(null);
     setLastExecHint(null);
+    setExecProgressLabel(`${dryRun ? "Running dry-run" : "Executing"}…`);
     const res = await window.sitePilotDesktop.executePlanAction({
       siteId,
       requestId: lastRequestId,
@@ -233,6 +375,7 @@ export function ChatPage(): ReactElement | null {
       dryRun
     });
     setExecBusy(false);
+    setExecProgressLabel(null);
     if (!res.ok) {
       setErr(res.message);
       return;
@@ -254,6 +397,14 @@ export function ChatPage(): ReactElement | null {
     }
   }
 
+  async function onRunPlan(dryRun: boolean): Promise<void> {
+    if (!canRunPlanDirectly) {
+      setLastExecHint("Run actions individually below for this plan.");
+      return;
+    }
+    await onExecuteAction(executableActions[0].id, dryRun);
+  }
+
   if (loading) {
     return <p className="muted">Loading workspace…</p>;
   }
@@ -261,6 +412,77 @@ export function ChatPage(): ReactElement | null {
   if (!data) {
     return null;
   }
+
+  const composerState = useMemo(() => {
+    if (!bundle) {
+      return {
+        title: "New request",
+        helper:
+          "Start with what you want changed on the site. SitePilot will ask follow-up questions if it needs more detail.",
+        placeholder: "Ask SitePilot to create, edit, or analyse something…",
+        actionLabel: "Send"
+      };
+    }
+
+    switch (bundle.request.status) {
+      case "clarifying":
+        return {
+          title: "Answer question",
+          helper:
+            "Reply here to answer the assistant's clarification question and keep the same request moving.",
+          placeholder: "Answer the assistant's question…",
+          actionLabel: "Reply"
+        };
+      case "new":
+      case "drafted":
+        return {
+          title: "Refine request",
+          helper:
+            "Add more context here. The current request will be updated; generate an action plan only when you're ready.",
+          placeholder: "Add more detail to the current request…",
+          actionLabel: "Update request"
+        };
+      case "awaiting_approval":
+        return {
+          title: "Request waiting for approval",
+          helper:
+            "This request is waiting on approval. Execution stays blocked until approval, but you can still leave a note here if needed.",
+          placeholder: "Add a note for this thread…",
+          actionLabel: "Add note"
+        };
+      case "approved":
+        return {
+          title: "Add note",
+          helper:
+            canRunPlanDirectly
+              ? "Use the Dry-run plan or Execute plan buttons above. This box is only for optional notes."
+              : "Use the action buttons in the plan below. This box is only for optional notes.",
+          placeholder: "Add a note for this thread…",
+          actionLabel: "Add note"
+        };
+      case "executing":
+        return {
+          title: "Add note",
+          helper:
+            "Execution is running. You can leave notes here while SitePilot processes the request.",
+          placeholder: "Add a note for this thread…",
+          actionLabel: "Add note"
+        };
+      default:
+        return {
+          title: "New request",
+          helper:
+            "The last request is closed. Start a new request here in the same thread or create a new thread.",
+          placeholder: "Ask SitePilot to do the next thing…",
+          actionLabel: "Send"
+        };
+    }
+  }, [bundle, canRunPlanDirectly]);
+
+  const canGeneratePlan =
+    selectedThreadId !== null &&
+    bundle !== null &&
+    (bundle.request.status === "new" || bundle.request.status === "drafted");
 
   const chatEnabled = data.site.activationStatus === "active";
 
@@ -320,72 +542,25 @@ export function ChatPage(): ReactElement | null {
           <p className="muted">Create a thread to start messaging.</p>
         ) : (
           <>
-            <div className="chat-messages">
+            <div ref={messagesRef} className="chat-messages">
               {messages.map((m) => (
-                <article key={m.id} className="chat-msg">
+                <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>
                   <header className="chat-msg-meta">
-                    <span>{roleLabel(m)}</span>
+                    <span className="chat-msg-author">
+                      <span className="chat-msg-icon">{roleIcon(m)}</span>
+                      <span>{roleLabel(m)}</span>
+                    </span>
                     <time dateTime={m.createdAt}>{m.createdAt}</time>
                   </header>
                   <p className="chat-msg-body">{m.body.value}</p>
                 </article>
               ))}
             </div>
-            <div className="chat-compose">
-              <textarea
-                rows={3}
-                value={composer}
-                placeholder="Message"
-                onChange={(e) => {
-                  setComposer(e.target.value);
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy || composer.trim().length === 0}
-                onClick={() => void onSendMessage()}
-              >
-                Send
-              </button>
-            </div>
-            <div className="chat-request-panel">
-              <h3>Typed request</h3>
-              <p className="muted small-print">
-                Creates a persisted request for this thread. Vague prompts enter
-                clarification; similar prompts get duplicate warnings (T20–T22).
-              </p>
-              <textarea
-                rows={3}
-                value={requestPrompt}
-                placeholder="Describe what you want done on the site…"
-                onChange={(e) => {
-                  setRequestPrompt(e.target.value);
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy || requestPrompt.trim().length === 0}
-                onClick={() => void onCreateRequest()}
-              >
-                Create request
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy || lastRequestId === null}
-                onClick={() => void onGeneratePlan()}
-              >
-                Generate action plan
-              </button>
-              {lastRequestId ? (
-                <p className="muted small-print">
-                  Last request id: <code>{lastRequestId}</code>
-                </p>
-              ) : null}
-              {bundle ? (
-                <div className="chat-bundle-panel">
+            {bundle ? (
+              <div className="chat-request-panel">
+                <h3>Current request</h3>
+                <p className="chat-request-current">{bundle.request.userPrompt}</p>
+                <div className="chat-request-meta">
                   <h4>Request status</h4>
                   <p className="small-print">
                     <span className="badge">{bundle.request.status}</span>
@@ -404,109 +579,202 @@ export function ChatPage(): ReactElement | null {
                       </>
                     ) : null}
                   </p>
-                  {bundle.lastExecution ? (
-                    <p className="muted small-print">
-                      Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
-                      <code className="break-all">
-                        {bundle.lastExecution.idempotencyKey}
-                      </code>
-                    </p>
-                  ) : null}
-                  {bundle.plan ? (
-                    <>
-                      <h4>Planned actions</h4>
-                      <ul className="chat-action-list">
-                        {bundle.plan.proposedActions.map((action) => {
-                          const spec = actionToMcpToolCall(
-                            action.type,
-                            action.input,
-                            true
-                          );
-                          const remote = spec !== null;
-                          return (
-                            <li key={action.id} className="chat-action-row">
-                              <div>
-                                <strong>{action.type}</strong>
-                                {remote ? (
-                                  <span className="muted small-print">
-                                    {" "}
-                                    → {spec.toolName}
-                                  </span>
-                                ) : (
-                                  <span className="muted small-print">
-                                    {" "}
-                                    (no MCP tool — local / interpret only)
-                                  </span>
-                                )}
-                              </div>
-                              <div className="chat-action-buttons">
-                                {remote ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="btn btn-secondary btn-small"
-                                      disabled={execBusy || busy}
-                                      onClick={() =>
-                                        void onExecuteAction(action.id, true)
-                                      }
-                                    >
-                                      Dry-run
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-primary btn-small"
-                                      disabled={
-                                        execBusy ||
-                                        busy ||
-                                        bundle.request.status !== "approved"
-                                      }
-                                      onClick={() =>
-                                        void onExecuteAction(action.id, false)
-                                      }
-                                    >
-                                      Execute
-                                    </button>
-                                  </>
-                                ) : null}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      {bundle.request.status !== "approved" ? (
-                        <p className="muted small-print">
-                          Execute stays disabled until the request is approved.
-                        </p>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="muted small-print">
-                      No plan yet — generate an action plan above.
-                    </p>
-                  )}
                 </div>
-              ) : null}
-              {lastExecHint ? (
-                <p className="small-print workspace-note">{lastExecHint}</p>
-              ) : null}
-              {planValidationJson ? (
-                <pre className="diag-json">{planValidationJson}</pre>
-              ) : null}
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={busy || !canGeneratePlan}
+                    onClick={() => void onGeneratePlan()}
+                  >
+                    Generate action plan
+                  </button>
+                </div>
+                {bundle.plan && executableActions.length > 0 ? (
+                  <div className="chat-plan-runbar">
+                    <div>
+                      <h4>Run plan</h4>
+                      <p className="muted small-print">
+                        {canRunPlanDirectly
+                          ? bundle.request.status === "approved"
+                            ? "The approved plan is ready to run."
+                            : "You can dry-run this plan now. Execution unlocks after approval."
+                          : "This plan has multiple runnable actions. Use the action buttons below for now."}
+                      </p>
+                    </div>
+                    {canRunPlanDirectly ? (
+                      <div className="chat-plan-runbar-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={execBusy || busy}
+                          onClick={() => void onRunPlan(true)}
+                        >
+                          {execBusy && execProgressLabel === "Running dry-run…"
+                            ? "Running dry-run…"
+                            : "Dry-run plan"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={
+                            execBusy ||
+                            busy ||
+                            bundle.request.status !== "approved"
+                          }
+                          onClick={() => void onRunPlan(false)}
+                        >
+                          {execBusy && execProgressLabel === "Executing…"
+                            ? "Executing…"
+                            : "Execute plan"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {bundle.lastExecution ? (
+                  <p className="muted small-print">
+                    Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
+                    <code className="break-all">
+                      {bundle.lastExecution.idempotencyKey}
+                    </code>
+                  </p>
+                ) : null}
+                {bundle.plan ? (
+                  <div className="chat-bundle-panel">
+                    <h4>Planned actions</h4>
+                    <ul className="chat-action-list">
+                      {bundle.plan.proposedActions.map((action) => {
+                        const spec = actionToMcpToolCall(
+                          action.type,
+                          action.input,
+                          true
+                        );
+                        const remote = spec !== null;
+                        return (
+                          <li key={action.id} className="chat-action-row">
+                            <div>
+                              <strong>{action.type}</strong>
+                              {remote ? (
+                                <span className="muted small-print">
+                                  {" "}
+                                  → {spec.toolName}
+                                </span>
+                              ) : (
+                                <span className="muted small-print">
+                                  {" "}
+                                  ({actionUnavailableReason(
+                                    action.type,
+                                    action.input
+                                  )})
+                                </span>
+                              )}
+                            </div>
+                            <div className="chat-action-buttons">
+                              {remote ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-small"
+                                    disabled={execBusy || busy}
+                                    onClick={() =>
+                                      void onExecuteAction(action.id, true)
+                                    }
+                                  >
+                                    Dry-run
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-small"
+                                    disabled={
+                                      execBusy ||
+                                      busy ||
+                                      bundle.request.status !== "approved"
+                                    }
+                                    onClick={() =>
+                                      void onExecuteAction(action.id, false)
+                                    }
+                                  >
+                                    Execute
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {bundle.request.status !== "approved" ? (
+                      <p className="muted small-print">
+                        Execute stays disabled until the request is approved.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="muted small-print">
+                    No plan yet. Keep refining the request, then generate a plan.
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="chat-composer-card">
+              <h3>{composerState.title}</h3>
+              <p className="muted small-print">{composerState.helper}</p>
+              <textarea
+                rows={3}
+                value={requestPrompt}
+                placeholder={composerState.placeholder}
+                onChange={(e) => {
+                  setRequestPrompt(e.target.value);
+                }}
+              />
+              <div className="action-row">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy || requestPrompt.trim().length === 0}
+                  onClick={() => void onSubmitPrompt()}
+                >
+                  {composerState.actionLabel}
+                </button>
+                {bundle?.pendingApproval ? (
+                  <Link
+                    className="btn btn-secondary"
+                    to={`/site/${siteId}/approvals`}
+                  >
+                    Open approvals
+                  </Link>
+                ) : null}
+              </div>
             </div>
-            <div className="chat-planner-panel">
-              <h3>Planner context (debug)</h3>
-              <button
-                type="button"
-                className="btn btn-secondary btn-small"
-                disabled={busy}
-                onClick={() => void onBuildPlannerContext()}
-              >
-                Build planner context
-              </button>
-              {plannerJson ? (
-                <pre className="diag-json">{plannerJson}</pre>
-              ) : null}
-            </div>
+
+            {execProgressLabel ? (
+              <p className="small-print workspace-note">{execProgressLabel}</p>
+            ) : null}
+            {lastExecHint ? (
+              <p className="small-print workspace-note">{lastExecHint}</p>
+            ) : null}
+            {planValidationJson ? (
+              <pre className="diag-json">{planValidationJson}</pre>
+            ) : null}
+            <details className="chat-debug-panel">
+              <summary>Developer tools</summary>
+              <div className="chat-planner-panel">
+                <h3>Planner context</h3>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  disabled={busy}
+                  onClick={() => void onBuildPlannerContext()}
+                >
+                  Build planner context
+                </button>
+                {plannerJson ? (
+                  <pre className="diag-json">{plannerJson}</pre>
+                ) : null}
+              </div>
+            </details>
           </>
         )}
       </section>

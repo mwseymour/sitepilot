@@ -7,6 +7,7 @@ import {
   loadRegisteredSiteContext,
   normalizeBaseUrl
 } from "./site-site-context.js";
+import { fetchSiteUrl } from "./site-fetch.js";
 
 const SITEPILOT_PROTOCOL_VERSION = "1.0.0";
 
@@ -40,7 +41,7 @@ export async function runConnectivityDiagnostics(
 
   const healthStarted = Date.now();
   try {
-    const healthRes = await fetch(`${base}/wp-json/sitepilot/v1/health`, {
+    const healthRes = await fetchSiteUrl(`${base}/wp-json/sitepilot/v1/health`, {
       signal: AbortSignal.timeout(15_000)
     });
     const latencyMs = Date.now() - healthStarted;

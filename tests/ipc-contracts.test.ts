@@ -84,7 +84,7 @@ describe("ipc contracts", () => {
             latencyMs: 5
           },
           authentication: { ok: true },
-          mcpTools: { ok: true, toolNames: ["sitepilot/ping"] },
+          mcpTools: { ok: true, toolNames: ["sitepilot-ping"] },
           pluginVersion: { ok: true, version: "0.1.0" }
         }
       }),
@@ -95,7 +95,7 @@ describe("ipc contracts", () => {
           siteId: "site-1",
           revision: 1,
           warnings: [],
-          capabilities: ["sitepilot/ping"],
+          capabilities: ["sitepilot-ping"],
           summary: { discovery: {} },
           createdAt: "2026-04-19T12:00:00.000Z",
           updatedAt: "2026-04-19T12:00:00.000Z"

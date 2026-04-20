@@ -51,14 +51,14 @@ export async function refreshDiscoveryForSite(
 
   let discoveryPayload: Record<string, unknown>;
   try {
-    const raw = await mcpBundle.client.callTool("sitepilot/site-discovery", {});
+    const raw = await mcpBundle.client.callTool("sitepilot-site-discovery", {});
     discoveryPayload = normalizeMcpToolResult(raw);
   } catch (e) {
     return {
       ok: false,
       code: "discovery_tool_failed",
       message:
-        e instanceof Error ? e.message : "sitepilot/site-discovery call failed"
+        e instanceof Error ? e.message : "sitepilot-site-discovery call failed"
     };
   }
 

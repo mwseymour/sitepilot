@@ -82,4 +82,22 @@ describe("validateActionPlan (T25)", () => {
     });
     expect(outcome.kind).toBe("blocked_approval");
   });
+
+  it("returns blocked_clarification when an update action lacks post_id", () => {
+    const plan = actionPlanSchema.parse({
+      ...basePlan,
+      proposedActions: [
+        {
+          ...basePlan.proposedActions[0]!,
+          type: "sitepilot-update-post-fields",
+          input: { content: "Fresh body" }
+        }
+      ]
+    });
+    const outcome = validateActionPlan(plan, {
+      discoveryCapabilities: ["read", "edit_drafts"],
+      siteConfigPublishRequiresApproval: false
+    });
+    expect(outcome.kind).toBe("blocked_clarification");
+  });
 });

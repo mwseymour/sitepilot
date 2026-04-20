@@ -33,7 +33,7 @@ final class Store {
 	}
 
 	/**
-	 * @param array{secret: string, client_id: string, fingerprint: string} $record Secret is base64-encoded raw bytes.
+	 * @param array{secret: string, client_id: string, fingerprint: string, user_id?: int} $record Secret is base64-encoded raw bytes.
 	 */
 	public static function save_site( string $site_id, array $record ): void {
 		$sites = get_option( self::OPTION_SITES, array() );
@@ -45,7 +45,7 @@ final class Store {
 	}
 
 	/**
-	 * @return array{secret: string, client_id: string, fingerprint: string}|null
+	 * @return array{secret: string, client_id: string, fingerprint: string, user_id?: int}|null
 	 */
 	public static function get_site( string $site_id ): ?array {
 		$sites = get_option( self::OPTION_SITES, array() );
@@ -60,6 +60,7 @@ final class Store {
 			'secret'      => (string) $row['secret'],
 			'client_id'   => (string) $row['client_id'],
 			'fingerprint' => isset( $row['fingerprint'] ) ? (string) $row['fingerprint'] : '',
+			'user_id'     => isset( $row['user_id'] ) ? (int) $row['user_id'] : 0,
 		);
 	}
 }

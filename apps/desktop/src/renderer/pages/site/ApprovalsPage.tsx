@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { Link } from "react-router-dom";
 
 import type { ApprovalSummary } from "@sitepilot/contracts";
 
@@ -10,6 +11,8 @@ export function ApprovalsPage(): ReactElement {
   const { siteId, data, loading } = useSiteWorkspace();
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [lastThreadId, setLastThreadId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -36,6 +39,7 @@ export function ApprovalsPage(): ReactElement {
   ): Promise<void> {
     setBusy(true);
     setErr(null);
+    setMessage(null);
     const res = await window.sitePilotDesktop.decideApproval({
       siteId,
       approvalRequestId,
@@ -46,6 +50,15 @@ export function ApprovalsPage(): ReactElement {
       setErr(res.message);
       return;
     }
+    const approval = approvals.find((row) => row.id === approvalRequestId);
+    setLastThreadId(approval?.threadId ?? null);
+    setMessage(
+      decision === "approved"
+        ? "Approval recorded. Open Chat to use the plan controls."
+        : decision === "revision_requested"
+          ? "Revision requested. Open Chat to update the request or regenerate the plan."
+          : "Approval rejected."
+    );
     await load();
   }
 
@@ -75,6 +88,14 @@ export function ApprovalsPage(): ReactElement {
         Pending items for high-risk or policy-gated plans. Decisions are
         recorded in the immutable audit log.
       </p>
+      {message ? (
+        <p className="success-note">
+          {message}{" "}
+          {lastThreadId ? (
+            <Link to={`/site/${siteId}/chat`}>Open chat</Link>
+          ) : null}
+        </p>
+      ) : null}
       {err ? <p className="workspace-error">{err}</p> : null}
       <div className="approvals-toolbar">
         <button
@@ -93,10 +114,13 @@ export function ApprovalsPage(): ReactElement {
           {approvals.map((a) => (
             <li key={a.id} className="approval-card">
               <header>
-                <span className="approval-id">Approval {a.id}</span>
-                <span className="muted">Request {a.requestId}</span>
+                <span className="approval-id">
+                  {a.requestPrompt ?? "Approval request"}
+                </span>
               </header>
               <p className="muted small-print">
+                Request {a.requestId}
+                {" · "}
                 Plan {a.planId}
                 {a.expiresAt ? (
                   <>

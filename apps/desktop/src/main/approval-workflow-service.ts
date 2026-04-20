@@ -6,6 +6,7 @@ import type {
   ApprovalRequest,
   ApprovalRequestId,
   AuditEntryId,
+  ChatMessageId,
   Request,
   SiteId
 } from "@sitepilot/domain";
@@ -25,6 +26,8 @@ export type ListPendingApprovalsResult =
         requestId: ApprovalRequest["requestId"];
         planId: ApprovalRequest["planId"];
         siteId: ApprovalRequest["siteId"];
+        threadId?: Request["threadId"];
+        requestPrompt?: Request["userPrompt"];
         status: ApprovalRequest["status"];
         expiresAt?: ApprovalRequest["expiresAt"];
       }>;
@@ -50,14 +53,21 @@ export async function listPendingApprovalsForSite(
   const rows = await db.repositories.approvals.listPendingBySiteId(siteId);
   return {
     ok: true,
-    approvals: rows.map((a) => ({
-      id: a.id,
-      requestId: a.requestId,
-      planId: a.planId,
-      siteId: a.siteId,
-      status: a.status,
-      ...(a.expiresAt !== undefined ? { expiresAt: a.expiresAt } : {})
-    }))
+    approvals: await Promise.all(
+      rows.map(async (a) => {
+        const request = await db.repositories.requests.getById(a.requestId);
+        return {
+          id: a.id,
+          requestId: a.requestId,
+          planId: a.planId,
+          siteId: a.siteId,
+          ...(request !== null ? { threadId: request.threadId } : {}),
+          ...(request !== null ? { requestPrompt: request.userPrompt } : {}),
+          status: a.status,
+          ...(a.expiresAt !== undefined ? { expiresAt: a.expiresAt } : {})
+        };
+      })
+    )
   };
 }
 
@@ -140,6 +150,31 @@ export async function decideApprovalForSite(input: {
     await db.repositories.requests.save({
       ...request,
       status: nextStatus,
+      updatedAt: ts
+    });
+
+    const decisionLabel =
+      input.decision === "approved"
+        ? "approved"
+        : input.decision === "revision_requested"
+          ? "sent back for revision"
+          : "rejected";
+
+    await db.repositories.chatMessages.save({
+      id: randomUUID() as ChatMessageId,
+      threadId: request.threadId,
+      siteId: input.siteId,
+      requestId: request.id,
+      author: { kind: "system" },
+      body: {
+        format: "plain_text",
+        value: `Approval ${decisionLabel}.${
+          input.decision === "approved"
+            ? " The plan is now unlocked for dry-run and execution from the Chat screen."
+            : ""
+        }`
+      },
+      createdAt: ts,
       updatedAt: ts
     });
   }

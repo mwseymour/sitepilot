@@ -16,6 +16,7 @@ import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import { createSignedMcpFetch } from "./signed-fetch.js";
 import { SITEPILOT_PROTOCOL_VERSION } from "./compatibility-info.js";
+import { fetchSiteUrl } from "./site-fetch.js";
 
 import type { SecretKey } from "@sitepilot/services";
 
@@ -50,6 +51,7 @@ export type RegisterSiteRequest = {
   baseUrl: string;
   registrationCode: string;
   siteName: string;
+  wordpressUsername?: string;
   workspaceId?: string;
   environment?: Site["environment"];
   trustedAppOrigin?: string;
@@ -60,7 +62,9 @@ export async function registerSiteWithWordPress(
 ): Promise<RegisterSiteResponse> {
   try {
     const base = normalizeBaseUrl(request.baseUrl);
-    const protocolRes = await fetch(`${base}/wp-json/sitepilot/v1/protocol`);
+    const protocolRes = await fetchSiteUrl(
+      `${base}/wp-json/sitepilot/v1/protocol`
+    );
     if (!protocolRes.ok) {
       return {
         ok: false,
@@ -105,6 +109,9 @@ export async function registerSiteWithWordPress(
       workspaceId,
       trustedAppOrigin,
       clientIdentifier,
+      ...(request.wordpressUsername !== undefined
+        ? { wordpressUsername: request.wordpressUsername }
+        : {}),
       protocolVersion: SITEPILOT_PROTOCOL_VERSION,
       siteName: request.siteName,
       siteBaseUrl: base,
@@ -112,14 +119,17 @@ export async function registerSiteWithWordPress(
       sharedSecretBase64
     });
 
-    const registerRes = await fetch(`${base}/wp-json/sitepilot/v1/register`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json"
-      },
-      body: JSON.stringify(handshakeBody)
-    });
+    const registerRes = await fetchSiteUrl(
+      `${base}/wp-json/sitepilot/v1/register`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify(handshakeBody)
+      }
+    );
 
     const registerText = await registerRes.text();
     let registerJson: unknown;

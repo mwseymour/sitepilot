@@ -59,6 +59,7 @@ final class Registration_Routes {
 		$workspace_id       = isset( $params['workspaceId'] ) ? (string) $params['workspaceId'] : '';
 		$trusted_origin     = isset( $params['trustedAppOrigin'] ) ? (string) $params['trustedAppOrigin'] : '';
 		$client_id          = isset( $params['clientIdentifier'] ) ? (string) $params['clientIdentifier'] : '';
+		$wordpress_username = isset( $params['wordpressUsername'] ) ? (string) $params['wordpressUsername'] : '';
 		$protocol_requested = isset( $params['protocolVersion'] ) ? (string) $params['protocolVersion'] : '';
 		$site_name          = isset( $params['siteName'] ) ? (string) $params['siteName'] : '';
 		$site_base_url      = isset( $params['siteBaseUrl'] ) ? (string) $params['siteBaseUrl'] : '';
@@ -107,6 +108,26 @@ final class Registration_Routes {
 			);
 		}
 
+		$user_id = 0;
+		if ( $wordpress_username !== '' ) {
+			$user = get_user_by( 'login', $wordpress_username );
+			if ( ! $user instanceof \WP_User ) {
+				return new \WP_Error(
+					'sitepilot_invalid_wordpress_user',
+					__( 'The requested WordPress username was not found.', 'sitepilot' ),
+					array( 'status' => 400 )
+				);
+			}
+			if ( ! user_can( $user, 'read' ) ) {
+				return new \WP_Error(
+					'sitepilot_invalid_wordpress_user',
+					__( 'The requested WordPress user cannot access SitePilot MCP.', 'sitepilot' ),
+					array( 'status' => 400 )
+				);
+			}
+			$user_id = (int) $user->ID;
+		}
+
 		$fingerprint = hash( 'sha256', $secret_raw, false );
 
 		Store::save_site(
@@ -115,6 +136,7 @@ final class Registration_Routes {
 				'secret'      => base64_encode( $secret_raw ),
 				'client_id'   => $client_id,
 				'fingerprint' => $fingerprint,
+				'user_id'     => $user_id,
 			)
 		);
 

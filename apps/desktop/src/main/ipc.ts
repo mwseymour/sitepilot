@@ -28,6 +28,8 @@ import {
 } from "./approval-workflow-service.js";
 import { listAuditEntriesForSite } from "./audit-query-service.js";
 import {
+  amendRequestForThread,
+  answerClarificationForRequest,
   createChatThreadForSite,
   createTypedRequestForThread,
   listChatMessagesForThread,
@@ -242,6 +244,46 @@ export function registerIpcHandlers(): void {
     });
   });
 
+  ipcMain.handle(ipcChannels.amendRequest, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.amendRequest, payload);
+    const result = await amendRequestForThread(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.requestId as RequestId,
+      request.text
+    );
+    if (!result.ok) {
+      return parseResponse(ipcChannels.amendRequest, result);
+    }
+    return parseResponse(ipcChannels.amendRequest, {
+      ok: true,
+      request: result.request,
+      ...(result.clarificationRound !== undefined
+        ? { clarificationRound: result.clarificationRound }
+        : {})
+    });
+  });
+
+  ipcMain.handle(ipcChannels.answerClarification, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.answerClarification, payload);
+    const result = await answerClarificationForRequest(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.requestId as RequestId,
+      request.answer
+    );
+    if (!result.ok) {
+      return parseResponse(ipcChannels.answerClarification, result);
+    }
+    return parseResponse(ipcChannels.answerClarification, {
+      ok: true,
+      request: result.request,
+      ...(result.clarificationRound !== undefined
+        ? { clarificationRound: result.clarificationRound }
+        : {})
+    });
+  });
+
   ipcMain.handle(ipcChannels.buildPlannerContext, async (_event, payload) => {
     const request = parseRequest(ipcChannels.buildPlannerContext, payload);
     const result = await buildPlannerContextForThread(
@@ -341,6 +383,9 @@ export function registerIpcHandlers(): void {
       registrationCode: request.registrationCode,
       siteName: request.siteName
     };
+    if (request.wordpressUsername !== undefined) {
+      forward.wordpressUsername = request.wordpressUsername;
+    }
     if (request.workspaceId !== undefined) {
       forward.workspaceId = request.workspaceId;
     }

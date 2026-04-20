@@ -43,7 +43,11 @@ export function actionToMcpToolCall(
   input: Record<string, unknown>,
   dryRun: boolean
 ): McpToolCall | null {
-  const t = actionType.trim().toLowerCase().replace(/-/g, "_");
+  const t = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
 
   if (
     t === "interpret_request" ||
@@ -57,7 +61,8 @@ export function actionToMcpToolCall(
   if (
     t === "create_draft_post" ||
     t === "create_draft_content" ||
-    t === "create_post_draft"
+    t === "create_post_draft" ||
+    t === "sitepilot_create_draft_post"
   ) {
     const title = pickString(input, "title", "postTitle", "post_title");
     if (!title) {
@@ -66,7 +71,7 @@ export function actionToMcpToolCall(
     const postType = pickString(input, "postType", "post_type") ?? "post";
     const content = pickString(input, "content", "postContent", "post_content");
     return {
-      toolName: "sitepilot/create-draft-post",
+      toolName: "sitepilot-create-draft-post",
       arguments: {
         post_type: postType,
         title,
@@ -79,7 +84,8 @@ export function actionToMcpToolCall(
   if (
     t === "update_post_fields" ||
     t === "update_post_content" ||
-    t === "edit_post_fields"
+    t === "edit_post_fields" ||
+    t === "sitepilot_update_post_fields"
   ) {
     const postId = pickNumber(input, "postId", "post_id", "id");
     if (postId === undefined) {
@@ -102,7 +108,7 @@ export function actionToMcpToolCall(
       args.excerpt = excerpt;
     }
     return {
-      toolName: "sitepilot/update-post-fields",
+      toolName: "sitepilot-update-post-fields",
       arguments: args
     };
   }
@@ -110,7 +116,8 @@ export function actionToMcpToolCall(
   if (
     t === "set_post_seo_meta" ||
     t === "seo_meta" ||
-    t === "update_post_seo"
+    t === "update_post_seo" ||
+    t === "sitepilot_set_post_seo_meta"
   ) {
     const postId = pickNumber(input, "postId", "post_id", "id");
     if (postId === undefined) {
@@ -134,7 +141,7 @@ export function actionToMcpToolCall(
       args.seo_description = seoDescription;
     }
     return {
-      toolName: "sitepilot/set-post-seo-meta",
+      toolName: "sitepilot-set-post-seo-meta",
       arguments: args
     };
   }

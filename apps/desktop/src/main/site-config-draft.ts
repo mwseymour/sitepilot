@@ -283,7 +283,7 @@ export function buildSiteConfigDraftFromDiscovery(
       },
       toolAccessPolicy: {
         enabledTools:
-          toolNames.length > 0 ? toolNames : ["sitepilot/site-discovery"],
+          toolNames.length > 0 ? toolNames : ["sitepilot-site-discovery"],
         disabledTools: [],
         dryRunOnlyTools: []
       },

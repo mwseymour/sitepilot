@@ -25,6 +25,52 @@ async function loadLatestSiteConfigDocument(
   }
 }
 
+function summarizeToolOutput(
+  toolName: string,
+  output: Record<string, unknown> | undefined
+): string | null {
+  if (!output) {
+    return null;
+  }
+
+  const bits: string[] = [`Tool ${toolName} succeeded`];
+
+  const postId = output["post_id"];
+  if (typeof postId === "number" && Number.isFinite(postId) && postId > 0) {
+    bits.push(`post_id=${postId}`);
+  }
+
+  const postType = output["post_type"];
+  if (typeof postType === "string" && postType.trim().length > 0) {
+    bits.push(`post_type=${postType}`);
+  }
+
+  const postStatus = output["post_status"];
+  if (typeof postStatus === "string" && postStatus.trim().length > 0) {
+    bits.push(`post_status=${postStatus}`);
+  }
+
+  const after = output["after"];
+  if (after && typeof after === "object" && !Array.isArray(after)) {
+    const record = after as Record<string, unknown>;
+    const title = record["post_title"];
+    if (typeof title === "string" && title.trim().length > 0) {
+      bits.push(`current_title="${title.trim()}"`);
+    }
+  }
+
+  const preview = output["preview"];
+  if (preview && typeof preview === "object" && !Array.isArray(preview)) {
+    const record = preview as Record<string, unknown>;
+    const title = record["post_title"];
+    if (typeof title === "string" && title.trim().length > 0) {
+      bits.push(`preview_title="${title.trim()}"`);
+    }
+  }
+
+  return bits.length > 1 ? bits.join("; ") : null;
+}
+
 export async function buildPlannerContextForThread(
   siteId: SiteId,
   threadId: ChatThreadId
@@ -51,11 +97,50 @@ export async function buildPlannerContextForThread(
     };
   }
 
-  const [siteConfig, discovery, messages] = await Promise.all([
+  const [siteConfig, discovery, messages, requests] = await Promise.all([
     loadLatestSiteConfigDocument(siteId),
     db.repositories.discoverySnapshots.getLatest(siteId),
-    db.repositories.chatMessages.listByThreadId(threadId)
+    db.repositories.chatMessages.listByThreadId(threadId),
+    db.repositories.requests.listByThreadId(threadId)
   ]);
+
+  const priorChanges: string[] = [];
+  const targetSummaries: string[] = [];
+
+  for (const request of requests) {
+    if (
+      request.siteId !== siteId ||
+      request.latestExecutionRunId === undefined
+    ) {
+      continue;
+    }
+
+    const invocations = await db.repositories.toolInvocations.listByExecutionRunId(
+      request.latestExecutionRunId
+    );
+
+    for (const invocation of invocations) {
+      if (invocation.status !== "succeeded") {
+        continue;
+      }
+      const summary = summarizeToolOutput(invocation.toolName, invocation.output);
+      if (summary) {
+        priorChanges.push(summary);
+      }
+
+      const postId = invocation.output?.["post_id"];
+      if (
+        typeof postId === "number" &&
+        Number.isFinite(postId) &&
+        postId > 0 &&
+        invocation.toolName === "sitepilot-create-draft-post"
+      ) {
+        targetSummaries.push(
+          `This thread previously created a draft post with post_id=${postId}. Reuse that post id for follow-up edits to the same draft.`
+        );
+      }
+    }
+  }
 
   const builtAt = new Date().toISOString();
 
@@ -66,8 +151,8 @@ export async function buildPlannerContextForThread(
     siteConfig,
     discoverySnapshot: discovery,
     messages,
-    targetSummaries: [],
-    priorChanges: []
+    targetSummaries,
+    priorChanges
   });
 
   return { ok: true, context };

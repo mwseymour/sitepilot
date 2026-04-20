@@ -60,7 +60,11 @@ export async function getRequestBundleForThread(input: {
 
   let plan: ContractActionPlan | null = null;
   if (request.latestPlanId !== undefined) {
-    plan = await db.repositories.actionPlans.getById(request.latestPlanId);
+    try {
+      plan = await db.repositories.actionPlans.getById(request.latestPlanId);
+    } catch {
+      plan = null;
+    }
   }
 
   const approvals = await db.repositories.approvals.listByRequestId(

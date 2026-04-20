@@ -37,6 +37,7 @@ export const siteRegistrationHandshakeRequestSchema = z.object({
   workspaceId: idSchema,
   trustedAppOrigin: urlSchema,
   clientIdentifier: z.string().min(1),
+  wordpressUsername: z.string().min(1).optional(),
   protocolVersion: z.string().min(1),
   siteName: z.string().min(1),
   siteBaseUrl: urlSchema,

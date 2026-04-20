@@ -6,6 +6,7 @@ import { McpHttpClient } from "@sitepilot/mcp-client";
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import { createSignedMcpFetch } from "./signed-fetch.js";
+import { fetchSiteUrl } from "./site-fetch.js";
 
 const protocolMetadataSchema = z.object({
   protocol_version: z.string().min(1),
@@ -81,7 +82,7 @@ export async function fetchProtocolMetadata(
   const started = Date.now();
   let protocolRes: Response;
   try {
-    protocolRes = await fetch(`${base}/wp-json/sitepilot/v1/protocol`, {
+    protocolRes = await fetchSiteUrl(`${base}/wp-json/sitepilot/v1/protocol`, {
       signal: AbortSignal.timeout(15_000)
     });
   } catch (e) {

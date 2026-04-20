@@ -40,6 +40,8 @@ export const ipcChannels = {
   listChatMessages: "chat.listMessages",
   postChatMessage: "chat.postMessage",
   createChatRequest: "chat.createRequest",
+  amendRequest: "chat.amendRequest",
+  answerClarification: "chat.answerClarification",
   buildPlannerContext: "planner.buildContext",
   generateActionPlan: "planner.generateActionPlan",
   listPendingApprovals: "approvals.listPending",
@@ -99,6 +101,7 @@ export const registerSiteRequestSchema = z.object({
   baseUrl: z.string().url(),
   registrationCode: z.string().min(1),
   siteName: z.string().min(1),
+  wordpressUsername: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
   environment: siteEnvironmentSchema.optional(),
   trustedAppOrigin: urlSchema.optional()
@@ -357,6 +360,25 @@ export const createChatRequestResponseSchema = z.discriminatedUnion("ok", [
   })
 ]);
 
+export const answerClarificationRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  requestId: idSchema,
+  answer: z.string().min(1)
+});
+
+export const answerClarificationResponseSchema =
+  createChatRequestResponseSchema;
+
+export const amendRequestRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  requestId: idSchema,
+  text: z.string().min(1)
+});
+
+export const amendRequestResponseSchema = createChatRequestResponseSchema;
+
 export const buildPlannerContextRequestSchema = siteThreadRequestSchema;
 
 export const buildPlannerContextResponseSchema = z.discriminatedUnion("ok", [
@@ -415,6 +437,8 @@ export const approvalSummarySchema = z.object({
   requestId: idSchema,
   planId: idSchema,
   siteId: idSchema,
+  threadId: idSchema.optional(),
+  requestPrompt: z.string().min(1).optional(),
   status: approvalStateSchema,
   expiresAt: isoTimestampSchema.optional()
 });
@@ -702,6 +726,14 @@ export const ipcContracts = {
     request: createChatRequestRequestSchema,
     response: createChatRequestResponseSchema
   },
+  [ipcChannels.amendRequest]: {
+    request: amendRequestRequestSchema,
+    response: amendRequestResponseSchema
+  },
+  [ipcChannels.answerClarification]: {
+    request: answerClarificationRequestSchema,
+    response: answerClarificationResponseSchema
+  },
   [ipcChannels.buildPlannerContext]: {
     request: buildPlannerContextRequestSchema,
     response: buildPlannerContextResponseSchema
@@ -824,6 +856,12 @@ export interface SitePilotDesktopApi {
   createChatRequest: (
     request: IpcRequest<typeof ipcChannels.createChatRequest>
   ) => Promise<IpcResponse<typeof ipcChannels.createChatRequest>>;
+  amendRequest: (
+    request: IpcRequest<typeof ipcChannels.amendRequest>
+  ) => Promise<IpcResponse<typeof ipcChannels.amendRequest>>;
+  answerClarification: (
+    request: IpcRequest<typeof ipcChannels.answerClarification>
+  ) => Promise<IpcResponse<typeof ipcChannels.answerClarification>>;
   buildPlannerContext: (
     request: IpcRequest<typeof ipcChannels.buildPlannerContext>
   ) => Promise<IpcResponse<typeof ipcChannels.buildPlannerContext>>;

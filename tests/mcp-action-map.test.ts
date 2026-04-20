@@ -16,12 +16,29 @@ describe("actionToMcpToolCall", () => {
       true
     );
     expect(call).toEqual({
-      toolName: "sitepilot/create-draft-post",
+      toolName: "sitepilot-create-draft-post",
       arguments: {
         post_type: "post",
         title: "Hello",
         content: "Body",
         dry_run: true
+      }
+    });
+  });
+
+  it("maps createDraftPost camelCase actions", () => {
+    const call = actionToMcpToolCall(
+      "createDraftPost",
+      { postTitle: "Hello Matt", postContent: "Body", postType: "post" },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-create-draft-post",
+      arguments: {
+        post_type: "post",
+        title: "Hello Matt",
+        content: "Body",
+        dry_run: false
       }
     });
   });
@@ -33,8 +50,20 @@ describe("actionToMcpToolCall", () => {
       false
     );
     expect(call).toEqual({
-      toolName: "sitepilot/update-post-fields",
+      toolName: "sitepilot-update-post-fields",
       arguments: { post_id: 12, dry_run: false, title: "T" }
+    });
+  });
+
+  it("maps sitepilot-update-post-fields tool ids", () => {
+    const call = actionToMcpToolCall(
+      "sitepilot-update-post-fields",
+      { post_id: 12, content: "Fresh body" },
+      true
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: { post_id: 12, dry_run: true, content: "Fresh body" }
     });
   });
 
@@ -45,7 +74,7 @@ describe("actionToMcpToolCall", () => {
       false
     );
     expect(call).toEqual({
-      toolName: "sitepilot/set-post-seo-meta",
+      toolName: "sitepilot-set-post-seo-meta",
       arguments: {
         post_id: 3,
         dry_run: false,

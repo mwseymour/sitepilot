@@ -1,4 +1,5 @@
 import { signSitePilotHmacRequest } from "@sitepilot/plugin-protocol";
+import { fetchSiteUrl } from "./site-fetch.js";
 
 export type SignedFetchOptions = {
   sharedSecret: Buffer;
@@ -54,6 +55,6 @@ export function createSignedMcpFetch(
     for (const [key, value] of Object.entries(signed)) {
       merged.set(key, value);
     }
-    return fetch(input, { ...init, headers: merged });
+    return fetchSiteUrl(input, { ...init, headers: merged });
   };
 }

@@ -13,7 +13,7 @@ const baseSnapshot = (
   siteId: "site-1",
   revision: 2,
   warnings: ["Example warning from WordPress."],
-  capabilities: ["sitepilot/site-discovery", "sitepilot/ping"],
+  capabilities: ["sitepilot-site-discovery", "sitepilot-ping"],
   summary,
   createdAt: "2026-04-19T10:00:00.000Z",
   updatedAt: "2026-04-19T10:00:00.000Z",
@@ -85,8 +85,8 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
     );
     expect(draft.sections.seoPolicy.titlePatterns[0]).toContain("%%");
     expect(draft.sections.toolAccessPolicy.enabledTools).toEqual([
-      "sitepilot/site-discovery",
-      "sitepilot/ping"
+      "sitepilot-site-discovery",
+      "sitepilot-ping"
     ]);
     expect(
       draft.metadata.notes.some((n) => n.includes("Example warning"))

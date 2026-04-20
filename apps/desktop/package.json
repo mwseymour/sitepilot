@@ -9,7 +9,8 @@
     "build:main": "tsc -b tsconfig.main.json --force",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --sourcemap --external:electron --outfile=dist/preload/index.js",
     "build:renderer": "vite build",
-    "start": "npm run build && electron .",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
+    "start": "npm run rebuild:native && npm run build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "react-router-dom": "^7.14.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
