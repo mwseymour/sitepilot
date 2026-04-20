@@ -173,7 +173,48 @@ describe("ipc contracts", () => {
         code: "stub",
         message: "Not used in this contract shape test."
       }),
-      getProviderStatus: async () => ({ configuredProviders: [] })
+      getProviderStatus: async () => ({ configuredProviders: [] }),
+      getSettingsState: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      setProviderSecret: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      clearProviderSecret: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      setPlannerPreferences: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      clearSiteSigningSecret: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      getCompatibilityInfo: async () => ({
+        appVersion: "0.1.0",
+        electronVersion: "0.0.0",
+        sitepilotProtocolVersion: "1.0.0",
+        minPluginProtocolVersion: "1.0.0"
+      }),
+      buildSiteExportBundle: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      applySiteImportBundle: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      })
     };
 
     await expect(api.getShellInfo()).resolves.toMatchObject({

@@ -36,6 +36,9 @@ export function HomePage(): ReactElement {
           diagnostics. Site configuration must be confirmed before chat is
           enabled.
         </p>
+        <Link className="btn btn-secondary btn-small" to="/settings">
+          App settings
+        </Link>
       </section>
       {error ? <p className="workspace-error">{error}</p> : null}
       <section className="site-list">

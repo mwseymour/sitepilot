@@ -1,8 +1,10 @@
 import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
 import type {
+  ActionId,
   ApprovalDecision,
   ApprovalRequest,
   AuditEntry,
+  AuditEventType,
   ChatMessage,
   ChatThread,
   ClarificationRound,
@@ -93,9 +95,25 @@ export interface ApprovalRepository {
   appendDecision(decision: ApprovalDecision): Promise<void>;
 }
 
+/** Filtered audit listing for operator UI (T31). */
+export type AuditSiteQuery = {
+  siteId: AuditEntry["siteId"];
+  requestId?: Request["id"];
+  actionId?: ActionId;
+  eventTypes?: AuditEventType[];
+  since?: string;
+  until?: string;
+  /** Narrow to execution_failed vs execution_completed / tool_invoked. */
+  executionOutcome?: "any" | "failed" | "succeeded";
+  /** Only rows that recorded rollback metadata for reversible edits. */
+  rollbackRelatedOnly?: boolean;
+  limit: number;
+};
+
 export interface AuditEntryRepository {
   listByRequestId(requestId: AuditEntry["requestId"]): Promise<AuditEntry[]>;
   listBySiteId(siteId: AuditEntry["siteId"]): Promise<AuditEntry[]>;
+  queryForSite(query: AuditSiteQuery): Promise<AuditEntry[]>;
   append(entry: AuditEntry): Promise<void>;
 }
 

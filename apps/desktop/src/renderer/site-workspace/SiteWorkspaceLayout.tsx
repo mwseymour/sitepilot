@@ -15,7 +15,8 @@ function SiteWorkspaceChrome(): ReactElement {
     { to: `config`, label: "Site config" },
     { to: `approvals`, label: "Approvals" },
     { to: `audit`, label: "Audit" },
-    { to: `diagnostics`, label: "Diagnostics" }
+    { to: `diagnostics`, label: "Diagnostics" },
+    { to: `settings`, label: "Settings" }
   ];
 
   return (

@@ -56,7 +56,22 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.getRequestBundle, request),
   executePlanAction: (request) =>
     invokeIpc(ipcChannels.executePlanAction, request),
-  getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {})
+  getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {}),
+  getSettingsState: (request = {}) =>
+    invokeIpc(ipcChannels.settingsGetState, request),
+  setProviderSecret: (request) =>
+    invokeIpc(ipcChannels.settingsSetProviderSecret, request),
+  clearProviderSecret: (request) =>
+    invokeIpc(ipcChannels.settingsClearProviderSecret, request),
+  setPlannerPreferences: (request) =>
+    invokeIpc(ipcChannels.settingsSetPlannerPreferences, request),
+  clearSiteSigningSecret: (request) =>
+    invokeIpc(ipcChannels.settingsClearSiteSigningSecret, request),
+  getCompatibilityInfo: () => invokeIpc(ipcChannels.getCompatibilityInfo, {}),
+  buildSiteExportBundle: (request) =>
+    invokeIpc(ipcChannels.exportBuildSiteBundle, request),
+  applySiteImportBundle: (request) =>
+    invokeIpc(ipcChannels.importApplySiteBundle, request)
 };
 
 contextBridge.exposeInMainWorld("sitePilotDesktop", desktopApi);

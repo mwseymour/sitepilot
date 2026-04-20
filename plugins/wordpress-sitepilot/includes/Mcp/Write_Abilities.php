@@ -49,13 +49,15 @@ final class Write_Abilities {
 				'output_schema'       => array(
 					'type'       => 'object',
 					'properties' => array(
-						'ok'        => array( 'type' => 'boolean' ),
-						'dry_run'   => array( 'type' => 'boolean' ),
-						'post_id'   => array( 'type' => 'integer' ),
-						'post_type' => array( 'type' => 'string' ),
-						'post_status' => array( 'type' => 'string' ),
-						'preview'   => array( 'type' => 'object' ),
-						'error'     => array( 'type' => 'string' ),
+						'ok'                    => array( 'type' => 'boolean' ),
+						'dry_run'               => array( 'type' => 'boolean' ),
+						'post_id'               => array( 'type' => 'integer' ),
+						'post_type'             => array( 'type' => 'string' ),
+						'post_status'           => array( 'type' => 'string' ),
+						'preview'               => array( 'type' => 'object' ),
+						'error'                 => array( 'type' => 'string' ),
+						'reversible'            => array( 'type' => 'boolean' ),
+						'compensation_required' => array( 'type' => 'boolean' ),
 					),
 					'required'   => array( 'ok', 'dry_run', 'post_type', 'post_status' ),
 				),
@@ -249,12 +251,14 @@ final class Write_Abilities {
 
 		if ( $dry_run ) {
 			return array(
-				'ok'          => true,
-				'dry_run'     => true,
-				'post_id'     => 0,
-				'post_type'   => $ptype,
-				'post_status' => 'draft',
-				'preview'     => array(
+				'ok'                    => true,
+				'dry_run'               => true,
+				'post_id'               => 0,
+				'post_type'             => $ptype,
+				'post_status'           => 'draft',
+				'reversible'            => true,
+				'compensation_required' => false,
+				'preview'               => array(
 					'post_title'   => $title,
 					'post_content' => $content,
 					'post_status'  => 'draft',
@@ -284,11 +288,13 @@ final class Write_Abilities {
 		}
 
 		return array(
-			'ok'          => true,
-			'dry_run'     => false,
-			'post_id'     => (int) $post_id,
-			'post_type'   => $ptype,
-			'post_status' => 'draft',
+			'ok'                    => true,
+			'dry_run'               => false,
+			'post_id'               => (int) $post_id,
+			'post_type'             => $ptype,
+			'post_status'           => 'draft',
+			'reversible'            => false,
+			'compensation_required' => true,
 		);
 	}
 

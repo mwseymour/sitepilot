@@ -47,7 +47,15 @@ export const ipcChannels = {
   listAuditEntries: "audit.listEntries",
   getRequestBundle: "chat.getRequestBundle",
   executePlanAction: "execution.executePlanAction",
-  getProviderStatus: "settings.getProviderStatus"
+  getProviderStatus: "settings.getProviderStatus",
+  settingsGetState: "settings.getState",
+  settingsSetProviderSecret: "settings.setProviderSecret",
+  settingsClearProviderSecret: "settings.clearProviderSecret",
+  settingsSetPlannerPreferences: "settings.setPlannerPreferences",
+  settingsClearSiteSigningSecret: "settings.clearSiteSigningSecret",
+  getCompatibilityInfo: "app.getCompatibilityInfo",
+  exportBuildSiteBundle: "export.buildSiteBundle",
+  importApplySiteBundle: "import.applySiteBundle"
 } as const;
 
 export const shellInfoResponseSchema = z.object({
@@ -457,6 +465,12 @@ export const ipcAuditEntrySchema = z.object({
 export const listAuditEntriesRequestSchema = z.object({
   siteId: idSchema,
   requestId: idSchema.optional(),
+  actionId: idSchema.optional(),
+  eventTypes: z.array(auditEventTypeSchema).max(50).optional(),
+  since: isoTimestampSchema.optional(),
+  until: isoTimestampSchema.optional(),
+  executionOutcome: z.enum(["any", "failed", "succeeded"]).optional(),
+  rollbackRelatedOnly: z.boolean().optional(),
   limit: z.number().int().positive().max(500).optional()
 });
 
@@ -474,6 +488,99 @@ export const listAuditEntriesResponseSchema = z.discriminatedUnion("ok", [
 
 export type ApprovalSummary = z.infer<typeof approvalSummarySchema>;
 export type AuditLogEntry = z.infer<typeof ipcAuditEntrySchema>;
+
+export const plannerPreferencesSchema = z.object({
+  preferredProvider: z.enum(["auto", "openai", "anthropic"]),
+  openaiModel: z.string().min(1).max(120),
+  anthropicModel: z.string().min(1).max(120)
+});
+
+export type PlannerPreferencesPayload = z.infer<
+  typeof plannerPreferencesSchema
+>;
+
+export const settingsGetStateRequestSchema = z.object({
+  workspaceId: idSchema.optional(),
+  siteId: idSchema.optional()
+});
+
+export const settingsGetStateResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    configuredProviders: providerStatusResponseSchema.shape.configuredProviders,
+    planner: plannerPreferencesSchema,
+    siteHasSigningSecret: z.boolean().optional()
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const settingsSetProviderSecretRequestSchema = z.object({
+  provider: z.enum(["openai", "anthropic"]),
+  secret: z.string().min(1).max(8192)
+});
+
+export const settingsOkOnlyResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true) }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const settingsSetPlannerPreferencesRequestSchema = z.object({
+  workspaceId: idSchema.optional(),
+  preferences: plannerPreferencesSchema
+});
+
+export const settingsClearSiteSigningSecretRequestSchema = z.object({
+  siteId: idSchema
+});
+
+export const compatibilityInfoResponseSchema = z.object({
+  appVersion: z.string().min(1),
+  electronVersion: z.string().min(1),
+  sitepilotProtocolVersion: z.string().min(1),
+  minPluginProtocolVersion: z.string().min(1)
+});
+
+export const exportBuildSiteBundleRequestSchema = z.object({
+  siteId: idSchema
+});
+
+export const exportBuildSiteBundleResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    bundleJson: z.string().min(1)
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const importApplySiteBundleRequestSchema = z.object({
+  bundleJson: z.string().min(1)
+});
+
+export const importApplySiteBundleResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    siteId: idSchema,
+    auditsImported: z.number().int().nonnegative(),
+    configsImported: z.number().int().nonnegative()
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
 
 export const getRequestBundleRequestSchema = z.object({
   siteId: idSchema,
@@ -626,6 +733,38 @@ export const ipcContracts = {
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
     response: providerStatusResponseSchema
+  },
+  [ipcChannels.settingsGetState]: {
+    request: settingsGetStateRequestSchema,
+    response: settingsGetStateResponseSchema
+  },
+  [ipcChannels.settingsSetProviderSecret]: {
+    request: settingsSetProviderSecretRequestSchema,
+    response: settingsOkOnlyResponseSchema
+  },
+  [ipcChannels.settingsClearProviderSecret]: {
+    request: z.object({ provider: z.enum(["openai", "anthropic"]) }),
+    response: settingsOkOnlyResponseSchema
+  },
+  [ipcChannels.settingsSetPlannerPreferences]: {
+    request: settingsSetPlannerPreferencesRequestSchema,
+    response: settingsOkOnlyResponseSchema
+  },
+  [ipcChannels.settingsClearSiteSigningSecret]: {
+    request: settingsClearSiteSigningSecretRequestSchema,
+    response: settingsOkOnlyResponseSchema
+  },
+  [ipcChannels.getCompatibilityInfo]: {
+    request: z.object({}),
+    response: compatibilityInfoResponseSchema
+  },
+  [ipcChannels.exportBuildSiteBundle]: {
+    request: exportBuildSiteBundleRequestSchema,
+    response: exportBuildSiteBundleResponseSchema
+  },
+  [ipcChannels.importApplySiteBundle]: {
+    request: importApplySiteBundleRequestSchema,
+    response: importApplySiteBundleResponseSchema
   }
 } as const;
 
@@ -707,4 +846,28 @@ export interface SitePilotDesktopApi {
     request: IpcRequest<typeof ipcChannels.executePlanAction>
   ) => Promise<IpcResponse<typeof ipcChannels.executePlanAction>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
+  getSettingsState: (
+    request: IpcRequest<typeof ipcChannels.settingsGetState>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsGetState>>;
+  setProviderSecret: (
+    request: IpcRequest<typeof ipcChannels.settingsSetProviderSecret>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsSetProviderSecret>>;
+  clearProviderSecret: (
+    request: IpcRequest<typeof ipcChannels.settingsClearProviderSecret>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsClearProviderSecret>>;
+  setPlannerPreferences: (
+    request: IpcRequest<typeof ipcChannels.settingsSetPlannerPreferences>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsSetPlannerPreferences>>;
+  clearSiteSigningSecret: (
+    request: IpcRequest<typeof ipcChannels.settingsClearSiteSigningSecret>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsClearSiteSigningSecret>>;
+  getCompatibilityInfo: () => Promise<
+    IpcResponse<typeof ipcChannels.getCompatibilityInfo>
+  >;
+  buildSiteExportBundle: (
+    request: IpcRequest<typeof ipcChannels.exportBuildSiteBundle>
+  ) => Promise<IpcResponse<typeof ipcChannels.exportBuildSiteBundle>>;
+  applySiteImportBundle: (
+    request: IpcRequest<typeof ipcChannels.importApplySiteBundle>
+  ) => Promise<IpcResponse<typeof ipcChannels.importApplySiteBundle>>;
 }

@@ -18,7 +18,8 @@ import type {
   RequestId,
   SiteConfigId,
   SiteId,
-  Workspace
+  Workspace,
+  WorkspaceId
 } from "@sitepilot/domain";
 
 import {
@@ -47,7 +48,17 @@ import { generateActionPlanForRequest } from "./plan-generation-service.js";
 import { readProviderStatus } from "./provider-status-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 import { getRequestBundleForThread } from "./request-bundle-service.js";
+import { getCompatibilityPayload } from "./compatibility-info.js";
 import { executePlanAction } from "./execution-orchestrator-service.js";
+import { buildSiteExportBundle } from "./export-site-service.js";
+import { applySiteImportBundle } from "./import-site-service.js";
+import {
+  clearProviderSecret,
+  clearSiteSigningSecret,
+  getSettingsState,
+  setPlannerPreferences,
+  setProviderSecret
+} from "./settings-service.js";
 
 function parseRequest<TChannel extends IpcChannel>(
   channel: TChannel,
@@ -288,6 +299,20 @@ export function registerIpcHandlers(): void {
       ...(request.requestId !== undefined
         ? { requestId: request.requestId as RequestId }
         : {}),
+      ...(request.actionId !== undefined
+        ? { actionId: request.actionId as ActionId }
+        : {}),
+      ...(request.eventTypes !== undefined && request.eventTypes.length > 0
+        ? { eventTypes: request.eventTypes }
+        : {}),
+      ...(request.since !== undefined ? { since: request.since } : {}),
+      ...(request.until !== undefined ? { until: request.until } : {}),
+      ...(request.executionOutcome !== undefined
+        ? { executionOutcome: request.executionOutcome }
+        : {}),
+      ...(request.rollbackRelatedOnly === true
+        ? { rollbackRelatedOnly: true }
+        : {}),
       ...(request.limit !== undefined ? { limit: request.limit } : {})
     });
     if (!result.ok) {
@@ -405,5 +430,90 @@ export function registerIpcHandlers(): void {
         ? { toolInvocationId: result.toolInvocationId }
         : {})
     });
+  });
+
+  ipcMain.handle(ipcChannels.settingsGetState, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.settingsGetState, payload);
+    const result = await getSettingsState({
+      ...(req.workspaceId !== undefined
+        ? { workspaceId: req.workspaceId as WorkspaceId }
+        : {}),
+      ...(req.siteId !== undefined ? { siteId: req.siteId as SiteId } : {})
+    });
+    return parseResponse(ipcChannels.settingsGetState, result);
+  });
+
+  ipcMain.handle(
+    ipcChannels.settingsSetProviderSecret,
+    async (_event, payload) => {
+      const req = parseRequest(ipcChannels.settingsSetProviderSecret, payload);
+      const result = await setProviderSecret(req);
+      return parseResponse(ipcChannels.settingsSetProviderSecret, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsClearProviderSecret,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.settingsClearProviderSecret,
+        payload
+      );
+      const result = await clearProviderSecret(req);
+      return parseResponse(ipcChannels.settingsClearProviderSecret, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsSetPlannerPreferences,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.settingsSetPlannerPreferences,
+        payload
+      );
+      const result = await setPlannerPreferences({
+        ...(req.workspaceId !== undefined
+          ? { workspaceId: req.workspaceId as WorkspaceId }
+          : {}),
+        preferences: req.preferences
+      });
+      return parseResponse(ipcChannels.settingsSetPlannerPreferences, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsClearSiteSigningSecret,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.settingsClearSiteSigningSecret,
+        payload
+      );
+      const result = await clearSiteSigningSecret({
+        siteId: req.siteId as SiteId
+      });
+      return parseResponse(ipcChannels.settingsClearSiteSigningSecret, result);
+    }
+  );
+
+  ipcMain.handle(ipcChannels.getCompatibilityInfo, async (_event, payload) => {
+    parseRequest(ipcChannels.getCompatibilityInfo, payload);
+    return parseResponse(ipcChannels.getCompatibilityInfo, {
+      ...getCompatibilityPayload({
+        appVersion: app.getVersion(),
+        electronVersion: process.versions.electron ?? "unknown"
+      })
+    });
+  });
+
+  ipcMain.handle(ipcChannels.exportBuildSiteBundle, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.exportBuildSiteBundle, payload);
+    const result = await buildSiteExportBundle(req.siteId as SiteId);
+    return parseResponse(ipcChannels.exportBuildSiteBundle, result);
+  });
+
+  ipcMain.handle(ipcChannels.importApplySiteBundle, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.importApplySiteBundle, payload);
+    const result = await applySiteImportBundle(req.bundleJson);
+    return parseResponse(ipcChannels.importApplySiteBundle, result);
   });
 }

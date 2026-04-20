@@ -15,10 +15,9 @@ import {
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import { createSignedMcpFetch } from "./signed-fetch.js";
+import { SITEPILOT_PROTOCOL_VERSION } from "./compatibility-info.js";
 
 import type { SecretKey } from "@sitepilot/services";
-
-const SITEPILOT_PROTOCOL_VERSION = "1.0.0";
 
 const protocolMetadataSchema = z.object({
   protocol_version: z.string().min(1),

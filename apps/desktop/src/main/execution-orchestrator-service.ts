@@ -391,6 +391,33 @@ export async function executePlanAction(
     updatedAt: doneTs
   });
 
+  const beforeSnap = mcpResult["before"];
+  if (
+    beforeSnap !== null &&
+    typeof beforeSnap === "object" &&
+    !Array.isArray(beforeSnap)
+  ) {
+    await db.repositories.auditEntries.append({
+      id: randomUUID() as AuditEntryId,
+      siteId: input.siteId,
+      requestId: input.requestId,
+      actionId: input.actionId,
+      eventType: "rollback_recorded",
+      actor: DEFAULT_OPERATOR,
+      metadata: {
+        executionRunId: runId,
+        toolName: spec.toolName,
+        toolInvocationId: invId,
+        snapshot: {
+          before: beforeSnap,
+          after: mcpResult["after"] ?? null
+        }
+      },
+      createdAt: doneTs,
+      updatedAt: doneTs
+    });
+  }
+
   return {
     ok: true,
     dryRun: false,

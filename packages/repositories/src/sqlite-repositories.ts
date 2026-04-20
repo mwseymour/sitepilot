@@ -28,6 +28,7 @@ import type {
   ActionPlanRepository,
   ApprovalRepository,
   AuditEntryRepository,
+  AuditSiteQuery,
   ChatMessageRepository,
   ChatThreadRepository,
   ClarificationRoundRepository,
@@ -1574,6 +1575,71 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
       )
       .all({ siteId });
 
+    return rows.map((row) => this.mapAuditEntry(row));
+  }
+
+  public async queryForSite(query: AuditSiteQuery): Promise<AuditEntry[]> {
+    const clauses: string[] = ["site_id = @siteId"];
+    const bind: Record<string, unknown> = {
+      siteId: query.siteId,
+      limit: query.limit
+    };
+
+    if (query.requestId !== undefined) {
+      clauses.push("request_id = @requestId");
+      bind.requestId = query.requestId;
+    }
+    if (query.actionId !== undefined) {
+      clauses.push("action_id = @actionId");
+      bind.actionId = query.actionId;
+    }
+    if (query.since !== undefined) {
+      clauses.push("created_at >= @since");
+      bind.since = query.since;
+    }
+    if (query.until !== undefined) {
+      clauses.push("created_at <= @until");
+      bind.until = query.until;
+    }
+
+    if (query.executionOutcome === "failed") {
+      clauses.push("event_type = 'execution_failed'");
+    } else if (query.executionOutcome === "succeeded") {
+      clauses.push("event_type IN ('execution_completed', 'tool_invoked')");
+    }
+
+    if (query.rollbackRelatedOnly === true) {
+      clauses.push("event_type = 'rollback_recorded'");
+    }
+
+    if (query.eventTypes !== undefined && query.eventTypes.length > 0) {
+      const ph = query.eventTypes.map((_, i) => `@et${i}`).join(", ");
+      query.eventTypes.forEach((et, i) => {
+        bind[`et${i}`] = et;
+      });
+      clauses.push(`event_type IN (${ph})`);
+    }
+
+    const sql = `SELECT id, site_id, request_id, action_id, event_type, actor_json, metadata_json,
+                created_at, updated_at
+         FROM audit_entries
+         WHERE ${clauses.join(" AND ")}
+         ORDER BY created_at DESC
+         LIMIT @limit`;
+
+    type Row = {
+      id: AuditEntry["id"];
+      site_id: AuditEntry["siteId"];
+      request_id: AuditEntry["requestId"] | null;
+      action_id: AuditEntry["actionId"] | null;
+      event_type: AuditEntry["eventType"];
+      actor_json: string;
+      metadata_json: string;
+      created_at: string;
+      updated_at: string;
+    };
+
+    const rows = this.connection.prepare(sql).all(bind) as Row[];
     return rows.map((row) => this.mapAuditEntry(row));
   }
 

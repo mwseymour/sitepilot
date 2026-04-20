@@ -35,6 +35,10 @@
   },
   "build": {
     "appId": "com.sitepilot.desktop",
+    "extraMetadata": {
+      "sitepilotProtocolVersion": "1.0.0",
+      "sitepilotMinPluginProtocolVersion": "1.0.0"
+    },
     "files": [
       "dist/**/*",
       "package.json"

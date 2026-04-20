@@ -1,7 +1,7 @@
 /**
  * Partition for secret material so keys from different domains never collide.
  */
-export type SecretNamespace = "provider" | "site" | "signing" | "oauth";
+export type SecretNamespace = "provider" | "site" | "signing" | "oauth" | "app";
 
 /**
  * Logical secret key. `keyId` is opaque to the adapter; callers may embed

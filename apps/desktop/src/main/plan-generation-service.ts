@@ -26,9 +26,41 @@ import type { PlanValidationOutcome } from "@sitepilot/validation";
 import { getDatabase } from "./app-database.js";
 import { buildPlannerContextForThread } from "./planner-context-service.js";
 import { getSecureStorage } from "./app-secure-storage.js";
+import {
+  loadPlannerPreferences,
+  type PlannerPreferences
+} from "./planner-preferences-service.js";
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+type ChosenProvider =
+  | { kind: "openai"; key: string; model: string }
+  | { kind: "anthropic"; key: string; model: string }
+  | { kind: "stub" };
+
+function choosePlannerProvider(
+  prefs: PlannerPreferences,
+  openaiKey: string | undefined,
+  anthropicKey: string | undefined
+): ChosenProvider {
+  const openai = (): ChosenProvider | null =>
+    openaiKey !== undefined
+      ? { kind: "openai", key: openaiKey, model: prefs.openaiModel }
+      : null;
+  const anthropic = (): ChosenProvider | null =>
+    anthropicKey !== undefined
+      ? { kind: "anthropic", key: anthropicKey, model: prefs.anthropicModel }
+      : null;
+
+  if (prefs.preferredProvider === "openai") {
+    return openai() ?? anthropic() ?? { kind: "stub" };
+  }
+  if (prefs.preferredProvider === "anthropic") {
+    return anthropic() ?? openai() ?? { kind: "stub" };
+  }
+  return openai() ?? anthropic() ?? { kind: "stub" };
 }
 
 export type GenerateActionPlanResult =
@@ -83,6 +115,7 @@ export async function generateActionPlanForRequest(
 
   const ts = nowIso();
   const storage = getSecureStorage();
+  const prefs = await loadPlannerPreferences(storage, site.workspaceId);
   const openaiKey = await storage.get({
     namespace: "provider",
     keyId: "openai"
@@ -91,6 +124,8 @@ export async function generateActionPlanForRequest(
     namespace: "provider",
     keyId: "anthropic"
   });
+
+  const chosen = choosePlannerProvider(prefs, openaiKey, anthropicKey);
 
   let plan: ContractActionPlan;
   let usage:
@@ -102,9 +137,8 @@ export async function generateActionPlanForRequest(
       }
     | undefined;
 
-  if (openaiKey) {
-    const client = createOpenAiChatClient(openaiKey);
-    const model = "gpt-4o-mini";
+  if (chosen.kind === "openai") {
+    const client = createOpenAiChatClient(chosen.key);
     try {
       const result = await buildLlmActionPlan({
         context: ctxResult.context,
@@ -112,14 +146,14 @@ export async function generateActionPlanForRequest(
         siteId,
         nowIso: ts,
         client,
-        model
+        model: chosen.model
       });
       plan = result.plan;
       usage = {
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
         provider: "openai",
-        model
+        model: chosen.model
       };
     } catch (error) {
       return {
@@ -129,9 +163,8 @@ export async function generateActionPlanForRequest(
           error instanceof Error ? error.message : "Planner model call failed."
       };
     }
-  } else if (anthropicKey) {
-    const client = createAnthropicChatClient(anthropicKey);
-    const model = "claude-3-5-haiku-20241022";
+  } else if (chosen.kind === "anthropic") {
+    const client = createAnthropicChatClient(chosen.key);
     try {
       const result = await buildLlmActionPlan({
         context: ctxResult.context,
@@ -139,14 +172,14 @@ export async function generateActionPlanForRequest(
         siteId,
         nowIso: ts,
         client,
-        model
+        model: chosen.model
       });
       plan = result.plan;
       usage = {
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
         provider: "anthropic",
-        model
+        model: chosen.model
       };
     } catch (error) {
       return {

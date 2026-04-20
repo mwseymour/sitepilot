@@ -1,4 +1,10 @@
-import type { AuditEntry, RequestId, SiteId } from "@sitepilot/domain";
+import type {
+  ActionId,
+  AuditEntry,
+  AuditEventType,
+  RequestId,
+  SiteId
+} from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
 
@@ -9,6 +15,12 @@ export type ListAuditEntriesResult =
 export async function listAuditEntriesForSite(input: {
   siteId: SiteId;
   requestId?: RequestId;
+  actionId?: ActionId;
+  eventTypes?: AuditEventType[];
+  since?: string;
+  until?: string;
+  executionOutcome?: "any" | "failed" | "succeeded";
+  rollbackRelatedOnly?: boolean;
   limit?: number;
 }): Promise<ListAuditEntriesResult> {
   const db = getDatabase();
@@ -28,13 +40,25 @@ export async function listAuditEntriesForSite(input: {
         message: "Request not found for this site."
       };
     }
-    const entries = await db.repositories.auditEntries.listByRequestId(
-      input.requestId
-    );
-    const slice = entries.length > limit ? entries.slice(-limit) : entries;
-    return { ok: true, entries: slice };
   }
 
-  const entries = await db.repositories.auditEntries.listBySiteId(input.siteId);
-  return { ok: true, entries: entries.slice(0, limit) };
+  const entries = await db.repositories.auditEntries.queryForSite({
+    siteId: input.siteId,
+    ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
+    ...(input.actionId !== undefined ? { actionId: input.actionId } : {}),
+    ...(input.eventTypes !== undefined && input.eventTypes.length > 0
+      ? { eventTypes: input.eventTypes }
+      : {}),
+    ...(input.since !== undefined ? { since: input.since } : {}),
+    ...(input.until !== undefined ? { until: input.until } : {}),
+    ...(input.executionOutcome !== undefined && input.executionOutcome !== "any"
+      ? { executionOutcome: input.executionOutcome }
+      : {}),
+    ...(input.rollbackRelatedOnly === true
+      ? { rollbackRelatedOnly: true }
+      : {}),
+    limit
+  });
+
+  return { ok: true, entries };
 }
