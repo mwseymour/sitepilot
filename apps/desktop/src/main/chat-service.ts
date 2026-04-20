@@ -15,7 +15,10 @@ import type {
   SiteId,
   UserProfileId
 } from "@sitepilot/domain";
-import { analyzeClarification } from "@sitepilot/services";
+import {
+  analyzeClarification,
+  canResolveActionViaPostLookup
+} from "@sitepilot/services";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
 
 import { getDatabase } from "./app-database.js";
@@ -108,7 +111,8 @@ function countRunnableActions(plan: ContractActionPlan | null): number {
   }
   return plan.proposedActions.filter(
     (action: ContractActionPlan["proposedActions"][number]) =>
-      actionToMcpToolCall(action.type, action.input, true) !== null
+      actionToMcpToolCall(action.type, action.input, true) !== null ||
+      canResolveActionViaPostLookup(action.type, action.input)
   ).length;
 }
 

@@ -58,6 +58,49 @@ function actionUnavailableReason(
     .replace(/[\s/_-]+/g, "_")
     .toLowerCase();
 
+  const canResolveViaLookup =
+    (normalized === "update_post_fields" ||
+      normalized === "update_post_content" ||
+      normalized === "edit_post_fields" ||
+      normalized === "sitepilot_update_post_fields" ||
+      normalized === "set_post_seo_meta" ||
+      normalized === "sitepilot_set_post_seo_meta") &&
+    input["post_id"] === undefined &&
+    input["postId"] === undefined &&
+    input["id"] === undefined &&
+    (typeof input["lookup_status"] === "string" ||
+      typeof input["lookupStatus"] === "string" ||
+      typeof input["target_status"] === "string" ||
+      typeof input["targetStatus"] === "string" ||
+      typeof input["post_status"] === "string" ||
+      typeof input["postStatus"] === "string" ||
+      typeof input["status"] === "string" ||
+      typeof input["lookup_slug"] === "string" ||
+      typeof input["lookupSlug"] === "string" ||
+      typeof input["target_slug"] === "string" ||
+      typeof input["targetSlug"] === "string" ||
+      typeof input["slug"] === "string" ||
+      typeof input["post_name"] === "string" ||
+      typeof input["postSlug"] === "string" ||
+      typeof input["lookup_title"] === "string" ||
+      typeof input["lookupTitle"] === "string" ||
+      typeof input["target_title"] === "string" ||
+      typeof input["targetTitle"] === "string" ||
+      typeof input["existing_title"] === "string" ||
+      typeof input["existingTitle"] === "string" ||
+      typeof input["lookup_search"] === "string" ||
+      typeof input["lookupSearch"] === "string" ||
+      typeof input["target_search"] === "string" ||
+      typeof input["targetSearch"] === "string" ||
+      typeof input["search"] === "string" ||
+      typeof input["query"] === "string");
+
+  if (
+    canResolveViaLookup
+  ) {
+    return "target will be resolved via lookup";
+  }
+
   if (
     (normalized === "update_post_fields" ||
       normalized === "update_post_content" ||
@@ -402,7 +445,12 @@ export function ChatPage(): ReactElement | null {
       setLastExecHint("Run actions individually below for this plan.");
       return;
     }
-    await onExecuteAction(executableActions[0].id, dryRun);
+    const firstExecutableAction = executableActions[0];
+    if (!firstExecutableAction) {
+      setLastExecHint("No executable actions are available.");
+      return;
+    }
+    await onExecuteAction(firstExecutableAction.id, dryRun);
   }
 
   if (loading) {

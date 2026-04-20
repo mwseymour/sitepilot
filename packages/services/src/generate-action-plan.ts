@@ -126,7 +126,9 @@ export async function buildLlmActionPlan(input: {
   "validationWarnings": string[]
 }
 Use the operator request and site context. Keep actions conservative.
-Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input. Do not propose update actions without a concrete target id.`;
+Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input.
+If an exact post_id is not known but the target can be uniquely discovered at execution time, include lookup fields such as lookup_status, lookup_slug, lookup_title, lookup_search, and lookup_post_type in the update action input.
+Do not propose update actions that lack both a concrete post_id and resolvable lookup fields.`;
 
   const user = JSON.stringify(
     {

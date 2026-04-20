@@ -46,6 +46,7 @@ final class Server_Registrar {
 				'sitepilot/ping',
 				'sitepilot/site-summary',
 				'sitepilot/site-discovery',
+				'sitepilot/find-posts',
 				'sitepilot/create-draft-post',
 				'sitepilot/update-post-fields',
 				'sitepilot/set-post-seo-meta',

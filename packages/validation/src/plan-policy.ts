@@ -17,18 +17,106 @@ function hasCap(caps: string[], needle: string): boolean {
   return caps.some((c) => c.toLowerCase().includes(n));
 }
 
-function hasNumericPostId(input: Record<string, unknown>): boolean {
+function findNumericPostId(input: Record<string, unknown>): number | undefined {
   const candidates = [input["post_id"], input["postId"], input["id"]];
-  return candidates.some((value) => {
-    if (typeof value === "number") {
-      return Number.isFinite(value) && value > 0;
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
     }
     if (typeof value === "string" && value.trim().length > 0) {
       const parsed = Number.parseInt(value, 10);
-      return !Number.isNaN(parsed) && parsed > 0;
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
     }
+  }
+  return undefined;
+}
+
+function pickString(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const k of keys) {
+    const v = input[k];
+    if (typeof v === "string" && v.trim().length > 0) {
+      return v.trim();
+    }
+  }
+  return undefined;
+}
+
+function canResolveActionViaPostLookup(
+  actionType: string,
+  input: Record<string, unknown>
+): boolean {
+  const t = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+
+  const supportsLookup =
+    t === "update_post_fields" ||
+    t === "update_post_content" ||
+    t === "edit_post_fields" ||
+    t === "sitepilot_update_post_fields" ||
+    t === "set_post_seo_meta" ||
+    t === "sitepilot_set_post_seo_meta";
+
+  if (!supportsLookup || findNumericPostId(input) !== undefined) {
     return false;
-  });
+  }
+
+  return (
+    pickString(
+      input,
+      "lookup_post_type",
+      "lookupPostType",
+      "target_post_type",
+      "targetPostType",
+      "post_type",
+      "postType"
+    ) !== undefined ||
+    pickString(
+      input,
+      "lookup_status",
+      "lookupStatus",
+      "target_status",
+      "targetStatus",
+      "post_status",
+      "postStatus",
+      "status"
+    ) !== undefined ||
+    pickString(
+      input,
+      "lookup_slug",
+      "lookupSlug",
+      "target_slug",
+      "targetSlug",
+      "post_name",
+      "postSlug",
+      "slug"
+    ) !== undefined ||
+    pickString(
+      input,
+      "lookup_title",
+      "lookupTitle",
+      "target_title",
+      "targetTitle",
+      "existing_title",
+      "existingTitle"
+    ) !== undefined ||
+    pickString(
+      input,
+      "lookup_search",
+      "lookupSearch",
+      "target_search",
+      "targetSearch",
+      "search",
+      "query"
+    ) !== undefined
+  );
 }
 
 /**
@@ -61,7 +149,8 @@ export function validateActionPlan(
         t.includes("update_post_content") ||
         t.includes("edit_post_fields") ||
         t.includes("set_post_seo_meta")) &&
-      !hasNumericPostId(action.input)
+      findNumericPostId(action.input) === undefined &&
+      !canResolveActionViaPostLookup(action.type, action.input)
     ) {
       clarification.push(
         `Action "${action.type}" is missing the target post id. Ask which page or post should be updated before execution.`

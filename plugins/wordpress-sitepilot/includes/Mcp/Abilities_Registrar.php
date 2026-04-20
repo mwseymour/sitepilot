@@ -163,5 +163,56 @@ final class Abilities_Registrar {
 				),
 			)
 		);
+
+		wp_register_ability(
+			'sitepilot/find-posts',
+			array(
+				'label'               => __( 'Find posts', 'sitepilot' ),
+				'description'         => __( 'Finds posts by status, slug, title, search text, and post type.', 'sitepilot' ),
+				'category'            => 'sitepilot',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'post_type' => array( 'type' => 'string', 'default' => 'any' ),
+						'status'    => array( 'type' => 'string', 'default' => 'any' ),
+						'slug'      => array( 'type' => 'string' ),
+						'title'     => array( 'type' => 'string' ),
+						'search'    => array( 'type' => 'string' ),
+						'limit'     => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+							'maximum' => 20,
+							'default' => 10,
+						),
+					),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'ok'            => array( 'type' => 'boolean' ),
+						'total_matches' => array( 'type' => 'integer' ),
+						'truncated'     => array( 'type' => 'boolean' ),
+						'matches'       => array( 'type' => 'array' ),
+						'error'         => array( 'type' => 'string' ),
+					),
+					'required'   => array( 'ok', 'total_matches', 'truncated', 'matches' ),
+				),
+				'execute_callback'    => static function ( array $input ) {
+					return Post_Query::find_posts( $input );
+				},
+				'permission_callback' => static function ( $input = array() ) {
+					unset( $input );
+					return current_user_can( 'read' );
+				},
+				'meta'                => array(
+					'annotations' => array(
+						'readonly'    => true,
+						'destructive' => false,
+						'idempotent'  => true,
+					),
+				),
+			)
+		);
 	}
 }

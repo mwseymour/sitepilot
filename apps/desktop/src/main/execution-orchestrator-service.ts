@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import {
+  McpHttpClient,
+  normalizeMcpToolResult
+} from "@sitepilot/mcp-client";
 import type {
   ActionId,
   ActionPlanId,
@@ -12,7 +15,12 @@ import type {
   SiteId,
   ToolInvocationId
 } from "@sitepilot/domain";
-import { actionToMcpToolCall } from "@sitepilot/services";
+import {
+  actionToMcpToolCall,
+  buildPostLookupArguments,
+  canResolveActionViaPostLookup,
+  resolvePostIdFromLookupResult
+} from "@sitepilot/services";
 
 import { getDatabase } from "./app-database.js";
 import { DEFAULT_OPERATOR } from "./chat-service.js";
@@ -42,6 +50,65 @@ export type ExecutePlanActionResult =
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+async function resolveActionPostId(input: {
+  actionType: string;
+  actionInput: Record<string, unknown>;
+  mcpClient: McpHttpClient;
+}): Promise<
+  | { ok: true; actionInput: Record<string, unknown> }
+  | { ok: false; code: string; message: string }
+> {
+  if (!canResolveActionViaPostLookup(input.actionType, input.actionInput)) {
+    return { ok: true, actionInput: input.actionInput };
+  }
+
+  const lookupArgs = buildPostLookupArguments(input.actionInput);
+  if (!lookupArgs) {
+    return { ok: true, actionInput: input.actionInput };
+  }
+
+  let raw: unknown;
+  try {
+    raw = await input.mcpClient.callTool("sitepilot/find-posts", lookupArgs);
+  } catch (error) {
+    return {
+      ok: false,
+      code: "post_lookup_failed",
+      message:
+        error instanceof Error ? error.message : "Post lookup MCP call failed."
+    };
+  }
+
+  const lookupResult = normalizeMcpToolResult(raw);
+  if (lookupResult.ok === false) {
+    return {
+      ok: false,
+      code: "post_lookup_failed",
+      message:
+        typeof lookupResult.error === "string"
+          ? lookupResult.error
+          : "Post lookup MCP call failed."
+    };
+  }
+
+  const resolved = resolvePostIdFromLookupResult(lookupResult);
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      code: resolved.code,
+      message: resolved.message
+    };
+  }
+
+  return {
+    ok: true,
+    actionInput: {
+      ...input.actionInput,
+      post_id: resolved.postId
+    }
+  };
 }
 
 async function appendExecutionMessage(input: {
@@ -141,7 +208,35 @@ export async function executePlanAction(
     };
   }
 
-  const spec = actionToMcpToolCall(action.type, action.input, input.dryRun);
+  let spec = actionToMcpToolCall(action.type, action.input, input.dryRun);
+
+  const needsLookup = !spec && canResolveActionViaPostLookup(action.type, action.input);
+  let resolvedInput = action.input;
+  let mcpClient: McpHttpClient | undefined;
+
+  if (needsLookup) {
+    const mcp = await createMcpClientForSite(input.siteId);
+    if (!mcp.ok) {
+      return mcp;
+    }
+    mcpClient = mcp.client;
+    const resolution = await resolveActionPostId({
+      actionType: action.type,
+      actionInput: action.input,
+      mcpClient
+    });
+    if (!resolution.ok) {
+      await appendExecutionMessage({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        author: { kind: "system" },
+        text: `Could not resolve a unique target post for "${action.type}": ${resolution.message}`
+      });
+      return resolution;
+    }
+    resolvedInput = resolution.actionInput;
+    spec = actionToMcpToolCall(action.type, resolvedInput, input.dryRun);
+  }
 
   if (!spec) {
     await appendExecutionMessage({
@@ -161,15 +256,18 @@ export async function executePlanAction(
     };
   }
 
-  const mcp = await createMcpClientForSite(input.siteId);
-  if (!mcp.ok) {
-    return mcp;
+  if (!mcpClient) {
+    const mcp = await createMcpClientForSite(input.siteId);
+    if (!mcp.ok) {
+      return mcp;
+    }
+    mcpClient = mcp.client;
   }
 
   if (input.dryRun) {
     let raw: unknown;
     try {
-      raw = await mcp.client.callTool(spec.toolName, spec.arguments);
+      raw = await mcpClient.callTool(spec.toolName, spec.arguments);
     } catch (error) {
       await appendExecutionMessage({
         siteId: input.siteId,
@@ -283,7 +381,7 @@ export async function executePlanAction(
 
   let raw: unknown;
   try {
-    raw = await mcp.client.callTool(spec.toolName, spec.arguments);
+    raw = await mcpClient.callTool(spec.toolName, spec.arguments);
   } catch (error) {
     const failTs = nowIso();
     const invId = randomUUID() as ToolInvocationId;

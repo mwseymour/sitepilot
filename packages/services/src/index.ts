@@ -10,6 +10,13 @@ export {
 } from "./generate-action-plan.js";
 export { actionToMcpToolCall } from "./mcp-action-map.js";
 export type { McpToolCall } from "./mcp-action-map.js";
+export {
+  actionSupportsPostLookup,
+  buildPostLookupArguments,
+  canResolveActionViaPostLookup,
+  findNumericPostId,
+  resolvePostIdFromLookupResult
+} from "./post-target-resolution.js";
 export type {
   SecretKey,
   SecretNamespace,
