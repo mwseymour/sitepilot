@@ -5,7 +5,8 @@ import type {
   ExecutionRun,
   Request,
   RequestId,
-  SiteId
+  SiteId,
+  ToolInvocation
 } from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
@@ -23,6 +24,14 @@ export type RequestBundleLastExecution = {
   id: ExecutionRun["id"];
   status: ExecutionRun["status"];
   idempotencyKey: string;
+  toolInvocation?: {
+    id: ToolInvocation["id"];
+    toolName: ToolInvocation["toolName"];
+    status: ToolInvocation["status"];
+    input: ToolInvocation["input"];
+    output?: ToolInvocation["output"];
+    errorCode?: ToolInvocation["errorCode"];
+  } | null;
   completedAt?: ExecutionRun["completedAt"];
 };
 
@@ -91,10 +100,28 @@ export async function getRequestBundleForThread(input: {
       request.latestExecutionRunId
     );
     if (run) {
+      const invocations =
+        await db.repositories.toolInvocations.listByExecutionRunId(run.id);
+      const invocation = invocations.at(-1);
       lastExecution = {
         id: run.id,
         status: run.status,
         idempotencyKey: run.idempotencyKey,
+        toolInvocation:
+          invocation !== undefined
+            ? {
+                id: invocation.id,
+                toolName: invocation.toolName,
+                status: invocation.status,
+                input: invocation.input,
+                ...(invocation.output !== undefined
+                  ? { output: invocation.output }
+                  : {}),
+                ...(invocation.errorCode !== undefined
+                  ? { errorCode: invocation.errorCode }
+                  : {})
+              }
+            : null,
         ...(run.completedAt !== undefined
           ? { completedAt: run.completedAt }
           : {})

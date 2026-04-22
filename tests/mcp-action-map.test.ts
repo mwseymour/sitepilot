@@ -79,6 +79,39 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("passes blocks and legacy content through when both are present", () => {
+    const blocks = [
+      {
+        blockName: "core/paragraph",
+        attrs: {},
+        innerBlocks: [],
+        innerHTML: "<p>Structured body</p>",
+        innerContent: ["<p>Structured body</p>"]
+      }
+    ];
+    const call = actionToMcpToolCall(
+      "create_draft_post",
+      {
+        title: "Hello",
+        content: "<!-- wp:paragraph --><p>Legacy body</p><!-- /wp:paragraph -->",
+        blocks
+      },
+      true
+    );
+
+    expect(call).toEqual({
+      toolName: "sitepilot-create-draft-post",
+      arguments: {
+        post_type: "post",
+        title: "Hello",
+        content:
+          "<!-- wp:paragraph --><p>Legacy body</p><!-- /wp:paragraph -->",
+        blocks,
+        dry_run: true
+      }
+    });
+  });
+
   it("maps update_post_fields when post id present", () => {
     const call = actionToMcpToolCall(
       "update_post_fields",
@@ -134,6 +167,105 @@ describe("actionToMcpToolCall", () => {
             innerContent: ["<p>Fresh body</p>"]
           }
         ]
+      }
+    });
+  });
+
+  it("passes nested layout blocks through unchanged to update_post_fields", () => {
+    const blocks = [
+      {
+        blockName: "core/columns",
+        attrs: {},
+        innerBlocks: [
+          {
+            blockName: "core/column",
+            attrs: { width: "50%" },
+            innerBlocks: [
+              {
+                blockName: "core/paragraph",
+                attrs: {},
+                innerBlocks: [],
+                innerHTML: "<p>Text left</p>",
+                innerContent: ["<p>Text left</p>"]
+              }
+            ],
+            innerHTML: "",
+            innerContent: [null]
+          },
+          {
+            blockName: "core/column",
+            attrs: { width: "50%" },
+            innerBlocks: [
+              {
+                blockName: "core/image",
+                attrs: {
+                  id: 0,
+                  url: "https://upload.wikimedia.org/example.jpg",
+                  alt: "Example image"
+                },
+                innerBlocks: [],
+                innerHTML:
+                  '<figure class="wp-block-image"><img src="https://upload.wikimedia.org/example.jpg" alt="Example image" /></figure>',
+                innerContent: [
+                  '<figure class="wp-block-image"><img src="https://upload.wikimedia.org/example.jpg" alt="Example image" /></figure>'
+                ]
+              }
+            ],
+            innerHTML: "",
+            innerContent: [null]
+          }
+        ],
+        innerHTML: "",
+        innerContent: [null]
+      },
+      {
+        blockName: "core/spacer",
+        attrs: { height: "40px" },
+        innerBlocks: [],
+        innerHTML:
+          '<div style="height:40px" aria-hidden="true" class="wp-block-spacer"></div>',
+        innerContent: [
+          '<div style="height:40px" aria-hidden="true" class="wp-block-spacer"></div>'
+        ]
+      }
+    ];
+
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      { post_id: 12, blocks },
+      false
+    );
+
+    expect(call?.arguments.blocks).toBe(blocks);
+  });
+
+  it("maps nested planner input blocks for create_draft_post", () => {
+    const blocks = [
+      {
+        blockName: "core/paragraph",
+        attrs: {},
+        innerBlocks: [],
+        innerHTML: "<p>Nested body</p>",
+        innerContent: ["<p>Nested body</p>"]
+      }
+    ];
+
+    const call = actionToMcpToolCall(
+      "create_draft_post",
+      {
+        post_title: "Nested",
+        input: { blocks }
+      },
+      false
+    );
+
+    expect(call).toEqual({
+      toolName: "sitepilot-create-draft-post",
+      arguments: {
+        post_type: "post",
+        title: "Nested",
+        blocks,
+        dry_run: false
       }
     });
   });

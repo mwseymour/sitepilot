@@ -2,6 +2,8 @@
 
 Thin companion plugin for the SitePilot desktop app: protocol metadata REST routes, `wordpress/mcp-adapter` integration, and read-only MCP tools.
 
+For block editor writes, the plugin accepts structured parsed block arrays in `blocks`, validates and sanitizes them recursively, canonicalizes common core block shapes, and serializes them with WordPress core `serialize_blocks()`. See [Reliable Gutenberg Block Generation](../../docs/reliable-gutenberg-blocks.md) for the contract, debugging notes, and failure modes.
+
 ## Requirements
 
 - WordPress **6.9+** (Abilities API in core)

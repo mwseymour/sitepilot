@@ -332,6 +332,14 @@ export function ChatPage(): ReactElement | null {
     threads
   ]);
 
+  const savePendingThreadRename = useCallback(() => {
+    if (editingThreadId === null || renamingThreadId !== null) {
+      return;
+    }
+
+    void submitThreadRename();
+  }, [editingThreadId, renamingThreadId, submitThreadRename]);
+
   async function onCreateThread(): Promise<void> {
     setBusy(true);
     setErr(null);
@@ -665,6 +673,15 @@ export function ChatPage(): ReactElement | null {
     selectedThreadId !== null &&
     bundle !== null &&
     (bundle.request.status === "new" || bundle.request.status === "drafted");
+  const activityLabel =
+    execProgressLabel ??
+    (deletingThreadId !== null
+      ? "Deleting thread"
+      : renamingThreadId !== null
+        ? "Saving thread"
+        : busy
+          ? "Working"
+          : null);
 
   const chatEnabled = data.site.activationStatus === "active";
 
@@ -686,6 +703,12 @@ export function ChatPage(): ReactElement | null {
 
   return (
     <div className="chat-layout">
+      {activityLabel ? (
+        <div className="chat-activity-indicator" role="status">
+          <span className="activity-spinner" aria-hidden="true" />
+          <span>{activityLabel}</span>
+        </div>
+      ) : null}
       <aside className="chat-threads">
         <div className="chat-threads-header">
           <h2>Threads</h2>
@@ -1094,6 +1117,7 @@ export function ChatPage(): ReactElement | null {
                 rows={3}
                 value={requestPrompt}
                 placeholder={composerState.placeholder}
+                onFocus={savePendingThreadRename}
                 onChange={(e) => {
                   setRequestPrompt(e.target.value);
                 }}
@@ -1129,6 +1153,26 @@ export function ChatPage(): ReactElement | null {
             ) : null}
             <details className="chat-debug-panel">
               <summary>Developer tools</summary>
+              {bundle?.plan ? (
+                <div className="chat-planner-panel">
+                  <h3>Planned action input</h3>
+                  <pre className="diag-json">
+                    {JSON.stringify(bundle.plan.proposedActions, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
+              {bundle?.lastExecution?.toolInvocation ? (
+                <div className="chat-planner-panel">
+                  <h3>Last MCP call</h3>
+                  <pre className="diag-json">
+                    {JSON.stringify(
+                      bundle.lastExecution.toolInvocation,
+                      null,
+                      2
+                    )}
+                  </pre>
+                </div>
+              ) : null}
               <div className="chat-planner-panel">
                 <h3>Planner context</h3>
                 <button

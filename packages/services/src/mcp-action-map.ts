@@ -43,6 +43,58 @@ function pickArray(
   return undefined;
 }
 
+function pickObject(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): Record<string, unknown> | undefined {
+  for (const k of keys) {
+    const v = input[k];
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      return v as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+function pickStringFrom(
+  inputs: Record<string, unknown>[],
+  ...keys: string[]
+): string | undefined {
+  for (const input of inputs) {
+    const value = pickString(input, ...keys);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function pickArrayFrom(
+  inputs: Record<string, unknown>[],
+  ...keys: string[]
+): unknown[] | undefined {
+  for (const input of inputs) {
+    const value = pickArray(input, ...keys);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function pickNumberFrom(
+  inputs: Record<string, unknown>[],
+  ...keys: string[]
+): number | undefined {
+  for (const input of inputs) {
+    const value = pickNumber(input, ...keys);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 export type McpToolCall = {
   toolName: string;
   arguments: Record<string, unknown>;
@@ -77,14 +129,28 @@ export function actionToMcpToolCall(
     t === "create_post_draft" ||
     t === "sitepilot_create_draft_post"
   ) {
-    const title = pickString(input, "title", "postTitle", "post_title");
+    const nestedInput = pickObject(input, "input");
+    const inputScopes =
+      nestedInput !== undefined ? [input, nestedInput] : [input];
+    const title = pickStringFrom(
+      inputScopes,
+      "title",
+      "postTitle",
+      "post_title"
+    );
     if (!title) {
       return null;
     }
-    const postType = pickString(input, "postType", "post_type") ?? "post";
-    const content = pickString(input, "content", "postContent", "post_content");
-    const blocks = pickArray(
-      input,
+    const postType =
+      pickStringFrom(inputScopes, "postType", "post_type") ?? "post";
+    const content = pickStringFrom(
+      inputScopes,
+      "content",
+      "postContent",
+      "post_content"
+    );
+    const blocks = pickArrayFrom(
+      inputScopes,
       "blocks",
       "contentBlocks",
       "content_blocks"
@@ -108,7 +174,10 @@ export function actionToMcpToolCall(
     t === "edit_post_fields" ||
     t === "sitepilot_update_post_fields"
   ) {
-    const postId = pickNumber(input, "postId", "post_id", "id");
+    const nestedInput = pickObject(input, "input");
+    const inputScopes =
+      nestedInput !== undefined ? [input, nestedInput] : [input];
+    const postId = pickNumberFrom(inputScopes, "postId", "post_id", "id");
     if (postId === undefined) {
       return null;
     }
@@ -116,15 +185,15 @@ export function actionToMcpToolCall(
       post_id: postId,
       dry_run: dryRun
     };
-    const title = pickString(input, "title", "postTitle");
-    const content = pickString(input, "content", "postContent");
-    const blocks = pickArray(
-      input,
+    const title = pickStringFrom(inputScopes, "title", "postTitle");
+    const content = pickStringFrom(inputScopes, "content", "postContent");
+    const blocks = pickArrayFrom(
+      inputScopes,
       "blocks",
       "contentBlocks",
       "content_blocks"
     );
-    const excerpt = pickString(input, "excerpt", "postExcerpt");
+    const excerpt = pickStringFrom(inputScopes, "excerpt", "postExcerpt");
     if (title !== undefined) {
       args.title = title;
     }

@@ -99,6 +99,24 @@ export const actionSchema = z.object({
   rollbackSupported: z.boolean()
 });
 
+export type ParsedBlock = {
+  blockName: string;
+  attrs: Record<string, unknown>;
+  innerBlocks: ParsedBlock[];
+  innerHTML: string;
+  innerContent: Array<string | null>;
+};
+
+export const parsedBlockSchema: z.ZodType<ParsedBlock> = z.lazy(() =>
+  z.object({
+    blockName: z.string().min(1),
+    attrs: z.record(jsonValueSchema),
+    innerBlocks: z.array(parsedBlockSchema),
+    innerHTML: z.string(),
+    innerContent: z.array(z.string().nullable())
+  })
+);
+
 export const actionPlanSchema = z.object({
   id: idSchema,
   requestId: idSchema,

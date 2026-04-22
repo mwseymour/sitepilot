@@ -314,6 +314,20 @@ export async function deleteChatThreadForSite(
             .map((row) => row.id)
         : [];
 
+    const actionIds =
+      requestIds.length > 0
+        ? db.connection
+            .prepare<{ threadId: string }, { id: string }>(
+              `SELECT actions.id
+               FROM actions
+               INNER JOIN requests
+                 ON requests.id = actions.request_id
+               WHERE requests.thread_id = @threadId`
+            )
+            .all({ threadId })
+            .map((row) => row.id)
+        : [];
+
     const approvalIds =
       requestIds.length > 0
         ? db.connection
@@ -433,14 +447,24 @@ export async function deleteChatThreadForSite(
         .run(...executionRunIds);
     }
 
-    if (planIds.length > 0) {
-      const placeholders = planIds.map(() => "?").join(", ");
+    if (actionIds.length > 0) {
+      const placeholders = actionIds.map(() => "?").join(", ");
+      db.connection
+        .prepare(
+          `DELETE FROM tool_invocations
+           WHERE action_id IN (${placeholders})`
+        )
+        .run(...actionIds);
       db.connection
         .prepare(
           `DELETE FROM actions
-           WHERE plan_id IN (${placeholders})`
+           WHERE id IN (${placeholders})`
         )
-        .run(...planIds);
+        .run(...actionIds);
+    }
+
+    if (planIds.length > 0) {
+      const placeholders = planIds.map(() => "?").join(", ");
       db.connection
         .prepare(
           `DELETE FROM action_plans

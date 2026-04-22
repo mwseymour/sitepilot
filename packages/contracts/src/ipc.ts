@@ -656,6 +656,17 @@ export const requestBundleLastExecutionSchema = z.object({
   id: idSchema,
   status: z.string().min(1),
   idempotencyKey: z.string().min(1),
+  toolInvocation: z
+    .object({
+      id: idSchema,
+      toolName: z.string().min(1),
+      status: z.string().min(1),
+      input: z.record(jsonValueSchema),
+      output: z.record(jsonValueSchema).optional(),
+      errorCode: z.string().optional()
+    })
+    .nullable()
+    .optional(),
   completedAt: isoTimestampSchema.optional()
 });
 

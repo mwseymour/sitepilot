@@ -301,6 +301,210 @@ describe("buildLlmActionPlan", () => {
     );
   });
 
+  it("preserves structured blocks without normalizing fallback content", async () => {
+    const blocks = [
+      {
+        blockName: "core/paragraph",
+        attrs: {},
+        innerBlocks: [],
+        innerHTML: "<p>Structured body.</p>",
+        innerContent: ["<p>Structured body.</p>"]
+      }
+    ];
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a post from structured blocks",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Structured",
+              content: "Fallback plain content",
+              blocks,
+              post_type: "post"
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a post from structured blocks."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]!.input.blocks).toEqual(blocks);
+    expect(result.plan.proposedActions[0]!.input.content).toBe(
+      "Fallback plain content"
+    );
+    expect(result.plan.validationWarnings).not.toContain(
+      "Planner returned post content without Gutenberg block serialization; normalized it into paragraph blocks."
+    );
+  });
+
+  it("normalizes nested planner block arguments into parsed blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a post with columns",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              post_title: "Columns",
+              input: {
+                blocks: [
+                  {
+                    blockName: "wp:columns",
+                    attrs: {},
+                    innerBlocks: [
+                      {
+                        blockName: "wp:column",
+                        attrs: {},
+                        innerBlocks: [
+                          {
+                            blockName: "wp:paragraph",
+                            attrs: {},
+                            innerHTML: "Left copy",
+                            innerContent: ["Left copy"]
+                          }
+                        ],
+                        innerContent: []
+                      },
+                      {
+                        blockName: "wp:column",
+                        attrs: {},
+                        innerBlocks: [
+                          {
+                            blockName: "wp:image",
+                            attrs: {
+                              id: 24,
+                              url: "https://test.localhost:8890/wp-content/uploads/2026/04/test.jpeg",
+                              alt: "",
+                              sizeSlug: "full",
+                              linkDestination: "none"
+                            },
+                            innerHTML:
+                              '<figure class="wp-block-image"><img src="https://test.localhost:8890/wp-content/uploads/2026/04/test.jpeg" alt="" /></figure>',
+                            innerContent: []
+                          }
+                        ],
+                        innerContent: ["unexpected wrapper copy"]
+                      }
+                    ],
+                    innerContent: ["unexpected columns copy"]
+                  },
+                  {
+                    blockName: "wp:spacer",
+                    attrs: { height: 20 },
+                    innerBlocks: [],
+                    innerHTML: "",
+                    innerContent: []
+                  }
+                ]
+              }
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a post with columns."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const nestedInput = result.plan.proposedActions[0]!.input.input as {
+      blocks: Array<{
+        blockName: string;
+        attrs: Record<string, unknown>;
+        innerHTML: string;
+        innerContent: unknown[];
+        innerBlocks: Array<{
+          innerContent: unknown[];
+          innerBlocks: Array<{
+            innerHTML: string;
+            innerContent: unknown[];
+            attrs: Record<string, unknown>;
+          }>;
+        }>;
+      }>;
+    };
+    const columns = nestedInput.blocks[0]!;
+    const spacer = nestedInput.blocks[1]!;
+    const paragraph = columns.innerBlocks[0]!.innerBlocks[0]!;
+    const image = columns.innerBlocks[1]!.innerBlocks[0]!;
+
+    expect(columns.blockName).toBe("core/columns");
+    expect(columns.innerContent).toEqual([
+      '<div class="wp-block-columns">',
+      null,
+      "\n\n",
+      null,
+      "</div>"
+    ]);
+    expect(columns.innerBlocks[0]!.innerContent).toEqual([
+      '<div class="wp-block-column">',
+      null,
+      "</div>"
+    ]);
+    expect(columns.innerBlocks[1]!.innerContent).toEqual([
+      '<div class="wp-block-column">',
+      null,
+      "</div>"
+    ]);
+    expect(paragraph.innerHTML).toBe("<p>Left copy</p>");
+    expect(paragraph.innerContent).toEqual(["<p>Left copy</p>"]);
+    expect(image.innerHTML).toBe(
+      '<figure class="wp-block-image size-full"><img src="https://test.localhost:8890/wp-content/uploads/2026/04/test.jpeg" alt="" class="wp-image-24"/></figure>'
+    );
+    expect(image.innerContent).toEqual([image.innerHTML]);
+    expect(spacer.innerContent).toEqual([
+      '<div style="height:20px" aria-hidden="true" class="wp-block-spacer"></div>'
+    ]);
+    expect(spacer.attrs).toEqual({ height: "20px" });
+    expect(result.plan.validationWarnings).toContain(
+      'Normalized blockName at blocks[0] from "wp:columns" to "core/columns".'
+    );
+  });
+
   it("instructs the model not to invent blocks or layouts", async () => {
     let systemPrompt = "";
     const client = makeClient(
@@ -355,6 +559,9 @@ describe("buildLlmActionPlan", () => {
     );
     expect(systemPrompt).toContain(
       "Use input.blocks as an array of WordPress parsed block objects"
+    );
+    expect(systemPrompt).toContain(
+      'never use comment prefixes such as "wp:columns" in parsed blockName'
     );
   });
 });

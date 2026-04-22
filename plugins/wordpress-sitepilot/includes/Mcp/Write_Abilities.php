@@ -56,6 +56,7 @@ final class Write_Abilities {
 						'post_type'             => array( 'type' => 'string' ),
 						'post_status'           => array( 'type' => 'string' ),
 						'preview'               => array( 'type' => 'object' ),
+						'after'                 => array( 'type' => 'object' ),
 						'error'                 => array( 'type' => 'string' ),
 						'reversible'            => array( 'type' => 'boolean' ),
 						'compensation_required' => array( 'type' => 'boolean' ),
@@ -196,75 +197,368 @@ final class Write_Abilities {
 
 	/**
 	 * @param mixed $value Candidate block node.
-	 * @return array<string, mixed>|null
+	 * @param string $path Path used in validation messages.
+	 * @return array<string, mixed>
 	 */
-	private static function sanitize_parsed_block( $value ): ?array {
+	private static function sanitize_parsed_block( $value, string $path ) {
 		if ( ! is_array( $value ) ) {
-			return null;
+			return self::invalid_blocks( $path . ' must be an object' );
 		}
 
-		$block_name = isset( $value['blockName'] ) ? sanitize_text_field( (string) $value['blockName'] ) : '';
+		if ( ! array_key_exists( 'blockName', $value ) || ! is_string( $value['blockName'] ) ) {
+			return self::invalid_blocks( $path . '.blockName must be a string' );
+		}
+
+		if ( ! array_key_exists( 'attrs', $value ) || ! is_array( $value['attrs'] ) ) {
+			return self::invalid_blocks( $path . '.attrs must be an object' );
+		}
+
+		if ( ! array_key_exists( 'innerBlocks', $value ) || ! is_array( $value['innerBlocks'] ) ) {
+			return self::invalid_blocks( $path . '.innerBlocks must be an array' );
+		}
+
+		if ( ! array_key_exists( 'innerHTML', $value ) || ! is_string( $value['innerHTML'] ) ) {
+			return self::invalid_blocks( $path . '.innerHTML must be a string' );
+		}
+
+		if ( ! array_key_exists( 'innerContent', $value ) || ! is_array( $value['innerContent'] ) ) {
+			return self::invalid_blocks( $path . '.innerContent must be an array' );
+		}
+
+		$block_name = self::normalize_block_name( $value['blockName'] );
 		if ( '' === $block_name ) {
-			return null;
+			return self::invalid_blocks( $path . '.blockName must not be empty' );
 		}
 
-		$attrs = array();
-		if ( isset( $value['attrs'] ) && is_array( $value['attrs'] ) ) {
-			$attrs = $value['attrs'];
+		$attrs = self::sanitize_block_attrs( $value['attrs'] );
+		if ( ! is_array( $attrs ) ) {
+			$attrs = array();
+		}
+
+		$url_error = self::validate_media_urls( $block_name, $attrs, $path . '.attrs' );
+		if ( null !== $url_error ) {
+			return self::invalid_blocks( $url_error );
 		}
 
 		$inner_blocks = array();
-		if ( isset( $value['innerBlocks'] ) && is_array( $value['innerBlocks'] ) ) {
-			foreach ( $value['innerBlocks'] as $inner_block ) {
-				$sanitized_inner = self::sanitize_parsed_block( $inner_block );
-				if ( null !== $sanitized_inner ) {
-					$inner_blocks[] = $sanitized_inner;
-				}
+		foreach ( $value['innerBlocks'] as $index => $inner_block ) {
+			$sanitized_inner = self::sanitize_parsed_block( $inner_block, $path . '.innerBlocks[' . $index . ']' );
+			if ( ! $sanitized_inner['ok'] ) {
+				return $sanitized_inner;
+			}
+			$inner_blocks[] = $sanitized_inner['block'];
+		}
+
+		$inner_content = array();
+		foreach ( $value['innerContent'] as $index => $chunk ) {
+			if ( is_string( $chunk ) ) {
+				$inner_content[] = wp_kses_post( self::normalize_text_chunk( $chunk, $block_name ) );
+				continue;
+			}
+			if ( null === $chunk ) {
+				$inner_content[] = null;
+				continue;
+			}
+			return self::invalid_blocks( $path . '.innerContent[' . $index . '] must be a string or null' );
+		}
+
+		$inner_html = wp_kses_post( $value['innerHTML'] );
+		if ( 'core/paragraph' === $block_name || 'core/heading' === $block_name ) {
+			$inner_html    = wp_kses_post( self::normalize_text_chunk( $inner_html, $block_name ) );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/image' === $block_name ) {
+			$image_html = self::image_html( $attrs );
+			if ( '' !== $image_html ) {
+				$inner_html    = $image_html;
+				$inner_content = array( $image_html );
+			} elseif ( '' !== $inner_html && empty( $inner_content ) ) {
+				$inner_content = array( $inner_html );
 			}
 		}
 
-		$inner_html = isset( $value['innerHTML'] ) ? wp_kses_post( (string) $value['innerHTML'] ) : '';
+		if ( 'core/spacer' === $block_name ) {
+			$spacer       = self::spacer_html( $attrs );
+			$attrs        = $spacer['attrs'];
+			$inner_html   = $spacer['html'];
+			$inner_content = array( $inner_html );
+		}
 
-		$inner_content = array();
-		if ( isset( $value['innerContent'] ) && is_array( $value['innerContent'] ) ) {
-			foreach ( $value['innerContent'] as $chunk ) {
-				if ( is_string( $chunk ) ) {
-					$inner_content[] = wp_kses_post( $chunk );
-				} else {
-					$inner_content[] = null;
-				}
-			}
+		$container_inner_content = self::canonical_container_inner_content( $block_name, $attrs, $inner_blocks );
+		if ( null !== $container_inner_content ) {
+			$inner_content = $container_inner_content;
+			$inner_html    = implode(
+				'',
+				array_filter(
+					$inner_content,
+					static fn ( $chunk ) => null !== $chunk
+				)
+			);
 		}
 
 		return array(
-			'blockName'    => $block_name,
-			'attrs'        => $attrs,
-			'innerBlocks'  => $inner_blocks,
-			'innerHTML'    => $inner_html,
-			'innerContent' => $inner_content,
+			'ok'    => true,
+			'block' => array(
+				'blockName'    => $block_name,
+				'attrs'        => $attrs,
+				'innerBlocks'  => $inner_blocks,
+				'innerHTML'    => $inner_html,
+				'innerContent' => $inner_content,
+			),
+		);
+	}
+
+	private static function normalize_block_name( string $raw ): string {
+		$name = trim( $raw );
+		if ( str_starts_with( $name, 'wp:' ) ) {
+			$name = substr( $name, 3 );
+			$name = str_contains( $name, '/' ) ? $name : 'core/' . $name;
+		} elseif ( str_starts_with( $name, 'core:' ) ) {
+			$name = 'core/' . substr( $name, 5 );
+		}
+
+		$core_block_names = array(
+			'paragraph',
+			'heading',
+			'image',
+			'spacer',
+			'columns',
+			'column',
+		);
+		if ( ! str_contains( $name, '/' ) && in_array( $name, $core_block_names, true ) ) {
+			$name = 'core/' . $name;
+		}
+
+		return sanitize_text_field( $name );
+	}
+
+	private static function normalize_text_chunk( string $chunk, string $block_name ): string {
+		if ( preg_match( '/<[a-z][\s\S]*>/i', $chunk ) ) {
+			return $chunk;
+		}
+
+		$text = htmlspecialchars( $chunk, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		if ( 'core/paragraph' === $block_name ) {
+			return '<p>' . $text . '</p>';
+		}
+		if ( 'core/heading' === $block_name ) {
+			return '<h2>' . $text . '</h2>';
+		}
+
+		return $text;
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function image_html( array $attrs ): string {
+		$url = isset( $attrs['url'] ) && is_string( $attrs['url'] ) ? $attrs['url'] : '';
+		if ( '' === $url ) {
+			return '';
+		}
+
+		$alt            = isset( $attrs['alt'] ) && is_string( $attrs['alt'] ) ? $attrs['alt'] : '';
+		$size_slug      = isset( $attrs['sizeSlug'] ) && is_string( $attrs['sizeSlug'] ) ? $attrs['sizeSlug'] : '';
+		$id             = isset( $attrs['id'] ) && is_int( $attrs['id'] ) ? $attrs['id'] : 0;
+		$figure_classes = array( 'wp-block-image' );
+		if ( '' !== $size_slug ) {
+			$figure_classes[] = 'size-' . htmlspecialchars( $size_slug, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		$image_class = $id > 0 ? ' class="wp-image-' . $id . '"' : '';
+
+		return '<figure class="' . implode( ' ', $figure_classes ) . '"><img src="' . htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" alt="' . htmlspecialchars( $alt, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . $image_class . '/></figure>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 * @return array{attrs: array<string, mixed>, html: string}
+	 */
+	private static function spacer_html( array $attrs ): array {
+		$raw_height = isset( $attrs['height'] ) && ( is_string( $attrs['height'] ) || is_int( $attrs['height'] ) || is_float( $attrs['height'] ) )
+			? (string) $attrs['height']
+			: '100px';
+		$height = preg_match( '/^\d+$/', $raw_height ) ? $raw_height . 'px' : $raw_height;
+		if ( '100px' === $height ) {
+			unset( $attrs['height'] );
+		} else {
+			$attrs['height'] = $height;
+		}
+
+		return array(
+			'attrs' => $attrs,
+			'html'  => '<div style="height:' . htmlspecialchars( $height, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" aria-hidden="true" class="wp-block-spacer"></div>',
 		);
 	}
 
 	/**
-	 * @param array<string, mixed> $input Input.
-	 * @return string
+	 * @param array<string, mixed> $attrs Block attrs.
 	 */
-	private static function resolve_post_content_input( array $input ): string {
-		if ( isset( $input['blocks'] ) && is_array( $input['blocks'] ) ) {
-			$blocks = array();
-			foreach ( $input['blocks'] as $block ) {
-				$sanitized = self::sanitize_parsed_block( $block );
-				if ( null !== $sanitized ) {
-					$blocks[] = $sanitized;
+	private static function column_wrapper_open( array $attrs ): string {
+		$width = isset( $attrs['width'] ) && is_string( $attrs['width'] ) ? trim( $attrs['width'] ) : '';
+		$style = '' !== $width ? ' style="flex-basis:' . htmlspecialchars( $width, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
+		return '<div class="wp-block-column"' . $style . '>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 * @param array<int, array<string, mixed>> $inner_blocks Inner blocks.
+	 * @return array<int, string|null>|null
+	 */
+	private static function canonical_container_inner_content( string $block_name, array $attrs, array $inner_blocks ): ?array {
+		if ( 'core/columns' === $block_name ) {
+			$inner_content = array( '<div class="wp-block-columns">' );
+			foreach ( $inner_blocks as $index => $_block ) {
+				if ( $index > 0 ) {
+					$inner_content[] = "\n\n";
 				}
+				$inner_content[] = null;
+			}
+			$inner_content[] = '</div>';
+			return $inner_content;
+		}
+
+		if ( 'core/column' === $block_name ) {
+			return array_merge(
+				array( self::column_wrapper_open( $attrs ) ),
+				array_fill( 0, count( $inner_blocks ), null ),
+				array( '</div>' )
+			);
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param array<string, mixed> $input Input.
+	 * @return array<string, mixed>
+	 */
+	private static function resolve_post_content_input( array $input ): array {
+		if ( array_key_exists( 'blocks', $input ) ) {
+			if ( ! is_array( $input['blocks'] ) ) {
+				return self::invalid_blocks( 'blocks must be an array' );
 			}
 
-			if ( ! empty( $blocks ) ) {
-				return serialize_blocks( $blocks );
+			if ( empty( $input['blocks'] ) ) {
+				return self::invalid_blocks( 'blocks must not be empty' );
+			}
+
+			$blocks = array();
+			foreach ( $input['blocks'] as $index => $block ) {
+				$sanitized = self::sanitize_parsed_block( $block, 'blocks[' . $index . ']' );
+				if ( ! $sanitized['ok'] ) {
+					return $sanitized;
+				}
+				$blocks[] = $sanitized['block'];
+			}
+
+			return array(
+				'ok'      => true,
+				'content' => serialize_blocks( $blocks ),
+			);
+		}
+
+		return array(
+			'ok'      => true,
+			'content' => isset( $input['content'] ) ? wp_kses_post( (string) $input['content'] ) : '',
+		);
+	}
+
+	/**
+	 * @param string $message Validation detail.
+	 * @return array<string, mixed>
+	 */
+	private static function invalid_blocks( string $message ): array {
+		return array(
+			'ok'    => false,
+			'error' => 'invalid_blocks: ' . $message,
+		);
+	}
+
+	/**
+	 * @param mixed $value Block attrs value.
+	 * @return mixed
+	 */
+	private static function sanitize_block_attrs( $value ) {
+		if ( is_array( $value ) ) {
+			$sanitized = array();
+			foreach ( $value as $key => $inner_value ) {
+				$sanitized[ $key ] = self::sanitize_block_attrs( $inner_value );
+			}
+			return $sanitized;
+		}
+
+		if ( is_string( $value ) ) {
+			return sanitize_text_field( $value );
+		}
+
+		if ( is_int( $value ) || is_float( $value ) || is_bool( $value ) || null === $value ) {
+			return $value;
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param string $block_name Block name.
+	 * @param array<string, mixed> $attrs Block attrs.
+	 * @param string $path Path used in validation messages.
+	 * @return string|null
+	 */
+	private static function validate_media_urls( string $block_name, array $attrs, string $path ): ?string {
+		$media_blocks = array(
+			'core/audio',
+			'core/cover',
+			'core/file',
+			'core/gallery',
+			'core/image',
+			'core/media-text',
+			'core/video',
+		);
+
+		if ( ! in_array( $block_name, $media_blocks, true ) ) {
+			return null;
+		}
+
+		return self::validate_media_url_values( $attrs, $path );
+	}
+
+	/**
+	 * @param array<string, mixed> $value Attr values.
+	 * @param string $path Path used in validation messages.
+	 * @return string|null
+	 */
+	private static function validate_media_url_values( array $value, string $path ): ?string {
+		foreach ( $value as $key => $inner_value ) {
+			$inner_path = $path . '.' . (string) $key;
+			if ( is_array( $inner_value ) ) {
+				$error = self::validate_media_url_values( $inner_value, $inner_path );
+				if ( null !== $error ) {
+					return $error;
+				}
+				continue;
+			}
+
+			if ( ! is_string( $inner_value ) ) {
+				continue;
+			}
+
+			$key_lower = strtolower( (string) $key );
+			if ( ! str_contains( $key_lower, 'url' ) && ! str_contains( $key_lower, 'src' ) ) {
+				continue;
+			}
+
+			if ( str_starts_with( $inner_value, '//' ) ) {
+				return $inner_path . ' must be an HTTPS URL';
+			}
+
+			$scheme = wp_parse_url( $inner_value, PHP_URL_SCHEME );
+			if ( is_string( $scheme ) && strtolower( $scheme ) !== 'https' ) {
+				return $inner_path . ' must be an HTTPS URL';
 			}
 		}
 
-		return isset( $input['content'] ) ? wp_kses_post( (string) $input['content'] ) : '';
+		return null;
 	}
 
 	/**
@@ -285,6 +579,17 @@ final class Write_Abilities {
 				'post_type'   => $ptype,
 				'post_status' => 'draft',
 				'error'       => 'title_required',
+			);
+		}
+
+		if ( ! $content['ok'] ) {
+			return array(
+				'ok'          => false,
+				'dry_run'     => $dry_run,
+				'post_id'     => 0,
+				'post_type'   => $ptype,
+				'post_status' => 'draft',
+				'error'       => $content['error'],
 			);
 		}
 
@@ -335,7 +640,7 @@ final class Write_Abilities {
 				'compensation_required' => false,
 				'preview'               => array(
 					'post_title'   => $title,
-					'post_content' => $content,
+					'post_content' => $content['content'],
 					'post_status'  => 'draft',
 				),
 			);
@@ -345,7 +650,7 @@ final class Write_Abilities {
 			array(
 				'post_type'    => $ptype,
 				'post_title'   => $title,
-				'post_content' => $content,
+				'post_content' => $content['content'],
 				'post_status'  => 'draft',
 			),
 			true
@@ -370,6 +675,11 @@ final class Write_Abilities {
 			'post_status'           => 'draft',
 			'reversible'            => false,
 			'compensation_required' => true,
+			'after'                 => array(
+				'post_title'   => get_post_field( 'post_title', (int) $post_id ),
+				'post_content' => get_post_field( 'post_content', (int) $post_id ),
+				'post_status'  => get_post_status( (int) $post_id ),
+			),
 		);
 	}
 
@@ -419,7 +729,16 @@ final class Write_Abilities {
 			$after['post_title'] = sanitize_text_field( (string) $input['title'] );
 		}
 		if ( array_key_exists( 'content', $input ) || array_key_exists( 'blocks', $input ) ) {
-			$after['post_content'] = self::resolve_post_content_input( $input );
+			$content = self::resolve_post_content_input( $input );
+			if ( ! $content['ok'] ) {
+				return array(
+					'ok'      => false,
+					'dry_run' => $dry_run,
+					'post_id' => $post_id,
+					'error'   => $content['error'],
+				);
+			}
+			$after['post_content'] = $content['content'];
 		}
 		if ( array_key_exists( 'excerpt', $input ) ) {
 			$after['post_excerpt'] = sanitize_textarea_field( (string) $input['excerpt'] );

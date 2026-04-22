@@ -52,6 +52,19 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function defaultIdempotencyKey(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  planId: ActionPlanId;
+  actionId: ActionId;
+}): string {
+  return `sitepilot:${input.siteId}:${input.requestId}:${input.planId}:${input.actionId}`;
+}
+
+function retryIdempotencyKey(baseKey: string): string {
+  return `${baseKey}:retry:${randomUUID()}`;
+}
+
 async function resolveActionPostId(input: {
   actionType: string;
   actionInput: Record<string, unknown>;
@@ -296,9 +309,15 @@ export async function executePlanAction(
     };
   }
 
-  const idem =
+  const explicitIdempotencyKey = input.idempotencyKey !== undefined;
+  let idem =
     input.idempotencyKey ??
-    `sitepilot:${input.siteId}:${input.requestId}:${input.planId}:${input.actionId}`;
+    defaultIdempotencyKey({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      planId: input.planId,
+      actionId: input.actionId
+    });
 
   const prior = await db.repositories.executionRuns.getByIdempotencyKey(idem);
   if (prior !== null) {
@@ -312,12 +331,15 @@ export async function executePlanAction(
         message: "This action is already executing."
       };
     }
-    return {
-      ok: false,
-      code: "execution_previous_failed",
-      message:
-        "A previous execution with this idempotency key failed. Pass a new idempotencyKey to retry."
-    };
+    if (explicitIdempotencyKey) {
+      return {
+        ok: false,
+        code: "execution_previous_failed",
+        message:
+          "A previous execution with this idempotency key failed. Pass a new idempotencyKey to retry."
+      };
+    }
+    idem = retryIdempotencyKey(idem);
   }
 
   const ts = nowIso();
@@ -440,6 +462,10 @@ export async function executePlanAction(
 
   if (!toolOk) {
     const failTs = nowIso();
+    const siteMessage =
+      typeof mcpResult.error === "string" && mcpResult.error.trim().length > 0
+        ? mcpResult.error
+        : "The site reported that the action did not succeed.";
     await db.repositories.toolInvocations.save({
       id: invId,
       executionRunId: runId,
@@ -477,12 +503,12 @@ export async function executePlanAction(
       siteId: input.siteId,
       requestId: input.requestId,
       author: { kind: "system" },
-      text: `Execution failed for ${spec.toolName}: the site reported the action did not succeed.`
+      text: `Execution failed for ${spec.toolName}: ${siteMessage}`
     });
     return {
       ok: false,
       code: "tool_reported_failure",
-      message: "The site reported that the action did not succeed."
+      message: siteMessage
     };
   }
 

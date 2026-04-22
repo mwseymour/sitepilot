@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   actionPlanSchema,
   auditEntrySchema,
+  parsedBlockSchema,
   siteConfigSchema,
   signedRequestHeadersSchema
 } from "@sitepilot/contracts";
@@ -137,5 +138,35 @@ describe("contracts schemas", () => {
 
     expect(auditEntry.eventType).toBe("plan_generated");
     expect(headers["x-sitepilot-client-id"]).toBe("desktop-client-1");
+  });
+
+  it("accepts recursive parsed Gutenberg block payloads", () => {
+    const parsed = parsedBlockSchema.parse({
+      blockName: "core/columns",
+      attrs: {},
+      innerBlocks: [
+        {
+          blockName: "core/column",
+          attrs: { width: "50%" },
+          innerBlocks: [
+            {
+              blockName: "core/paragraph",
+              attrs: {},
+              innerBlocks: [],
+              innerHTML: "<p>Left text</p>",
+              innerContent: ["<p>Left text</p>"]
+            }
+          ],
+          innerHTML: "",
+          innerContent: [null]
+        }
+      ],
+      innerHTML: "",
+      innerContent: [null]
+    });
+
+    expect(parsed.innerBlocks[0]?.innerBlocks[0]?.blockName).toBe(
+      "core/paragraph"
+    );
   });
 });

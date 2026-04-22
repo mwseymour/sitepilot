@@ -461,6 +461,9 @@ export function registerIpcHandlers(): void {
               id: bundle.lastExecution.id,
               status: bundle.lastExecution.status,
               idempotencyKey: bundle.lastExecution.idempotencyKey,
+              ...(bundle.lastExecution.toolInvocation !== undefined
+                ? { toolInvocation: bundle.lastExecution.toolInvocation }
+                : {}),
               ...(bundle.lastExecution.completedAt !== undefined
                 ? { completedAt: bundle.lastExecution.completedAt }
                 : {})

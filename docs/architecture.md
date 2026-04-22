@@ -121,6 +121,14 @@ The plugin does not own:
 - multi-site coordination
 - AI provider logic
 
+## Gutenberg Block Content
+
+Complex Gutenberg content must use the structured parsed-block flow documented in [Reliable Gutenberg Block Generation](./reliable-gutenberg-blocks.md).
+
+Do not rely on model-authored serialized block HTML for nested, layout, media, or spacer content. The planner should emit `input.blocks`, desktop should preserve that tree, and the WordPress plugin should validate, sanitize, canonicalize, and serialize it with WordPress core `serialize_blocks()`.
+
+The most important implementation detail is that `serialize_blocks()` serializes the supplied parsed block tree; it does not recreate every static block's save markup from `blockName`. Parent layout blocks need correct `innerContent` wrapper strings and `null` child placeholders before serialization.
+
 ## Runtime Boundaries
 
 ### Renderer
