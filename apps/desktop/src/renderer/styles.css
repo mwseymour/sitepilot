@@ -500,7 +500,8 @@ h2 {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   padding: 0.45rem 0.55rem;
   border-radius: 8px;
   border: 1px solid var(--border-strong);
@@ -513,6 +514,14 @@ h2 {
 .field textarea {
   resize: vertical;
   min-height: 3rem;
+}
+
+.add-site-card {
+  max-width: 46rem;
+}
+
+.add-site-form {
+  margin-top: 1.25rem;
 }
 
 .checkbox-field {

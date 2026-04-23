@@ -283,6 +283,295 @@ function pullquoteHtml(
   )}"><blockquote><p>${escapeHtml(value)}</p>${cite}</blockquote></figure>`;
 }
 
+function rawBlockHtml(attrs: Record<string, unknown>, attrName: string, fallback: string): string {
+  const value = typeof attrs[attrName] === "string" ? attrs[attrName] : fallback;
+  return value;
+}
+
+function moreHtml(attrs: Record<string, unknown>): string {
+  const customText =
+    typeof attrs.customText === "string" ? attrs.customText.trim() : "";
+  const moreTag = customText.length > 0 ? `<!--more ${customText}-->` : "<!--more-->";
+  const noTeaser = attrs.noTeaser === true ? "<!--noteaser-->" : "";
+  return [moreTag, noTeaser].filter((part) => part.length > 0).join("\n");
+}
+
+function fileHtml(attrs: Record<string, unknown>): string {
+  const href = typeof attrs.href === "string" ? attrs.href.trim() : "";
+  if (href.length === 0) {
+    return "";
+  }
+  const fileName =
+    typeof attrs.fileName === "string" && attrs.fileName.length > 0
+      ? attrs.fileName
+      : "";
+  const textLinkHref =
+    typeof attrs.textLinkHref === "string" && attrs.textLinkHref.trim().length > 0
+      ? attrs.textLinkHref.trim()
+      : href;
+  const textLinkTarget =
+    typeof attrs.textLinkTarget === "string" && attrs.textLinkTarget.trim().length > 0
+      ? ` target="${escapeHtml(attrs.textLinkTarget.trim())}"`
+      : "";
+  const linkRel = textLinkTarget.length > 0 ? ' rel="noreferrer noopener"' : "";
+  const fileId =
+    typeof attrs.fileId === "string" && attrs.fileId.trim().length > 0
+      ? attrs.fileId.trim()
+      : "";
+  const describedById = fileName.length > 0 && fileId.length > 0 ? fileId : "";
+  const preview =
+    attrs.displayPreview === true
+      ? `<object class="wp-block-file__embed" data="${escapeHtml(
+          href
+        )}" type="application/pdf" style="width:100%;height:${escapeHtml(
+          String(
+            typeof attrs.previewHeight === "number" ? attrs.previewHeight : 600
+          )
+        )}px" aria-label="${escapeHtml(fileName || "PDF embed")}"></object>`
+      : "";
+  const nameLink =
+    fileName.length > 0
+      ? `<a${describedById.length > 0 ? ` id="${escapeHtml(describedById)}"` : ""} href="${escapeHtml(
+          textLinkHref
+        )}"${textLinkTarget}${linkRel}>${fileName}</a>`
+      : "";
+  const downloadText =
+    typeof attrs.downloadButtonText === "string" &&
+    attrs.downloadButtonText.length > 0
+      ? attrs.downloadButtonText
+      : "Download";
+  const downloadButton =
+    attrs.showDownloadButton !== false
+      ? `<a href="${escapeHtml(
+          href
+        )}" class="wp-block-file__button wp-element-button" download${
+          describedById.length > 0
+            ? ` aria-describedby="${escapeHtml(describedById)}"`
+            : ""
+        }>${downloadText}</a>`
+      : "";
+  return `<div class="wp-block-file">${preview}${nameLink}${downloadButton}</div>`;
+}
+
+function videoTracksHtml(attrs: Record<string, unknown>): string {
+  const tracks = Array.isArray(attrs.tracks) ? attrs.tracks : [];
+  return tracks
+    .map((track) => {
+      const record = objectValue(track);
+      const attrNames = ["kind", "label", "src", "srcLang", "srclang", "default"];
+      const attrPairs: string[] = [];
+      for (const name of attrNames) {
+        if (name === "default") {
+          if (record.default === true) {
+            attrPairs.push("default");
+          }
+          continue;
+        }
+        if (typeof record[name] === "string" && record[name].trim().length > 0) {
+          const htmlName = name === "srcLang" ? "srclang" : name;
+          attrPairs.push(`${htmlName}="${escapeHtml(record[name].trim())}"`);
+        }
+      }
+      return `<track${attrPairs.length > 0 ? ` ${attrPairs.join(" ")}` : ""}>`;
+    })
+    .join("");
+}
+
+function videoHtml(attrs: Record<string, unknown>): string {
+  const src = typeof attrs.src === "string" ? attrs.src.trim() : "";
+  const caption =
+    typeof attrs.caption === "string" && attrs.caption.trim().length > 0
+      ? `<figcaption class="wp-element-caption">${attrs.caption}</figcaption>`
+      : "";
+  const attrsOut: string[] = [];
+  if (attrs.autoplay === true) attrsOut.push("autoplay");
+  if (attrs.controls !== false) attrsOut.push("controls");
+  if (attrs.loop === true) attrsOut.push("loop");
+  if (attrs.muted === true) attrsOut.push("muted");
+  if (attrs.playsInline === true) attrsOut.push("playsinline");
+  if (typeof attrs.poster === "string" && attrs.poster.trim().length > 0) {
+    attrsOut.push(`poster="${escapeHtml(attrs.poster.trim())}"`);
+  }
+  if (
+    typeof attrs.preload === "string" &&
+    attrs.preload.trim().length > 0 &&
+    attrs.preload.trim() !== "metadata"
+  ) {
+    attrsOut.push(`preload="${escapeHtml(attrs.preload.trim())}"`);
+  }
+  if (src.length > 0) {
+    attrsOut.push(`src="${escapeHtml(src)}"`);
+  }
+  return `<figure class="wp-block-video">${
+    src.length > 0 ? `<video ${attrsOut.join(" ")}>${videoTracksHtml(attrs)}</video>` : ""
+  }${caption}</figure>`;
+}
+
+function contentPositionClassName(position: string): string {
+  const map: Record<string, string> = {
+    "top left": "is-position-top-left",
+    "top center": "is-position-top-center",
+    "top right": "is-position-top-right",
+    "center left": "is-position-center-left",
+    "center center": "is-position-center-center",
+    center: "is-position-center-center",
+    "center right": "is-position-center-right",
+    "bottom left": "is-position-bottom-left",
+    "bottom center": "is-position-bottom-center",
+    "bottom right": "is-position-bottom-right"
+  };
+  return map[position] ?? "";
+}
+
+function mediaPositionString(focalPoint: Record<string, unknown> | null): string {
+  const x = focalPoint && typeof focalPoint.x === "number" ? focalPoint.x : 0.5;
+  const y = focalPoint && typeof focalPoint.y === "number" ? focalPoint.y : 0.5;
+  return `${Math.round(x * 100)}% ${Math.round(y * 100)}%`;
+}
+
+function coverTagName(attrs: Record<string, unknown>): string {
+  const tag = typeof attrs.tagName === "string" ? attrs.tagName.trim() : "div";
+  return tag.length > 0 ? tag : "div";
+}
+
+function coverWrapperOpen(attrs: Record<string, unknown>): string {
+  const classes = ["wp-block-cover"];
+  if (attrs.isDark === false) classes.push("is-light");
+  if (attrs.hasParallax === true) classes.push("has-parallax");
+  if (attrs.isRepeated === true) classes.push("is-repeated");
+  const contentPosition =
+    typeof attrs.contentPosition === "string" ? attrs.contentPosition.trim() : "";
+  if (
+    contentPosition.length > 0 &&
+    contentPosition !== "center center" &&
+    contentPosition !== "center"
+  ) {
+    classes.push("has-custom-content-position");
+    const posClass = contentPositionClassName(contentPosition);
+    if (posClass.length > 0) classes.push(posClass);
+  }
+  const minHeight =
+    typeof attrs.minHeight === "number"
+      ? `${String(attrs.minHeight)}${
+          typeof attrs.minHeightUnit === "string" ? attrs.minHeightUnit : "px"
+        }`
+      : "";
+  return `<${coverTagName(attrs)} class="${classes.join(" ")}"${
+    minHeight.length > 0 ? ` style="min-height:${escapeHtml(minHeight)}"` : ""
+  }>`;
+}
+
+function coverBackgroundHtml(attrs: Record<string, unknown>): string {
+  const url = typeof attrs.url === "string" ? attrs.url.trim() : "";
+  const backgroundType =
+    typeof attrs.backgroundType === "string" ? attrs.backgroundType : "image";
+  const focalPoint =
+    typeof attrs.focalPoint === "object" && attrs.focalPoint !== null
+      ? (attrs.focalPoint as Record<string, unknown>)
+      : null;
+  const objectPosition = mediaPositionString(focalPoint);
+  const sizeSlug =
+    typeof attrs.sizeSlug === "string" && attrs.sizeSlug.trim().length > 0
+      ? ` size-${escapeHtml(attrs.sizeSlug.trim())}`
+      : "";
+  const idClass =
+    typeof attrs.id === "number" && attrs.id > 0 ? ` wp-image-${attrs.id}` : "";
+  const alt = typeof attrs.alt === "string" ? attrs.alt : "";
+  if (attrs.useFeaturedImage === true) {
+    return "";
+  }
+  if (backgroundType === "image" && url.length > 0) {
+    if (attrs.hasParallax === true || attrs.isRepeated === true) {
+      return `<div${
+        alt.length > 0 ? ' role="img"' : ""
+      }${
+        alt.length > 0 ? ` aria-label="${escapeHtml(alt)}"` : ""
+      } class="wp-block-cover__image-background${idClass}${sizeSlug}${
+        attrs.hasParallax === true ? " has-parallax" : ""
+      }${attrs.isRepeated === true ? " is-repeated" : ""}" style="background-position:${escapeHtml(
+        objectPosition
+      )};background-image:url(${escapeHtml(url)})"></div>`;
+    }
+    return `<img class="wp-block-cover__image-background${idClass}${sizeSlug}" alt="${escapeHtml(
+      alt
+    )}" src="${escapeHtml(
+      url
+    )}" style="object-position:${escapeHtml(
+      objectPosition
+    )}" data-object-fit="cover" data-object-position="${escapeHtml(
+      objectPosition
+    )}"/>`;
+  }
+  if (backgroundType === "video" && url.length > 0) {
+    const poster =
+      typeof attrs.poster === "string" && attrs.poster.trim().length > 0
+        ? ` poster="${escapeHtml(attrs.poster.trim())}"`
+        : "";
+    return `<video class="wp-block-cover__video-background intrinsic-ignore" autoplay muted loop playsinline src="${escapeHtml(
+      url
+    )}"${poster} style="object-position:${escapeHtml(
+      objectPosition
+    )}" data-object-fit="cover" data-object-position="${escapeHtml(
+      objectPosition
+    )}"></video>`;
+  }
+  if (backgroundType === "embed-video" && url.length > 0) {
+    return `<figure class="wp-block-cover__video-background wp-block-cover__embed-background wp-block-embed"><div class="wp-block-embed__wrapper">${escapeHtml(
+      url
+    )}</div></figure>`;
+  }
+  return "";
+}
+
+function dimRatioClass(ratio: unknown): string {
+  if (typeof ratio !== "number" || ratio === 50) {
+    return "";
+  }
+  return `has-background-dim-${10 * Math.round(ratio / 10)}`;
+}
+
+function coverOverlayHtml(attrs: Record<string, unknown>): string {
+  const classes = ["wp-block-cover__background"];
+  const overlayColor =
+    typeof attrs.overlayColor === "string" && attrs.overlayColor.trim().length > 0
+      ? `has-${escapeHtml(attrs.overlayColor.trim())}-background-color`
+      : "";
+  if (overlayColor) classes.push(overlayColor);
+  const dimClass = dimRatioClass(attrs.dimRatio);
+  if (dimClass) classes.push(dimClass);
+  if (typeof attrs.dimRatio === "number") classes.push("has-background-dim");
+  const gradient =
+    typeof attrs.gradient === "string" && attrs.gradient.trim().length > 0
+      ? attrs.gradient.trim()
+      : "";
+  const customGradient =
+    typeof attrs.customGradient === "string" && attrs.customGradient.trim().length > 0
+      ? attrs.customGradient.trim()
+      : "";
+  if (gradient || customGradient) {
+    classes.push("has-background-gradient");
+    if (gradient) classes.push(`has-${escapeHtml(gradient)}-gradient-background`);
+    if (
+      typeof attrs.url === "string" &&
+      attrs.url.trim().length > 0 &&
+      (gradient || customGradient) &&
+      attrs.dimRatio !== 0
+    ) {
+      classes.push("wp-block-cover__gradient-background");
+    }
+  }
+  const styles: string[] = [];
+  if (!overlayColor && typeof attrs.customOverlayColor === "string") {
+    styles.push(`background-color:${escapeHtml(attrs.customOverlayColor)}`);
+  }
+  if (customGradient) {
+    styles.push(`background:${escapeHtml(customGradient)}`);
+  }
+  return `<span aria-hidden="true" class="${classes.join(" ")}"${
+    styles.length > 0 ? ` style="${styles.join(";")}"` : ""
+  }></span>`;
+}
+
 function codeHtml(innerHTML: string): string {
   const text = extractTextContent(innerHTML);
   return `<pre class="wp-block-code"><code>${escapeHtml(text)}</code></pre>`;
@@ -693,6 +982,18 @@ function canonicalContainerInnerContent(
     ];
   }
 
+  if (blockName === "core/cover") {
+    return [
+      coverWrapperOpen(attrs),
+      coverBackgroundHtml(attrs),
+      coverOverlayHtml(attrs),
+      '<div class="wp-block-cover__inner-container">',
+      ...innerBlocks.map(() => null),
+      "</div>",
+      `</${coverTagName(attrs)}>`
+    ];
+  }
+
   if (blockName === "core/media-text") {
     const mediaFigure = mediaTextMediaFigureHtml(attrs);
     const contentOpen = '<div class="wp-block-media-text__content">';
@@ -779,6 +1080,26 @@ function normalizeParsedBlockNode(
     innerContent = [innerHTML];
   }
 
+  if (blockName === "core/more") {
+    innerHTML = moreHtml(attrs);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/html") {
+    innerHTML = rawBlockHtml(attrs, "content", innerHTML);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/shortcode") {
+    innerHTML = rawBlockHtml(attrs, "text", innerHTML);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/file") {
+    innerHTML = fileHtml(attrs);
+    innerContent = innerHTML.length > 0 ? [innerHTML] : [];
+  }
+
   if (blockName === "core/pullquote") {
     innerHTML = pullquoteHtml(attrs, innerHTML);
     innerContent = [innerHTML];
@@ -829,9 +1150,19 @@ function normalizeParsedBlockNode(
     innerContent = [innerHTML];
   }
 
+  if (blockName === "core/video") {
+    innerHTML = videoHtml(attrs);
+    innerContent = [innerHTML];
+  }
+
   if (blockName === "core/verse") {
     innerHTML = verseHtml(innerHTML);
     innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/read-more") {
+    innerHTML = "";
+    innerContent = [];
   }
 
   const containerInnerContent = canonicalContainerInnerContent(
@@ -1063,7 +1394,7 @@ function normalizePlanPostContent(
       );
       if (unsupportedBlocks.length > 0) {
         validationWarnings.push(
-          `Structured parsed blocks include unsupported block types that execution will reject: ${unsupportedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}.`
+          `Structured parsed blocks include unsupported block types that execution will reject: ${unsupportedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. Add blocked blocks manually in the WordPress post editor for now.`
         );
       }
       const nextBlockTarget = {
@@ -1103,7 +1434,7 @@ function normalizePlanPostContent(
     );
     if (unsupportedSerializedBlocks.length > 0) {
       validationWarnings.push(
-        `Serialized Gutenberg content includes unsupported block types that execution will reject: ${unsupportedSerializedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}.`
+        `Serialized Gutenberg content includes unsupported block types that execution will reject: ${unsupportedSerializedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. Add blocked blocks manually in the WordPress post editor for now.`
       );
     }
     if (normalized.content === currentContent) {

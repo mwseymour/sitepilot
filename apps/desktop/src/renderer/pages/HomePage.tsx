@@ -36,9 +36,14 @@ export function HomePage(): ReactElement {
           diagnostics. Site configuration must be confirmed before chat is
           enabled.
         </p>
-        <Link className="btn btn-secondary btn-small" to="/settings">
-          App settings
-        </Link>
+        <div className="action-row">
+          <Link className="btn btn-primary" to="/sites/new">
+            Add site
+          </Link>
+          <Link className="btn btn-secondary btn-small" to="/settings">
+            App settings
+          </Link>
+        </div>
       </section>
       {error ? <p className="workspace-error">{error}</p> : null}
       <section className="site-list">
@@ -46,8 +51,11 @@ export function HomePage(): ReactElement {
           <article className="status-card">
             <h2>No sites yet</h2>
             <p>
-              Register a site from the onboarding flow to see it listed here.
+              Register a WordPress site to see it listed here.
             </p>
+            <Link className="btn btn-primary" to="/sites/new">
+              Add your first site
+            </Link>
           </article>
         ) : (
           sites.map((s) => (

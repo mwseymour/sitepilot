@@ -368,6 +368,26 @@ final class Write_Abilities {
 			$inner_content = array( $inner_html );
 		}
 
+		if ( 'core/more' === $block_name ) {
+			$inner_html    = self::more_html( $attrs );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/html' === $block_name ) {
+			$inner_html    = self::raw_block_html( $attrs, 'content', $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/shortcode' === $block_name ) {
+			$inner_html    = self::raw_block_html( $attrs, 'text', $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/file' === $block_name ) {
+			$inner_html    = self::file_html( $attrs );
+			$inner_content = '' !== $inner_html ? array( $inner_html ) : array();
+		}
+
 		if ( 'core/pullquote' === $block_name ) {
 			$inner_html    = self::pullquote_html( $attrs, $inner_html );
 			$inner_content = array( $inner_html );
@@ -383,6 +403,11 @@ final class Write_Abilities {
 			$inner_content = '' !== $inner_html ? array( $inner_html ) : array();
 		}
 
+		if ( 'core/video' === $block_name ) {
+			$inner_html    = self::video_html( $attrs );
+			$inner_content = array( $inner_html );
+		}
+
 		if ( 'core/list-item' === $block_name ) {
 			$inner_html    = self::list_item_html( $inner_html );
 			$inner_content = array( $inner_html );
@@ -391,6 +416,11 @@ final class Write_Abilities {
 		if ( 'core/verse' === $block_name ) {
 			$inner_html    = self::verse_html( $inner_html );
 			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/read-more' === $block_name ) {
+			$inner_html    = '';
+			$inner_content = array();
 		}
 
 		$container_inner_content = self::canonical_container_inner_content( $block_name, $attrs, $inner_blocks );
@@ -507,6 +537,26 @@ final class Write_Abilities {
 		return '<figure class="' . implode( ' ', $classes ) . '"><blockquote><p>' . htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</p>' . $cite . '</blockquote></figure>';
 	}
 
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function raw_block_html( array $attrs, string $attr_name, string $fallback ): string {
+		if ( preg_match( '/<[a-z][\s\S]*>/i', $fallback ) ) {
+			return $fallback;
+		}
+		return isset( $attrs[ $attr_name ] ) && is_string( $attrs[ $attr_name ] ) ? $attrs[ $attr_name ] : $fallback;
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function more_html( array $attrs ): string {
+		$custom_text = isset( $attrs['customText'] ) && is_string( $attrs['customText'] ) ? trim( $attrs['customText'] ) : '';
+		$more_tag = '' !== $custom_text ? '<!--more ' . $custom_text . '-->' : '<!--more-->';
+		$no_teaser = isset( $attrs['noTeaser'] ) && true === $attrs['noTeaser'] ? '<!--noteaser-->' : '';
+		return implode( "\n", array_filter( array( $more_tag, $no_teaser ) ) );
+	}
+
 	private static function code_html( string $inner_html ): string {
 		$text = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 		return '<pre class="wp-block-code"><code>' . $text . '</code></pre>';
@@ -565,6 +615,35 @@ final class Write_Abilities {
 			: ( 'button' === $tag_name ? ' type="button"' : '' );
 
 		return '<div class="wp-block-button"><' . $tag_name . ' class="wp-block-button__link wp-element-button"' . $href . $title . $target . $rel . $type . '>' . $text . '</' . $tag_name . '></div>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function file_html( array $attrs ): string {
+		$href = isset( $attrs['href'] ) && is_string( $attrs['href'] ) ? trim( $attrs['href'] ) : '';
+		if ( '' === $href ) {
+			return '';
+		}
+		$file_name = isset( $attrs['fileName'] ) && is_string( $attrs['fileName'] ) ? $attrs['fileName'] : '';
+		$text_link_href = isset( $attrs['textLinkHref'] ) && is_string( $attrs['textLinkHref'] ) && '' !== trim( $attrs['textLinkHref'] ) ? trim( $attrs['textLinkHref'] ) : $href;
+		$text_link_target = isset( $attrs['textLinkTarget'] ) && is_string( $attrs['textLinkTarget'] ) && '' !== trim( $attrs['textLinkTarget'] ) ? ' target="' . htmlspecialchars( trim( $attrs['textLinkTarget'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
+		$link_rel = '' !== $text_link_target ? ' rel="noreferrer noopener"' : '';
+		$file_id = isset( $attrs['fileId'] ) && is_string( $attrs['fileId'] ) && '' !== trim( $attrs['fileId'] ) ? trim( $attrs['fileId'] ) : '';
+		$described_by = '' !== $file_name && '' !== $file_id ? $file_id : '';
+		$preview = '';
+		if ( isset( $attrs['displayPreview'] ) && true === $attrs['displayPreview'] ) {
+			$preview_height = isset( $attrs['previewHeight'] ) && is_numeric( $attrs['previewHeight'] ) ? (string) $attrs['previewHeight'] : '600';
+			$preview = '<object class="wp-block-file__embed" data="' . htmlspecialchars( $href, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" type="application/pdf" style="width:100%;height:' . htmlspecialchars( $preview_height, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . 'px" aria-label="' . htmlspecialchars( '' !== $file_name ? $file_name : 'PDF embed', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"></object>';
+		}
+		$name_link = '' !== $file_name
+			? '<a' . ( '' !== $described_by ? ' id="' . htmlspecialchars( $described_by, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '' ) . ' href="' . htmlspecialchars( $text_link_href, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . $text_link_target . $link_rel . '>' . $file_name . '</a>'
+			: '';
+		$download_text = isset( $attrs['downloadButtonText'] ) && is_string( $attrs['downloadButtonText'] ) && '' !== $attrs['downloadButtonText'] ? $attrs['downloadButtonText'] : 'Download';
+		$download_button = ( ! isset( $attrs['showDownloadButton'] ) || false !== $attrs['showDownloadButton'] )
+			? '<a href="' . htmlspecialchars( $href, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" class="wp-block-file__button wp-element-button" download' . ( '' !== $described_by ? ' aria-describedby="' . htmlspecialchars( $described_by, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '' ) . '>' . $download_text . '</a>'
+			: '';
+		return '<div class="wp-block-file">' . $preview . $name_link . $download_button . '</div>';
 	}
 
 	/**
@@ -645,6 +724,65 @@ final class Write_Abilities {
 			? '<figcaption class="wp-element-caption">' . htmlspecialchars( trim( $attrs['caption'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</figcaption>'
 			: '';
 		return '<figure class="wp-block-table"><table' . ( ! empty( $table_classes ) ? ' class="' . implode( ' ', $table_classes ) . '"' : '' ) . '>' . $head . $body . $foot . '</table>' . $caption . '</figure>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function video_tracks_html( array $attrs ): string {
+		$tracks = isset( $attrs['tracks'] ) && is_array( $attrs['tracks'] ) ? $attrs['tracks'] : array();
+		$html = '';
+		foreach ( $tracks as $track ) {
+			if ( ! is_array( $track ) ) {
+				continue;
+			}
+			$parts = array();
+			foreach ( array( 'kind', 'label', 'src', 'srcLang', 'srclang' ) as $name ) {
+				if ( isset( $track[ $name ] ) && is_string( $track[ $name ] ) && '' !== trim( $track[ $name ] ) ) {
+					$html_name = 'srcLang' === $name ? 'srclang' : $name;
+					$parts[] = $html_name . '="' . htmlspecialchars( trim( $track[ $name ] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+				}
+			}
+			if ( isset( $track['default'] ) && true === $track['default'] ) {
+				$parts[] = 'default';
+			}
+			$html .= '<track' . ( ! empty( $parts ) ? ' ' . implode( ' ', $parts ) : '' ) . '>';
+		}
+		return $html;
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function video_html( array $attrs ): string {
+		$src = isset( $attrs['src'] ) && is_string( $attrs['src'] ) ? trim( $attrs['src'] ) : '';
+		$caption = isset( $attrs['caption'] ) && is_string( $attrs['caption'] ) && '' !== trim( $attrs['caption'] ) ? '<figcaption class="wp-element-caption">' . $attrs['caption'] . '</figcaption>' : '';
+		$video_attrs = array();
+		if ( isset( $attrs['autoplay'] ) && true === $attrs['autoplay'] ) {
+			$video_attrs[] = 'autoplay';
+		}
+		if ( ! isset( $attrs['controls'] ) || false !== $attrs['controls'] ) {
+			$video_attrs[] = 'controls';
+		}
+		if ( isset( $attrs['loop'] ) && true === $attrs['loop'] ) {
+			$video_attrs[] = 'loop';
+		}
+		if ( isset( $attrs['muted'] ) && true === $attrs['muted'] ) {
+			$video_attrs[] = 'muted';
+		}
+		if ( isset( $attrs['playsInline'] ) && true === $attrs['playsInline'] ) {
+			$video_attrs[] = 'playsinline';
+		}
+		if ( isset( $attrs['poster'] ) && is_string( $attrs['poster'] ) && '' !== trim( $attrs['poster'] ) ) {
+			$video_attrs[] = 'poster="' . htmlspecialchars( trim( $attrs['poster'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		if ( isset( $attrs['preload'] ) && is_string( $attrs['preload'] ) && '' !== trim( $attrs['preload'] ) && 'metadata' !== trim( $attrs['preload'] ) ) {
+			$video_attrs[] = 'preload="' . htmlspecialchars( trim( $attrs['preload'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		if ( '' !== $src ) {
+			$video_attrs[] = 'src="' . htmlspecialchars( $src, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		return '<figure class="wp-block-video">' . ( '' !== $src ? '<video ' . implode( ' ', $video_attrs ) . '>' . self::video_tracks_html( $attrs ) . '</video>' : '' ) . $caption . '</figure>';
 	}
 
 	private static function list_item_html( string $inner_html ): string {
@@ -744,6 +882,142 @@ final class Write_Abilities {
 	}
 
 	/**
+	 * @param array<string, mixed> $focal_point Focal point attrs.
+	 */
+	private static function cover_media_position( array $focal_point ): string {
+		$x = isset( $focal_point['x'] ) && is_numeric( $focal_point['x'] ) ? (float) $focal_point['x'] : 0.5;
+		$y = isset( $focal_point['y'] ) && is_numeric( $focal_point['y'] ) ? (float) $focal_point['y'] : 0.5;
+		return round( $x * 100 ) . '% ' . round( $y * 100 ) . '%';
+	}
+
+	private static function cover_dim_ratio_class( $ratio ): string {
+		if ( ! is_numeric( $ratio ) || 50.0 === (float) $ratio ) {
+			return '';
+		}
+		return 'has-background-dim-' . (string) ( 10 * round( (float) $ratio / 10 ) );
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function cover_tag_name( array $attrs ): string {
+		$tag = isset( $attrs['tagName'] ) && is_string( $attrs['tagName'] ) ? trim( $attrs['tagName'] ) : 'div';
+		return '' !== $tag ? $tag : 'div';
+	}
+
+	private static function cover_content_position_class( string $position ): string {
+		$map = array(
+			'top left' => 'is-position-top-left',
+			'top center' => 'is-position-top-center',
+			'top right' => 'is-position-top-right',
+			'center left' => 'is-position-center-left',
+			'center center' => 'is-position-center-center',
+			'center' => 'is-position-center-center',
+			'center right' => 'is-position-center-right',
+			'bottom left' => 'is-position-bottom-left',
+			'bottom center' => 'is-position-bottom-center',
+			'bottom right' => 'is-position-bottom-right',
+		);
+		return $map[ $position ] ?? '';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function cover_wrapper_open( array $attrs ): string {
+		$classes = array( 'wp-block-cover' );
+		if ( isset( $attrs['isDark'] ) && false === $attrs['isDark'] ) {
+			$classes[] = 'is-light';
+		}
+		if ( isset( $attrs['hasParallax'] ) && true === $attrs['hasParallax'] ) {
+			$classes[] = 'has-parallax';
+		}
+		if ( isset( $attrs['isRepeated'] ) && true === $attrs['isRepeated'] ) {
+			$classes[] = 'is-repeated';
+		}
+		$content_position = isset( $attrs['contentPosition'] ) && is_string( $attrs['contentPosition'] ) ? trim( $attrs['contentPosition'] ) : '';
+		if ( '' !== $content_position && 'center center' !== $content_position && 'center' !== $content_position ) {
+			$classes[] = 'has-custom-content-position';
+			$position_class = self::cover_content_position_class( $content_position );
+			if ( '' !== $position_class ) {
+				$classes[] = $position_class;
+			}
+		}
+		$min_height = '';
+		if ( isset( $attrs['minHeight'] ) && is_numeric( $attrs['minHeight'] ) ) {
+			$min_height = (string) $attrs['minHeight'] . ( isset( $attrs['minHeightUnit'] ) && is_string( $attrs['minHeightUnit'] ) ? $attrs['minHeightUnit'] : 'px' );
+		}
+		return '<' . self::cover_tag_name( $attrs ) . ' class="' . implode( ' ', $classes ) . '"' . ( '' !== $min_height ? ' style="min-height:' . htmlspecialchars( $min_height, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '' ) . '>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function cover_background_html( array $attrs ): string {
+		$url = isset( $attrs['url'] ) && is_string( $attrs['url'] ) ? trim( $attrs['url'] ) : '';
+		$background_type = isset( $attrs['backgroundType'] ) && is_string( $attrs['backgroundType'] ) ? $attrs['backgroundType'] : 'image';
+		$focal_point = isset( $attrs['focalPoint'] ) && is_array( $attrs['focalPoint'] ) ? $attrs['focalPoint'] : array();
+		$object_position = self::cover_media_position( $focal_point );
+		$size_slug = isset( $attrs['sizeSlug'] ) && is_string( $attrs['sizeSlug'] ) && '' !== trim( $attrs['sizeSlug'] ) ? ' size-' . htmlspecialchars( trim( $attrs['sizeSlug'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) : '';
+		$id_class = isset( $attrs['id'] ) && is_int( $attrs['id'] ) && $attrs['id'] > 0 ? ' wp-image-' . $attrs['id'] : '';
+		$alt = isset( $attrs['alt'] ) && is_string( $attrs['alt'] ) ? $attrs['alt'] : '';
+		if ( isset( $attrs['useFeaturedImage'] ) && true === $attrs['useFeaturedImage'] ) {
+			return '';
+		}
+		if ( 'image' === $background_type && '' !== $url ) {
+			if ( ( isset( $attrs['hasParallax'] ) && true === $attrs['hasParallax'] ) || ( isset( $attrs['isRepeated'] ) && true === $attrs['isRepeated'] ) ) {
+				return '<div' . ( '' !== $alt ? ' role="img" aria-label="' . htmlspecialchars( $alt, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '' ) . ' class="wp-block-cover__image-background' . $id_class . $size_slug . ( isset( $attrs['hasParallax'] ) && true === $attrs['hasParallax'] ? ' has-parallax' : '' ) . ( isset( $attrs['isRepeated'] ) && true === $attrs['isRepeated'] ? ' is-repeated' : '' ) . '" style="background-position:' . htmlspecialchars( $object_position, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . ';background-image:url(' . htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . ')"></div>';
+			}
+			return '<img class="wp-block-cover__image-background' . $id_class . $size_slug . '" alt="' . htmlspecialchars( $alt, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" src="' . htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" style="object-position:' . htmlspecialchars( $object_position, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" data-object-fit="cover" data-object-position="' . htmlspecialchars( $object_position, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"/>';
+		}
+		if ( 'video' === $background_type && '' !== $url ) {
+			$poster = isset( $attrs['poster'] ) && is_string( $attrs['poster'] ) && '' !== trim( $attrs['poster'] ) ? ' poster="' . htmlspecialchars( trim( $attrs['poster'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
+			return '<video class="wp-block-cover__video-background intrinsic-ignore" autoplay muted loop playsinline src="' . htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . $poster . ' style="object-position:' . htmlspecialchars( $object_position, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" data-object-fit="cover" data-object-position="' . htmlspecialchars( $object_position, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"></video>';
+		}
+		if ( 'embed-video' === $background_type && '' !== $url ) {
+			return '<figure class="wp-block-cover__video-background wp-block-cover__embed-background wp-block-embed"><div class="wp-block-embed__wrapper">' . htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</div></figure>';
+		}
+		return '';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function cover_overlay_html( array $attrs ): string {
+		$classes = array( 'wp-block-cover__background' );
+		$overlay_color = isset( $attrs['overlayColor'] ) && is_string( $attrs['overlayColor'] ) && '' !== trim( $attrs['overlayColor'] ) ? 'has-' . htmlspecialchars( trim( $attrs['overlayColor'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '-background-color' : '';
+		if ( '' !== $overlay_color ) {
+			$classes[] = $overlay_color;
+		}
+		$dim_class = self::cover_dim_ratio_class( $attrs['dimRatio'] ?? null );
+		if ( '' !== $dim_class ) {
+			$classes[] = $dim_class;
+		}
+		if ( isset( $attrs['dimRatio'] ) && is_numeric( $attrs['dimRatio'] ) ) {
+			$classes[] = 'has-background-dim';
+		}
+		$gradient = isset( $attrs['gradient'] ) && is_string( $attrs['gradient'] ) ? trim( $attrs['gradient'] ) : '';
+		$custom_gradient = isset( $attrs['customGradient'] ) && is_string( $attrs['customGradient'] ) ? trim( $attrs['customGradient'] ) : '';
+		if ( '' !== $gradient || '' !== $custom_gradient ) {
+			$classes[] = 'has-background-gradient';
+			if ( '' !== $gradient ) {
+				$classes[] = 'has-' . htmlspecialchars( $gradient, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '-gradient-background';
+			}
+			if ( isset( $attrs['url'] ) && is_string( $attrs['url'] ) && '' !== trim( $attrs['url'] ) && 0 !== ( $attrs['dimRatio'] ?? null ) ) {
+				$classes[] = 'wp-block-cover__gradient-background';
+			}
+		}
+		$styles = array();
+		if ( '' === $overlay_color && isset( $attrs['customOverlayColor'] ) && is_string( $attrs['customOverlayColor'] ) ) {
+			$styles[] = 'background-color:' . htmlspecialchars( $attrs['customOverlayColor'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		if ( '' !== $custom_gradient ) {
+			$styles[] = 'background:' . htmlspecialchars( $custom_gradient, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		return '<span aria-hidden="true" class="' . implode( ' ', $classes ) . '"' . ( ! empty( $styles ) ? ' style="' . implode( ';', $styles ) . '"' : '' ) . '></span>';
+	}
+
+	/**
 	 * @param array<string, mixed> $attrs Block attrs.
 	 */
 	private static function normalize_heading_html( string $html, array $attrs ): string {
@@ -765,19 +1039,24 @@ final class Write_Abilities {
 			'core/column',
 			'core/columns',
 			'core/details',
+			'core/file',
 			'core/group',
 			'core/heading',
+			'core/html',
 			'core/image',
 			'core/list',
 			'core/list-item',
 			'core/media-text',
+			'core/more',
 			'core/paragraph',
 			'core/preformatted',
 			'core/pullquote',
 			'core/quote',
 			'core/separator',
+			'core/shortcode',
 			'core/spacer',
 			'core/table',
+			'core/video',
 			'core/verse',
 		);
 	}
@@ -917,7 +1196,7 @@ final class Write_Abilities {
 
 	private static function unsupported_block_reason( string $block_name ): string {
 		if ( in_array( $block_name, self::wordpress_core_block_names(), true ) ) {
-			return 'SitePilot does not yet have explicit canonical serialization for that WordPress core block, so execution is blocked instead of inventing Gutenberg save HTML.';
+			return 'SitePilot does not yet have explicit canonical serialization for that WordPress core block, so execution is blocked instead of inventing Gutenberg save HTML. Add it manually in the WordPress post editor for now.';
 		}
 		return 'SitePilot only executes an explicit allowlist of canonicalized Gutenberg blocks.';
 	}
@@ -1081,6 +1360,19 @@ final class Write_Abilities {
 				array( self::details_wrapper_open( $attrs ) ),
 				array_fill( 0, count( $inner_blocks ), null ),
 				array( '</details>' )
+			);
+		}
+
+		if ( 'core/cover' === $block_name ) {
+			return array_merge(
+				array(
+					self::cover_wrapper_open( $attrs ),
+					self::cover_background_html( $attrs ),
+					self::cover_overlay_html( $attrs ),
+					'<div class="wp-block-cover__inner-container">'
+				),
+				array_fill( 0, count( $inner_blocks ), null ),
+				array( '</div>', '</' . self::cover_tag_name( $attrs ) . '>' )
 			);
 		}
 

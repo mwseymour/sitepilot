@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { HomePage } from "./pages/HomePage.js";
+import { AddSitePage } from "./pages/AddSitePage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { ApprovalsPage } from "./pages/site/ApprovalsPage.js";
 import { AuditPage } from "./pages/site/AuditPage.js";
@@ -48,6 +49,7 @@ export function App(): ReactElement {
       <HashRouter>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/sites/new" element={<AddSitePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/site/:siteId" element={<SiteWorkspaceLayout />}>
             <Route index element={<Navigate to="overview" replace />} />

@@ -115,7 +115,7 @@ async function listStyleFiles(blockDir: string, root: string): Promise<string[]>
 function blockReason(name: string, executable: boolean): string {
   return executable
     ? "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it."
-    : "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.";
+    : "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.";
 }
 
 async function indexSingleBlock(input: {

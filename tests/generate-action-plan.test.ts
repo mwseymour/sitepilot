@@ -252,7 +252,7 @@ describe("buildLlmActionPlan", () => {
   it("warns when structured parsed blocks include unsupported block types", async () => {
     const client = makeClient(
       JSON.stringify({
-        requestSummary: "Create a cover layout",
+        requestSummary: "Create a gallery layout",
         assumptions: [],
         openQuestions: [],
         targetEntities: [],
@@ -266,7 +266,7 @@ describe("buildLlmActionPlan", () => {
               post_type: "page",
               blocks: [
                 {
-                  blockName: "core/cover",
+                  blockName: "core/gallery",
                   attrs: {
                     url: "https://upload.wikimedia.org/example.jpg"
                   },
@@ -293,7 +293,7 @@ describe("buildLlmActionPlan", () => {
 
     const result = await buildLlmActionPlan({
       context: makePlannerContext(
-        "Create a page with a cover block and image overlay."
+        "Create a page with a gallery block."
       ),
       requestId: "req-1",
       siteId: "site-1",
@@ -303,7 +303,7 @@ describe("buildLlmActionPlan", () => {
     });
 
     expect(result.plan.validationWarnings).toContain(
-      'Structured parsed blocks include unsupported block types that execution will reject: core/cover. Supported blocks today: core/button, core/buttons, core/code, core/column, core/columns, core/details, core/group, core/heading, core/image, core/list, core/list-item, core/media-text, core/paragraph, core/preformatted, core/pullquote, core/quote, core/separator, core/spacer, core/table, core/verse.'
+      'Structured parsed blocks include unsupported block types that execution will reject: core/gallery. Supported blocks today: core/button, core/buttons, core/code, core/column, core/columns, core/details, core/file, core/group, core/heading, core/html, core/image, core/list, core/list-item, core/media-text, core/more, core/paragraph, core/preformatted, core/pullquote, core/quote, core/separator, core/shortcode, core/spacer, core/table, core/video, core/verse. Add blocked blocks manually in the WordPress post editor for now.'
     );
   });
 
@@ -705,6 +705,85 @@ describe("buildLlmActionPlan", () => {
       null,
       "</div>",
       '<figure class="wp-block-media-text__media"><img src="https://example.com/photo.jpg" alt="Photo"/></figure>',
+      "</div>"
+    ]);
+  });
+
+  it("canonicalizes more, html, shortcode, file, read-more, video, and cover blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft with raw and media blocks",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Requested Blocks",
+              post_type: "page",
+              blocks: [
+                { blockName: "core/more", attrs: { customText: "Continue", noTeaser: true }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                { blockName: "core/html", attrs: { content: "<div>Raw HTML</div>" }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                { blockName: "core/shortcode", attrs: { text: "[gallery ids=\"1,2\"]" }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                { blockName: "core/file", attrs: { href: "https://example.com/file.pdf", fileName: "Brochure.pdf", fileId: "file-link", downloadButtonText: "Download file" }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                { blockName: "core/read-more", attrs: { content: "Read more", linkTarget: "_self" }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                { blockName: "core/video", attrs: { src: "https://example.com/video.mp4", controls: true, caption: "Demo video" }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                {
+                  blockName: "core/cover",
+                  attrs: { url: "https://example.com/hero.jpg", alt: "Hero", dimRatio: 60 },
+                  innerBlocks: [
+                    { blockName: "core/paragraph", attrs: {}, innerBlocks: [], innerHTML: "Overlay text", innerContent: ["Overlay text"] }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a page using more, html, shortcode, file, read-more, video, and cover blocks."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as Array<{
+      innerHTML: string;
+      innerContent: Array<string | null>;
+    }>;
+    expect(blocks[0]?.innerHTML).toBe("<!--more Continue-->\n<!--noteaser-->");
+    expect(blocks[1]?.innerHTML).toBe("<div>Raw HTML</div>");
+    expect(blocks[2]?.innerHTML).toBe("[gallery ids=\"1,2\"]");
+    expect(blocks[3]?.innerHTML).toContain('class="wp-block-file"');
+    expect(blocks[4]?.innerHTML).toBe("");
+    expect(blocks[4]?.innerContent).toEqual([]);
+    expect(blocks[5]?.innerHTML).toContain('<figure class="wp-block-video"><video controls src="https://example.com/video.mp4">');
+    expect(blocks[6]?.innerContent).toEqual([
+      '<div class="wp-block-cover">',
+      '<img class="wp-block-cover__image-background" alt="Hero" src="https://example.com/hero.jpg" style="object-position:50% 50%" data-object-fit="cover" data-object-position="50% 50%"/>',
+      '<span aria-hidden="true" class="wp-block-cover__background has-background-dim-60 has-background-dim"></span>',
+      '<div class="wp-block-cover__inner-container">',
+      null,
+      "</div>",
       "</div>"
     ]);
   });

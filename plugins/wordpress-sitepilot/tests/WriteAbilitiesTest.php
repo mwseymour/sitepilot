@@ -214,12 +214,35 @@ final class WriteAbilitiesTest extends TestCase {
 				'title'   => 'Unsupported Cover',
 				'blocks'  => array(
 					array(
-						'blockName'    => 'core/cover',
+						'blockName'    => 'core/gallery',
 						'attrs'        => array(
 							'url' => 'https://upload.wikimedia.org/example.jpg',
 						),
 						'innerBlocks'  => array(),
-						'innerHTML'    => '<div class="wp-block-cover"></div>',
+						'innerHTML'    => '<figure class="wp-block-gallery"></figure>',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertStringContainsString( 'unsupported block "core/gallery"', $result['error'] );
+	}
+
+	public function test_blocked_cover_and_read_more_advise_manual_editor_fallback(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Blocked Blocks',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/cover',
+						'attrs'        => array(
+							'url' => 'https://example.com/hero.jpg',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
 						'innerContent' => array(),
 					),
 				),
@@ -229,6 +252,7 @@ final class WriteAbilitiesTest extends TestCase {
 
 		$this->assertFalse( $result['ok'] );
 		$this->assertStringContainsString( 'unsupported block "core/cover"', $result['error'] );
+		$this->assertStringContainsString( 'Add it manually in the WordPress post editor for now.', $result['error'] );
 	}
 
 	public function test_heading_level_is_respected_during_serialization(): void {
@@ -490,6 +514,77 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( '<figcaption class="wp-element-caption">Pricing</figcaption>', $content );
 		$this->assertStringContainsString( '<!-- wp:media-text {"mediaType":"image","mediaUrl":"https://example.com/photo.jpg","mediaAlt":"Photo","mediaPosition":"right","mediaWidth":40,"isStackedOnMobile":true} --><div class="wp-block-media-text has-media-on-the-right is-stacked-on-mobile" style="grid-template-columns:auto 40%"><div class="wp-block-media-text__content">', $content );
 		$this->assertStringContainsString( '<figure class="wp-block-media-text__media"><img src="https://example.com/photo.jpg" alt="Photo"/></figure></div><!-- /wp:media-text -->', $content );
+	}
+
+	public function test_create_draft_with_requested_more_file_html_shortcode_and_video_blocks_serializes(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Requested Blocks',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/more',
+						'attrs'        => array(
+							'customText' => 'Continue',
+							'noTeaser'   => true,
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+					array(
+						'blockName'    => 'core/html',
+						'attrs'        => array(
+							'content' => '<div>Raw HTML</div>',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<div>Raw HTML</div>',
+						'innerContent' => array( '<div>Raw HTML</div>' ),
+					),
+					array(
+						'blockName'    => 'core/shortcode',
+						'attrs'        => array(
+							'text' => '[gallery ids="1,2"]',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+					array(
+						'blockName'    => 'core/file',
+						'attrs'        => array(
+							'href'               => 'https://example.com/file.pdf',
+							'fileName'           => 'Brochure.pdf',
+							'fileId'             => 'file-link',
+							'downloadButtonText' => 'Download file',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+					array(
+						'blockName'    => 'core/video',
+						'attrs'        => array(
+							'src'      => 'https://example.com/video.mp4',
+							'controls' => true,
+							'caption'  => 'Demo video',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<!-- wp:more {"customText":"Continue","noTeaser":true} --><!--more Continue-->', $content );
+		$this->assertStringContainsString( '<!--noteaser--><!-- /wp:more -->', $content );
+		$this->assertStringContainsString( '<!-- wp:html {"content":"Raw HTML"} --><div>Raw HTML</div><!-- /wp:html -->', $content );
+		$this->assertStringContainsString( '<!-- wp:shortcode {"text":"[gallery ids=\"1,2\"]"} -->[gallery ids="1,2"]<!-- /wp:shortcode -->', $content );
+		$this->assertStringContainsString( '<div class="wp-block-file"><a id="file-link" href="https://example.com/file.pdf">Brochure.pdf</a><a href="https://example.com/file.pdf" class="wp-block-file__button wp-element-button" download aria-describedby="file-link">Download file</a></div>', $content );
+		$this->assertStringContainsString( '<figure class="wp-block-video"><video controls src="https://example.com/video.mp4"></video><figcaption class="wp-element-caption">Demo video</figcaption></figure>', $content );
 	}
 
 	public function test_update_post_with_blocks_returns_serialized_after_content(): void {
