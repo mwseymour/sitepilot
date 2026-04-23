@@ -1,12 +1,17 @@
 import type {
   ProviderStatusResponse,
   SitePlannerSettings,
-  UiPreferences
+  UiPreferences,
+  WordPressCoreBlockIndex
 } from "@sitepilot/contracts";
 import type { SiteId, WorkspaceId } from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
+import {
+  getWordPressCoreBlockIndex,
+  reindexWordPressCoreBlockIndex
+} from "./core-block-index-service.js";
 import {
   loadPlannerPreferences,
   saveGlobalPlannerPreferences,
@@ -22,6 +27,7 @@ export type SettingsStateResult =
       uiPreferences: UiPreferences;
       sitePlannerSettings?: SitePlannerSettings;
       siteHasSigningSecret?: boolean;
+      coreBlockIndex?: WordPressCoreBlockIndex | null;
     }
   | { ok: false; code: string; message: string };
 
@@ -154,6 +160,7 @@ export async function getSettingsState(input: {
       : undefined
   );
   const uiPreferences = await loadUiPreferences(storage);
+  const coreBlockIndex = await getWordPressCoreBlockIndex();
 
   let siteHasSigningSecret: boolean | undefined;
   let sitePlannerSettings: SitePlannerSettings | undefined;
@@ -174,8 +181,20 @@ export async function getSettingsState(input: {
     configuredProviders: configured,
     planner,
     uiPreferences,
+    coreBlockIndex,
     ...(sitePlannerSettings !== undefined ? { sitePlannerSettings } : {}),
     ...(siteHasSigningSecret !== undefined ? { siteHasSigningSecret } : {})
+  };
+}
+
+export async function reindexCoreBlocks(): Promise<
+  | { ok: true; coreBlockIndex: WordPressCoreBlockIndex | null }
+  | { ok: false; code: string; message: string }
+> {
+  const coreBlockIndex = await reindexWordPressCoreBlockIndex();
+  return {
+    ok: true,
+    coreBlockIndex
   };
 }
 

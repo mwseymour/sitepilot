@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import type { ImageAttachmentPayload } from "@sitepilot/contracts";
+import {
+  explainUnsupportedBlockName,
+  findUnsupportedParsedBlockNames,
+  findUnsupportedSerializedBlockNames,
+  type ImageAttachmentPayload,
+  SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
+} from "@sitepilot/contracts";
 import {
   McpHttpClient,
   normalizeMcpToolResult
@@ -154,6 +160,12 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function blockExecutionErrorMessage(blockNames: string[]): string {
+  const uniqueNames = [...new Set(blockNames)];
+  const reasons = uniqueNames.map((name) => explainUnsupportedBlockName(name));
+  return `Execution blocked because the action uses unsupported Gutenberg block types: ${uniqueNames.join(", ")}. ${reasons.join(" ")} Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}.`;
 }
 
 async function uploadAttachmentsToMediaLibrary(input: {
@@ -696,6 +708,46 @@ export async function executePlanAction(
         actionType: action.type
       }
     };
+  }
+
+  const unsupportedParsedBlocks = Array.isArray(spec.arguments.blocks)
+    ? findUnsupportedParsedBlockNames(spec.arguments.blocks)
+    : [];
+  if (unsupportedParsedBlocks.length > 0) {
+    const message = blockExecutionErrorMessage(unsupportedParsedBlocks);
+    await appendExecutionMessage({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      author: { kind: "system" },
+      text: message
+    });
+    return {
+      ok: false,
+      code: "unsupported_blocks",
+      message
+    };
+  }
+
+  const contentValue = spec.arguments.content;
+  if (typeof contentValue === "string") {
+    const unsupportedSerializedBlocks =
+      findUnsupportedSerializedBlockNames(contentValue);
+    if (unsupportedSerializedBlocks.length > 0) {
+      const message = blockExecutionErrorMessage(
+        unsupportedSerializedBlocks
+      );
+      await appendExecutionMessage({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        author: { kind: "system" },
+        text: message
+      });
+      return {
+        ok: false,
+        code: "unsupported_blocks",
+        message
+      };
+    }
   }
 
   if (!mcpClient) {

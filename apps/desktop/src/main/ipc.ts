@@ -60,6 +60,7 @@ import {
   clearProviderSecret,
   clearSiteSigningSecret,
   getSettingsState,
+  reindexCoreBlocks,
   setPlannerPreferences,
   setSitePlannerSettings,
   setUiPreferences,
@@ -597,6 +598,15 @@ export function registerIpcHandlers(): void {
         siteId: req.siteId as SiteId
       });
       return parseResponse(ipcChannels.settingsClearSiteSigningSecret, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsReindexCoreBlocks,
+    async (_event, payload) => {
+      parseRequest(ipcChannels.settingsReindexCoreBlocks, payload);
+      const result = await reindexCoreBlocks();
+      return parseResponse(ipcChannels.settingsReindexCoreBlocks, result);
     }
   );
 

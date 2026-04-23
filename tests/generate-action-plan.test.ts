@@ -249,6 +249,142 @@ describe("buildLlmActionPlan", () => {
     );
   });
 
+  it("warns when structured parsed blocks include unsupported block types", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a cover layout",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Cover Page",
+              post_type: "page",
+              blocks: [
+                {
+                  blockName: "core/cover",
+                  attrs: {
+                    url: "https://upload.wikimedia.org/example.jpg"
+                  },
+                  innerBlocks: [],
+                  innerHTML: "<div class=\"wp-block-cover\"></div>",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a page with a cover block and image overlay."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.validationWarnings).toContain(
+      'Structured parsed blocks include unsupported block types that execution will reject: core/cover. Supported blocks today: core/code, core/column, core/columns, core/heading, core/image, core/paragraph, core/preformatted, core/quote, core/separator, core/spacer, core/verse.'
+    );
+  });
+
+  it("canonicalizes standalone block batch 1 shapes", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft with standalone blocks",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Standalone Blocks",
+              post_type: "page",
+              blocks: [
+                {
+                  blockName: "core/quote",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "Quoted line",
+                  innerContent: ["Quoted line"]
+                },
+                {
+                  blockName: "core/code",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "const x = 1;",
+                  innerContent: ["const x = 1;"]
+                },
+                {
+                  blockName: "core/separator",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a draft with quote, code, and separator blocks."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as Array<{
+      blockName: string;
+      innerHTML: string;
+    }>;
+    expect(blocks[0]?.innerHTML).toBe(
+      '<blockquote class="wp-block-quote"><p>Quoted line</p></blockquote>'
+    );
+    expect(blocks[1]?.innerHTML).toBe(
+      '<pre class="wp-block-code"><code>const x = 1;</code></pre>'
+    );
+    expect(blocks[2]?.innerHTML).toBe(
+      '<hr class="wp-block-separator has-alpha-channel-opacity"/>'
+    );
+  });
+
   it("preserves requested columns content instead of flattening it", async () => {
     const client = makeClient(
       JSON.stringify({

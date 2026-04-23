@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import {
   actionPlanSchema,
+  findUnsupportedParsedBlockNames,
+  findUnsupportedSerializedBlockNames,
+  isKnownWordPressCoreBlockName,
   type ImageAttachmentPayload,
   type Action,
   type ActionPlan,
-  type PlannerContext
+  type PlannerContext,
+  SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
 } from "@sitepilot/contracts";
 import type {
   ActionId,
@@ -189,6 +193,9 @@ function normalizeBlockName(raw: unknown): string {
   if (trimmed.startsWith("core:")) {
     return `core/${trimmed.slice("core:".length)}`;
   }
+  if (!trimmed.includes("/") && isKnownWordPressCoreBlockName(`core/${trimmed}`)) {
+    return `core/${trimmed}`;
+  }
   return trimmed;
 }
 
@@ -209,6 +216,69 @@ function normalizeTextChunk(chunk: string, blockName: string): string {
     return `<h2>${escapeHtml(chunk)}</h2>`;
   }
   return escapeHtml(chunk);
+}
+
+function extractTextContent(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+}
+
+function quoteHtml(attrs: Record<string, unknown>, innerHTML: string): string {
+  const classNames = ["wp-block-quote"];
+  const textAlign =
+    typeof attrs.textAlign === "string" ? attrs.textAlign.trim() : "";
+  if (textAlign.length > 0) {
+    classNames.push(`has-text-align-${escapeHtml(textAlign)}`);
+  }
+
+  const citation =
+    typeof attrs.citation === "string" ? attrs.citation.trim() : "";
+  const body = innerHTML.includes("<blockquote")
+    ? innerHTML
+    : `<blockquote><p>${escapeHtml(extractTextContent(innerHTML))}</p>${
+        citation.length > 0 ? `<cite>${escapeHtml(citation)}</cite>` : ""
+      }</blockquote>`;
+  if (body.includes("<blockquote")) {
+    return body.replace(
+      /<blockquote\b[^>]*>/i,
+      `<blockquote class="${classNames.join(" ")}">`
+    );
+  }
+  return body;
+}
+
+function codeHtml(innerHTML: string): string {
+  const text = extractTextContent(innerHTML);
+  return `<pre class="wp-block-code"><code>${escapeHtml(text)}</code></pre>`;
+}
+
+function preformattedHtml(innerHTML: string): string {
+  const text = extractTextContent(innerHTML);
+  return `<pre class="wp-block-preformatted">${escapeHtml(text)}</pre>`;
+}
+
+function verseHtml(innerHTML: string): string {
+  const text = extractTextContent(innerHTML);
+  return `<pre class="wp-block-verse">${escapeHtml(text)}</pre>`;
+}
+
+function separatorHtml(attrs: Record<string, unknown>): string {
+  const tagName =
+    typeof attrs.tagName === "string" && attrs.tagName.trim().length > 0
+      ? attrs.tagName.trim()
+      : "hr";
+  const classNames = ["wp-block-separator"];
+  const opacity =
+    typeof attrs.opacity === "string" ? attrs.opacity.trim() : "alpha-channel";
+  if (opacity === "css") {
+    classNames.push("has-css-opacity");
+  } else {
+    classNames.push("has-alpha-channel-opacity");
+  }
+  return `<${tagName} class="${classNames.join(" ")}"/>`;
 }
 
 function imageHtml(attrs: Record<string, unknown>): string {
@@ -322,6 +392,26 @@ function normalizeParsedBlockNode(
     innerContent = [innerHTML];
   }
 
+  if (blockName === "core/code") {
+    innerHTML = codeHtml(innerHTML);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/preformatted") {
+    innerHTML = preformattedHtml(innerHTML);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/quote") {
+    innerHTML = quoteHtml(attrs, innerHTML);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/separator") {
+    innerHTML = separatorHtml(attrs);
+    innerContent = [innerHTML];
+  }
+
   if (blockName === "core/image") {
     const generated = imageHtml(attrs);
     if (generated.length > 0) {
@@ -334,6 +424,11 @@ function normalizeParsedBlockNode(
 
   if (blockName === "core/spacer") {
     innerHTML = spacerHtml(attrs);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/verse") {
+    innerHTML = verseHtml(innerHTML);
     innerContent = [innerHTML];
   }
 
@@ -561,6 +656,14 @@ function normalizePlanPostContent(
     if (blockKey !== undefined && Array.isArray(blockTarget[blockKey])) {
       const normalizedBlocks = normalizeParsedBlocks(blockTarget[blockKey]);
       validationWarnings.push(...normalizedBlocks.warnings);
+      const unsupportedBlocks = findUnsupportedParsedBlockNames(
+        normalizedBlocks.blocks
+      );
+      if (unsupportedBlocks.length > 0) {
+        validationWarnings.push(
+          `Structured parsed blocks include unsupported block types that execution will reject: ${unsupportedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}.`
+        );
+      }
       const nextBlockTarget = {
         ...blockTarget,
         [blockKey]: normalizedBlocks.blocks
@@ -593,6 +696,14 @@ function normalizePlanPostContent(
 
     const normalized = normalizePostContent(currentContent, requestText);
     validationWarnings.push(...normalized.warnings);
+    const unsupportedSerializedBlocks = findUnsupportedSerializedBlockNames(
+      normalized.content
+    );
+    if (unsupportedSerializedBlocks.length > 0) {
+      validationWarnings.push(
+        `Serialized Gutenberg content includes unsupported block types that execution will reject: ${unsupportedSerializedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}.`
+      );
+    }
     if (normalized.content === currentContent) {
       return action;
     }
@@ -721,6 +832,7 @@ Do not propose update actions that lack both a concrete post_id and resolvable l
 Do not invent deliverables, sections, media, layouts, or block types the operator did not ask for. Default to the smallest faithful set of blocks, usually headings, paragraphs, and lists only. Do not add image/media-text/columns/gallery/buttons/cover/separator/spacer/embed/table/video blocks unless the request explicitly requires them.
 For each proposed action, put tool arguments directly in the action.input object. Do not wrap tool arguments in a nested input object inside action.input.
 For content-writing actions, use structured block data instead of hand-written serialized HTML whenever the request needs nested, layout, media, spacer, columns, gallery, cover, or other non-trivial Gutenberg blocks. Use input.blocks as an array of WordPress parsed block objects that can be passed to WordPress serialize_blocks(): each block has blockName, attrs, innerBlocks, innerHTML, and innerContent. Parsed blockName values for WordPress core blocks must use the "core/name" form such as "core/columns", "core/column", "core/paragraph", "core/image", and "core/spacer"; never use comment prefixes such as "wp:columns" in parsed blockName. Use input.content only for simple text-only block markup when no nested layout, media, or spacer block is needed. If input.blocks is present, it is the authoritative post body and downstream tools will prefer it over input.content.
+Only use parsed Gutenberg blocks that SitePilot explicitly supports for execution right now: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. If the request would require any other block, do not invent it. Use simpler supported blocks where faithful, otherwise surface the limitation in validationWarnings.
 
 WordPress Gutenberg content rules for create_draft_post and update_post_fields (post_content / content field):
 - Store body content as block serialization: each block uses delimiters <!-- wp:blockname {json attrs} --> ...inner HTML... <!-- /wp:blockname -->. Do not wrap the whole article in a single wp:html block that only describes intent (e.g. never use placeholder text like "Content about X with alternating blocks").

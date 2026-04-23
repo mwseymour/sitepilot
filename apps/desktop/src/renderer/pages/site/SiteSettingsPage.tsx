@@ -10,10 +10,112 @@ import { Link } from "react-router-dom";
 import type {
   PlannerPreferencesPayload,
   SitePlannerSettings,
-  UiPreferences
+  UiPreferences,
+  WordPressCoreBlockIndex
+} from "@sitepilot/contracts";
+import {
+  WORDPRESS_CORE_BLOCK_REFERENCE_URL,
 } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+
+type GapComplexity = "simple" | "medium" | "complex";
+type StructuralRole =
+  | "standalone"
+  | "container"
+  | "child-only"
+  | "placement-restricted";
+
+function blockHasRelationshipRules(block: WordPressCoreBlockIndex["blocks"][number]): boolean {
+  return (
+    block.parent.length > 0 ||
+    block.ancestor.length > 0 ||
+    block.allowedBlocks.length > 0
+  );
+}
+
+function classifyGapComplexity(
+  block: WordPressCoreBlockIndex["blocks"][number]
+): GapComplexity {
+  const score =
+    (block.renderPath ? 2 : 0) +
+    (block.phpRegistrationPath ? 1 : 0) +
+    (blockHasRelationshipRules(block) ? 1 : 0) +
+    (block.attributes.length >= 8 ? 1 : 0) +
+    (block.supports.length >= 8 ? 1 : 0);
+
+  if (score >= 4) {
+    return "complex";
+  }
+  if (score >= 2) {
+    return "medium";
+  }
+  return "simple";
+}
+
+function complexityLabel(
+  block: WordPressCoreBlockIndex["blocks"][number]
+): string {
+  const complexity = classifyGapComplexity(block);
+  if (complexity === "complex") {
+    return "Complex";
+  }
+  if (complexity === "medium") {
+    return "Medium";
+  }
+  return "Simple";
+}
+
+function blockSignals(block: WordPressCoreBlockIndex["blocks"][number]): string {
+  const signals: string[] = [];
+  if (block.renderPath) {
+    signals.push("render");
+  }
+  if (block.phpRegistrationPath) {
+    signals.push("php");
+  }
+  if (block.canContainInnerBlocks) {
+    signals.push("inner-blocks");
+  }
+  if (block.hasParentRestriction || block.hasAncestorRestriction) {
+    signals.push("placement-rules");
+  }
+  if (signals.length === 0) {
+    signals.push("static");
+  }
+  return signals.join(", ");
+}
+
+function classifyStructuralRole(
+  block: WordPressCoreBlockIndex["blocks"][number]
+): StructuralRole {
+  if (block.canContainInnerBlocks) {
+    return "container";
+  }
+  if (block.hasParentRestriction || block.hasAncestorRestriction) {
+    if (block.parent.length > 0 && block.ancestor.length === 0) {
+      return "child-only";
+    }
+    return "placement-restricted";
+  }
+  return "standalone";
+}
+
+function structuralRoleLabel(
+  block: WordPressCoreBlockIndex["blocks"][number]
+): string {
+  const role = classifyStructuralRole(block);
+  if (role === "container") {
+    return "Container";
+  }
+  if (role === "child-only") {
+    return "Child-only";
+  }
+  if (role === "placement-restricted") {
+    return "Placement-restricted";
+  }
+  return "Standalone";
+}
 
 export function SiteSettingsPage(): ReactElement {
   const { siteId, data, loading } = useSiteWorkspace();
@@ -27,7 +129,34 @@ export function SiteSettingsPage(): ReactElement {
   const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(null);
   const [sitePlannerSettings, setSitePlannerSettings] =
     useState<SitePlannerSettings | null>(null);
+  const [coreBlockIndex, setCoreBlockIndex] =
+    useState<WordPressCoreBlockIndex | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const executableBlocks =
+    coreBlockIndex?.blocks.filter((entry) => entry.executable) ?? [];
+  const indexedOnlyBlocks =
+    coreBlockIndex?.blocks.filter((entry) => !entry.executable) ?? [];
+  const simpleGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyGapComplexity(entry) === "simple"
+  );
+  const mediumGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyGapComplexity(entry) === "medium"
+  );
+  const complexGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyGapComplexity(entry) === "complex"
+  );
+  const standaloneGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyStructuralRole(entry) === "standalone"
+  );
+  const containerGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyStructuralRole(entry) === "container"
+  );
+  const childOnlyGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyStructuralRole(entry) === "child-only"
+  );
+  const placementRestrictedGaps = indexedOnlyBlocks.filter(
+    (entry) => classifyStructuralRole(entry) === "placement-restricted"
+  );
 
   const load = useCallback(async () => {
     if (!data || data.site.activationStatus !== "active") {
@@ -48,6 +177,7 @@ export function SiteSettingsPage(): ReactElement {
       state.sitePlannerSettings ?? { bypassApprovalRequests: false }
     );
     setHasSecret(state.siteHasSigningSecret ?? false);
+    setCoreBlockIndex(state.coreBlockIndex ?? null);
   }, [data, siteId]);
 
   useEffect(() => {
@@ -169,6 +299,24 @@ export function SiteSettingsPage(): ReactElement {
     }
     setHint("Developer tools setting saved.");
     await load();
+  }
+
+  async function onReindexCoreBlocks(): Promise<void> {
+    setBusy(true);
+    setErr(null);
+    setHint(null);
+    const res = await window.sitePilotDesktop.reindexCoreBlocks({});
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setCoreBlockIndex(res.coreBlockIndex ?? null);
+    setHint(
+      res.coreBlockIndex
+        ? `Re-indexed ${res.coreBlockIndex.indexedBlockCount} core blocks from WordPress ${res.coreBlockIndex.wordpressVersion ?? "snapshot"}.`
+        : "No local wordpress-core snapshot was found to index."
+    );
   }
 
   if (loading) {
@@ -340,6 +488,200 @@ export function SiteSettingsPage(): ReactElement {
           </button>
         </section>
       ) : null}
+
+      <section className="settings-site-section">
+        <h2>Supported blocks</h2>
+        <p className="muted small-print">
+          Reference list:{" "}
+          <a
+            href={WORDPRESS_CORE_BLOCK_REFERENCE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            WordPress Core Blocks Reference
+          </a>
+          . Snapshot source: <code>{coreBlockIndex?.sourceRoot ?? "wordpress-core/"}</code>.
+        </p>
+        <p className="muted small-print">
+          SitePilot indexes the local WordPress snapshot to discover core block
+          metadata, but only executes blocks with explicit parsed-block
+          canonicalization. Everything else stays blocked instead of saving
+          guessed Gutenberg HTML.
+        </p>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void onReindexCoreBlocks()}
+          >
+            Re-index block structures
+          </button>
+        </div>
+        {coreBlockIndex ? (
+          <>
+            <p className="muted small-print">
+              Indexed {coreBlockIndex.indexedBlockCount} blocks from WordPress{" "}
+              {coreBlockIndex.wordpressVersion ?? "unknown"} on{" "}
+              {new Date(coreBlockIndex.generatedAt).toLocaleString()}.
+            </p>
+            <details open>
+              <summary>Executable ({executableBlocks.length})</summary>
+              <ul className="small-print">
+                {executableBlocks.map((entry) => (
+                  <li key={entry.name}>
+                    <strong>{entry.name}</strong>: {entry.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+            <details>
+              <summary>Indexed only ({indexedOnlyBlocks.length})</summary>
+              <ul className="small-print">
+                {indexedOnlyBlocks.map((entry) => (
+                  <li key={entry.name}>
+                    <strong>{entry.name}</strong>: {entry.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+            <details open>
+              <summary>Gap Report ({indexedOnlyBlocks.length})</summary>
+              <p className="muted small-print">
+                Complexity is heuristic. It reflects render files, PHP
+                registration, placement rules, inner-block allowances, and
+                attribute/support count so we can see where serializer work is
+                likely to be shallow or expensive.
+              </p>
+              <p className="muted small-print">
+                Simple: {simpleGaps.length}. Medium: {mediumGaps.length}.
+                Complex: {complexGaps.length}.
+              </p>
+              <p className="muted small-print">
+                Standalone: {standaloneGaps.length}. Container:{" "}
+                {containerGaps.length}. Child-only: {childOnlyGaps.length}.
+                Placement-restricted: {placementRestrictedGaps.length}.
+              </p>
+              <details>
+                <summary>Structural Roles</summary>
+                <div className="settings-role-grid small-print">
+                  <div>
+                    <strong>Standalone</strong>
+                    <p className="muted">
+                      No child allowance and no placement restriction.
+                    </p>
+                    <p>{standaloneGaps.map((entry) => entry.name).join(", ")}</p>
+                  </div>
+                  <div>
+                    <strong>Container</strong>
+                    <p className="muted">
+                      Explicitly allows direct child blocks.
+                    </p>
+                    <p>{containerGaps.map((entry) => entry.name).join(", ")}</p>
+                  </div>
+                  <div>
+                    <strong>Child-only</strong>
+                    <p className="muted">
+                      Must live under specific parent blocks.
+                    </p>
+                    <p>{childOnlyGaps.map((entry) => entry.name).join(", ")}</p>
+                  </div>
+                  <div>
+                    <strong>Placement-restricted</strong>
+                    <p className="muted">
+                      Constrained by ancestor rules or mixed placement logic.
+                    </p>
+                    <p>
+                      {placementRestrictedGaps
+                        .map((entry) => entry.name)
+                        .join(", ")}
+                    </p>
+                  </div>
+                </div>
+              </details>
+              <div className="settings-gap-table-wrap">
+                <table className="settings-gap-table small-print">
+                  <thead>
+                    <tr>
+                      <th>Block</th>
+                      <th>Role</th>
+                      <th>Complexity</th>
+                      <th>Signals</th>
+                      <th>Inner</th>
+                      <th>Placement</th>
+                      <th>Attrs</th>
+                      <th>Supports</th>
+                      <th>Files</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {indexedOnlyBlocks.map((entry) => (
+                      <tr key={entry.name}>
+                        <td>
+                          <strong>{entry.name}</strong>
+                        </td>
+                        <td>{structuralRoleLabel(entry)}</td>
+                        <td>{complexityLabel(entry)}</td>
+                        <td>{blockSignals(entry)}</td>
+                        <td>
+                          {entry.canContainInnerBlocks
+                            ? `children: ${entry.allowedBlocks.length}`
+                            : entry.likelyUsesInnerBlocks
+                              ? "likely"
+                              : "no"}
+                        </td>
+                        <td>
+                          {entry.hasParentRestriction
+                            ? `parent: ${entry.parent.length}`
+                            : entry.hasAncestorRestriction
+                              ? `ancestor: ${entry.ancestor.length}`
+                              : "none"}
+                        </td>
+                        <td>{entry.attributes.length}</td>
+                        <td>{entry.supports.length}</td>
+                        <td>
+                          <code>{entry.metadataPath}</code>
+                          {entry.renderPath ? <>, <code>{entry.renderPath}</code></> : null}
+                          {entry.phpRegistrationPath ? (
+                            <>
+                              , <code>{entry.phpRegistrationPath}</code>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            {coreBlockIndex.missingReferenceBlocks.length > 0 ? (
+              <details>
+                <summary>
+                  Missing From Snapshot ({coreBlockIndex.missingReferenceBlocks.length})
+                </summary>
+                <p className="muted small-print">
+                  {coreBlockIndex.missingReferenceBlocks.join(", ")}
+                </p>
+              </details>
+            ) : null}
+            {coreBlockIndex.additionalSnapshotBlocks.length > 0 ? (
+              <details>
+                <summary>
+                  Additional Snapshot Blocks ({coreBlockIndex.additionalSnapshotBlocks.length})
+                </summary>
+                <p className="muted small-print">
+                  {coreBlockIndex.additionalSnapshotBlocks.join(", ")}
+                </p>
+              </details>
+            ) : null}
+          </>
+        ) : (
+          <p className="muted small-print">
+            No cached WordPress core block index found yet. Add or update the
+            local <code>wordpress-core/</code> snapshot and run re-index.
+          </p>
+        )}
+      </section>
 
       <section className="settings-site-section">
         <h2>Export &amp; import</h2>

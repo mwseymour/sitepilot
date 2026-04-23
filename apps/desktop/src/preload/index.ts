@@ -78,6 +78,8 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.settingsSetUiPreferences, request),
   clearSiteSigningSecret: (request) =>
     invokeIpc(ipcChannels.settingsClearSiteSigningSecret, request),
+  reindexCoreBlocks: (request = {}) =>
+    invokeIpc(ipcChannels.settingsReindexCoreBlocks, request),
   getCompatibilityInfo: () => invokeIpc(ipcChannels.getCompatibilityInfo, {}),
   buildSiteExportBundle: (request) =>
     invokeIpc(ipcChannels.exportBuildSiteBundle, request),

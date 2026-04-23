@@ -1,0 +1,4100 @@
+{
+  "sourceRoot": "/Users/mattseymour/Desktop/ai-dev/sitepilot/wordpress-core",
+  "cachePath": "/Users/mattseymour/Desktop/ai-dev/sitepilot/wordpress-core/.sitepilot-core-block-index.json",
+  "generatedAt": "2026-04-23T14:25:12.183Z",
+  "wordpressVersion": "6.9.4",
+  "indexedBlockCount": 106,
+  "executableBlockCount": 6,
+  "missingReferenceBlocks": [
+    "core/breadcrumbs",
+    "core/comment-author-avatar",
+    "core/form",
+    "core/form-input",
+    "core/form-submission-notification",
+    "core/form-submit-button",
+    "core/icon",
+    "core/navigation-overlay-close",
+    "core/playlist",
+    "core/playlist-track",
+    "core/post-comment",
+    "core/tab",
+    "core/tab-list",
+    "core/tab-panel",
+    "core/tab-panels",
+    "core/table-of-contents",
+    "core/tabs"
+  ],
+  "additionalSnapshotBlocks": [
+    "core/legacy-widget",
+    "core/widget-group"
+  ],
+  "blocks": [
+    {
+      "name": "core/accordion",
+      "label": "Accordion",
+      "title": "Accordion",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/accordion/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/accordion.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/accordion-item"
+      ],
+      "attributes": [
+        "autoclose",
+        "headingLevel",
+        "iconPosition",
+        "levelOptions",
+        "showIcon"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "ariaLabel",
+        "background",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "layout",
+        "shadow",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/accordion/style-rtl.css",
+        "wp-includes/blocks/accordion/style-rtl.min.css",
+        "wp-includes/blocks/accordion/style.css",
+        "wp-includes/blocks/accordion/style.min.css"
+      ]
+    },
+    {
+      "name": "core/accordion-heading",
+      "label": "Accordion Heading",
+      "title": "Accordion Heading",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/accordion-heading/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/accordion-item"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "iconPosition",
+        "level",
+        "openByDefault",
+        "showIcon",
+        "title"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "interactivity",
+        "lock",
+        "shadow",
+        "spacing",
+        "typography",
+        "visibility"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/accordion-heading/style-rtl.css",
+        "wp-includes/blocks/accordion-heading/style-rtl.min.css",
+        "wp-includes/blocks/accordion-heading/style.css",
+        "wp-includes/blocks/accordion-heading/style.min.css"
+      ]
+    },
+    {
+      "name": "core/accordion-item",
+      "label": "Accordion Item",
+      "title": "Accordion Item",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/accordion-item/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/accordion-item.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/accordion"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/accordion-heading",
+        "core/accordion-panel"
+      ],
+      "attributes": [
+        "openByDefault"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "layout",
+        "shadow",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/accordion-item/style-rtl.css",
+        "wp-includes/blocks/accordion-item/style-rtl.min.css",
+        "wp-includes/blocks/accordion-item/style.css",
+        "wp-includes/blocks/accordion-item/style.min.css"
+      ]
+    },
+    {
+      "name": "core/accordion-panel",
+      "label": "Accordion Panel",
+      "title": "Accordion Panel",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/accordion-panel/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/accordion-item"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isSelected",
+        "openByDefault",
+        "templateLock"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "allowedBlocks",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "layout",
+        "lock",
+        "shadow",
+        "spacing",
+        "typography",
+        "visibility"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/accordion-panel/style-rtl.css",
+        "wp-includes/blocks/accordion-panel/style-rtl.min.css",
+        "wp-includes/blocks/accordion-panel/style.css",
+        "wp-includes/blocks/accordion-panel/style.min.css"
+      ]
+    },
+    {
+      "name": "core/archives",
+      "label": "Archives",
+      "title": "Archives",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/archives/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/archives.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "displayAsDropdown",
+        "showLabel",
+        "showPostCounts",
+        "type"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/archives/editor-rtl.css",
+        "wp-includes/blocks/archives/editor-rtl.min.css",
+        "wp-includes/blocks/archives/editor.css",
+        "wp-includes/blocks/archives/editor.min.css",
+        "wp-includes/blocks/archives/style-rtl.css",
+        "wp-includes/blocks/archives/style-rtl.min.css",
+        "wp-includes/blocks/archives/style.css",
+        "wp-includes/blocks/archives/style.min.css"
+      ]
+    },
+    {
+      "name": "core/audio",
+      "label": "Audio",
+      "title": "Audio",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/audio/block.json",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "autoplay",
+        "blob",
+        "caption",
+        "id",
+        "loop",
+        "preload",
+        "src"
+      ],
+      "supports": [
+        "align",
+        "anchor",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/audio/editor-rtl.css",
+        "wp-includes/blocks/audio/editor-rtl.min.css",
+        "wp-includes/blocks/audio/editor.css",
+        "wp-includes/blocks/audio/editor.min.css",
+        "wp-includes/blocks/audio/style-rtl.css",
+        "wp-includes/blocks/audio/style-rtl.min.css",
+        "wp-includes/blocks/audio/style.css",
+        "wp-includes/blocks/audio/style.min.css",
+        "wp-includes/blocks/audio/theme-rtl.css",
+        "wp-includes/blocks/audio/theme-rtl.min.css",
+        "wp-includes/blocks/audio/theme.css",
+        "wp-includes/blocks/audio/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/avatar",
+      "label": "Avatar",
+      "title": "Avatar",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/avatar/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/avatar.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "linkTarget",
+        "size",
+        "userId"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "alignWide",
+        "color",
+        "filter",
+        "html",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/avatar/editor-rtl.css",
+        "wp-includes/blocks/avatar/editor-rtl.min.css",
+        "wp-includes/blocks/avatar/editor.css",
+        "wp-includes/blocks/avatar/editor.min.css",
+        "wp-includes/blocks/avatar/style-rtl.css",
+        "wp-includes/blocks/avatar/style-rtl.min.css",
+        "wp-includes/blocks/avatar/style.css",
+        "wp-includes/blocks/avatar/style.min.css"
+      ]
+    },
+    {
+      "name": "core/block",
+      "label": "Block",
+      "title": "Pattern",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/block/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/block.php",
+      "apiVersion": 3,
+      "category": "reusable",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content",
+        "ref"
+      ],
+      "supports": [
+        "customClassName",
+        "html",
+        "inserter",
+        "interactivity",
+        "renaming"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/button",
+      "label": "Button",
+      "title": "Button",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/button/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/button.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/buttons"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "backgroundColor",
+        "gradient",
+        "linkTarget",
+        "placeholder",
+        "rel",
+        "tagName",
+        "text",
+        "textAlign",
+        "textColor",
+        "title",
+        "type",
+        "url",
+        "width"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "alignWide",
+        "anchor",
+        "color",
+        "interactivity",
+        "reusable",
+        "shadow",
+        "spacing",
+        "splitting",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/button/editor-rtl.css",
+        "wp-includes/blocks/button/editor-rtl.min.css",
+        "wp-includes/blocks/button/editor.css",
+        "wp-includes/blocks/button/editor.min.css",
+        "wp-includes/blocks/button/style-rtl.css",
+        "wp-includes/blocks/button/style-rtl.min.css",
+        "wp-includes/blocks/button/style.css",
+        "wp-includes/blocks/button/style.min.css"
+      ]
+    },
+    {
+      "name": "core/buttons",
+      "label": "Buttons",
+      "title": "Buttons",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/buttons/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/button"
+      ],
+      "attributes": [],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalExposeControlsToChildren",
+        "align",
+        "anchor",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/buttons/editor-rtl.css",
+        "wp-includes/blocks/buttons/editor-rtl.min.css",
+        "wp-includes/blocks/buttons/editor.css",
+        "wp-includes/blocks/buttons/editor.min.css",
+        "wp-includes/blocks/buttons/style-rtl.css",
+        "wp-includes/blocks/buttons/style-rtl.min.css",
+        "wp-includes/blocks/buttons/style.css",
+        "wp-includes/blocks/buttons/style.min.css"
+      ]
+    },
+    {
+      "name": "core/calendar",
+      "label": "Calendar",
+      "title": "Calendar",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/calendar/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/calendar.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "month",
+        "year"
+      ],
+      "supports": [
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/calendar/style-rtl.css",
+        "wp-includes/blocks/calendar/style-rtl.min.css",
+        "wp-includes/blocks/calendar/style.css",
+        "wp-includes/blocks/calendar/style.min.css"
+      ]
+    },
+    {
+      "name": "core/categories",
+      "label": "Categories",
+      "title": "Terms List",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/categories/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/categories.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "displayAsDropdown",
+        "label",
+        "showEmpty",
+        "showHierarchy",
+        "showLabel",
+        "showOnlyTopLevel",
+        "showPostCounts",
+        "taxonomy"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/categories/editor-rtl.css",
+        "wp-includes/blocks/categories/editor-rtl.min.css",
+        "wp-includes/blocks/categories/editor.css",
+        "wp-includes/blocks/categories/editor.min.css",
+        "wp-includes/blocks/categories/style-rtl.css",
+        "wp-includes/blocks/categories/style-rtl.min.css",
+        "wp-includes/blocks/categories/style.css",
+        "wp-includes/blocks/categories/style.min.css"
+      ]
+    },
+    {
+      "name": "core/code",
+      "label": "Code",
+      "title": "Code",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/code/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/code/editor-rtl.css",
+        "wp-includes/blocks/code/editor-rtl.min.css",
+        "wp-includes/blocks/code/editor.css",
+        "wp-includes/blocks/code/editor.min.css",
+        "wp-includes/blocks/code/style-rtl.css",
+        "wp-includes/blocks/code/style-rtl.min.css",
+        "wp-includes/blocks/code/style.css",
+        "wp-includes/blocks/code/style.min.css",
+        "wp-includes/blocks/code/theme-rtl.css",
+        "wp-includes/blocks/code/theme-rtl.min.css",
+        "wp-includes/blocks/code/theme.css",
+        "wp-includes/blocks/code/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/column",
+      "label": "Column",
+      "title": "Column",
+      "executable": true,
+      "status": "executable",
+      "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/column/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/columns"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "templateLock",
+        "verticalAlignment",
+        "width"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalOnEnter",
+        "allowedBlocks",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "reusable",
+        "shadow",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/columns",
+      "label": "Columns",
+      "title": "Columns",
+      "executable": true,
+      "status": "executable",
+      "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/columns/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/column"
+      ],
+      "attributes": [
+        "isStackedOnMobile",
+        "templateLock",
+        "verticalAlignment"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "shadow",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/columns/editor-rtl.css",
+        "wp-includes/blocks/columns/editor-rtl.min.css",
+        "wp-includes/blocks/columns/editor.css",
+        "wp-includes/blocks/columns/editor.min.css",
+        "wp-includes/blocks/columns/style-rtl.css",
+        "wp-includes/blocks/columns/style-rtl.min.css",
+        "wp-includes/blocks/columns/style.css",
+        "wp-includes/blocks/columns/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comment-author-name",
+      "label": "Comment Author Name",
+      "title": "Comment Author Name",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comment-author-name/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comment-author-name.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/comment-template"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "linkTarget",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comment-author-name/style-rtl.css",
+        "wp-includes/blocks/comment-author-name/style-rtl.min.css",
+        "wp-includes/blocks/comment-author-name/style.css",
+        "wp-includes/blocks/comment-author-name/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comment-content",
+      "label": "Comment Content",
+      "title": "Comment Content",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comment-content/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comment-content.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/comment-template"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comment-content/style-rtl.css",
+        "wp-includes/blocks/comment-content/style-rtl.min.css",
+        "wp-includes/blocks/comment-content/style.css",
+        "wp-includes/blocks/comment-content/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comment-date",
+      "label": "Comment Date",
+      "title": "Comment Date",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comment-date/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comment-date.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/comment-template"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "format",
+        "isLink"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comment-date/style-rtl.css",
+        "wp-includes/blocks/comment-date/style-rtl.min.css",
+        "wp-includes/blocks/comment-date/style.css",
+        "wp-includes/blocks/comment-date/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comment-edit-link",
+      "label": "Comment Edit Link",
+      "title": "Comment Edit Link",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comment-edit-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comment-edit-link.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/comment-template"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "linkTarget",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comment-edit-link/style-rtl.css",
+        "wp-includes/blocks/comment-edit-link/style-rtl.min.css",
+        "wp-includes/blocks/comment-edit-link/style.css",
+        "wp-includes/blocks/comment-edit-link/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comment-reply-link",
+      "label": "Comment Reply Link",
+      "title": "Comment Reply Link",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comment-reply-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comment-reply-link.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/comment-template"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comment-reply-link/style-rtl.css",
+        "wp-includes/blocks/comment-reply-link/style-rtl.min.css",
+        "wp-includes/blocks/comment-reply-link/style.css",
+        "wp-includes/blocks/comment-reply-link/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comment-template",
+      "label": "Comment Template",
+      "title": "Comment Template",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comment-template/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comment-template.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/comments"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "html",
+        "interactivity",
+        "reusable",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comment-template/style-rtl.css",
+        "wp-includes/blocks/comment-template/style-rtl.min.css",
+        "wp-includes/blocks/comment-template/style.css",
+        "wp-includes/blocks/comment-template/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comments",
+      "label": "Comments",
+      "title": "Comments",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comments/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comments.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "legacy",
+        "tagName"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comments/editor-rtl.css",
+        "wp-includes/blocks/comments/editor-rtl.min.css",
+        "wp-includes/blocks/comments/editor.css",
+        "wp-includes/blocks/comments/editor.min.css",
+        "wp-includes/blocks/comments/style-rtl.css",
+        "wp-includes/blocks/comments/style-rtl.min.css",
+        "wp-includes/blocks/comments/style.css",
+        "wp-includes/blocks/comments/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comments-pagination",
+      "label": "Comments Pagination",
+      "title": "Comments Pagination",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comments-pagination/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comments-pagination.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/comments"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/comments-pagination-next",
+        "core/comments-pagination-numbers",
+        "core/comments-pagination-previous"
+      ],
+      "attributes": [
+        "paginationArrow"
+      ],
+      "supports": [
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comments-pagination/editor-rtl.css",
+        "wp-includes/blocks/comments-pagination/editor-rtl.min.css",
+        "wp-includes/blocks/comments-pagination/editor.css",
+        "wp-includes/blocks/comments-pagination/editor.min.css",
+        "wp-includes/blocks/comments-pagination/style-rtl.css",
+        "wp-includes/blocks/comments-pagination/style-rtl.min.css",
+        "wp-includes/blocks/comments-pagination/style.css",
+        "wp-includes/blocks/comments-pagination/style.min.css"
+      ]
+    },
+    {
+      "name": "core/comments-pagination-next",
+      "label": "Comments Pagination Next",
+      "title": "Comments Next Page",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comments-pagination-next/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comments-pagination-next.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/comments-pagination"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label"
+      ],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/comments-pagination-numbers",
+      "label": "Comments Pagination Numbers",
+      "title": "Comments Page Numbers",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comments-pagination-numbers/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comments-pagination-numbers.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/comments-pagination"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comments-pagination-numbers/editor-rtl.css",
+        "wp-includes/blocks/comments-pagination-numbers/editor-rtl.min.css",
+        "wp-includes/blocks/comments-pagination-numbers/editor.css",
+        "wp-includes/blocks/comments-pagination-numbers/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/comments-pagination-previous",
+      "label": "Comments Pagination Previous",
+      "title": "Comments Previous Page",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comments-pagination-previous/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comments-pagination-previous.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/comments-pagination"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label"
+      ],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/comments-title",
+      "label": "Comments Title",
+      "title": "Comments Title",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/comments-title/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/comments-title.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/comments"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "level",
+        "levelOptions",
+        "showCommentsCount",
+        "showPostTitle",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/comments-title/editor-rtl.css",
+        "wp-includes/blocks/comments-title/editor-rtl.min.css",
+        "wp-includes/blocks/comments-title/editor.css",
+        "wp-includes/blocks/comments-title/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/cover",
+      "label": "Cover",
+      "title": "Cover",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/cover/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/cover.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "alt",
+        "backgroundType",
+        "contentPosition",
+        "customGradient",
+        "customOverlayColor",
+        "dimRatio",
+        "focalPoint",
+        "gradient",
+        "hasParallax",
+        "id",
+        "isDark",
+        "isRepeated",
+        "isUserOverlayColor",
+        "minHeight",
+        "minHeightUnit",
+        "overlayColor",
+        "poster",
+        "sizeSlug",
+        "tagName",
+        "templateLock",
+        "url",
+        "useFeaturedImage"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "allowedBlocks",
+        "anchor",
+        "color",
+        "dimensions",
+        "filter",
+        "html",
+        "interactivity",
+        "layout",
+        "shadow",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/cover/editor-rtl.css",
+        "wp-includes/blocks/cover/editor-rtl.min.css",
+        "wp-includes/blocks/cover/editor.css",
+        "wp-includes/blocks/cover/editor.min.css",
+        "wp-includes/blocks/cover/style-rtl.css",
+        "wp-includes/blocks/cover/style-rtl.min.css",
+        "wp-includes/blocks/cover/style.css",
+        "wp-includes/blocks/cover/style.min.css"
+      ]
+    },
+    {
+      "name": "core/details",
+      "label": "Details",
+      "title": "Details",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/details/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "name",
+        "placeholder",
+        "showContent",
+        "summary"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalOnEnter",
+        "align",
+        "allowedBlocks",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/details/editor-rtl.css",
+        "wp-includes/blocks/details/editor-rtl.min.css",
+        "wp-includes/blocks/details/editor.css",
+        "wp-includes/blocks/details/editor.min.css",
+        "wp-includes/blocks/details/style-rtl.css",
+        "wp-includes/blocks/details/style-rtl.min.css",
+        "wp-includes/blocks/details/style.css",
+        "wp-includes/blocks/details/style.min.css"
+      ]
+    },
+    {
+      "name": "core/embed",
+      "label": "Embed",
+      "title": "Embed",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/embed/block.json",
+      "apiVersion": 3,
+      "category": "embed",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "allowResponsive",
+        "caption",
+        "previewable",
+        "providerNameSlug",
+        "responsive",
+        "type",
+        "url"
+      ],
+      "supports": [
+        "align",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/embed/editor-rtl.css",
+        "wp-includes/blocks/embed/editor-rtl.min.css",
+        "wp-includes/blocks/embed/editor.css",
+        "wp-includes/blocks/embed/editor.min.css",
+        "wp-includes/blocks/embed/style-rtl.css",
+        "wp-includes/blocks/embed/style-rtl.min.css",
+        "wp-includes/blocks/embed/style.css",
+        "wp-includes/blocks/embed/style.min.css",
+        "wp-includes/blocks/embed/theme-rtl.css",
+        "wp-includes/blocks/embed/theme-rtl.min.css",
+        "wp-includes/blocks/embed/theme.css",
+        "wp-includes/blocks/embed/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/file",
+      "label": "File",
+      "title": "File",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/file/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/file.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "blob",
+        "displayPreview",
+        "downloadButtonText",
+        "fileId",
+        "fileName",
+        "href",
+        "id",
+        "previewHeight",
+        "showDownloadButton",
+        "textLinkHref",
+        "textLinkTarget"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/file/editor-rtl.css",
+        "wp-includes/blocks/file/editor-rtl.min.css",
+        "wp-includes/blocks/file/editor.css",
+        "wp-includes/blocks/file/editor.min.css",
+        "wp-includes/blocks/file/style-rtl.css",
+        "wp-includes/blocks/file/style-rtl.min.css",
+        "wp-includes/blocks/file/style.css",
+        "wp-includes/blocks/file/style.min.css",
+        "wp-includes/blocks/file/view.asset.php",
+        "wp-includes/blocks/file/view.js",
+        "wp-includes/blocks/file/view.min.asset.php",
+        "wp-includes/blocks/file/view.min.js"
+      ]
+    },
+    {
+      "name": "core/footnotes",
+      "label": "Footnotes",
+      "title": "Footnotes",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/footnotes/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/footnotes.php",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "inserter",
+        "interactivity",
+        "multiple",
+        "reusable",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/footnotes/style-rtl.css",
+        "wp-includes/blocks/footnotes/style-rtl.min.css",
+        "wp-includes/blocks/footnotes/style.css",
+        "wp-includes/blocks/footnotes/style.min.css"
+      ]
+    },
+    {
+      "name": "core/freeform",
+      "label": "Freeform",
+      "title": "Classic",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/freeform/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content"
+      ],
+      "supports": [
+        "className",
+        "customClassName",
+        "lock",
+        "renaming",
+        "reusable",
+        "visibility"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/freeform/editor-rtl.css",
+        "wp-includes/blocks/freeform/editor-rtl.min.css",
+        "wp-includes/blocks/freeform/editor.css",
+        "wp-includes/blocks/freeform/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/gallery",
+      "label": "Gallery",
+      "title": "Gallery",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/gallery/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/gallery.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/image"
+      ],
+      "attributes": [
+        "allowResize",
+        "aspectRatio",
+        "caption",
+        "columns",
+        "fixedHeight",
+        "ids",
+        "imageCrop",
+        "images",
+        "linkTarget",
+        "linkTo",
+        "randomOrder",
+        "shortCodeTransforms",
+        "sizeSlug"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing",
+        "units"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/gallery/editor-rtl.css",
+        "wp-includes/blocks/gallery/editor-rtl.min.css",
+        "wp-includes/blocks/gallery/editor.css",
+        "wp-includes/blocks/gallery/editor.min.css",
+        "wp-includes/blocks/gallery/style-rtl.css",
+        "wp-includes/blocks/gallery/style-rtl.min.css",
+        "wp-includes/blocks/gallery/style.css",
+        "wp-includes/blocks/gallery/style.min.css",
+        "wp-includes/blocks/gallery/theme-rtl.css",
+        "wp-includes/blocks/gallery/theme-rtl.min.css",
+        "wp-includes/blocks/gallery/theme.css",
+        "wp-includes/blocks/gallery/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/group",
+      "label": "Group",
+      "title": "Group",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/group/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "tagName",
+        "templateLock"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalOnEnter",
+        "__experimentalOnMerge",
+        "__experimentalSettings",
+        "align",
+        "allowedBlocks",
+        "anchor",
+        "ariaLabel",
+        "background",
+        "color",
+        "dimensions",
+        "html",
+        "interactivity",
+        "layout",
+        "position",
+        "shadow",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/group/editor-rtl.css",
+        "wp-includes/blocks/group/editor-rtl.min.css",
+        "wp-includes/blocks/group/editor.css",
+        "wp-includes/blocks/group/editor.min.css",
+        "wp-includes/blocks/group/style-rtl.css",
+        "wp-includes/blocks/group/style-rtl.min.css",
+        "wp-includes/blocks/group/style.css",
+        "wp-includes/blocks/group/style.min.css",
+        "wp-includes/blocks/group/theme-rtl.css",
+        "wp-includes/blocks/group/theme-rtl.min.css",
+        "wp-includes/blocks/group/theme.css",
+        "wp-includes/blocks/group/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/heading",
+      "label": "Heading",
+      "title": "Heading",
+      "executable": true,
+      "status": "executable",
+      "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/heading/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/heading.php",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content",
+        "level",
+        "levelOptions",
+        "placeholder",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalSlashInserter",
+        "__unstablePasteTextInline",
+        "align",
+        "anchor",
+        "className",
+        "color",
+        "interactivity",
+        "spacing",
+        "splitting",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/heading/style-rtl.css",
+        "wp-includes/blocks/heading/style-rtl.min.css",
+        "wp-includes/blocks/heading/style.css",
+        "wp-includes/blocks/heading/style.min.css"
+      ]
+    },
+    {
+      "name": "core/home-link",
+      "label": "Home Link",
+      "title": "Home Link",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/home-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/home-link.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/navigation"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label"
+      ],
+      "supports": [
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/html",
+      "label": "Html",
+      "title": "Custom HTML",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/html/block.json",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content"
+      ],
+      "supports": [
+        "className",
+        "customClassName",
+        "html",
+        "interactivity"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/html/editor-rtl.css",
+        "wp-includes/blocks/html/editor-rtl.min.css",
+        "wp-includes/blocks/html/editor.css",
+        "wp-includes/blocks/html/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/image",
+      "label": "Image",
+      "title": "Image",
+      "executable": true,
+      "status": "executable",
+      "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/image/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/image.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "alt",
+        "aspectRatio",
+        "blob",
+        "caption",
+        "height",
+        "href",
+        "id",
+        "lightbox",
+        "linkClass",
+        "linkDestination",
+        "linkTarget",
+        "rel",
+        "scale",
+        "sizeSlug",
+        "title",
+        "url",
+        "width"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "filter",
+        "interactivity",
+        "shadow",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/image/editor-rtl.css",
+        "wp-includes/blocks/image/editor-rtl.min.css",
+        "wp-includes/blocks/image/editor.css",
+        "wp-includes/blocks/image/editor.min.css",
+        "wp-includes/blocks/image/style-rtl.css",
+        "wp-includes/blocks/image/style-rtl.min.css",
+        "wp-includes/blocks/image/style.css",
+        "wp-includes/blocks/image/style.min.css",
+        "wp-includes/blocks/image/theme-rtl.css",
+        "wp-includes/blocks/image/theme-rtl.min.css",
+        "wp-includes/blocks/image/theme.css",
+        "wp-includes/blocks/image/theme.min.css",
+        "wp-includes/blocks/image/view.asset.php",
+        "wp-includes/blocks/image/view.js",
+        "wp-includes/blocks/image/view.min.asset.php",
+        "wp-includes/blocks/image/view.min.js"
+      ]
+    },
+    {
+      "name": "core/latest-comments",
+      "label": "Latest Comments",
+      "title": "Latest Comments",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/latest-comments/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/latest-comments.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "commentsToShow",
+        "displayAvatar",
+        "displayDate",
+        "displayExcerpt"
+      ],
+      "supports": [
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/latest-comments/style-rtl.css",
+        "wp-includes/blocks/latest-comments/style-rtl.min.css",
+        "wp-includes/blocks/latest-comments/style.css",
+        "wp-includes/blocks/latest-comments/style.min.css"
+      ]
+    },
+    {
+      "name": "core/latest-posts",
+      "label": "Latest Posts",
+      "title": "Latest Posts",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/latest-posts/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/latest-posts.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "addLinkToFeaturedImage",
+        "categories",
+        "columns",
+        "displayAuthor",
+        "displayFeaturedImage",
+        "displayPostContent",
+        "displayPostContentRadio",
+        "displayPostDate",
+        "excerptLength",
+        "featuredImageAlign",
+        "featuredImageSizeHeight",
+        "featuredImageSizeSlug",
+        "featuredImageSizeWidth",
+        "order",
+        "orderBy",
+        "postLayout",
+        "postsToShow",
+        "selectedAuthor"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/latest-posts/editor-rtl.css",
+        "wp-includes/blocks/latest-posts/editor-rtl.min.css",
+        "wp-includes/blocks/latest-posts/editor.css",
+        "wp-includes/blocks/latest-posts/editor.min.css",
+        "wp-includes/blocks/latest-posts/style-rtl.css",
+        "wp-includes/blocks/latest-posts/style-rtl.min.css",
+        "wp-includes/blocks/latest-posts/style.css",
+        "wp-includes/blocks/latest-posts/style.min.css"
+      ]
+    },
+    {
+      "name": "core/legacy-widget",
+      "label": "Legacy Widget",
+      "title": "Legacy Widget",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/legacy-widget/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/legacy-widget.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "id",
+        "idBase",
+        "instance"
+      ],
+      "supports": [
+        "customClassName",
+        "html",
+        "reusable"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/list",
+      "label": "List",
+      "title": "List",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/list/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/list.php",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/list-item"
+      ],
+      "attributes": [
+        "ordered",
+        "placeholder",
+        "reversed",
+        "start",
+        "type",
+        "values"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalOnMerge",
+        "__experimentalSlashInserter",
+        "__unstablePasteTextInline",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/list/style-rtl.css",
+        "wp-includes/blocks/list/style-rtl.min.css",
+        "wp-includes/blocks/list/style.css",
+        "wp-includes/blocks/list/style.min.css"
+      ]
+    },
+    {
+      "name": "core/list-item",
+      "label": "List Item",
+      "title": "List Item",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/list-item/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [
+        "core/list"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/list"
+      ],
+      "attributes": [
+        "content",
+        "placeholder"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "anchor",
+        "className",
+        "color",
+        "interactivity",
+        "spacing",
+        "splitting",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/loginout",
+      "label": "Loginout",
+      "title": "Login/out",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/loginout/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/loginout.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "displayLoginAsForm",
+        "redirectToCurrent"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "className",
+        "color",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/loginout/style-rtl.css",
+        "wp-includes/blocks/loginout/style-rtl.min.css",
+        "wp-includes/blocks/loginout/style.css",
+        "wp-includes/blocks/loginout/style.min.css"
+      ]
+    },
+    {
+      "name": "core/math",
+      "label": "Math",
+      "title": "Math",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/math/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "latex",
+        "mathML"
+      ],
+      "supports": [
+        "html"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/math/editor-rtl.css",
+        "wp-includes/blocks/math/editor-rtl.min.css",
+        "wp-includes/blocks/math/editor.css",
+        "wp-includes/blocks/math/editor.min.css",
+        "wp-includes/blocks/math/style-rtl.css",
+        "wp-includes/blocks/math/style-rtl.min.css",
+        "wp-includes/blocks/math/style.css",
+        "wp-includes/blocks/math/style.min.css"
+      ]
+    },
+    {
+      "name": "core/media-text",
+      "label": "Media Text",
+      "title": "Media & Text",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/media-text/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/media-text.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "align",
+        "focalPoint",
+        "href",
+        "imageFill",
+        "isStackedOnMobile",
+        "linkClass",
+        "linkDestination",
+        "linkTarget",
+        "mediaAlt",
+        "mediaId",
+        "mediaLink",
+        "mediaPosition",
+        "mediaSizeSlug",
+        "mediaType",
+        "mediaUrl",
+        "mediaWidth",
+        "rel",
+        "useFeaturedImage",
+        "verticalAlignment"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "allowedBlocks",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/media-text/editor-rtl.css",
+        "wp-includes/blocks/media-text/editor-rtl.min.css",
+        "wp-includes/blocks/media-text/editor.css",
+        "wp-includes/blocks/media-text/editor.min.css",
+        "wp-includes/blocks/media-text/style-rtl.css",
+        "wp-includes/blocks/media-text/style-rtl.min.css",
+        "wp-includes/blocks/media-text/style.css",
+        "wp-includes/blocks/media-text/style.min.css"
+      ]
+    },
+    {
+      "name": "core/missing",
+      "label": "Missing",
+      "title": "Unsupported",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/missing/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "originalContent",
+        "originalName",
+        "originalUndelimitedContent"
+      ],
+      "supports": [
+        "className",
+        "customClassName",
+        "html",
+        "inserter",
+        "interactivity",
+        "lock",
+        "renaming",
+        "reusable",
+        "visibility"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/more",
+      "label": "More",
+      "title": "More",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/more/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "customText",
+        "noTeaser"
+      ],
+      "supports": [
+        "className",
+        "customClassName",
+        "html",
+        "interactivity",
+        "multiple"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/more/editor-rtl.css",
+        "wp-includes/blocks/more/editor-rtl.min.css",
+        "wp-includes/blocks/more/editor.css",
+        "wp-includes/blocks/more/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/navigation",
+      "label": "Navigation",
+      "title": "Navigation",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/navigation/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/navigation.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/buttons",
+        "core/home-link",
+        "core/loginout",
+        "core/navigation-link",
+        "core/navigation-submenu",
+        "core/page-list",
+        "core/search",
+        "core/site-logo",
+        "core/site-title",
+        "core/social-links",
+        "core/spacer"
+      ],
+      "attributes": [
+        "__unstableLocation",
+        "backgroundColor",
+        "customBackgroundColor",
+        "customOverlayBackgroundColor",
+        "customOverlayTextColor",
+        "customTextColor",
+        "hasIcon",
+        "icon",
+        "maxNestingLevel",
+        "openSubmenusOnClick",
+        "overlayBackgroundColor",
+        "overlayMenu",
+        "overlayTextColor",
+        "ref",
+        "rgbBackgroundColor",
+        "rgbTextColor",
+        "showSubmenuIcon",
+        "templateLock",
+        "textColor"
+      ],
+      "supports": [
+        "align",
+        "ariaLabel",
+        "contentRole",
+        "html",
+        "inserter",
+        "interactivity",
+        "layout",
+        "renaming",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/navigation/editor-rtl.css",
+        "wp-includes/blocks/navigation/editor-rtl.min.css",
+        "wp-includes/blocks/navigation/editor.css",
+        "wp-includes/blocks/navigation/editor.min.css",
+        "wp-includes/blocks/navigation/style-rtl.css",
+        "wp-includes/blocks/navigation/style-rtl.min.css",
+        "wp-includes/blocks/navigation/style.css",
+        "wp-includes/blocks/navigation/style.min.css",
+        "wp-includes/blocks/navigation/view-modal.asset.php",
+        "wp-includes/blocks/navigation/view-modal.min.asset.php",
+        "wp-includes/blocks/navigation/view.asset.php",
+        "wp-includes/blocks/navigation/view.js",
+        "wp-includes/blocks/navigation/view.min.asset.php",
+        "wp-includes/blocks/navigation/view.min.js"
+      ]
+    },
+    {
+      "name": "core/navigation-link",
+      "label": "Navigation Link",
+      "title": "Custom Link",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/navigation-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/navigation-link.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/navigation"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/navigation-link",
+        "core/navigation-submenu",
+        "core/page-list"
+      ],
+      "attributes": [
+        "description",
+        "id",
+        "isTopLevelLink",
+        "kind",
+        "label",
+        "opensInNewTab",
+        "rel",
+        "title",
+        "type",
+        "url"
+      ],
+      "supports": [
+        "__experimentalSlashInserter",
+        "html",
+        "interactivity",
+        "renaming",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/navigation-link/editor-rtl.css",
+        "wp-includes/blocks/navigation-link/editor-rtl.min.css",
+        "wp-includes/blocks/navigation-link/editor.css",
+        "wp-includes/blocks/navigation-link/editor.min.css",
+        "wp-includes/blocks/navigation-link/style-rtl.css",
+        "wp-includes/blocks/navigation-link/style-rtl.min.css",
+        "wp-includes/blocks/navigation-link/style.css",
+        "wp-includes/blocks/navigation-link/style.min.css"
+      ]
+    },
+    {
+      "name": "core/navigation-submenu",
+      "label": "Navigation Submenu",
+      "title": "Submenu",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/navigation-submenu/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/navigation-submenu.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/navigation"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "description",
+        "id",
+        "isTopLevelItem",
+        "kind",
+        "label",
+        "opensInNewTab",
+        "rel",
+        "title",
+        "type",
+        "url"
+      ],
+      "supports": [
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/navigation-submenu/editor-rtl.css",
+        "wp-includes/blocks/navigation-submenu/editor-rtl.min.css",
+        "wp-includes/blocks/navigation-submenu/editor.css",
+        "wp-includes/blocks/navigation-submenu/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/nextpage",
+      "label": "Nextpage",
+      "title": "Page Break",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/nextpage/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/post-content"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "className",
+        "customClassName",
+        "html",
+        "interactivity"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/nextpage/editor-rtl.css",
+        "wp-includes/blocks/nextpage/editor-rtl.min.css",
+        "wp-includes/blocks/nextpage/editor.css",
+        "wp-includes/blocks/nextpage/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/page-list",
+      "label": "Page List",
+      "title": "Page List",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/page-list/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/page-list.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/page-list-item"
+      ],
+      "attributes": [
+        "isNested",
+        "parentPageID"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "reusable",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/page-list/editor-rtl.css",
+        "wp-includes/blocks/page-list/editor-rtl.min.css",
+        "wp-includes/blocks/page-list/editor.css",
+        "wp-includes/blocks/page-list/editor.min.css",
+        "wp-includes/blocks/page-list/style-rtl.css",
+        "wp-includes/blocks/page-list/style-rtl.min.css",
+        "wp-includes/blocks/page-list/style.css",
+        "wp-includes/blocks/page-list/style.min.css"
+      ]
+    },
+    {
+      "name": "core/page-list-item",
+      "label": "Page List Item",
+      "title": "Page List Item",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/page-list-item/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/page-list-item.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [
+        "core/page-list"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "hasChildren",
+        "id",
+        "label",
+        "link",
+        "title"
+      ],
+      "supports": [
+        "__experimentalToolbar",
+        "html",
+        "inserter",
+        "interactivity",
+        "lock",
+        "reusable"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/paragraph",
+      "label": "Paragraph",
+      "title": "Paragraph",
+      "executable": true,
+      "status": "executable",
+      "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/paragraph/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "align",
+        "content",
+        "direction",
+        "dropCap",
+        "placeholder"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalSelector",
+        "__unstablePasteTextInline",
+        "anchor",
+        "className",
+        "color",
+        "interactivity",
+        "spacing",
+        "splitting",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/paragraph/editor-rtl.css",
+        "wp-includes/blocks/paragraph/editor-rtl.min.css",
+        "wp-includes/blocks/paragraph/editor.css",
+        "wp-includes/blocks/paragraph/editor.min.css",
+        "wp-includes/blocks/paragraph/style-rtl.css",
+        "wp-includes/blocks/paragraph/style-rtl.min.css",
+        "wp-includes/blocks/paragraph/style.css",
+        "wp-includes/blocks/paragraph/style.min.css"
+      ]
+    },
+    {
+      "name": "core/pattern",
+      "label": "Pattern",
+      "title": "Pattern Placeholder",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/pattern/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/pattern.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "slug"
+      ],
+      "supports": [
+        "html",
+        "inserter",
+        "interactivity",
+        "renaming",
+        "visibility"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/post-author",
+      "label": "Post Author",
+      "title": "Author",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-author/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-author.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "avatarSize",
+        "byline",
+        "isLink",
+        "linkTarget",
+        "showAvatar",
+        "showBio",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "filter",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-author/style-rtl.css",
+        "wp-includes/blocks/post-author/style-rtl.min.css",
+        "wp-includes/blocks/post-author/style.css",
+        "wp-includes/blocks/post-author/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-author-biography",
+      "label": "Post Author Biography",
+      "title": "Author Biography",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-author-biography/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-author-biography.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-author-biography/style-rtl.css",
+        "wp-includes/blocks/post-author-biography/style-rtl.min.css",
+        "wp-includes/blocks/post-author-biography/style.css",
+        "wp-includes/blocks/post-author-biography/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-author-name",
+      "label": "Post Author Name",
+      "title": "Author Name",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-author-name/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-author-name.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "linkTarget",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-author-name/style-rtl.css",
+        "wp-includes/blocks/post-author-name/style-rtl.min.css",
+        "wp-includes/blocks/post-author-name/style.css",
+        "wp-includes/blocks/post-author-name/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-comments-count",
+      "label": "Post Comments Count",
+      "title": "Comments Count",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-comments-count/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-comments-count.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-comments-count/style-rtl.css",
+        "wp-includes/blocks/post-comments-count/style-rtl.min.css",
+        "wp-includes/blocks/post-comments-count/style.css",
+        "wp-includes/blocks/post-comments-count/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-comments-form",
+      "label": "Post Comments Form",
+      "title": "Comments Form",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-comments-form/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-comments-form.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-comments-form/editor-rtl.css",
+        "wp-includes/blocks/post-comments-form/editor-rtl.min.css",
+        "wp-includes/blocks/post-comments-form/editor.css",
+        "wp-includes/blocks/post-comments-form/editor.min.css",
+        "wp-includes/blocks/post-comments-form/style-rtl.css",
+        "wp-includes/blocks/post-comments-form/style-rtl.min.css",
+        "wp-includes/blocks/post-comments-form/style.css",
+        "wp-includes/blocks/post-comments-form/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-comments-link",
+      "label": "Post Comments Link",
+      "title": "Comments Link",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-comments-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-comments-link.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-comments-link/style-rtl.css",
+        "wp-includes/blocks/post-comments-link/style-rtl.min.css",
+        "wp-includes/blocks/post-comments-link/style.css",
+        "wp-includes/blocks/post-comments-link/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-content",
+      "label": "Post Content",
+      "title": "Content",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-content/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-content.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "tagName"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "background",
+        "color",
+        "dimensions",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-content/style-rtl.css",
+        "wp-includes/blocks/post-content/style-rtl.min.css",
+        "wp-includes/blocks/post-content/style.css",
+        "wp-includes/blocks/post-content/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-date",
+      "label": "Post Date",
+      "title": "Date",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-date/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-date.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "datetime",
+        "format",
+        "isLink",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-date/style-rtl.css",
+        "wp-includes/blocks/post-date/style-rtl.min.css",
+        "wp-includes/blocks/post-date/style.css",
+        "wp-includes/blocks/post-date/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-excerpt",
+      "label": "Post Excerpt",
+      "title": "Excerpt",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-excerpt/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-excerpt.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "excerptLength",
+        "moreText",
+        "showMoreOnNewLine",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-excerpt/editor-rtl.css",
+        "wp-includes/blocks/post-excerpt/editor-rtl.min.css",
+        "wp-includes/blocks/post-excerpt/editor.css",
+        "wp-includes/blocks/post-excerpt/editor.min.css",
+        "wp-includes/blocks/post-excerpt/style-rtl.css",
+        "wp-includes/blocks/post-excerpt/style-rtl.min.css",
+        "wp-includes/blocks/post-excerpt/style.css",
+        "wp-includes/blocks/post-excerpt/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-featured-image",
+      "label": "Post Featured Image",
+      "title": "Featured Image",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-featured-image/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-featured-image.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "aspectRatio",
+        "customGradient",
+        "customOverlayColor",
+        "dimRatio",
+        "gradient",
+        "height",
+        "isLink",
+        "linkTarget",
+        "overlayColor",
+        "rel",
+        "scale",
+        "sizeSlug",
+        "useFirstImageFromPost",
+        "width"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "filter",
+        "html",
+        "interactivity",
+        "shadow",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-featured-image/editor-rtl.css",
+        "wp-includes/blocks/post-featured-image/editor-rtl.min.css",
+        "wp-includes/blocks/post-featured-image/editor.css",
+        "wp-includes/blocks/post-featured-image/editor.min.css",
+        "wp-includes/blocks/post-featured-image/style-rtl.css",
+        "wp-includes/blocks/post-featured-image/style-rtl.min.css",
+        "wp-includes/blocks/post-featured-image/style.css",
+        "wp-includes/blocks/post-featured-image/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-navigation-link",
+      "label": "Post Navigation Link",
+      "title": "Post Navigation Link",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-navigation-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-navigation-link.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "arrow",
+        "label",
+        "linkLabel",
+        "showTitle",
+        "taxonomy",
+        "textAlign",
+        "type"
+      ],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-navigation-link/style-rtl.css",
+        "wp-includes/blocks/post-navigation-link/style-rtl.min.css",
+        "wp-includes/blocks/post-navigation-link/style.css",
+        "wp-includes/blocks/post-navigation-link/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-template",
+      "label": "Post Template",
+      "title": "Post Template",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-template/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-template.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/query"
+      ],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "reusable",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-template/style-rtl.css",
+        "wp-includes/blocks/post-template/style-rtl.min.css",
+        "wp-includes/blocks/post-template/style.css",
+        "wp-includes/blocks/post-template/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-terms",
+      "label": "Post Terms",
+      "title": "Post Terms",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-terms/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-terms.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "prefix",
+        "separator",
+        "suffix",
+        "term",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-terms/style-rtl.css",
+        "wp-includes/blocks/post-terms/style-rtl.min.css",
+        "wp-includes/blocks/post-terms/style.css",
+        "wp-includes/blocks/post-terms/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-time-to-read",
+      "label": "Post Time To Read",
+      "title": "Time to Read",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-time-to-read/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-time-to-read.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "averageReadingSpeed",
+        "displayAsRange",
+        "displayMode",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-time-to-read/style-rtl.css",
+        "wp-includes/blocks/post-time-to-read/style-rtl.min.css",
+        "wp-includes/blocks/post-time-to-read/style.css",
+        "wp-includes/blocks/post-time-to-read/style.min.css"
+      ]
+    },
+    {
+      "name": "core/post-title",
+      "label": "Post Title",
+      "title": "Title",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/post-title/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/post-title.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "level",
+        "levelOptions",
+        "linkTarget",
+        "rel",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/post-title/style-rtl.css",
+        "wp-includes/blocks/post-title/style-rtl.min.css",
+        "wp-includes/blocks/post-title/style.css",
+        "wp-includes/blocks/post-title/style.min.css"
+      ]
+    },
+    {
+      "name": "core/preformatted",
+      "label": "Preformatted",
+      "title": "Preformatted",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/preformatted/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "anchor",
+        "color",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/preformatted/style-rtl.css",
+        "wp-includes/blocks/preformatted/style-rtl.min.css",
+        "wp-includes/blocks/preformatted/style.css",
+        "wp-includes/blocks/preformatted/style.min.css"
+      ]
+    },
+    {
+      "name": "core/pullquote",
+      "label": "Pullquote",
+      "title": "Pullquote",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/pullquote/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "citation",
+        "textAlign",
+        "value"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalStyle",
+        "align",
+        "anchor",
+        "background",
+        "color",
+        "dimensions",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/pullquote/editor-rtl.css",
+        "wp-includes/blocks/pullquote/editor-rtl.min.css",
+        "wp-includes/blocks/pullquote/editor.css",
+        "wp-includes/blocks/pullquote/editor.min.css",
+        "wp-includes/blocks/pullquote/style-rtl.css",
+        "wp-includes/blocks/pullquote/style-rtl.min.css",
+        "wp-includes/blocks/pullquote/style.css",
+        "wp-includes/blocks/pullquote/style.min.css",
+        "wp-includes/blocks/pullquote/theme-rtl.css",
+        "wp-includes/blocks/pullquote/theme-rtl.min.css",
+        "wp-includes/blocks/pullquote/theme.css",
+        "wp-includes/blocks/pullquote/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/query",
+      "label": "Query",
+      "title": "Query Loop",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "enhancedPagination",
+        "namespace",
+        "query",
+        "queryId",
+        "tagName"
+      ],
+      "supports": [
+        "align",
+        "contentRole",
+        "html",
+        "interactivity",
+        "layout"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/query/editor-rtl.css",
+        "wp-includes/blocks/query/editor-rtl.min.css",
+        "wp-includes/blocks/query/editor.css",
+        "wp-includes/blocks/query/editor.min.css",
+        "wp-includes/blocks/query/view.asset.php",
+        "wp-includes/blocks/query/view.js",
+        "wp-includes/blocks/query/view.min.asset.php",
+        "wp-includes/blocks/query/view.min.js"
+      ]
+    },
+    {
+      "name": "core/query-no-results",
+      "label": "Query No Results",
+      "title": "No Results",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-no-results/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-no-results.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/query"
+      ],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/query-pagination",
+      "label": "Query Pagination",
+      "title": "Pagination",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-pagination/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-pagination.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/query"
+      ],
+      "allowedBlocks": [
+        "core/query-pagination-next",
+        "core/query-pagination-numbers",
+        "core/query-pagination-previous"
+      ],
+      "attributes": [
+        "paginationArrow",
+        "showLabel"
+      ],
+      "supports": [
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/query-pagination/editor-rtl.css",
+        "wp-includes/blocks/query-pagination/editor-rtl.min.css",
+        "wp-includes/blocks/query-pagination/editor.css",
+        "wp-includes/blocks/query-pagination/editor.min.css",
+        "wp-includes/blocks/query-pagination/style-rtl.css",
+        "wp-includes/blocks/query-pagination/style-rtl.min.css",
+        "wp-includes/blocks/query-pagination/style.css",
+        "wp-includes/blocks/query-pagination/style.min.css"
+      ]
+    },
+    {
+      "name": "core/query-pagination-next",
+      "label": "Query Pagination Next",
+      "title": "Next Page",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-pagination-next/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-pagination-next.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/query-pagination"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label"
+      ],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/query-pagination-numbers",
+      "label": "Query Pagination Numbers",
+      "title": "Page Numbers",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-pagination-numbers/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-pagination-numbers.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/query-pagination"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "midSize"
+      ],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/query-pagination-numbers/editor-rtl.css",
+        "wp-includes/blocks/query-pagination-numbers/editor-rtl.min.css",
+        "wp-includes/blocks/query-pagination-numbers/editor.css",
+        "wp-includes/blocks/query-pagination-numbers/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/query-pagination-previous",
+      "label": "Query Pagination Previous",
+      "title": "Previous Page",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-pagination-previous/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-pagination-previous.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [
+        "core/query-pagination"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label"
+      ],
+      "supports": [
+        "color",
+        "html",
+        "interactivity",
+        "reusable",
+        "typography"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/query-title",
+      "label": "Query Title",
+      "title": "Query Title",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-title/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-title.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "level",
+        "levelOptions",
+        "showPrefix",
+        "showSearchTerm",
+        "textAlign",
+        "type"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/query-title/style-rtl.css",
+        "wp-includes/blocks/query-title/style-rtl.min.css",
+        "wp-includes/blocks/query-title/style.css",
+        "wp-includes/blocks/query-title/style.min.css"
+      ]
+    },
+    {
+      "name": "core/query-total",
+      "label": "Query Total",
+      "title": "Query Total",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/query-total/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/query-total.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/query"
+      ],
+      "allowedBlocks": [],
+      "attributes": [
+        "displayType"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/query-total/style-rtl.css",
+        "wp-includes/blocks/query-total/style-rtl.min.css",
+        "wp-includes/blocks/query-total/style.css",
+        "wp-includes/blocks/query-total/style.min.css"
+      ]
+    },
+    {
+      "name": "core/quote",
+      "label": "Quote",
+      "title": "Quote",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/quote/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "citation",
+        "textAlign",
+        "value"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalOnEnter",
+        "__experimentalOnMerge",
+        "align",
+        "allowedBlocks",
+        "anchor",
+        "background",
+        "color",
+        "dimensions",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/quote/style-rtl.css",
+        "wp-includes/blocks/quote/style-rtl.min.css",
+        "wp-includes/blocks/quote/style.css",
+        "wp-includes/blocks/quote/style.min.css",
+        "wp-includes/blocks/quote/theme-rtl.css",
+        "wp-includes/blocks/quote/theme-rtl.min.css",
+        "wp-includes/blocks/quote/theme.css",
+        "wp-includes/blocks/quote/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/read-more",
+      "label": "Read More",
+      "title": "Read More",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/read-more/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/read-more.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content",
+        "linkTarget"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/read-more/style-rtl.css",
+        "wp-includes/blocks/read-more/style-rtl.min.css",
+        "wp-includes/blocks/read-more/style.css",
+        "wp-includes/blocks/read-more/style.min.css"
+      ]
+    },
+    {
+      "name": "core/rss",
+      "label": "Rss",
+      "title": "RSS",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/rss/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/rss.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "blockLayout",
+        "columns",
+        "displayAuthor",
+        "displayDate",
+        "displayExcerpt",
+        "excerptLength",
+        "feedURL",
+        "itemsToShow",
+        "openInNewTab",
+        "rel"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/rss/editor-rtl.css",
+        "wp-includes/blocks/rss/editor-rtl.min.css",
+        "wp-includes/blocks/rss/editor.css",
+        "wp-includes/blocks/rss/editor.min.css",
+        "wp-includes/blocks/rss/style-rtl.css",
+        "wp-includes/blocks/rss/style-rtl.min.css",
+        "wp-includes/blocks/rss/style.css",
+        "wp-includes/blocks/rss/style.min.css"
+      ]
+    },
+    {
+      "name": "core/search",
+      "label": "Search",
+      "title": "Search",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/search/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/search.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "buttonPosition",
+        "buttonText",
+        "buttonUseIcon",
+        "isSearchFieldHidden",
+        "label",
+        "placeholder",
+        "query",
+        "showLabel",
+        "width",
+        "widthUnit"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/search/editor-rtl.css",
+        "wp-includes/blocks/search/editor-rtl.min.css",
+        "wp-includes/blocks/search/editor.css",
+        "wp-includes/blocks/search/editor.min.css",
+        "wp-includes/blocks/search/style-rtl.css",
+        "wp-includes/blocks/search/style-rtl.min.css",
+        "wp-includes/blocks/search/style.css",
+        "wp-includes/blocks/search/style.min.css",
+        "wp-includes/blocks/search/theme-rtl.css",
+        "wp-includes/blocks/search/theme-rtl.min.css",
+        "wp-includes/blocks/search/theme.css",
+        "wp-includes/blocks/search/theme.min.css",
+        "wp-includes/blocks/search/view.asset.php",
+        "wp-includes/blocks/search/view.js",
+        "wp-includes/blocks/search/view.min.asset.php",
+        "wp-includes/blocks/search/view.min.js"
+      ]
+    },
+    {
+      "name": "core/separator",
+      "label": "Separator",
+      "title": "Separator",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/separator/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "opacity",
+        "tagName"
+      ],
+      "supports": [
+        "align",
+        "anchor",
+        "color",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/separator/editor-rtl.css",
+        "wp-includes/blocks/separator/editor-rtl.min.css",
+        "wp-includes/blocks/separator/editor.css",
+        "wp-includes/blocks/separator/editor.min.css",
+        "wp-includes/blocks/separator/style-rtl.css",
+        "wp-includes/blocks/separator/style-rtl.min.css",
+        "wp-includes/blocks/separator/style.css",
+        "wp-includes/blocks/separator/style.min.css",
+        "wp-includes/blocks/separator/theme-rtl.css",
+        "wp-includes/blocks/separator/theme-rtl.min.css",
+        "wp-includes/blocks/separator/theme.css",
+        "wp-includes/blocks/separator/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/shortcode",
+      "label": "Shortcode",
+      "title": "Shortcode",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/shortcode/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/shortcode.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "text"
+      ],
+      "supports": [
+        "className",
+        "customClassName",
+        "html"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/shortcode/editor-rtl.css",
+        "wp-includes/blocks/shortcode/editor-rtl.min.css",
+        "wp-includes/blocks/shortcode/editor.css",
+        "wp-includes/blocks/shortcode/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/site-logo",
+      "label": "Site Logo",
+      "title": "Site Logo",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/site-logo/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/site-logo.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "linkTarget",
+        "shouldSyncIcon",
+        "width"
+      ],
+      "supports": [
+        "align",
+        "alignWide",
+        "color",
+        "filter",
+        "html",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/site-logo/editor-rtl.css",
+        "wp-includes/blocks/site-logo/editor-rtl.min.css",
+        "wp-includes/blocks/site-logo/editor.css",
+        "wp-includes/blocks/site-logo/editor.min.css",
+        "wp-includes/blocks/site-logo/style-rtl.css",
+        "wp-includes/blocks/site-logo/style-rtl.min.css",
+        "wp-includes/blocks/site-logo/style.css",
+        "wp-includes/blocks/site-logo/style.min.css"
+      ]
+    },
+    {
+      "name": "core/site-tagline",
+      "label": "Site Tagline",
+      "title": "Site Tagline",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/site-tagline/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/site-tagline.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "level",
+        "levelOptions",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/site-tagline/editor-rtl.css",
+        "wp-includes/blocks/site-tagline/editor-rtl.min.css",
+        "wp-includes/blocks/site-tagline/editor.css",
+        "wp-includes/blocks/site-tagline/editor.min.css",
+        "wp-includes/blocks/site-tagline/style-rtl.css",
+        "wp-includes/blocks/site-tagline/style-rtl.min.css",
+        "wp-includes/blocks/site-tagline/style.css",
+        "wp-includes/blocks/site-tagline/style.min.css"
+      ]
+    },
+    {
+      "name": "core/site-title",
+      "label": "Site Title",
+      "title": "Site Title",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/site-title/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/site-title.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "level",
+        "levelOptions",
+        "linkTarget",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/site-title/editor-rtl.css",
+        "wp-includes/blocks/site-title/editor-rtl.min.css",
+        "wp-includes/blocks/site-title/editor.css",
+        "wp-includes/blocks/site-title/editor.min.css",
+        "wp-includes/blocks/site-title/style-rtl.css",
+        "wp-includes/blocks/site-title/style-rtl.min.css",
+        "wp-includes/blocks/site-title/style.css",
+        "wp-includes/blocks/site-title/style.min.css"
+      ]
+    },
+    {
+      "name": "core/social-link",
+      "label": "Social Link",
+      "title": "Social Icon",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/social-link/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/social-link.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [
+        "core/social-links"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label",
+        "rel",
+        "service",
+        "url"
+      ],
+      "supports": [
+        "html",
+        "interactivity",
+        "reusable"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/social-link/editor-rtl.css",
+        "wp-includes/blocks/social-link/editor-rtl.min.css",
+        "wp-includes/blocks/social-link/editor.css",
+        "wp-includes/blocks/social-link/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/social-links",
+      "label": "Social Links",
+      "title": "Social Icons",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/social-links/block.json",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/social-link"
+      ],
+      "attributes": [
+        "customIconBackgroundColor",
+        "customIconColor",
+        "iconBackgroundColor",
+        "iconBackgroundColorValue",
+        "iconColor",
+        "iconColorValue",
+        "openInNewTab",
+        "showLabels",
+        "size"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalExposeControlsToChildren",
+        "align",
+        "anchor",
+        "color",
+        "contentRole",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/social-links/editor-rtl.css",
+        "wp-includes/blocks/social-links/editor-rtl.min.css",
+        "wp-includes/blocks/social-links/editor.css",
+        "wp-includes/blocks/social-links/editor.min.css",
+        "wp-includes/blocks/social-links/style-rtl.css",
+        "wp-includes/blocks/social-links/style-rtl.min.css",
+        "wp-includes/blocks/social-links/style.css",
+        "wp-includes/blocks/social-links/style.min.css"
+      ]
+    },
+    {
+      "name": "core/spacer",
+      "label": "Spacer",
+      "title": "Spacer",
+      "executable": true,
+      "status": "executable",
+      "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/spacer/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "height",
+        "width"
+      ],
+      "supports": [
+        "anchor",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/spacer/editor-rtl.css",
+        "wp-includes/blocks/spacer/editor-rtl.min.css",
+        "wp-includes/blocks/spacer/editor.css",
+        "wp-includes/blocks/spacer/editor.min.css",
+        "wp-includes/blocks/spacer/style-rtl.css",
+        "wp-includes/blocks/spacer/style-rtl.min.css",
+        "wp-includes/blocks/spacer/style.css",
+        "wp-includes/blocks/spacer/style.min.css"
+      ]
+    },
+    {
+      "name": "core/table",
+      "label": "Table",
+      "title": "Table",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/table/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "body",
+        "caption",
+        "foot",
+        "hasFixedLayout",
+        "head"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/table/editor-rtl.css",
+        "wp-includes/blocks/table/editor-rtl.min.css",
+        "wp-includes/blocks/table/editor.css",
+        "wp-includes/blocks/table/editor.min.css",
+        "wp-includes/blocks/table/style-rtl.css",
+        "wp-includes/blocks/table/style-rtl.min.css",
+        "wp-includes/blocks/table/style.css",
+        "wp-includes/blocks/table/style.min.css",
+        "wp-includes/blocks/table/theme-rtl.css",
+        "wp-includes/blocks/table/theme-rtl.min.css",
+        "wp-includes/blocks/table/theme.css",
+        "wp-includes/blocks/table/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/tag-cloud",
+      "label": "Tag Cloud",
+      "title": "Tag Cloud",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/tag-cloud/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/tag-cloud.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "largestFontSize",
+        "numberOfTags",
+        "showTagCounts",
+        "smallestFontSize",
+        "taxonomy"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/tag-cloud/editor-rtl.css",
+        "wp-includes/blocks/tag-cloud/editor-rtl.min.css",
+        "wp-includes/blocks/tag-cloud/editor.css",
+        "wp-includes/blocks/tag-cloud/editor.min.css",
+        "wp-includes/blocks/tag-cloud/style-rtl.css",
+        "wp-includes/blocks/tag-cloud/style-rtl.min.css",
+        "wp-includes/blocks/tag-cloud/style.css",
+        "wp-includes/blocks/tag-cloud/style.min.css"
+      ]
+    },
+    {
+      "name": "core/template-part",
+      "label": "Template Part",
+      "title": "Template Part",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/template-part/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/template-part.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "area",
+        "slug",
+        "tagName",
+        "theme"
+      ],
+      "supports": [
+        "align",
+        "html",
+        "interactivity",
+        "renaming",
+        "reusable"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/template-part/editor-rtl.css",
+        "wp-includes/blocks/template-part/editor-rtl.min.css",
+        "wp-includes/blocks/template-part/editor.css",
+        "wp-includes/blocks/template-part/editor.min.css",
+        "wp-includes/blocks/template-part/theme-rtl.css",
+        "wp-includes/blocks/template-part/theme-rtl.min.css",
+        "wp-includes/blocks/template-part/theme.css",
+        "wp-includes/blocks/template-part/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/term-count",
+      "label": "Term Count",
+      "title": "Term Count",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/term-count/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/term-count.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "bracketType"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/term-count/style-rtl.css",
+        "wp-includes/blocks/term-count/style-rtl.min.css",
+        "wp-includes/blocks/term-count/style.css",
+        "wp-includes/blocks/term-count/style.min.css"
+      ]
+    },
+    {
+      "name": "core/term-description",
+      "label": "Term Description",
+      "title": "Term Description",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/term-description/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/term-description.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/term-description/style-rtl.css",
+        "wp-includes/blocks/term-description/style-rtl.min.css",
+        "wp-includes/blocks/term-description/style.css",
+        "wp-includes/blocks/term-description/style.min.css"
+      ]
+    },
+    {
+      "name": "core/term-name",
+      "label": "Term Name",
+      "title": "Term Name",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/term-name/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/term-name.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "isLink",
+        "level",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/term-name/style-rtl.css",
+        "wp-includes/blocks/term-name/style-rtl.min.css",
+        "wp-includes/blocks/term-name/style.css",
+        "wp-includes/blocks/term-name/style.min.css"
+      ]
+    },
+    {
+      "name": "core/term-template",
+      "label": "Term Template",
+      "title": "Term Template",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/term-template/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/term-template.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [
+        "core/terms-query"
+      ],
+      "allowedBlocks": [],
+      "attributes": [],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "reusable",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/term-template/editor-rtl.css",
+        "wp-includes/blocks/term-template/editor-rtl.min.css",
+        "wp-includes/blocks/term-template/editor.css",
+        "wp-includes/blocks/term-template/editor.min.css",
+        "wp-includes/blocks/term-template/style-rtl.css",
+        "wp-includes/blocks/term-template/style-rtl.min.css",
+        "wp-includes/blocks/term-template/style.css",
+        "wp-includes/blocks/term-template/style.min.css"
+      ]
+    },
+    {
+      "name": "core/terms-query",
+      "label": "Terms Query",
+      "title": "Terms Query",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/terms-query/block.json",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "tagName",
+        "termQuery"
+      ],
+      "supports": [
+        "align",
+        "html",
+        "interactivity",
+        "layout"
+      ],
+      "styleFiles": []
+    },
+    {
+      "name": "core/text-columns",
+      "label": "Text Columns",
+      "title": "Text Columns (deprecated)",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/text-columns/block.json",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "columns",
+        "content",
+        "width"
+      ],
+      "supports": [
+        "inserter",
+        "interactivity"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/text-columns/editor-rtl.css",
+        "wp-includes/blocks/text-columns/editor-rtl.min.css",
+        "wp-includes/blocks/text-columns/editor.css",
+        "wp-includes/blocks/text-columns/editor.min.css",
+        "wp-includes/blocks/text-columns/style-rtl.css",
+        "wp-includes/blocks/text-columns/style-rtl.min.css",
+        "wp-includes/blocks/text-columns/style.css",
+        "wp-includes/blocks/text-columns/style.min.css"
+      ]
+    },
+    {
+      "name": "core/verse",
+      "label": "Verse",
+      "title": "Verse",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/verse/block.json",
+      "apiVersion": 3,
+      "category": "text",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "content",
+        "textAlign"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "anchor",
+        "background",
+        "color",
+        "dimensions",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/verse/style-rtl.css",
+        "wp-includes/blocks/verse/style-rtl.min.css",
+        "wp-includes/blocks/verse/style.css",
+        "wp-includes/blocks/verse/style.min.css"
+      ]
+    },
+    {
+      "name": "core/video",
+      "label": "Video",
+      "title": "Video",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/video/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/video.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "autoplay",
+        "blob",
+        "caption",
+        "controls",
+        "id",
+        "loop",
+        "muted",
+        "playsInline",
+        "poster",
+        "preload",
+        "src",
+        "tracks"
+      ],
+      "supports": [
+        "align",
+        "anchor",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/video/editor-rtl.css",
+        "wp-includes/blocks/video/editor-rtl.min.css",
+        "wp-includes/blocks/video/editor.css",
+        "wp-includes/blocks/video/editor.min.css",
+        "wp-includes/blocks/video/style-rtl.css",
+        "wp-includes/blocks/video/style-rtl.min.css",
+        "wp-includes/blocks/video/style.css",
+        "wp-includes/blocks/video/style.min.css",
+        "wp-includes/blocks/video/theme-rtl.css",
+        "wp-includes/blocks/video/theme-rtl.min.css",
+        "wp-includes/blocks/video/theme.css",
+        "wp-includes/blocks/video/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/widget-group",
+      "label": "Widget Group",
+      "title": "Widget Group",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it.",
+      "metadataPath": "wp-includes/blocks/widget-group/block.json",
+      "phpRegistrationPath": "wp-includes/blocks/widget-group.php",
+      "apiVersion": 3,
+      "category": "widgets",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "title"
+      ],
+      "supports": [
+        "customClassName",
+        "html",
+        "inserter",
+        "reusable"
+      ],
+      "styleFiles": []
+    }
+  ]
+}

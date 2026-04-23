@@ -27,6 +27,42 @@ import {
   workspaceListResponseSchema
 } from "./schemas.js";
 
+const indexedCoreBlockEntrySchema = z.object({
+  name: z.string().min(1),
+  label: z.string().min(1),
+  title: z.string().min(1),
+  executable: z.boolean(),
+  status: z.enum(["executable", "indexed"]),
+  reason: z.string().min(1),
+  metadataPath: z.string().min(1),
+  canContainInnerBlocks: z.boolean(),
+  likelyUsesInnerBlocks: z.boolean(),
+  hasParentRestriction: z.boolean(),
+  hasAncestorRestriction: z.boolean(),
+  renderPath: z.string().min(1).optional(),
+  phpRegistrationPath: z.string().min(1).optional(),
+  apiVersion: z.number().int().positive().optional(),
+  category: z.string().min(1).optional(),
+  parent: z.array(z.string().min(1)),
+  ancestor: z.array(z.string().min(1)),
+  allowedBlocks: z.array(z.string().min(1)),
+  attributes: z.array(z.string().min(1)),
+  supports: z.array(z.string().min(1)),
+  styleFiles: z.array(z.string().min(1))
+});
+
+const wordpressCoreBlockIndexSchema = z.object({
+  sourceRoot: z.string().min(1),
+  cachePath: z.string().min(1),
+  generatedAt: isoTimestampSchema,
+  wordpressVersion: z.string().min(1).nullable(),
+  indexedBlockCount: z.number().int().nonnegative(),
+  executableBlockCount: z.number().int().nonnegative(),
+  missingReferenceBlocks: z.array(z.string().min(1)),
+  additionalSnapshotBlocks: z.array(z.string().min(1)),
+  blocks: z.array(indexedCoreBlockEntrySchema)
+});
+
 export const ipcChannels = {
   getShellInfo: "app.getShellInfo",
   listWorkspaces: "workspace.list",
@@ -62,6 +98,7 @@ export const ipcChannels = {
   settingsSetSitePlannerSettings: "settings.setSitePlannerSettings",
   settingsSetUiPreferences: "settings.setUiPreferences",
   settingsClearSiteSigningSecret: "settings.clearSiteSigningSecret",
+  settingsReindexCoreBlocks: "settings.reindexCoreBlocks",
   getCompatibilityInfo: "app.getCompatibilityInfo",
   exportBuildSiteBundle: "export.buildSiteBundle",
   importApplySiteBundle: "import.applySiteBundle"
@@ -576,7 +613,8 @@ export const settingsGetStateResponseSchema = z.discriminatedUnion("ok", [
     planner: plannerPreferencesSchema,
     sitePlannerSettings: sitePlannerSettingsSchema.optional(),
     uiPreferences: uiPreferencesSchema,
-    siteHasSigningSecret: z.boolean().optional()
+    siteHasSigningSecret: z.boolean().optional(),
+    coreBlockIndex: wordpressCoreBlockIndexSchema.nullable().optional()
   }),
   z.object({
     ok: z.literal(false),
@@ -616,6 +654,23 @@ export const settingsSetUiPreferencesRequestSchema = z.object({
 export const settingsClearSiteSigningSecretRequestSchema = z.object({
   siteId: idSchema
 });
+
+export const settingsReindexCoreBlocksRequestSchema = z.object({});
+
+export const settingsReindexCoreBlocksResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      coreBlockIndex: wordpressCoreBlockIndexSchema.nullable()
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]
+);
 
 export const compatibilityInfoResponseSchema = z.object({
   appVersion: z.string().min(1),
@@ -865,6 +920,10 @@ export const ipcContracts = {
     request: settingsClearSiteSigningSecretRequestSchema,
     response: settingsOkOnlyResponseSchema
   },
+  [ipcChannels.settingsReindexCoreBlocks]: {
+    request: settingsReindexCoreBlocksRequestSchema,
+    response: settingsReindexCoreBlocksResponseSchema
+  },
   [ipcChannels.getCompatibilityInfo]: {
     request: z.object({}),
     response: compatibilityInfoResponseSchema
@@ -992,6 +1051,9 @@ export interface SitePilotDesktopApi {
   clearSiteSigningSecret: (
     request: IpcRequest<typeof ipcChannels.settingsClearSiteSigningSecret>
   ) => Promise<IpcResponse<typeof ipcChannels.settingsClearSiteSigningSecret>>;
+  reindexCoreBlocks: (
+    request?: IpcRequest<typeof ipcChannels.settingsReindexCoreBlocks>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsReindexCoreBlocks>>;
   getCompatibilityInfo: () => Promise<
     IpcResponse<typeof ipcChannels.getCompatibilityInfo>
   >;

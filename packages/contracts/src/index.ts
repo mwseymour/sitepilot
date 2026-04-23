@@ -1,4 +1,24 @@
 export {
+  ALL_WORDPRESS_CORE_BLOCK_NAMES,
+  SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES,
+  WORDPRESS_CORE_BLOCK_REFERENCE_URL,
+  WORDPRESS_CORE_BLOCK_SUPPORT,
+  coreBlockLabel,
+  explainUnsupportedBlockName,
+  findUnsupportedParsedBlockNames,
+  findUnsupportedSerializedBlockNames,
+  getWordPressCoreBlockSupport,
+  isKnownWordPressCoreBlockName,
+  isSupportedWordPressCoreBlockName,
+  normalizeParsedBlockName
+} from "./core-block-support.js";
+export type {
+  CoreBlockSupportEntry,
+  CoreBlockSupportStatus,
+  IndexedCoreBlockEntry,
+  WordPressCoreBlockIndex
+} from "./core-block-support.js";
+export {
   actionRiskLevelSchema,
   actorSchema,
   approvalStateSchema,

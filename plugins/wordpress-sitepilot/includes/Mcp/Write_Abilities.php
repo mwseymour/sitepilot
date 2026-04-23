@@ -287,6 +287,11 @@ final class Write_Abilities {
 		if ( '' === $block_name ) {
 			return self::invalid_blocks( $path . '.blockName must not be empty' );
 		}
+		if ( ! self::is_supported_executable_block( $block_name ) ) {
+			return self::invalid_blocks(
+				$path . ' uses unsupported block "' . $block_name . '". ' . self::unsupported_block_reason( $block_name )
+			);
+		}
 
 		$attrs = self::sanitize_block_attrs( $value['attrs'] );
 		if ( ! is_array( $attrs ) ) {
@@ -322,7 +327,7 @@ final class Write_Abilities {
 
 		$inner_html = wp_kses_post( $value['innerHTML'] );
 		if ( 'core/paragraph' === $block_name || 'core/heading' === $block_name ) {
-			$inner_html    = wp_kses_post( self::normalize_text_chunk( $inner_html, $block_name ) );
+			$inner_html    = wp_kses_post( self::normalize_text_chunk( $inner_html, $block_name, $attrs ) );
 			$inner_content = array( $inner_html );
 		}
 
@@ -340,6 +345,31 @@ final class Write_Abilities {
 			$spacer       = self::spacer_html( $attrs );
 			$attrs        = $spacer['attrs'];
 			$inner_html   = $spacer['html'];
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/code' === $block_name ) {
+			$inner_html    = self::code_html( $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/preformatted' === $block_name ) {
+			$inner_html    = self::preformatted_html( $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/quote' === $block_name ) {
+			$inner_html    = self::quote_html( $attrs, $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/separator' === $block_name ) {
+			$inner_html    = self::separator_html( $attrs );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/verse' === $block_name ) {
+			$inner_html    = self::verse_html( $inner_html );
 			$inner_content = array( $inner_html );
 		}
 
@@ -376,13 +406,9 @@ final class Write_Abilities {
 			$name = 'core/' . substr( $name, 5 );
 		}
 
-		$core_block_names = array(
-			'paragraph',
-			'heading',
-			'image',
-			'spacer',
-			'columns',
-			'column',
+		$core_block_names = array_map(
+			static fn ( string $block_name ): string => str_replace( 'core/', '', $block_name ),
+			self::wordpress_core_block_names()
 		);
 		if ( ! str_contains( $name, '/' ) && in_array( $name, $core_block_names, true ) ) {
 			$name = 'core/' . $name;
@@ -391,8 +417,11 @@ final class Write_Abilities {
 		return sanitize_text_field( $name );
 	}
 
-	private static function normalize_text_chunk( string $chunk, string $block_name ): string {
+	private static function normalize_text_chunk( string $chunk, string $block_name, array $attrs = array() ): string {
 		if ( preg_match( '/<[a-z][\s\S]*>/i', $chunk ) ) {
+			if ( 'core/heading' === $block_name ) {
+				return self::normalize_heading_html( $chunk, $attrs );
+			}
 			return $chunk;
 		}
 
@@ -401,10 +430,257 @@ final class Write_Abilities {
 			return '<p>' . $text . '</p>';
 		}
 		if ( 'core/heading' === $block_name ) {
-			return '<h2>' . $text . '</h2>';
+			$tag = self::heading_tag_name( $attrs );
+			return '<' . $tag . '>' . $text . '</' . $tag . '>';
 		}
 
 		return $text;
+	}
+
+	private static function extract_text_content( string $html ): string {
+		$text = preg_replace( '/<br\s*\/?>/i', "\n", $html );
+		$text = is_string( $text ) ? $text : $html;
+		$text = preg_replace( '/<\/p>\s*<p>/i', "\n\n", $text );
+		$text = is_string( $text ) ? $text : $html;
+		$text = strip_tags( $text );
+		return trim( $text );
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function quote_html( array $attrs, string $inner_html ): string {
+		$classes    = array( 'wp-block-quote' );
+		$text_align = isset( $attrs['textAlign'] ) && is_string( $attrs['textAlign'] ) ? trim( $attrs['textAlign'] ) : '';
+		if ( '' !== $text_align ) {
+			$classes[] = 'has-text-align-' . htmlspecialchars( $text_align, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		if ( preg_match( '/<blockquote\b/i', $inner_html ) ) {
+			$normalized = preg_replace(
+				'/<blockquote\b[^>]*>/i',
+				'<blockquote class="' . implode( ' ', $classes ) . '">',
+				trim( $inner_html ),
+				1
+			);
+			return is_string( $normalized ) ? $normalized : trim( $inner_html );
+		}
+		$text     = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		$citation = isset( $attrs['citation'] ) && is_string( $attrs['citation'] ) ? trim( $attrs['citation'] ) : '';
+		$cite     = '' !== $citation ? '<cite>' . htmlspecialchars( $citation, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</cite>' : '';
+		return '<blockquote class="' . implode( ' ', $classes ) . '"><p>' . $text . '</p>' . $cite . '</blockquote>';
+	}
+
+	private static function code_html( string $inner_html ): string {
+		$text = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		return '<pre class="wp-block-code"><code>' . $text . '</code></pre>';
+	}
+
+	private static function preformatted_html( string $inner_html ): string {
+		$text = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		return '<pre class="wp-block-preformatted">' . $text . '</pre>';
+	}
+
+	private static function verse_html( string $inner_html ): string {
+		$text = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		return '<pre class="wp-block-verse">' . $text . '</pre>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function separator_html( array $attrs ): string {
+		$tag_name = isset( $attrs['tagName'] ) && is_string( $attrs['tagName'] ) && '' !== trim( $attrs['tagName'] )
+			? trim( $attrs['tagName'] )
+			: 'hr';
+		$classes  = array( 'wp-block-separator' );
+		$opacity  = isset( $attrs['opacity'] ) && is_string( $attrs['opacity'] ) ? trim( $attrs['opacity'] ) : 'alpha-channel';
+		if ( 'css' === $opacity ) {
+			$classes[] = 'has-css-opacity';
+		} else {
+			$classes[] = 'has-alpha-channel-opacity';
+		}
+		return '<' . $tag_name . ' class="' . implode( ' ', $classes ) . '"/>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function heading_tag_name( array $attrs ): string {
+		$level = isset( $attrs['level'] ) && is_int( $attrs['level'] ) ? $attrs['level'] : 2;
+		if ( $level < 1 || $level > 6 ) {
+			$level = 2;
+		}
+		return 'h' . $level;
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function normalize_heading_html( string $html, array $attrs ): string {
+		$tag = self::heading_tag_name( $attrs );
+		$normalized = preg_replace( '/^<h[1-6]\b/i', '<' . $tag, trim( $html ) );
+		$normalized = is_string( $normalized ) ? $normalized : trim( $html );
+		$normalized = preg_replace( '/<\/h[1-6]>\s*$/i', '</' . $tag . '>', $normalized );
+		return is_string( $normalized ) ? $normalized : trim( $html );
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private static function supported_executable_blocks(): array {
+		return array(
+			'core/code',
+			'core/column',
+			'core/columns',
+			'core/heading',
+			'core/image',
+			'core/paragraph',
+			'core/preformatted',
+			'core/quote',
+			'core/separator',
+			'core/spacer',
+			'core/verse',
+		);
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private static function wordpress_core_block_names(): array {
+		return array(
+			'core/accordion',
+			'core/accordion-heading',
+			'core/accordion-item',
+			'core/accordion-panel',
+			'core/archives',
+			'core/audio',
+			'core/avatar',
+			'core/block',
+			'core/breadcrumbs',
+			'core/button',
+			'core/buttons',
+			'core/calendar',
+			'core/categories',
+			'core/code',
+			'core/column',
+			'core/columns',
+			'core/comment-author-avatar',
+			'core/comment-author-name',
+			'core/comment-content',
+			'core/comment-date',
+			'core/comment-edit-link',
+			'core/comment-reply-link',
+			'core/comment-template',
+			'core/comments',
+			'core/comments-pagination',
+			'core/comments-pagination-next',
+			'core/comments-pagination-numbers',
+			'core/comments-pagination-previous',
+			'core/comments-title',
+			'core/cover',
+			'core/details',
+			'core/embed',
+			'core/file',
+			'core/footnotes',
+			'core/form',
+			'core/form-input',
+			'core/form-submission-notification',
+			'core/form-submit-button',
+			'core/freeform',
+			'core/gallery',
+			'core/group',
+			'core/heading',
+			'core/home-link',
+			'core/html',
+			'core/icon',
+			'core/image',
+			'core/latest-comments',
+			'core/latest-posts',
+			'core/list',
+			'core/list-item',
+			'core/loginout',
+			'core/math',
+			'core/media-text',
+			'core/missing',
+			'core/more',
+			'core/navigation',
+			'core/navigation-link',
+			'core/navigation-overlay-close',
+			'core/navigation-submenu',
+			'core/nextpage',
+			'core/page-list',
+			'core/page-list-item',
+			'core/paragraph',
+			'core/pattern',
+			'core/playlist',
+			'core/playlist-track',
+			'core/post-author',
+			'core/post-author-biography',
+			'core/post-author-name',
+			'core/post-comment',
+			'core/post-comments-count',
+			'core/post-comments-form',
+			'core/post-comments-link',
+			'core/post-content',
+			'core/post-date',
+			'core/post-excerpt',
+			'core/post-featured-image',
+			'core/post-navigation-link',
+			'core/post-template',
+			'core/post-terms',
+			'core/post-time-to-read',
+			'core/post-title',
+			'core/preformatted',
+			'core/pullquote',
+			'core/query',
+			'core/query-no-results',
+			'core/query-pagination',
+			'core/query-pagination-next',
+			'core/query-pagination-numbers',
+			'core/query-pagination-previous',
+			'core/query-title',
+			'core/query-total',
+			'core/quote',
+			'core/read-more',
+			'core/rss',
+			'core/search',
+			'core/separator',
+			'core/shortcode',
+			'core/site-logo',
+			'core/site-tagline',
+			'core/site-title',
+			'core/social-link',
+			'core/social-links',
+			'core/spacer',
+			'core/tab',
+			'core/tab-list',
+			'core/tab-panel',
+			'core/tab-panels',
+			'core/table',
+			'core/table-of-contents',
+			'core/tabs',
+			'core/tag-cloud',
+			'core/template-part',
+			'core/term-count',
+			'core/term-description',
+			'core/term-name',
+			'core/term-template',
+			'core/terms-query',
+			'core/text-columns',
+			'core/verse',
+			'core/video',
+		);
+	}
+
+	private static function is_supported_executable_block( string $block_name ): bool {
+		return in_array( $block_name, self::supported_executable_blocks(), true );
+	}
+
+	private static function unsupported_block_reason( string $block_name ): string {
+		if ( in_array( $block_name, self::wordpress_core_block_names(), true ) ) {
+			return 'SitePilot does not yet have explicit canonical serialization for that WordPress core block, so execution is blocked instead of inventing Gutenberg save HTML.';
+		}
+		return 'SitePilot only executes an explicit allowlist of canonicalized Gutenberg blocks.';
 	}
 
 	/**

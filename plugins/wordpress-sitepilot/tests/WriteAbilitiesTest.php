@@ -208,6 +208,88 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( '<div style="height:20px" aria-hidden="true" class="wp-block-spacer"></div>', $content );
 	}
 
+	public function test_create_draft_rejects_unsupported_core_blocks(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Unsupported Cover',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/cover',
+						'attrs'        => array(
+							'url' => 'https://upload.wikimedia.org/example.jpg',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<div class="wp-block-cover"></div>',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertStringContainsString( 'unsupported block "core/cover"', $result['error'] );
+	}
+
+	public function test_heading_level_is_respected_during_serialization(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Heading Level',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/heading',
+						'attrs'        => array( 'level' => 1 ),
+						'innerBlocks'  => array(),
+						'innerHTML'    => 'Hero Title',
+						'innerContent' => array( 'Hero Title' ),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringContainsString( '<h1>Hero Title</h1>', $result['preview']['post_content'] );
+	}
+
+	public function test_create_draft_with_standalone_batch_one_blocks_serializes(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Standalone Batch',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/quote',
+						'attrs'        => array(),
+						'innerBlocks'  => array(),
+						'innerHTML'    => 'Quoted line',
+						'innerContent' => array( 'Quoted line' ),
+					),
+					array(
+						'blockName'    => 'core/code',
+						'attrs'        => array(),
+						'innerBlocks'  => array(),
+						'innerHTML'    => 'const x = 1;',
+						'innerContent' => array( 'const x = 1;' ),
+					),
+					array(
+						'blockName'    => 'core/separator',
+						'attrs'        => array(),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<blockquote class="wp-block-quote"><p>Quoted line</p></blockquote>', $content );
+		$this->assertStringContainsString( '<pre class="wp-block-code"><code>const x = 1;</code></pre>', $content );
+		$this->assertStringContainsString( '<hr class="wp-block-separator has-alpha-channel-opacity"/>', $content );
+	}
+
 	public function test_update_post_with_blocks_returns_serialized_after_content(): void {
 		$result = $this->update_post(
 			array(
