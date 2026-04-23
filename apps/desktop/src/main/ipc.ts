@@ -1,4 +1,4 @@
-import { app, ipcMain } from "electron";
+import { app, dialog, ipcMain } from "electron";
 
 import {
   actionPlanSchema,
@@ -61,6 +61,7 @@ import {
   clearSiteSigningSecret,
   getSettingsState,
   reindexCoreBlocks,
+  setWordPressCoreSourcePath,
   setPlannerPreferences,
   setSitePlannerSettings,
   setUiPreferences,
@@ -607,6 +608,48 @@ export function registerIpcHandlers(): void {
       parseRequest(ipcChannels.settingsReindexCoreBlocks, payload);
       const result = await reindexCoreBlocks();
       return parseResponse(ipcChannels.settingsReindexCoreBlocks, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsSetWordPressCoreSourcePath,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.settingsSetWordPressCoreSourcePath,
+        payload
+      );
+      const result = await setWordPressCoreSourcePath({ path: req.path });
+      return parseResponse(
+        ipcChannels.settingsSetWordPressCoreSourcePath,
+        result
+      );
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsChooseWordPressCoreSourcePath,
+    async (_event, payload) => {
+      parseRequest(ipcChannels.settingsChooseWordPressCoreSourcePath, payload);
+      const result = await dialog.showOpenDialog({
+        properties: ["openDirectory"],
+        title: "Choose WordPress core folder"
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return parseResponse(
+          ipcChannels.settingsChooseWordPressCoreSourcePath,
+          {
+            ok: true,
+            path: null
+          }
+        );
+      }
+      const saveResult = await setWordPressCoreSourcePath({
+        path: result.filePaths[0] ?? null
+      });
+      return parseResponse(
+        ipcChannels.settingsChooseWordPressCoreSourcePath,
+        saveResult
+      );
     }
   );
 

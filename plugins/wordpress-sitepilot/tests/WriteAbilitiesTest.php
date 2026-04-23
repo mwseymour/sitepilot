@@ -290,6 +290,208 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( '<hr class="wp-block-separator has-alpha-channel-opacity"/>', $content );
 	}
 
+	public function test_create_draft_with_list_blocks_serializes(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'List Batch',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/list',
+						'attrs'        => array(
+							'ordered' => true,
+							'start'   => 3,
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/list-item',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => 'First item',
+								'innerContent' => array( 'First item' ),
+							),
+							array(
+								'blockName'    => 'core/list-item',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => '<li class="custom">Second item</li>',
+								'innerContent' => array( '<li class="custom">Second item</li>' ),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<!-- wp:list {"ordered":true,"start":3} -->', $content );
+		$this->assertStringContainsString( '<ol class="wp-block-list" start="3">', $content );
+		$this->assertStringContainsString( '<!-- wp:list-item --><li>First item</li><!-- /wp:list-item -->', $content );
+		$this->assertStringContainsString( '<!-- wp:list-item --><li>Second item</li><!-- /wp:list-item -->', $content );
+	}
+
+	public function test_create_draft_with_buttons_group_and_details_serializes(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Next Batches',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/buttons',
+						'attrs'        => array(),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/button',
+								'attrs'        => array(
+									'url'  => 'https://example.com',
+									'text' => 'Read More',
+								),
+								'innerBlocks'  => array(),
+								'innerHTML'    => '',
+								'innerContent' => array(),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+					array(
+						'blockName'    => 'core/group',
+						'attrs'        => array(
+							'tagName' => 'section',
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/paragraph',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => 'Inside group',
+								'innerContent' => array( 'Inside group' ),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+					array(
+						'blockName'    => 'core/details',
+						'attrs'        => array(
+							'summary'     => 'FAQ',
+							'showContent' => true,
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/paragraph',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => 'Answer',
+								'innerContent' => array( 'Answer' ),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<!-- wp:buttons -->', $content );
+		$this->assertStringContainsString( '<!-- wp:button {"url":"https://example.com","text":"Read More"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://example.com">Read More</a></div><!-- /wp:button -->', $content );
+		$this->assertStringContainsString( '<!-- wp:group {"tagName":"section"} --><section class="wp-block-group">', $content );
+		$this->assertStringContainsString( '<!-- wp:details {"summary":"FAQ","showContent":true} --><details class="wp-block-details" open><summary>FAQ</summary>', $content );
+	}
+
+	public function test_create_draft_with_pullquote_table_and_media_text_serializes(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Advanced Batch',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/pullquote',
+						'attrs'        => array(
+							'value'    => 'Big quote',
+							'citation' => 'Author',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => 'Big quote',
+						'innerContent' => array( 'Big quote' ),
+					),
+					array(
+						'blockName'    => 'core/table',
+						'attrs'        => array(
+							'caption' => 'Pricing',
+							'body'    => array(
+								array(
+									'cells' => array(
+										array(
+											'tag'     => 'th',
+											'content' => 'Plan',
+											'scope'   => 'col',
+										),
+										array(
+											'tag'     => 'th',
+											'content' => 'Price',
+											'scope'   => 'col',
+										),
+									),
+								),
+								array(
+									'cells' => array(
+										array(
+											'tag'     => 'td',
+											'content' => 'Starter',
+										),
+										array(
+											'tag'     => 'td',
+											'content' => '$10',
+										),
+									),
+								),
+							),
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+					array(
+						'blockName'    => 'core/media-text',
+						'attrs'        => array(
+							'mediaType'         => 'image',
+							'mediaUrl'          => 'https://example.com/photo.jpg',
+							'mediaAlt'          => 'Photo',
+							'mediaPosition'     => 'right',
+							'mediaWidth'        => 40,
+							'isStackedOnMobile' => true,
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/paragraph',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => 'Media text body',
+								'innerContent' => array( 'Media text body' ),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<!-- wp:pullquote {"value":"Big quote","citation":"Author"} --><figure class="wp-block-pullquote"><blockquote><p>Big quote</p><cite>Author</cite></blockquote></figure><!-- /wp:pullquote -->', $content );
+		$this->assertStringContainsString( '<!-- wp:table {"caption":"Pricing","body":[{"cells":[{"tag":"th","content":"Plan","scope":"col"},{"tag":"th","content":"Price","scope":"col"}]},{"cells":[{"tag":"td","content":"Starter"},{"tag":"td","content":"$10"}]}]} --><figure class="wp-block-table"><table class="has-fixed-layout">', $content );
+		$this->assertStringContainsString( '<figcaption class="wp-element-caption">Pricing</figcaption>', $content );
+		$this->assertStringContainsString( '<!-- wp:media-text {"mediaType":"image","mediaUrl":"https://example.com/photo.jpg","mediaAlt":"Photo","mediaPosition":"right","mediaWidth":40,"isStackedOnMobile":true} --><div class="wp-block-media-text has-media-on-the-right is-stacked-on-mobile" style="grid-template-columns:auto 40%"><div class="wp-block-media-text__content">', $content );
+		$this->assertStringContainsString( '<figure class="wp-block-media-text__media"><img src="https://example.com/photo.jpg" alt="Photo"/></figure></div><!-- /wp:media-text -->', $content );
+	}
+
 	public function test_update_post_with_blocks_returns_serialized_after_content(): void {
 		$result = $this->update_post(
 			array(

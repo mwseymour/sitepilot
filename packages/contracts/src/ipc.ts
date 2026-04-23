@@ -99,6 +99,8 @@ export const ipcChannels = {
   settingsSetUiPreferences: "settings.setUiPreferences",
   settingsClearSiteSigningSecret: "settings.clearSiteSigningSecret",
   settingsReindexCoreBlocks: "settings.reindexCoreBlocks",
+  settingsSetWordPressCoreSourcePath: "settings.setWordPressCoreSourcePath",
+  settingsChooseWordPressCoreSourcePath: "settings.chooseWordPressCoreSourcePath",
   getCompatibilityInfo: "app.getCompatibilityInfo",
   exportBuildSiteBundle: "export.buildSiteBundle",
   importApplySiteBundle: "import.applySiteBundle"
@@ -614,7 +616,8 @@ export const settingsGetStateResponseSchema = z.discriminatedUnion("ok", [
     sitePlannerSettings: sitePlannerSettingsSchema.optional(),
     uiPreferences: uiPreferencesSchema,
     siteHasSigningSecret: z.boolean().optional(),
-    coreBlockIndex: wordpressCoreBlockIndexSchema.nullable().optional()
+    coreBlockIndex: wordpressCoreBlockIndexSchema.nullable().optional(),
+    wordpressCoreSourcePath: z.string().min(1).nullable().optional()
   }),
   z.object({
     ok: z.literal(false),
@@ -671,6 +674,38 @@ export const settingsReindexCoreBlocksResponseSchema = z.discriminatedUnion(
     })
   ]
 );
+
+export const settingsSetWordPressCoreSourcePathRequestSchema = z.object({
+  path: z.string().min(1).nullable()
+});
+
+export const settingsSetWordPressCoreSourcePathResponseSchema =
+  z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      path: z.string().min(1).nullable()
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]);
+
+export const settingsChooseWordPressCoreSourcePathRequestSchema = z.object({});
+
+export const settingsChooseWordPressCoreSourcePathResponseSchema =
+  z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      path: z.string().min(1).nullable()
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]);
 
 export const compatibilityInfoResponseSchema = z.object({
   appVersion: z.string().min(1),
@@ -924,6 +959,14 @@ export const ipcContracts = {
     request: settingsReindexCoreBlocksRequestSchema,
     response: settingsReindexCoreBlocksResponseSchema
   },
+  [ipcChannels.settingsSetWordPressCoreSourcePath]: {
+    request: settingsSetWordPressCoreSourcePathRequestSchema,
+    response: settingsSetWordPressCoreSourcePathResponseSchema
+  },
+  [ipcChannels.settingsChooseWordPressCoreSourcePath]: {
+    request: settingsChooseWordPressCoreSourcePathRequestSchema,
+    response: settingsChooseWordPressCoreSourcePathResponseSchema
+  },
   [ipcChannels.getCompatibilityInfo]: {
     request: z.object({}),
     response: compatibilityInfoResponseSchema
@@ -1054,6 +1097,16 @@ export interface SitePilotDesktopApi {
   reindexCoreBlocks: (
     request?: IpcRequest<typeof ipcChannels.settingsReindexCoreBlocks>
   ) => Promise<IpcResponse<typeof ipcChannels.settingsReindexCoreBlocks>>;
+  setWordPressCoreSourcePath: (
+    request: IpcRequest<typeof ipcChannels.settingsSetWordPressCoreSourcePath>
+  ) => Promise<
+    IpcResponse<typeof ipcChannels.settingsSetWordPressCoreSourcePath>
+  >;
+  chooseWordPressCoreSourcePath: (
+    request?: IpcRequest<typeof ipcChannels.settingsChooseWordPressCoreSourcePath>
+  ) => Promise<
+    IpcResponse<typeof ipcChannels.settingsChooseWordPressCoreSourcePath>
+  >;
   getCompatibilityInfo: () => Promise<
     IpcResponse<typeof ipcChannels.getCompatibilityInfo>
   >;

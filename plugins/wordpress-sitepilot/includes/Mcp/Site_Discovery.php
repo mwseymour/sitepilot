@@ -69,10 +69,51 @@ final class Site_Discovery {
 			'post_types' => $post_types,
 			'taxonomies' => $taxonomies,
 			'nav_menus'  => $menus,
+			'third_party_blocks' => self::collect_third_party_blocks(),
 			'active_plugins' => $active,
 			'seo'        => self::detect_seo_plugins(),
 			'warnings'   => $warnings,
 		);
+	}
+
+	/**
+	 * @return array<int, array<string, string>>
+	 */
+	private static function collect_third_party_blocks(): array {
+		$blocks = array();
+
+		foreach ( \WP_Block_Type_Registry::get_instance()->get_all_registered() as $name => $block_type ) {
+			if ( ! is_string( $name ) || str_starts_with( $name, 'core/' ) ) {
+				continue;
+			}
+
+			$entry = array(
+				'name' => $name,
+			);
+
+			if ( isset( $block_type->title ) && is_string( $block_type->title ) && '' !== $block_type->title ) {
+				$entry['title'] = $block_type->title;
+			}
+
+			if ( isset( $block_type->description ) && is_string( $block_type->description ) && '' !== $block_type->description ) {
+				$entry['description'] = $block_type->description;
+			}
+
+			if ( isset( $block_type->category ) && is_string( $block_type->category ) && '' !== $block_type->category ) {
+				$entry['category'] = $block_type->category;
+			}
+
+			$blocks[] = $entry;
+		}
+
+		usort(
+			$blocks,
+			static function ( array $left, array $right ): int {
+				return strcmp( $left['name'], $right['name'] );
+			}
+		);
+
+		return $blocks;
 	}
 
 	/**

@@ -131,6 +131,8 @@ export function SiteSettingsPage(): ReactElement {
     useState<SitePlannerSettings | null>(null);
   const [coreBlockIndex, setCoreBlockIndex] =
     useState<WordPressCoreBlockIndex | null>(null);
+  const [wordpressCoreSourcePath, setWordPressCoreSourcePath] =
+    useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const executableBlocks =
     coreBlockIndex?.blocks.filter((entry) => entry.executable) ?? [];
@@ -178,6 +180,7 @@ export function SiteSettingsPage(): ReactElement {
     );
     setHasSecret(state.siteHasSigningSecret ?? false);
     setCoreBlockIndex(state.coreBlockIndex ?? null);
+    setWordPressCoreSourcePath(state.wordpressCoreSourcePath ?? null);
   }, [data, siteId]);
 
   useEffect(() => {
@@ -317,6 +320,48 @@ export function SiteSettingsPage(): ReactElement {
         ? `Re-indexed ${res.coreBlockIndex.indexedBlockCount} core blocks from WordPress ${res.coreBlockIndex.wordpressVersion ?? "snapshot"}.`
         : "No local wordpress-core snapshot was found to index."
     );
+  }
+
+  async function onSaveWordPressCoreSourcePath(): Promise<void> {
+    setBusy(true);
+    setErr(null);
+    setHint(null);
+    const res = await window.sitePilotDesktop.setWordPressCoreSourcePath({
+      path:
+        wordpressCoreSourcePath !== null &&
+        wordpressCoreSourcePath.trim().length > 0
+          ? wordpressCoreSourcePath
+          : null
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setWordPressCoreSourcePath(res.path ?? null);
+    setHint(
+      res.path
+        ? "WordPress core source folder saved."
+        : "WordPress core source folder cleared."
+    );
+    await load();
+  }
+
+  async function onChooseWordPressCoreSourcePath(): Promise<void> {
+    setBusy(true);
+    setErr(null);
+    setHint(null);
+    const res = await window.sitePilotDesktop.chooseWordPressCoreSourcePath({});
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    if (res.path) {
+      setWordPressCoreSourcePath(res.path);
+      setHint("WordPress core source folder selected.");
+      await load();
+    }
   }
 
   if (loading) {
@@ -508,7 +553,35 @@ export function SiteSettingsPage(): ReactElement {
           canonicalization. Everything else stays blocked instead of saving
           guessed Gutenberg HTML.
         </p>
+        <label className="settings-field">
+          <span>WordPress core source folder</span>
+          <input
+            type="text"
+            value={wordpressCoreSourcePath ?? ""}
+            placeholder="/path/to/wordpress-core"
+            disabled={busy}
+            onChange={(e) => {
+              setWordPressCoreSourcePath(e.target.value);
+            }}
+          />
+        </label>
         <div className="settings-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void onChooseWordPressCoreSourcePath()}
+          >
+            Choose folder…
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void onSaveWordPressCoreSourcePath()}
+          >
+            Save source folder
+          </button>
           <button
             type="button"
             className="btn btn-secondary"

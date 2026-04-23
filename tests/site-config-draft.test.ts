@@ -47,6 +47,10 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
         { id: 1, name: "Primary", slug: "primary" },
         { id: 2, name: "Footer", slug: "footer" }
       ],
+      third_party_blocks: [
+        { name: "acf/testimonial", title: "Testimonial" },
+        { name: "gravityforms/form", title: "Form" }
+      ],
       active_plugins: ["wordpress-seo/wp-seo.php"],
       seo: { yoast_seo: true },
       warnings: []
@@ -83,6 +87,10 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
     expect(draft.sections.contentModel.readOnlyPostTypes).toContain(
       "attachment"
     );
+    expect(draft.sections.contentModel.thirdPartyBlocks).toEqual([
+      "acf/testimonial",
+      "gravityforms/form"
+    ]);
     expect(draft.sections.seoPolicy.titlePatterns[0]).toContain("%%");
     expect(draft.sections.toolAccessPolicy.enabledTools).toEqual([
       "sitepilot-site-discovery",
@@ -109,5 +117,6 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
     expect(draft.sections.identity.siteName).toBe("Local Site");
     expect(draft.sections.identity.baseUrl).toBe("https://local.test/");
     expect(draft.sections.structure.publicSections.length).toBeGreaterThan(0);
+    expect(draft.sections.contentModel.thirdPartyBlocks).toEqual([]);
   });
 });

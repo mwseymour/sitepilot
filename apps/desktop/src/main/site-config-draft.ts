@@ -125,6 +125,33 @@ function parseSeoHints(d: Record<string, unknown>): { yoast?: boolean } {
   return { yoast: o["yoast_seo"] === true };
 }
 
+function parseThirdPartyBlocks(d: Record<string, unknown>): string[] {
+  const raw = d["third_party_blocks"];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const names = new Set<string>();
+  for (const item of raw) {
+    if (typeof item === "string" && item.length > 0) {
+      names.add(item);
+      continue;
+    }
+
+    const obj = asRecord(item);
+    if (!obj) {
+      continue;
+    }
+
+    const name = stringField(obj, "name");
+    if (name !== undefined) {
+      names.add(name);
+    }
+  }
+
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
 const READ_ONLY_POST_TYPES = new Set([
   "attachment",
   "revision",
@@ -173,6 +200,7 @@ export function buildSiteConfigDraftFromDiscovery(
   const taxonomies = parseTaxonomies(d);
   const navMenus = parseNavMenus(d);
   const seo = parseSeoHints(d);
+  const thirdPartyBlocks = parseThirdPartyBlocks(d);
 
   const editablePostTypes = Object.keys(postTypes).filter(
     (slug) => !READ_ONLY_POST_TYPES.has(slug)
@@ -257,7 +285,8 @@ export function buildSiteConfigDraftFromDiscovery(
         taxonomyDefinitions:
           taxonomyDefinitions.length > 0
             ? taxonomyDefinitions
-            : ["category (Category)", "post_tag (Tag)"]
+            : ["category (Category)", "post_tag (Tag)"],
+        thirdPartyBlocks
       },
       seoPolicy: {
         titlePatterns,

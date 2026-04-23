@@ -126,16 +126,25 @@ export const ALL_WORDPRESS_CORE_BLOCK_NAMES = [
 ] as const;
 
 export const SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES = [
+  "core/button",
+  "core/buttons",
   "core/code",
   "core/column",
   "core/columns",
+  "core/details",
+  "core/group",
   "core/heading",
   "core/image",
+  "core/list",
+  "core/list-item",
+  "core/media-text",
   "core/paragraph",
   "core/preformatted",
+  "core/pullquote",
   "core/quote",
   "core/separator",
   "core/spacer",
+  "core/table",
   "core/verse"
 ] as const;
 

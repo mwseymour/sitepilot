@@ -278,6 +278,14 @@ export function SiteConfigForm({
             }
           />
         </label>
+        <label className="field">
+          <span>Third-party blocks discovered (read-only)</span>
+          <textarea
+            rows={4}
+            readOnly
+            value={listToLines(s.contentModel.thirdPartyBlocks)}
+          />
+        </label>
       </fieldset>
 
       <fieldset className="config-fieldset">

@@ -10,6 +10,7 @@ import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import {
   getWordPressCoreBlockIndex,
+  isWordPressCoreRoot,
   reindexWordPressCoreBlockIndex
 } from "./core-block-index-service.js";
 import {
@@ -28,6 +29,7 @@ export type SettingsStateResult =
       sitePlannerSettings?: SitePlannerSettings;
       siteHasSigningSecret?: boolean;
       coreBlockIndex?: WordPressCoreBlockIndex | null;
+      wordpressCoreSourcePath?: string | null;
     }
   | { ok: false; code: string; message: string };
 
@@ -50,6 +52,13 @@ function uiPreferencesKey() {
   return {
     namespace: "app",
     keyId: "ui_preferences:global"
+  } as const;
+}
+
+function wordpressCoreSourcePathKey() {
+  return {
+    namespace: "app",
+    keyId: "wordpress_core_source_path"
   } as const;
 }
 
@@ -131,6 +140,28 @@ export async function saveUiPreferences(
   await storage.set(uiPreferencesKey(), JSON.stringify(preferences));
 }
 
+export async function loadWordPressCoreSourcePath(
+  storage: ReturnType<typeof getSecureStorage>
+): Promise<string | null> {
+  const raw = await storage.get(wordpressCoreSourcePathKey());
+  if (!raw) {
+    return null;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export async function saveWordPressCoreSourcePath(
+  storage: ReturnType<typeof getSecureStorage>,
+  sourcePath: string | null
+): Promise<void> {
+  if (sourcePath === null || sourcePath.trim().length === 0) {
+    await storage.delete(wordpressCoreSourcePathKey());
+    return;
+  }
+  await storage.set(wordpressCoreSourcePathKey(), sourcePath.trim());
+}
+
 export async function getSettingsState(input: {
   workspaceId?: WorkspaceId;
   siteId?: SiteId;
@@ -160,7 +191,10 @@ export async function getSettingsState(input: {
       : undefined
   );
   const uiPreferences = await loadUiPreferences(storage);
-  const coreBlockIndex = await getWordPressCoreBlockIndex();
+  const wordpressCoreSourcePath = await loadWordPressCoreSourcePath(storage);
+  const coreBlockIndex = await getWordPressCoreBlockIndex(
+    wordpressCoreSourcePath ?? undefined
+  );
 
   let siteHasSigningSecret: boolean | undefined;
   let sitePlannerSettings: SitePlannerSettings | undefined;
@@ -182,6 +216,7 @@ export async function getSettingsState(input: {
     planner,
     uiPreferences,
     coreBlockIndex,
+    wordpressCoreSourcePath,
     ...(sitePlannerSettings !== undefined ? { sitePlannerSettings } : {}),
     ...(siteHasSigningSecret !== undefined ? { siteHasSigningSecret } : {})
   };
@@ -191,11 +226,44 @@ export async function reindexCoreBlocks(): Promise<
   | { ok: true; coreBlockIndex: WordPressCoreBlockIndex | null }
   | { ok: false; code: string; message: string }
 > {
-  const coreBlockIndex = await reindexWordPressCoreBlockIndex();
+  const storage = getSecureStorage();
+  const wordpressCoreSourcePath = await loadWordPressCoreSourcePath(storage);
+  const coreBlockIndex = await reindexWordPressCoreBlockIndex(
+    wordpressCoreSourcePath ?? undefined
+  );
   return {
     ok: true,
     coreBlockIndex
   };
+}
+
+export async function setWordPressCoreSourcePath(input: {
+  path: string | null;
+}): Promise<
+  | { ok: true; path: string | null }
+  | { ok: false; code: string; message: string }
+> {
+  const storage = getSecureStorage();
+  if (input.path !== null) {
+    const candidate = input.path.trim();
+    if (candidate.length === 0) {
+      await saveWordPressCoreSourcePath(storage, null);
+      return { ok: true, path: null };
+    }
+    const isValid = await isWordPressCoreRoot(candidate);
+    if (!isValid) {
+      return {
+        ok: false,
+        code: "invalid_wordpress_core_source",
+        message:
+          "That folder does not look like a WordPress core snapshot. Expected wp-includes/version.php and wp-includes/blocks."
+      };
+    }
+    await saveWordPressCoreSourcePath(storage, candidate);
+    return { ok: true, path: candidate };
+  }
+  await saveWordPressCoreSourcePath(storage, null);
+  return { ok: true, path: null };
 }
 
 export async function setProviderSecret(input: {

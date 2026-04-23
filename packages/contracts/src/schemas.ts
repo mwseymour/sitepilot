@@ -35,7 +35,8 @@ const siteConfigSectionsSchema = z.object({
   contentModel: z.object({
     editablePostTypes: z.array(z.string().min(1)),
     readOnlyPostTypes: z.array(z.string().min(1)),
-    taxonomyDefinitions: z.array(z.string().min(1))
+    taxonomyDefinitions: z.array(z.string().min(1)),
+    thirdPartyBlocks: z.array(z.string().min(1)).default([])
   }),
   seoPolicy: z.object({
     titlePatterns: z.array(z.string().min(1)),

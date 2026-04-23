@@ -303,7 +303,7 @@ describe("buildLlmActionPlan", () => {
     });
 
     expect(result.plan.validationWarnings).toContain(
-      'Structured parsed blocks include unsupported block types that execution will reject: core/cover. Supported blocks today: core/code, core/column, core/columns, core/heading, core/image, core/paragraph, core/preformatted, core/quote, core/separator, core/spacer, core/verse.'
+      'Structured parsed blocks include unsupported block types that execution will reject: core/cover. Supported blocks today: core/button, core/buttons, core/code, core/column, core/columns, core/details, core/group, core/heading, core/image, core/list, core/list-item, core/media-text, core/paragraph, core/preformatted, core/pullquote, core/quote, core/separator, core/spacer, core/table, core/verse.'
     );
   });
 
@@ -383,6 +383,330 @@ describe("buildLlmActionPlan", () => {
     expect(blocks[2]?.innerHTML).toBe(
       '<hr class="wp-block-separator has-alpha-channel-opacity"/>'
     );
+  });
+
+  it("canonicalizes list containers and list items", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft with a list",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "List Blocks",
+              post_type: "page",
+              blocks: [
+                {
+                  blockName: "core/list",
+                  attrs: {
+                    ordered: true,
+                    start: 3
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/list-item",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "First item",
+                      innerContent: ["First item"]
+                    },
+                    {
+                      blockName: "core/list-item",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "<li class=\"custom\">Second item</li>",
+                      innerContent: ["<li class=\"custom\">Second item</li>"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create an ordered list with two items."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as Array<{
+      blockName: string;
+      innerHTML: string;
+      innerContent: Array<string | null>;
+      innerBlocks?: Array<{ innerHTML: string }>;
+    }>;
+    expect(blocks[0]?.blockName).toBe("core/list");
+    expect(blocks[0]?.innerContent).toEqual([
+      '<ol class="wp-block-list" start="3">',
+      null,
+      null,
+      "</ol>"
+    ]);
+    expect(blocks[0]?.innerBlocks?.[0]?.innerHTML).toBe("<li>First item</li>");
+    expect(blocks[0]?.innerBlocks?.[1]?.innerHTML).toBe("<li>Second item</li>");
+  });
+
+  it("canonicalizes buttons, group, and details containers", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft with buttons, group, and details",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Container Blocks",
+              post_type: "page",
+              blocks: [
+                {
+                  blockName: "core/buttons",
+                  attrs: {},
+                  innerBlocks: [
+                    {
+                      blockName: "core/button",
+                      attrs: {
+                        url: "https://example.com",
+                        text: "Read More"
+                      },
+                      innerBlocks: [],
+                      innerHTML: "",
+                      innerContent: []
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/group",
+                  attrs: {
+                    tagName: "section"
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "Inside group",
+                      innerContent: ["Inside group"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/details",
+                  attrs: {
+                    summary: "FAQ",
+                    showContent: true
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "Answer",
+                      innerContent: ["Answer"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a page using buttons, a group wrapper, and a details disclosure."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as Array<{
+      blockName: string;
+      innerHTML: string;
+      innerContent: Array<string | null>;
+      innerBlocks?: Array<{ innerHTML: string; innerContent: Array<string | null> }>;
+    }>;
+
+    expect(blocks[0]?.innerContent).toEqual([
+      '<div class="wp-block-buttons">',
+      null,
+      "</div>"
+    ]);
+    expect(blocks[0]?.innerBlocks?.[0]?.innerHTML).toBe(
+      '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://example.com">Read More</a></div>'
+    );
+    expect(blocks[1]?.innerContent).toEqual([
+      '<section class="wp-block-group">',
+      null,
+      "</section>"
+    ]);
+    expect(blocks[2]?.innerContent).toEqual([
+      '<details class="wp-block-details" open><summary>FAQ</summary>',
+      null,
+      "</details>"
+    ]);
+  });
+
+  it("canonicalizes pullquote, table, and media-text blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft with advanced blocks",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Advanced Blocks",
+              post_type: "page",
+              blocks: [
+                {
+                  blockName: "core/pullquote",
+                  attrs: {
+                    value: "Big quote",
+                    citation: "Author"
+                  },
+                  innerBlocks: [],
+                  innerHTML: "Big quote",
+                  innerContent: ["Big quote"]
+                },
+                {
+                  blockName: "core/table",
+                  attrs: {
+                    caption: "Pricing",
+                    body: [
+                      {
+                        cells: [
+                          { tag: "th", content: "Plan", scope: "col" },
+                          { tag: "th", content: "Price", scope: "col" }
+                        ]
+                      },
+                      {
+                        cells: [
+                          { tag: "td", content: "Starter" },
+                          { tag: "td", content: "$10" }
+                        ]
+                      }
+                    ]
+                  },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/media-text",
+                  attrs: {
+                    mediaType: "image",
+                    mediaUrl: "https://example.com/photo.jpg",
+                    mediaAlt: "Photo",
+                    mediaPosition: "right",
+                    mediaWidth: 40,
+                    isStackedOnMobile: true
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "Media text body",
+                      innerContent: ["Media text body"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create pullquote, table, and media text blocks."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as Array<{
+      innerHTML: string;
+      innerContent: Array<string | null>;
+    }>;
+    expect(blocks[0]?.innerHTML).toBe(
+      '<figure class="wp-block-pullquote"><blockquote><p>Big quote</p><cite>Author</cite></blockquote></figure>'
+    );
+    expect(blocks[1]?.innerHTML).toContain('<figure class="wp-block-table"><table class="has-fixed-layout">');
+    expect(blocks[1]?.innerHTML).toContain("<figcaption class=\"wp-element-caption\">Pricing</figcaption>");
+    expect(blocks[2]?.innerContent).toEqual([
+      '<div class="wp-block-media-text has-media-on-the-right is-stacked-on-mobile" style="grid-template-columns:auto 40%">',
+      '<div class="wp-block-media-text__content">',
+      null,
+      "</div>",
+      '<figure class="wp-block-media-text__media"><img src="https://example.com/photo.jpg" alt="Photo"/></figure>',
+      "</div>"
+    ]);
   });
 
   it("preserves requested columns content instead of flattening it", async () => {

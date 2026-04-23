@@ -31,7 +31,8 @@ describe("contracts schemas", () => {
         contentModel: {
           editablePostTypes: ["page", "post"],
           readOnlyPostTypes: ["acf-field-group"],
-          taxonomyDefinitions: ["category", "topic"]
+          taxonomyDefinitions: ["category", "topic"],
+          thirdPartyBlocks: ["acf/testimonial", "gravityforms/form"]
         },
         seoPolicy: {
           titlePatterns: ["{Page Title} | Example Site"],
@@ -72,6 +73,71 @@ describe("contracts schemas", () => {
     });
 
     expect(parsed.sections.identity.siteName).toBe("Example Site");
+  });
+
+  it("accepts a legacy site config payload without third-party blocks", () => {
+    const parsed = siteConfigSchema.parse({
+      id: "config-legacy-1",
+      siteId: "site-1",
+      version: 1,
+      requiredSectionsComplete: true,
+      activationStatus: "active",
+      sections: {
+        identity: {
+          siteName: "Example Site",
+          baseUrl: "https://example.com",
+          businessDescription: "Mortgage broker website",
+          audienceSummary: "Home buyers in the UK"
+        },
+        structure: {
+          publicSections: ["Home", "Services"],
+          restrictedTemplates: ["Landing Page"],
+          pageTreeSummary: "Home > Services > Equity Release"
+        },
+        contentModel: {
+          editablePostTypes: ["page", "post"],
+          readOnlyPostTypes: ["acf-field-group"],
+          taxonomyDefinitions: ["category", "topic"]
+        },
+        seoPolicy: {
+          titlePatterns: ["{Page Title} | Example Site"],
+          redirectsRequireApproval: true,
+          internalLinkingExpectation: "Link to relevant service pages"
+        },
+        mediaPolicy: {
+          acceptedFormats: ["image/jpeg", "image/png"],
+          altTextRequired: true,
+          featuredImageRequiredPostTypes: ["post"]
+        },
+        approvalPolicy: {
+          autoApproveCategories: ["draft_content_update"],
+          publishRequiresApproval: true,
+          menuChangesRequireApproval: true
+        },
+        toolAccessPolicy: {
+          enabledTools: ["content.create", "content.update"],
+          disabledTools: ["menu.update"],
+          dryRunOnlyTools: ["seo.set_meta"]
+        },
+        contentStylePolicy: {
+          tone: "Professional",
+          readingLevel: "General consumer",
+          disallowedWording: ["guaranteed approval"]
+        },
+        guardrails: {
+          neverEditPages: ["homepage"],
+          neverModifyMenuAutomatically: true,
+          neverPublishWithoutApproval: true
+        }
+      },
+      metadata: {
+        notes: ["Initial draft from discovery"]
+      },
+      createdAt: "2026-04-19T12:00:00.000Z",
+      updatedAt: "2026-04-19T12:00:00.000Z"
+    });
+
+    expect(parsed.sections.contentModel.thirdPartyBlocks).toEqual([]);
   });
 
   it("accepts a valid action plan payload", () => {

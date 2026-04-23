@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   ALL_WORDPRESS_CORE_BLOCK_NAMES,
@@ -9,9 +10,9 @@ import {
   type WordPressCoreBlockIndex
 } from "@sitepilot/contracts";
 
-const DEFAULT_WORDPRESS_CORE_ROOT = path.resolve(process.cwd(), "wordpress-core");
 const BLOCK_INDEX_CACHE_FILE = ".sitepilot-core-block-index.json";
 const REFERENCE_BLOCK_NAME_SET = new Set<string>(ALL_WORDPRESS_CORE_BLOCK_NAMES);
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 function sortStrings(values: string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
@@ -24,6 +25,33 @@ async function pathExists(targetPath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function firstExistingDirectory(paths: string[]): Promise<string | null> {
+  for (const candidate of paths) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function resolveWordPressCoreRoot(): Promise<string | null> {
+  const upwardRoots = [
+    process.cwd(),
+    path.resolve(MODULE_DIR, ".."),
+    path.resolve(MODULE_DIR, "..", ".."),
+    path.resolve(MODULE_DIR, "..", "..", ".."),
+    path.resolve(MODULE_DIR, "..", "..", "..", "..")
+  ];
+  const candidates = upwardRoots.map((root) => path.resolve(root, "wordpress-core"));
+  return firstExistingDirectory([...new Set(candidates)]);
+}
+
+export async function isWordPressCoreRoot(root: string): Promise<boolean> {
+  const versionPath = path.join(root, "wp-includes", "version.php");
+  const blocksRoot = path.join(root, "wp-includes", "blocks");
+  return (await pathExists(versionPath)) && (await pathExists(blocksRoot));
 }
 
 function relativeToSnapshot(root: string, targetPath: string | null): string | undefined {
@@ -166,21 +194,25 @@ async function indexSingleBlock(input: {
 }
 
 export function defaultWordPressCoreRoot(): string {
-  return DEFAULT_WORDPRESS_CORE_ROOT;
+  return path.resolve(process.cwd(), "wordpress-core");
 }
 
 export function defaultWordPressCoreIndexCachePath(
-  root = DEFAULT_WORDPRESS_CORE_ROOT
+  root = defaultWordPressCoreRoot()
 ): string {
   return path.join(root, BLOCK_INDEX_CACHE_FILE);
 }
 
 export async function buildWordPressCoreBlockIndex(
-  root = DEFAULT_WORDPRESS_CORE_ROOT
+  root?: string
 ): Promise<WordPressCoreBlockIndex | null> {
-  const versionPath = path.join(root, "wp-includes", "version.php");
-  const blocksRoot = path.join(root, "wp-includes", "blocks");
-  if (!(await pathExists(versionPath)) || !(await pathExists(blocksRoot))) {
+  const resolvedRoot = root ?? (await resolveWordPressCoreRoot());
+  if (!resolvedRoot) {
+    return null;
+  }
+  const versionPath = path.join(resolvedRoot, "wp-includes", "version.php");
+  const blocksRoot = path.join(resolvedRoot, "wp-includes", "blocks");
+  if (!(await isWordPressCoreRoot(resolvedRoot))) {
     return null;
   }
 
@@ -190,7 +222,7 @@ export async function buildWordPressCoreBlockIndex(
     await Promise.all(
       blockDirs.map((blockDir) =>
         indexSingleBlock({
-          root,
+          root: resolvedRoot,
           blocksRoot,
           blockDir
         })
@@ -209,8 +241,8 @@ export async function buildWordPressCoreBlockIndex(
     .filter((name) => !REFERENCE_BLOCK_NAME_SET.has(name));
 
   return {
-    sourceRoot: root,
-    cachePath: defaultWordPressCoreIndexCachePath(root),
+    sourceRoot: resolvedRoot,
+    cachePath: defaultWordPressCoreIndexCachePath(resolvedRoot),
     generatedAt: new Date().toISOString(),
     wordpressVersion: parseWordPressVersion(versionPhp),
     indexedBlockCount: blocks.length,
@@ -222,9 +254,13 @@ export async function buildWordPressCoreBlockIndex(
 }
 
 export async function readCachedWordPressCoreBlockIndex(
-  root = DEFAULT_WORDPRESS_CORE_ROOT
+  root?: string
 ): Promise<WordPressCoreBlockIndex | null> {
-  const cachePath = defaultWordPressCoreIndexCachePath(root);
+  const resolvedRoot = root ?? (await resolveWordPressCoreRoot());
+  if (!resolvedRoot) {
+    return null;
+  }
+  const cachePath = defaultWordPressCoreIndexCachePath(resolvedRoot);
   if (!(await pathExists(cachePath))) {
     return null;
   }
@@ -243,7 +279,7 @@ export async function writeWordPressCoreBlockIndex(
 }
 
 export async function getWordPressCoreBlockIndex(
-  root = DEFAULT_WORDPRESS_CORE_ROOT
+  root?: string
 ): Promise<WordPressCoreBlockIndex | null> {
   const cached = await readCachedWordPressCoreBlockIndex(root);
   if (cached) {
@@ -258,7 +294,7 @@ export async function getWordPressCoreBlockIndex(
 }
 
 export async function reindexWordPressCoreBlockIndex(
-  root = DEFAULT_WORDPRESS_CORE_ROOT
+  root?: string
 ): Promise<WordPressCoreBlockIndex | null> {
   const built = await buildWordPressCoreBlockIndex(root);
   if (!built) {

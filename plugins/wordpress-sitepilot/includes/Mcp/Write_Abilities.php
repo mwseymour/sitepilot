@@ -315,7 +315,7 @@ final class Write_Abilities {
 		$inner_content = array();
 		foreach ( $value['innerContent'] as $index => $chunk ) {
 			if ( is_string( $chunk ) ) {
-				$inner_content[] = wp_kses_post( self::normalize_text_chunk( $chunk, $block_name ) );
+				$inner_content[] = wp_kses_post( self::normalize_text_chunk( $chunk, $block_name, $attrs ) );
 				continue;
 			}
 			if ( null === $chunk ) {
@@ -363,8 +363,28 @@ final class Write_Abilities {
 			$inner_content = array( $inner_html );
 		}
 
+		if ( 'core/button' === $block_name ) {
+			$inner_html    = self::button_html( $attrs, $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/pullquote' === $block_name ) {
+			$inner_html    = self::pullquote_html( $attrs, $inner_html );
+			$inner_content = array( $inner_html );
+		}
+
 		if ( 'core/separator' === $block_name ) {
 			$inner_html    = self::separator_html( $attrs );
+			$inner_content = array( $inner_html );
+		}
+
+		if ( 'core/table' === $block_name ) {
+			$inner_html    = self::table_html( $attrs );
+			$inner_content = '' !== $inner_html ? array( $inner_html ) : array();
+		}
+
+		if ( 'core/list-item' === $block_name ) {
+			$inner_html    = self::list_item_html( $inner_html );
 			$inner_content = array( $inner_html );
 		}
 
@@ -470,6 +490,23 @@ final class Write_Abilities {
 		return '<blockquote class="' . implode( ' ', $classes ) . '"><p>' . $text . '</p>' . $cite . '</blockquote>';
 	}
 
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function pullquote_html( array $attrs, string $inner_html ): string {
+		$classes    = array( 'wp-block-pullquote' );
+		$text_align = isset( $attrs['textAlign'] ) && is_string( $attrs['textAlign'] ) ? trim( $attrs['textAlign'] ) : '';
+		if ( '' !== $text_align ) {
+			$classes[] = 'has-text-align-' . htmlspecialchars( $text_align, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		$value = isset( $attrs['value'] ) && is_string( $attrs['value'] ) && '' !== trim( $attrs['value'] )
+			? $attrs['value']
+			: self::extract_text_content( $inner_html );
+		$citation = isset( $attrs['citation'] ) && is_string( $attrs['citation'] ) ? trim( $attrs['citation'] ) : '';
+		$cite = '' !== $citation ? '<cite>' . htmlspecialchars( $citation, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</cite>' : '';
+		return '<figure class="' . implode( ' ', $classes ) . '"><blockquote><p>' . htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</p>' . $cite . '</blockquote></figure>';
+	}
+
 	private static function code_html( string $inner_html ): string {
 		$text = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 		return '<pre class="wp-block-code"><code>' . $text . '</code></pre>';
@@ -505,12 +542,205 @@ final class Write_Abilities {
 	/**
 	 * @param array<string, mixed> $attrs Block attrs.
 	 */
+	private static function button_html( array $attrs, string $inner_html ): string {
+		$tag_name = ( isset( $attrs['tagName'] ) && 'button' === $attrs['tagName'] ) ? 'button' : 'a';
+		$text_source = isset( $attrs['text'] ) && is_string( $attrs['text'] ) && '' !== trim( $attrs['text'] )
+			? $attrs['text']
+			: self::extract_text_content( $inner_html );
+		$text = htmlspecialchars( $text_source, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		$title = isset( $attrs['title'] ) && is_string( $attrs['title'] ) && '' !== trim( $attrs['title'] )
+			? ' title="' . htmlspecialchars( $attrs['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"'
+			: '';
+		$target = 'a' === $tag_name && isset( $attrs['linkTarget'] ) && is_string( $attrs['linkTarget'] ) && '' !== trim( $attrs['linkTarget'] )
+			? ' target="' . htmlspecialchars( $attrs['linkTarget'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"'
+			: '';
+		$rel = 'a' === $tag_name && isset( $attrs['rel'] ) && is_string( $attrs['rel'] ) && '' !== trim( $attrs['rel'] )
+			? ' rel="' . htmlspecialchars( $attrs['rel'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"'
+			: '';
+		$href = 'a' === $tag_name && isset( $attrs['url'] ) && is_string( $attrs['url'] ) && '' !== trim( $attrs['url'] )
+			? ' href="' . htmlspecialchars( $attrs['url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"'
+			: '';
+		$type = 'button' === $tag_name && isset( $attrs['type'] ) && is_string( $attrs['type'] ) && '' !== trim( $attrs['type'] )
+			? ' type="' . htmlspecialchars( $attrs['type'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"'
+			: ( 'button' === $tag_name ? ' type="button"' : '' );
+
+		return '<div class="wp-block-button"><' . $tag_name . ' class="wp-block-button__link wp-element-button"' . $href . $title . $target . $rel . $type . '>' . $text . '</' . $tag_name . '></div>';
+	}
+
+	/**
+	 * @param array<string, mixed> $cell Table cell attrs.
+	 */
+	private static function table_cell_html( array $cell, int $cell_index ): string {
+		$tag = isset( $cell['tag'] ) && is_string( $cell['tag'] ) && in_array( $cell['tag'], array( 'td', 'th' ), true ) ? $cell['tag'] : 'td';
+		$classes = array();
+		$align = isset( $cell['align'] ) && is_string( $cell['align'] ) ? trim( $cell['align'] ) : '';
+		if ( '' !== $align ) {
+			$classes[] = 'has-text-align-' . htmlspecialchars( $align, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		$attrs = array();
+		if ( ! empty( $classes ) ) {
+			$attrs[] = 'class="' . implode( ' ', $classes ) . '"';
+		}
+		if ( '' !== $align ) {
+			$attrs[] = 'data-align="' . htmlspecialchars( $align, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		if ( 'th' === $tag && isset( $cell['scope'] ) && is_string( $cell['scope'] ) && '' !== trim( $cell['scope'] ) ) {
+			$attrs[] = 'scope="' . htmlspecialchars( trim( $cell['scope'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		if ( isset( $cell['colspan'] ) && is_string( $cell['colspan'] ) && '' !== trim( $cell['colspan'] ) ) {
+			$attrs[] = 'colspan="' . htmlspecialchars( trim( $cell['colspan'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		if ( isset( $cell['rowspan'] ) && is_string( $cell['rowspan'] ) && '' !== trim( $cell['rowspan'] ) ) {
+			$attrs[] = 'rowspan="' . htmlspecialchars( trim( $cell['rowspan'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		$content = isset( $cell['content'] ) && is_string( $cell['content'] ) && '' !== $cell['content']
+			? $cell['content']
+			: 'Cell ' . (string) ( $cell_index + 1 );
+		$attr_string = ! empty( $attrs ) ? ' ' . implode( ' ', $attrs ) : '';
+		return '<' . $tag . $attr_string . '>' . $content . '</' . $tag . '>';
+	}
+
+	/**
+	 * @param string $section_tag Table section tag.
+	 * @param mixed $rows_value Table rows.
+	 */
+	private static function table_section_html( string $section_tag, $rows_value ): string {
+		if ( ! is_array( $rows_value ) || empty( $rows_value ) ) {
+			return '';
+		}
+		$rows_html = array();
+		foreach ( $rows_value as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			$cells = isset( $row['cells'] ) && is_array( $row['cells'] ) ? $row['cells'] : array();
+			if ( empty( $cells ) ) {
+				continue;
+			}
+			$row_html = '<tr>';
+			foreach ( $cells as $cell_index => $cell ) {
+				$row_html .= self::table_cell_html( is_array( $cell ) ? $cell : array(), $cell_index );
+			}
+			$row_html .= '</tr>';
+			$rows_html[] = $row_html;
+		}
+		return ! empty( $rows_html ) ? '<' . $section_tag . '>' . implode( '', $rows_html ) . '</' . $section_tag . '>' : '';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function table_html( array $attrs ): string {
+		$head = self::table_section_html( 'thead', $attrs['head'] ?? array() );
+		$body = self::table_section_html( 'tbody', $attrs['body'] ?? array() );
+		$foot = self::table_section_html( 'tfoot', $attrs['foot'] ?? array() );
+		if ( '' === $head && '' === $body && '' === $foot ) {
+			return '';
+		}
+		$table_classes = array();
+		if ( ! isset( $attrs['hasFixedLayout'] ) || false !== $attrs['hasFixedLayout'] ) {
+			$table_classes[] = 'has-fixed-layout';
+		}
+		$caption = isset( $attrs['caption'] ) && is_string( $attrs['caption'] ) && '' !== trim( $attrs['caption'] )
+			? '<figcaption class="wp-element-caption">' . htmlspecialchars( trim( $attrs['caption'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</figcaption>'
+			: '';
+		return '<figure class="wp-block-table"><table' . ( ! empty( $table_classes ) ? ' class="' . implode( ' ', $table_classes ) . '"' : '' ) . '>' . $head . $body . $foot . '</table>' . $caption . '</figure>';
+	}
+
+	private static function list_item_html( string $inner_html ): string {
+		if ( preg_match( '/<li\b/i', $inner_html ) ) {
+			$normalized = preg_replace( '/<li\b[^>]*>/i', '<li>', $inner_html, 1 );
+			return is_string( $normalized ) ? $normalized : $inner_html;
+		}
+
+		$text = htmlspecialchars( self::extract_text_content( $inner_html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		return '<li>' . $text . '</li>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
 	private static function heading_tag_name( array $attrs ): string {
 		$level = isset( $attrs['level'] ) && is_int( $attrs['level'] ) ? $attrs['level'] : 2;
 		if ( $level < 1 || $level > 6 ) {
 			$level = 2;
 		}
 		return 'h' . $level;
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function valid_group_tag_name( array $attrs ): string {
+		$tag_name = isset( $attrs['tagName'] ) && is_string( $attrs['tagName'] ) ? trim( $attrs['tagName'] ) : '';
+		$allowed = array( 'article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section' );
+		return in_array( $tag_name, $allowed, true ) ? $tag_name : 'div';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function media_text_media_figure_html( array $attrs ): string {
+		$media_type = isset( $attrs['mediaType'] ) && is_string( $attrs['mediaType'] ) ? $attrs['mediaType'] : '';
+		$media_url = isset( $attrs['mediaUrl'] ) && is_string( $attrs['mediaUrl'] ) ? trim( $attrs['mediaUrl'] ) : '';
+		if ( '' === $media_url || ! in_array( $media_type, array( 'image', 'video' ), true ) ) {
+			return '<figure class="wp-block-media-text__media"></figure>';
+		}
+
+		if ( 'video' === $media_type ) {
+			return '<figure class="wp-block-media-text__media"><video controls src="' . htmlspecialchars( $media_url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"></video></figure>';
+		}
+
+		$media_alt = isset( $attrs['mediaAlt'] ) && is_string( $attrs['mediaAlt'] ) ? $attrs['mediaAlt'] : '';
+		$media_id = isset( $attrs['mediaId'] ) && is_int( $attrs['mediaId'] ) ? $attrs['mediaId'] : 0;
+		$media_size_slug = isset( $attrs['mediaSizeSlug'] ) && is_string( $attrs['mediaSizeSlug'] ) && '' !== trim( $attrs['mediaSizeSlug'] )
+			? trim( $attrs['mediaSizeSlug'] )
+			: 'full';
+		$classes = array();
+		if ( $media_id > 0 ) {
+			$classes[] = 'wp-image-' . $media_id;
+			$classes[] = 'size-' . htmlspecialchars( $media_size_slug, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		$style = '';
+		if ( isset( $attrs['imageFill'] ) && true === $attrs['imageFill'] ) {
+			$focal_point = isset( $attrs['focalPoint'] ) && is_array( $attrs['focalPoint'] ) ? $attrs['focalPoint'] : array();
+			$x = isset( $focal_point['x'] ) && is_numeric( $focal_point['x'] ) ? (float) $focal_point['x'] : 0.5;
+			$y = isset( $focal_point['y'] ) && is_numeric( $focal_point['y'] ) ? (float) $focal_point['y'] : 0.5;
+			$style = ' style="object-position:' . round( $x * 100 ) . '% ' . round( $y * 100 ) . '%"';
+		}
+		$img = '<img src="' . htmlspecialchars( $media_url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '" alt="' . htmlspecialchars( $media_alt, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . ( ! empty( $classes ) ? ' class="' . implode( ' ', $classes ) . '"' : '' ) . $style . '/>';
+		if ( isset( $attrs['href'] ) && is_string( $attrs['href'] ) && '' !== trim( $attrs['href'] ) ) {
+			$link_class = isset( $attrs['linkClass'] ) && is_string( $attrs['linkClass'] ) && '' !== trim( $attrs['linkClass'] ) ? ' class="' . htmlspecialchars( trim( $attrs['linkClass'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
+			$target = isset( $attrs['linkTarget'] ) && is_string( $attrs['linkTarget'] ) && '' !== trim( $attrs['linkTarget'] ) ? ' target="' . htmlspecialchars( trim( $attrs['linkTarget'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
+			$rel = isset( $attrs['rel'] ) && is_string( $attrs['rel'] ) && '' !== trim( $attrs['rel'] ) ? ' rel="' . htmlspecialchars( trim( $attrs['rel'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
+			$img = '<a' . $link_class . ' href="' . htmlspecialchars( trim( $attrs['href'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . $target . $rel . '>' . $img . '</a>';
+		}
+		return '<figure class="wp-block-media-text__media">' . $img . '</figure>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function media_text_wrapper_open( array $attrs ): string {
+		$classes = array( 'wp-block-media-text' );
+		if ( isset( $attrs['mediaPosition'] ) && 'right' === $attrs['mediaPosition'] ) {
+			$classes[] = 'has-media-on-the-right';
+		}
+		if ( isset( $attrs['isStackedOnMobile'] ) && true === $attrs['isStackedOnMobile'] ) {
+			$classes[] = 'is-stacked-on-mobile';
+		}
+		if ( isset( $attrs['verticalAlignment'] ) && is_string( $attrs['verticalAlignment'] ) && '' !== trim( $attrs['verticalAlignment'] ) ) {
+			$classes[] = 'is-vertically-aligned-' . htmlspecialchars( trim( $attrs['verticalAlignment'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		if ( isset( $attrs['imageFill'] ) && true === $attrs['imageFill'] ) {
+			$classes[] = 'is-image-fill-element';
+		}
+		$style = '';
+		if ( isset( $attrs['mediaWidth'] ) && is_numeric( $attrs['mediaWidth'] ) && 50.0 !== (float) $attrs['mediaWidth'] ) {
+			$width = (string) $attrs['mediaWidth'];
+			$style = ' style="grid-template-columns:' . ( ( isset( $attrs['mediaPosition'] ) && 'right' === $attrs['mediaPosition'] ) ? 'auto ' . $width . '%' : $width . '% auto' ) . '"';
+		}
+		return '<div class="' . implode( ' ', $classes ) . '"' . $style . '>';
 	}
 
 	/**
@@ -530,15 +760,24 @@ final class Write_Abilities {
 	private static function supported_executable_blocks(): array {
 		return array(
 			'core/code',
+			'core/button',
+			'core/buttons',
 			'core/column',
 			'core/columns',
+			'core/details',
+			'core/group',
 			'core/heading',
 			'core/image',
+			'core/list',
+			'core/list-item',
+			'core/media-text',
 			'core/paragraph',
 			'core/preformatted',
+			'core/pullquote',
 			'core/quote',
 			'core/separator',
 			'core/spacer',
+			'core/table',
 			'core/verse',
 		);
 	}
@@ -736,6 +975,63 @@ final class Write_Abilities {
 
 	/**
 	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function group_wrapper_open( array $attrs ): string {
+		$tag_name = self::valid_group_tag_name( $attrs );
+		return '<' . $tag_name . ' class="wp-block-group">';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function group_wrapper_close( array $attrs ): string {
+		return '</' . self::valid_group_tag_name( $attrs ) . '>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function details_wrapper_open( array $attrs ): string {
+		$extras = array();
+		if ( isset( $attrs['name'] ) && is_string( $attrs['name'] ) && '' !== trim( $attrs['name'] ) ) {
+			$extras[] = 'name="' . htmlspecialchars( $attrs['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"';
+		}
+		if ( isset( $attrs['showContent'] ) && true === $attrs['showContent'] ) {
+			$extras[] = 'open';
+		}
+		$summary = isset( $attrs['summary'] ) && is_string( $attrs['summary'] ) && '' !== trim( $attrs['summary'] )
+			? $attrs['summary']
+			: 'Details';
+		$extra_attrs = ! empty( $extras ) ? ' ' . implode( ' ', $extras ) : '';
+		return '<details class="wp-block-details"' . $extra_attrs . '><summary>' . htmlspecialchars( $summary, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</summary>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function list_wrapper_open( array $attrs ): string {
+		$ordered = isset( $attrs['ordered'] ) && true === $attrs['ordered'];
+		$tag_name = $ordered ? 'ol' : 'ul';
+		$extras = array();
+		if ( $ordered && isset( $attrs['reversed'] ) && true === $attrs['reversed'] ) {
+			$extras[] = 'reversed';
+		}
+		if ( $ordered && isset( $attrs['start'] ) && is_int( $attrs['start'] ) ) {
+			$extras[] = 'start="' . (string) $attrs['start'] . '"';
+		}
+		$extra_attrs = ! empty( $extras ) ? ' ' . implode( ' ', $extras ) : '';
+		return '<' . $tag_name . ' class="wp-block-list"' . $extra_attrs . '>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
+	private static function list_wrapper_close( array $attrs ): string {
+		return ( isset( $attrs['ordered'] ) && true === $attrs['ordered'] ) ? '</ol>' : '</ul>';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
 	 * @param array<int, array<string, mixed>> $inner_blocks Inner blocks.
 	 * @return array<int, string|null>|null
 	 */
@@ -757,6 +1053,57 @@ final class Write_Abilities {
 				array( self::column_wrapper_open( $attrs ) ),
 				array_fill( 0, count( $inner_blocks ), null ),
 				array( '</div>' )
+			);
+		}
+
+		if ( 'core/buttons' === $block_name ) {
+			$inner_content = array( '<div class="wp-block-buttons">' );
+			foreach ( $inner_blocks as $index => $_block ) {
+				if ( $index > 0 ) {
+					$inner_content[] = "\n\n";
+				}
+				$inner_content[] = null;
+			}
+			$inner_content[] = '</div>';
+			return $inner_content;
+		}
+
+		if ( 'core/group' === $block_name ) {
+			return array_merge(
+				array( self::group_wrapper_open( $attrs ) ),
+				array_fill( 0, count( $inner_blocks ), null ),
+				array( self::group_wrapper_close( $attrs ) )
+			);
+		}
+
+		if ( 'core/details' === $block_name ) {
+			return array_merge(
+				array( self::details_wrapper_open( $attrs ) ),
+				array_fill( 0, count( $inner_blocks ), null ),
+				array( '</details>' )
+			);
+		}
+
+		if ( 'core/media-text' === $block_name ) {
+			if ( isset( $attrs['mediaPosition'] ) && 'right' === $attrs['mediaPosition'] ) {
+				return array_merge(
+					array( self::media_text_wrapper_open( $attrs ), '<div class="wp-block-media-text__content">' ),
+					array_fill( 0, count( $inner_blocks ), null ),
+					array( '</div>', self::media_text_media_figure_html( $attrs ), '</div>' )
+				);
+			}
+			return array_merge(
+				array( self::media_text_wrapper_open( $attrs ), self::media_text_media_figure_html( $attrs ), '<div class="wp-block-media-text__content">' ),
+				array_fill( 0, count( $inner_blocks ), null ),
+				array( '</div>', '</div>' )
+			);
+		}
+
+		if ( 'core/list' === $block_name ) {
+			return array_merge(
+				array( self::list_wrapper_open( $attrs ) ),
+				array_fill( 0, count( $inner_blocks ), null ),
+				array( self::list_wrapper_close( $attrs ) )
 			);
 		}
 

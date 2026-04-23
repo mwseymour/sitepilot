@@ -80,6 +80,10 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.settingsClearSiteSigningSecret, request),
   reindexCoreBlocks: (request = {}) =>
     invokeIpc(ipcChannels.settingsReindexCoreBlocks, request),
+  setWordPressCoreSourcePath: (request) =>
+    invokeIpc(ipcChannels.settingsSetWordPressCoreSourcePath, request),
+  chooseWordPressCoreSourcePath: (request = {}) =>
+    invokeIpc(ipcChannels.settingsChooseWordPressCoreSourcePath, request),
   getCompatibilityInfo: () => invokeIpc(ipcChannels.getCompatibilityInfo, {}),
   buildSiteExportBundle: (request) =>
     invokeIpc(ipcChannels.exportBuildSiteBundle, request),

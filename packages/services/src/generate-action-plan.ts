@@ -205,7 +205,17 @@ function objectValue(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function normalizeTextChunk(chunk: string, blockName: string): string {
+function headingTagName(attrs: Record<string, unknown>): string {
+  const level = typeof attrs.level === "number" ? attrs.level : 2;
+  const normalized = level >= 1 && level <= 6 ? level : 2;
+  return `h${normalized}`;
+}
+
+function normalizeTextChunk(
+  chunk: string,
+  blockName: string,
+  attrs: Record<string, unknown> = {}
+): string {
   if (/<[a-z][\s\S]*>/i.test(chunk)) {
     return chunk;
   }
@@ -213,7 +223,8 @@ function normalizeTextChunk(chunk: string, blockName: string): string {
     return `<p>${escapeHtml(chunk)}</p>`;
   }
   if (blockName === "core/heading") {
-    return `<h2>${escapeHtml(chunk)}</h2>`;
+    const tagName = headingTagName(attrs);
+    return `<${tagName}>${escapeHtml(chunk)}</${tagName}>`;
   }
   return escapeHtml(chunk);
 }
@@ -250,6 +261,28 @@ function quoteHtml(attrs: Record<string, unknown>, innerHTML: string): string {
   return body;
 }
 
+function pullquoteHtml(
+  attrs: Record<string, unknown>,
+  innerHTML: string
+): string {
+  const classNames = ["wp-block-pullquote"];
+  const textAlign =
+    typeof attrs.textAlign === "string" ? attrs.textAlign.trim() : "";
+  if (textAlign.length > 0) {
+    classNames.push(`has-text-align-${escapeHtml(textAlign)}`);
+  }
+  const value =
+    typeof attrs.value === "string" && attrs.value.trim().length > 0
+      ? attrs.value
+      : extractTextContent(innerHTML);
+  const citation =
+    typeof attrs.citation === "string" ? attrs.citation.trim() : "";
+  const cite = citation.length > 0 ? `<cite>${escapeHtml(citation)}</cite>` : "";
+  return `<figure class="${classNames.join(
+    " "
+  )}"><blockquote><p>${escapeHtml(value)}</p>${cite}</blockquote></figure>`;
+}
+
 function codeHtml(innerHTML: string): string {
   const text = extractTextContent(innerHTML);
   return `<pre class="wp-block-code"><code>${escapeHtml(text)}</code></pre>`;
@@ -279,6 +312,302 @@ function separatorHtml(attrs: Record<string, unknown>): string {
     classNames.push("has-alpha-channel-opacity");
   }
   return `<${tagName} class="${classNames.join(" ")}"/>`;
+}
+
+function buttonHtml(attrs: Record<string, unknown>, innerHTML: string): string {
+  const tagName = attrs.tagName === "button" ? "button" : "a";
+  const textSource =
+    typeof attrs.text === "string" && attrs.text.trim().length > 0
+      ? attrs.text
+      : extractTextContent(innerHTML);
+  const text = escapeHtml(textSource);
+  const title =
+    typeof attrs.title === "string" && attrs.title.trim().length > 0
+      ? ` title="${escapeHtml(attrs.title)}"`
+      : "";
+  const target =
+    tagName === "a" &&
+    typeof attrs.linkTarget === "string" &&
+    attrs.linkTarget.trim().length > 0
+      ? ` target="${escapeHtml(attrs.linkTarget)}"`
+      : "";
+  const rel =
+    tagName === "a" &&
+    typeof attrs.rel === "string" &&
+    attrs.rel.trim().length > 0
+      ? ` rel="${escapeHtml(attrs.rel)}"`
+      : "";
+  const href =
+    tagName === "a" &&
+    typeof attrs.url === "string" &&
+    attrs.url.trim().length > 0
+      ? ` href="${escapeHtml(attrs.url)}"`
+      : "";
+  const type =
+    tagName === "button" &&
+    typeof attrs.type === "string" &&
+    attrs.type.trim().length > 0
+      ? ` type="${escapeHtml(attrs.type)}"`
+      : tagName === "button"
+        ? ' type="button"'
+        : "";
+  return `<div class="wp-block-button"><${tagName} class="wp-block-button__link wp-element-button"${href}${title}${target}${rel}${type}>${text}</${tagName}></div>`;
+}
+
+function validGroupTagName(attrs: Record<string, unknown>): string {
+  const tagName = typeof attrs.tagName === "string" ? attrs.tagName.trim() : "";
+  return new Set([
+    "article",
+    "aside",
+    "div",
+    "footer",
+    "header",
+    "main",
+    "nav",
+    "section"
+  ]).has(tagName)
+    ? tagName
+    : "div";
+}
+
+function groupWrapperOpen(attrs: Record<string, unknown>): string {
+  const tagName = validGroupTagName(attrs);
+  return `<${tagName} class="wp-block-group">`;
+}
+
+function groupWrapperClose(attrs: Record<string, unknown>): string {
+  return `</${validGroupTagName(attrs)}>`;
+}
+
+function detailsWrapperOpen(attrs: Record<string, unknown>): string {
+  const extras: string[] = [];
+  if (typeof attrs.name === "string" && attrs.name.trim().length > 0) {
+    extras.push(`name="${escapeHtml(attrs.name)}"`);
+  }
+  if (attrs.showContent === true) {
+    extras.push("open");
+  }
+  const summary =
+    typeof attrs.summary === "string" && attrs.summary.trim().length > 0
+      ? attrs.summary
+      : "Details";
+  return `<details class="wp-block-details"${
+    extras.length > 0 ? ` ${extras.join(" ")}` : ""
+  }><summary>${escapeHtml(summary)}</summary>`;
+}
+
+function tableCellHtml(
+  cell: Record<string, unknown>,
+  cellIndex: number
+): string {
+  const tag =
+    typeof cell.tag === "string" &&
+    (cell.tag === "td" || cell.tag === "th")
+      ? cell.tag
+      : "td";
+  const classNames: string[] = [];
+  const align = typeof cell.align === "string" ? cell.align.trim() : "";
+  if (align.length > 0) {
+    classNames.push(`has-text-align-${escapeHtml(align)}`);
+  }
+  const attrs: string[] = [];
+  if (classNames.length > 0) {
+    attrs.push(`class="${classNames.join(" ")}"`);
+  }
+  if (align.length > 0) {
+    attrs.push(`data-align="${escapeHtml(align)}"`);
+  }
+  if (
+    tag === "th" &&
+    typeof cell.scope === "string" &&
+    cell.scope.trim().length > 0
+  ) {
+    attrs.push(`scope="${escapeHtml(cell.scope.trim())}"`);
+  }
+  if (typeof cell.colspan === "string" && cell.colspan.trim().length > 0) {
+    attrs.push(`colspan="${escapeHtml(cell.colspan.trim())}"`);
+  }
+  if (typeof cell.rowspan === "string" && cell.rowspan.trim().length > 0) {
+    attrs.push(`rowspan="${escapeHtml(cell.rowspan.trim())}"`);
+  }
+  const content =
+    typeof cell.content === "string" && cell.content.length > 0
+      ? cell.content
+      : `Cell ${cellIndex + 1}`;
+  return `<${tag}${attrs.length > 0 ? ` ${attrs.join(" ")}` : ""}>${content}</${tag}>`;
+}
+
+function tableSectionHtml(
+  sectionTag: "thead" | "tbody" | "tfoot",
+  rowsValue: unknown
+): string {
+  if (!Array.isArray(rowsValue) || rowsValue.length === 0) {
+    return "";
+  }
+  const rows = rowsValue
+    .map((row) => {
+      const rowRecord = objectValue(row);
+      const cells = Array.isArray(rowRecord.cells) ? rowRecord.cells : [];
+      if (cells.length === 0) {
+        return "";
+      }
+      return `<tr>${cells
+        .map((cell, cellIndex) => tableCellHtml(objectValue(cell), cellIndex))
+        .join("")}</tr>`;
+    })
+    .filter((row) => row.length > 0)
+    .join("");
+  return rows.length > 0 ? `<${sectionTag}>${rows}</${sectionTag}>` : "";
+}
+
+function tableHtml(attrs: Record<string, unknown>): string {
+  const head = tableSectionHtml("thead", attrs.head);
+  const body = tableSectionHtml("tbody", attrs.body);
+  const foot = tableSectionHtml("tfoot", attrs.foot);
+  if (head.length === 0 && body.length === 0 && foot.length === 0) {
+    return "";
+  }
+  const tableClasses: string[] = [];
+  if (attrs.hasFixedLayout !== false) {
+    tableClasses.push("has-fixed-layout");
+  }
+  const caption =
+    typeof attrs.caption === "string" && attrs.caption.trim().length > 0
+      ? `<figcaption class="wp-element-caption">${escapeHtml(
+          attrs.caption.trim()
+        )}</figcaption>`
+      : "";
+  return `<figure class="wp-block-table"><table${
+    tableClasses.length > 0 ? ` class="${tableClasses.join(" ")}"` : ""
+  }>${head}${body}${foot}</table>${caption}</figure>`;
+}
+
+function mediaTextMediaFigureHtml(attrs: Record<string, unknown>): string {
+  const mediaType = typeof attrs.mediaType === "string" ? attrs.mediaType : "";
+  const mediaUrl =
+    typeof attrs.mediaUrl === "string" ? attrs.mediaUrl.trim() : "";
+  if (mediaUrl.length === 0 || (mediaType !== "image" && mediaType !== "video")) {
+    return '<figure class="wp-block-media-text__media"></figure>';
+  }
+
+  const inner =
+    mediaType === "video"
+      ? `<video controls src="${escapeHtml(mediaUrl)}"></video>`
+      : (() => {
+          const mediaAlt =
+            typeof attrs.mediaAlt === "string" ? attrs.mediaAlt : "";
+          const mediaId =
+            typeof attrs.mediaId === "number" ? attrs.mediaId : undefined;
+          const mediaSizeSlug =
+            typeof attrs.mediaSizeSlug === "string" &&
+            attrs.mediaSizeSlug.trim().length > 0
+              ? attrs.mediaSizeSlug.trim()
+              : "full";
+          const classes: string[] = [];
+          if (mediaId && mediaId > 0) {
+            classes.push(`wp-image-${mediaId}`);
+            classes.push(`size-${escapeHtml(mediaSizeSlug)}`);
+          }
+          let style = "";
+          if (attrs.imageFill === true) {
+            const focalPoint =
+              typeof attrs.focalPoint === "object" && attrs.focalPoint !== null
+                ? (attrs.focalPoint as Record<string, unknown>)
+                : {};
+            const x = typeof focalPoint.x === "number" ? focalPoint.x : 0.5;
+            const y = typeof focalPoint.y === "number" ? focalPoint.y : 0.5;
+            style = ` style="object-position:${Math.round(
+              x * 100
+            )}% ${Math.round(y * 100)}%"`;
+          }
+          const img = `<img src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(
+            mediaAlt
+          )}"${
+            classes.length > 0 ? ` class="${classes.join(" ")}"` : ""
+          }${style}/>`;
+          if (
+            typeof attrs.href === "string" &&
+            attrs.href.trim().length > 0
+          ) {
+            const target =
+              typeof attrs.linkTarget === "string" &&
+              attrs.linkTarget.trim().length > 0
+                ? ` target="${escapeHtml(attrs.linkTarget.trim())}"`
+                : "";
+            const rel =
+              typeof attrs.rel === "string" && attrs.rel.trim().length > 0
+                ? ` rel="${escapeHtml(attrs.rel.trim())}"`
+                : "";
+            const linkClass =
+              typeof attrs.linkClass === "string" &&
+              attrs.linkClass.trim().length > 0
+                ? ` class="${escapeHtml(attrs.linkClass.trim())}"`
+                : "";
+            return `<a${linkClass} href="${escapeHtml(
+              attrs.href.trim()
+            )}"${target}${rel}>${img}</a>`;
+          }
+          return img;
+        })();
+  return `<figure class="wp-block-media-text__media">${inner}</figure>`;
+}
+
+function mediaTextWrapperOpen(attrs: Record<string, unknown>): string {
+  const classNames = ["wp-block-media-text"];
+  if (attrs.mediaPosition === "right") {
+    classNames.push("has-media-on-the-right");
+  }
+  if (attrs.isStackedOnMobile === true) {
+    classNames.push("is-stacked-on-mobile");
+  }
+  if (
+    typeof attrs.verticalAlignment === "string" &&
+    attrs.verticalAlignment.trim().length > 0
+  ) {
+    classNames.push(
+      `is-vertically-aligned-${escapeHtml(attrs.verticalAlignment.trim())}`
+    );
+  }
+  if (attrs.imageFill === true) {
+    classNames.push("is-image-fill-element");
+  }
+  let style = "";
+  if (
+    typeof attrs.mediaWidth === "number" &&
+    Number.isFinite(attrs.mediaWidth) &&
+    attrs.mediaWidth !== 50
+  ) {
+    const width = String(attrs.mediaWidth);
+    style =
+      attrs.mediaPosition === "right"
+        ? ` style="grid-template-columns:auto ${width}%"`
+        : ` style="grid-template-columns:${width}% auto"`;
+  }
+  return `<div class="${classNames.join(" ")}"${style}>`;
+}
+
+function listWrapperOpen(attrs: Record<string, unknown>): string {
+  const ordered = attrs.ordered === true;
+  const tagName = ordered ? "ol" : "ul";
+  const extras: string[] = [];
+  if (ordered && attrs.reversed === true) {
+    extras.push("reversed");
+  }
+  if (ordered && typeof attrs.start === "number" && Number.isFinite(attrs.start)) {
+    extras.push(`start="${String(attrs.start)}"`);
+  }
+  return `<${tagName} class="wp-block-list"${extras.length > 0 ? ` ${extras.join(" ")}` : ""}>`;
+}
+
+function listWrapperClose(attrs: Record<string, unknown>): string {
+  return attrs.ordered === true ? "</ol>" : "</ul>";
+}
+
+function listItemHtml(innerHTML: string): string {
+  if (innerHTML.includes("<li")) {
+    return innerHTML.replace(/<li\b[^>]*>/i, "<li>");
+  }
+  return `<li>${escapeHtml(extractTextContent(innerHTML))}</li>`;
 }
 
 function imageHtml(attrs: Record<string, unknown>): string {
@@ -338,6 +667,59 @@ function canonicalContainerInnerContent(
     return [columnWrapperOpen(attrs), ...innerBlocks.map(() => null), "</div>"];
   }
 
+  if (blockName === "core/buttons") {
+    return [
+      '<div class="wp-block-buttons">',
+      ...innerBlocks.flatMap((_, index) =>
+        index === 0 ? [null] : ["\n\n", null]
+      ),
+      "</div>"
+    ];
+  }
+
+  if (blockName === "core/group") {
+    return [
+      groupWrapperOpen(attrs),
+      ...innerBlocks.map(() => null),
+      groupWrapperClose(attrs)
+    ];
+  }
+
+  if (blockName === "core/details") {
+    return [
+      detailsWrapperOpen(attrs),
+      ...innerBlocks.map(() => null),
+      "</details>"
+    ];
+  }
+
+  if (blockName === "core/media-text") {
+    const mediaFigure = mediaTextMediaFigureHtml(attrs);
+    const contentOpen = '<div class="wp-block-media-text__content">';
+    if (attrs.mediaPosition === "right") {
+      return [
+        mediaTextWrapperOpen(attrs),
+        contentOpen,
+        ...innerBlocks.map(() => null),
+        "</div>",
+        mediaFigure,
+        "</div>"
+      ];
+    }
+    return [
+      mediaTextWrapperOpen(attrs),
+      mediaFigure,
+      contentOpen,
+      ...innerBlocks.map(() => null),
+      "</div>",
+      "</div>"
+    ];
+  }
+
+  if (blockName === "core/list") {
+    return [listWrapperOpen(attrs), ...innerBlocks.map(() => null), listWrapperClose(attrs)];
+  }
+
   return null;
 }
 
@@ -375,7 +757,7 @@ function normalizeParsedBlockNode(
   let innerContent = Array.isArray(raw.innerContent)
     ? raw.innerContent.map((chunk) =>
         typeof chunk === "string"
-          ? normalizeTextChunk(chunk, blockName)
+          ? normalizeTextChunk(chunk, blockName, attrs)
           : null
       )
     : [];
@@ -388,7 +770,17 @@ function normalizeParsedBlockNode(
     (blockName === "core/paragraph" || blockName === "core/heading") &&
     innerHTML.length > 0
   ) {
-    innerHTML = normalizeTextChunk(innerHTML, blockName);
+    innerHTML = normalizeTextChunk(innerHTML, blockName, attrs);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/button") {
+    innerHTML = buttonHtml(attrs, innerHTML);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/pullquote") {
+    innerHTML = pullquoteHtml(attrs, innerHTML);
     innerContent = [innerHTML];
   }
 
@@ -409,6 +801,16 @@ function normalizeParsedBlockNode(
 
   if (blockName === "core/separator") {
     innerHTML = separatorHtml(attrs);
+    innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/table") {
+    innerHTML = tableHtml(attrs);
+    innerContent = innerHTML.length > 0 ? [innerHTML] : [];
+  }
+
+  if (blockName === "core/list-item") {
+    innerHTML = listItemHtml(innerHTML);
     innerContent = [innerHTML];
   }
 
