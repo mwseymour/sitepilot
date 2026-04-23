@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { ImageAttachmentPayload } from "@sitepilot/contracts";
 import {
   McpHttpClient,
   normalizeMcpToolResult
@@ -63,6 +64,433 @@ function defaultIdempotencyKey(input: {
 
 function retryIdempotencyKey(baseKey: string): string {
   return `${baseKey}:retry:${randomUUID()}`;
+}
+
+type UploadedMediaAsset = {
+  attachmentId: number;
+  url: string;
+  fileName: string;
+  mediaType: string;
+};
+
+function normalizeBlockName(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (trimmed.startsWith("wp:")) {
+    const name = trimmed.slice("wp:".length);
+    return name.includes("/") ? name : `core/${name}`;
+  }
+  if (trimmed.startsWith("core:")) {
+    return `core/${trimmed.slice("core:".length)}`;
+  }
+  return trimmed;
+}
+
+function dataUrlToBase64(dataUrl: string): string | null {
+  const match = /^data:[^;]+;base64,(.+)$/s.exec(dataUrl);
+  return match?.[1] ?? null;
+}
+
+function imageBlockHtml(attrs: Record<string, unknown>): string {
+  const url = typeof attrs.url === "string" ? attrs.url : "";
+  if (url.length === 0) {
+    return "";
+  }
+  const alt = typeof attrs.alt === "string" ? attrs.alt : "";
+  const sizeSlug = typeof attrs.sizeSlug === "string" ? attrs.sizeSlug : "";
+  const id =
+    typeof attrs.id === "number"
+      ? attrs.id
+      : typeof attrs.id === "string"
+        ? Number.parseInt(attrs.id, 10)
+        : 0;
+  const figureClasses = ["wp-block-image"];
+  if (sizeSlug.length > 0) {
+    figureClasses.push(`size-${sizeSlug}`);
+  }
+  const imageClass = Number.isFinite(id) && id > 0 ? ` class="wp-image-${id}"` : "";
+  return `<figure class="${figureClasses.join(" ")}"><img src="${url}" alt="${alt}"${imageClass}/></figure>`;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function isSiteLocalUploadUrl(url: string, siteBaseUrl: string): boolean {
+  if (url.trim().length === 0) {
+    return true;
+  }
+
+  try {
+    const imageUrl = new URL(url);
+    const baseUrl = new URL(siteBaseUrl);
+    return (
+      imageUrl.origin === baseUrl.origin &&
+      imageUrl.pathname.includes("/wp-content/uploads/")
+    );
+  } catch {
+    return url.includes("/wp-content/uploads/");
+  }
+}
+
+function urlFileName(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    return segments.length > 0 ? decodeURIComponent(segments.at(-1) ?? "") : null;
+  } catch {
+    const segments = url.split("/").filter(Boolean);
+    return segments.length > 0 ? segments.at(-1) ?? null : null;
+  }
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+async function uploadAttachmentsToMediaLibrary(input: {
+  attachments: ImageAttachmentPayload[];
+  mcpClient: McpHttpClient;
+}): Promise<
+  | { ok: true; uploads: UploadedMediaAsset[] }
+  | { ok: false; code: string; message: string }
+> {
+  const uploads: UploadedMediaAsset[] = [];
+
+  for (const attachment of input.attachments) {
+    const dataBase64 = dataUrlToBase64(attachment.dataUrl);
+    if (!dataBase64) {
+      return {
+        ok: false,
+        code: "invalid_attachment_data",
+        message: `Image attachment "${attachment.fileName}" is not valid base64 image data.`
+      };
+    }
+
+    let raw: unknown;
+    try {
+      raw = await input.mcpClient.callTool("sitepilot-upload-media-asset", {
+        file_name: attachment.fileName,
+        media_type: attachment.mediaType,
+        data_base64: dataBase64,
+        dry_run: false
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        code: "media_upload_failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : `Media upload failed for ${attachment.fileName}.`
+      };
+    }
+
+    const result = normalizeMcpToolResult(raw);
+    if (result.ok === false) {
+      return {
+        ok: false,
+        code: "media_upload_failed",
+        message:
+          typeof result.error === "string" && result.error.trim().length > 0
+            ? result.error
+            : `Media upload failed for ${attachment.fileName}.`
+      };
+    }
+
+    const attachmentId = result["attachment_id"];
+    const url = result["url"];
+    if (
+      typeof attachmentId !== "number" ||
+      !Number.isFinite(attachmentId) ||
+      attachmentId <= 0 ||
+      typeof url !== "string" ||
+      url.trim().length === 0
+    ) {
+      return {
+        ok: false,
+        code: "media_upload_invalid_result",
+        message: `Media upload for "${attachment.fileName}" did not return a usable attachment id and URL.`
+      };
+    }
+
+    uploads.push({
+      attachmentId,
+      url,
+      fileName: attachment.fileName,
+      mediaType: attachment.mediaType
+    });
+  }
+
+  return { ok: true, uploads };
+}
+
+function rewriteBlocksWithUploadedMedia(input: {
+  blocks: unknown[];
+  uploads: UploadedMediaAsset[];
+  siteBaseUrl: string;
+}): unknown[] {
+  const usedUploadIndexes = new Set<number>();
+
+  const nextUnusedUpload = (): UploadedMediaAsset | undefined => {
+    const index = input.uploads.findIndex((_, uploadIndex) => !usedUploadIndexes.has(uploadIndex));
+    if (index < 0) {
+      return undefined;
+    }
+    usedUploadIndexes.add(index);
+    return input.uploads[index];
+  };
+
+  const matchingUploadForUrl = (url: string): UploadedMediaAsset | undefined => {
+    const fileName = urlFileName(url);
+    if (!fileName) {
+      return undefined;
+    }
+    const index = input.uploads.findIndex(
+      (upload, uploadIndex) =>
+        !usedUploadIndexes.has(uploadIndex) && upload.fileName === fileName
+    );
+    if (index < 0) {
+      return undefined;
+    }
+    usedUploadIndexes.add(index);
+    return input.uploads[index];
+  };
+
+  const visitBlock = (value: unknown): unknown => {
+    const block = objectRecord(value);
+    if (!block) {
+      return value;
+    }
+
+    const nextBlock: Record<string, unknown> = { ...block };
+    if (Array.isArray(block.innerBlocks)) {
+      nextBlock.innerBlocks = block.innerBlocks.map(visitBlock);
+    }
+
+    if (normalizeBlockName(block.blockName) !== "core/image") {
+      return nextBlock;
+    }
+
+    const attrs = objectRecord(block.attrs) ?? {};
+    const rawId = attrs.id;
+    const imageId =
+      typeof rawId === "number"
+        ? rawId
+        : typeof rawId === "string"
+          ? Number.parseInt(rawId, 10)
+          : 0;
+    const currentUrl =
+      typeof attrs.url === "string"
+        ? attrs.url
+        : typeof attrs.src === "string"
+          ? attrs.src
+          : "";
+
+    if (Number.isFinite(imageId) && imageId > 0 && currentUrl.length > 0) {
+      return nextBlock;
+    }
+
+    const upload =
+      matchingUploadForUrl(currentUrl) ??
+      (isSiteLocalUploadUrl(currentUrl, input.siteBaseUrl) ? nextUnusedUpload() : undefined);
+
+    if (!upload) {
+      return nextBlock;
+    }
+
+    const nextAttrs: Record<string, unknown> = {
+      ...attrs,
+      id: upload.attachmentId,
+      url: upload.url
+    };
+    if (typeof nextAttrs.src === "string") {
+      nextAttrs.src = upload.url;
+    }
+
+    const innerHtml = imageBlockHtml(nextAttrs);
+    nextBlock.attrs = nextAttrs;
+    nextBlock.innerHTML = innerHtml;
+    nextBlock.innerContent = [innerHtml];
+
+    return nextBlock;
+  };
+
+  return input.blocks.map(visitBlock);
+}
+
+function rewriteSerializedContentWithUploadedMedia(input: {
+  content: string;
+  uploads: UploadedMediaAsset[];
+  siteBaseUrl: string;
+}): string {
+  let nextUploadIndex = 0;
+
+  const takeUploadForUrl = (url: string): UploadedMediaAsset | undefined => {
+    const fileName = urlFileName(url);
+    if (fileName) {
+      const matchIndex = input.uploads.findIndex(
+        (upload, index) => index >= nextUploadIndex && upload.fileName === fileName
+      );
+      if (matchIndex >= 0) {
+        nextUploadIndex = matchIndex + 1;
+        return input.uploads[matchIndex];
+      }
+    }
+
+    if (isSiteLocalUploadUrl(url, input.siteBaseUrl) && nextUploadIndex < input.uploads.length) {
+      const upload = input.uploads[nextUploadIndex];
+      nextUploadIndex += 1;
+      return upload;
+    }
+
+    return undefined;
+  };
+
+  const imageBlockPattern =
+    /<!--\s*wp:image(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:image\s*-->/gi;
+
+  return input.content.replace(imageBlockPattern, (full, attrsJson, innerHtml) => {
+    let attrs: Record<string, unknown> = {};
+    if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(attrsJson) as unknown;
+        const record = objectRecord(parsed);
+        if (record) {
+          attrs = record;
+        }
+      } catch {
+        attrs = {};
+      }
+    }
+
+    const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(
+      typeof innerHtml === "string" ? innerHtml : ""
+    );
+    const currentUrl =
+      typeof attrs.url === "string"
+        ? attrs.url
+        : typeof attrs.src === "string"
+          ? attrs.src
+          : imgSrcMatch?.[2] ?? "";
+    const rawId = attrs.id;
+    const imageId =
+      typeof rawId === "number"
+        ? rawId
+        : typeof rawId === "string"
+          ? Number.parseInt(rawId, 10)
+          : 0;
+
+    if (Number.isFinite(imageId) && imageId > 0 && currentUrl.length > 0) {
+      return full;
+    }
+
+    const upload = takeUploadForUrl(currentUrl);
+    if (!upload) {
+      return full;
+    }
+
+    const nextAttrs: Record<string, unknown> = {
+      ...attrs,
+      id: upload.attachmentId,
+      url: upload.url,
+      src: upload.url
+    };
+    const alt =
+      typeof nextAttrs.alt === "string" ? nextAttrs.alt : upload.fileName;
+    nextAttrs.alt = alt;
+
+    const commentJson = JSON.stringify(nextAttrs);
+    const html = `<figure class="wp-block-image"><img src="${escapeHtml(
+      upload.url
+    )}" alt="${escapeHtml(alt)}" class="wp-image-${upload.attachmentId}"/></figure>`;
+
+    return `<!-- wp:image ${commentJson} -->${html}<!-- /wp:image -->`;
+  });
+}
+
+async function hydrateSpecMediaInputs(input: {
+  requestAttachments: ImageAttachmentPayload[] | undefined;
+  spec: { toolName: string; arguments: Record<string, unknown> };
+  mcpClient: McpHttpClient;
+  siteBaseUrl: string;
+}): Promise<
+  | { ok: true; spec: { toolName: string; arguments: Record<string, unknown> } }
+  | { ok: false; code: string; message: string }
+> {
+  if (
+    input.requestAttachments === undefined ||
+    input.requestAttachments.length === 0
+  ) {
+    return { ok: true, spec: input.spec };
+  }
+
+  if (
+    input.spec.toolName !== "sitepilot-create-draft-post" &&
+    input.spec.toolName !== "sitepilot-update-post-fields"
+  ) {
+    return { ok: true, spec: input.spec };
+  }
+
+  if (!Array.isArray(input.spec.arguments.blocks)) {
+    if (typeof input.spec.arguments.content !== "string") {
+      return { ok: true, spec: input.spec };
+    }
+
+    const uploadResult = await uploadAttachmentsToMediaLibrary({
+      attachments: input.requestAttachments,
+      mcpClient: input.mcpClient
+    });
+    if (!uploadResult.ok) {
+      return uploadResult;
+    }
+
+    return {
+      ok: true,
+      spec: {
+        ...input.spec,
+        arguments: {
+          ...input.spec.arguments,
+          content: rewriteSerializedContentWithUploadedMedia({
+            content: input.spec.arguments.content,
+            uploads: uploadResult.uploads,
+            siteBaseUrl: input.siteBaseUrl
+          })
+        }
+      }
+    };
+  }
+
+  const uploadResult = await uploadAttachmentsToMediaLibrary({
+    attachments: input.requestAttachments,
+    mcpClient: input.mcpClient
+  });
+  if (!uploadResult.ok) {
+    return uploadResult;
+  }
+
+  return {
+    ok: true,
+    spec: {
+      ...input.spec,
+      arguments: {
+        ...input.spec.arguments,
+        blocks: rewriteBlocksWithUploadedMedia({
+          blocks: input.spec.arguments.blocks,
+          uploads: uploadResult.uploads,
+          siteBaseUrl: input.siteBaseUrl
+        })
+      }
+    }
+  };
 }
 
 async function resolveActionPostId(input: {
@@ -182,12 +610,13 @@ export async function executePlanAction(
   input: ExecutePlanActionInput
 ): Promise<ExecutePlanActionResult> {
   const db = getDatabase();
+  const site = await db.repositories.sites.getById(input.siteId);
   const request = await db.repositories.requests.getById(input.requestId);
-  if (!request || request.siteId !== input.siteId) {
+  if (!site || !request || request.siteId !== input.siteId) {
     return {
       ok: false,
       code: "request_not_found",
-      message: "Request not found for this site."
+      message: "Request or site not found for this execution."
     };
   }
 
@@ -275,6 +704,25 @@ export async function executePlanAction(
       return mcp;
     }
     mcpClient = mcp.client;
+  }
+
+  if (!input.dryRun) {
+    const hydratedSpec = await hydrateSpecMediaInputs({
+      requestAttachments: request.attachments,
+      spec,
+      mcpClient,
+      siteBaseUrl: site.baseUrl
+    });
+    if (!hydratedSpec.ok) {
+      await appendExecutionMessage({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        author: { kind: "system" },
+        text: `Execution failed before ${spec.toolName}: ${hydratedSpec.message}`
+      });
+      return hydratedSpec;
+    }
+    spec = hydratedSpec.spec;
   }
 
   if (input.dryRun) {

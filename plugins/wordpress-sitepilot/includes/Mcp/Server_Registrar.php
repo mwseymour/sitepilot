@@ -50,6 +50,7 @@ final class Server_Registrar {
 				'sitepilot/create-draft-post',
 				'sitepilot/update-post-fields',
 				'sitepilot/set-post-seo-meta',
+				'sitepilot/upload-media-asset',
 			),
 			array(),
 			array(),

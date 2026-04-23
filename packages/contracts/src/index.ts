@@ -4,6 +4,7 @@ export {
   approvalStateSchema,
   auditEventTypeSchema,
   idSchema,
+  imageAttachmentSchema,
   isoTimestampSchema,
   jsonValueSchema,
   localizedTextBlockSchema,
@@ -17,6 +18,7 @@ export {
   toolInvocationStatusSchema,
   urlSchema
 } from "./common.js";
+export type { ImageAttachmentPayload } from "./common.js";
 export {
   connectivityDiagnosticsSchema,
   ipcChannels,
@@ -119,6 +121,7 @@ export {
   requestSchema,
   siteConfigSchema,
   sitePlannerSettingsSchema,
+  uiPreferencesSchema,
   siteConnectionSchema,
   toolInvocationSchema,
   workspaceListResponseSchema,
@@ -137,6 +140,7 @@ export type {
   PlannerContext,
   SiteConfig,
   SitePlannerSettings,
+  UiPreferences,
   WorkspaceListResponse,
   WorkspaceSummary
 } from "./schemas.js";

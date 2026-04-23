@@ -41,6 +41,13 @@ export const localizedTextBlockSchema = z.object({
   value: z.string().min(1)
 });
 
+export const imageAttachmentSchema = z.object({
+  fileName: z.string().min(1).max(260),
+  mediaType: z.string().regex(/^image\//),
+  sizeBytes: z.number().int().nonnegative(),
+  dataUrl: z.string().regex(/^data:image\//)
+});
+
 export const actorSchema = z.object({
   userProfileId: idSchema,
   appRole: z.enum([
@@ -72,3 +79,5 @@ export const timestampsSchema = z.object({
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema
 });
+
+export type ImageAttachmentPayload = z.infer<typeof imageAttachmentSchema>;

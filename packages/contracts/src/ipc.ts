@@ -5,6 +5,7 @@ import {
   approvalStateSchema,
   auditEventTypeSchema,
   idSchema,
+  imageAttachmentSchema,
   isoTimestampSchema,
   jsonValueSchema,
   siteEnvironmentSchema,
@@ -22,6 +23,7 @@ import {
   requestSchema,
   siteConfigSchema,
   sitePlannerSettingsSchema,
+  uiPreferencesSchema,
   workspaceListResponseSchema
 } from "./schemas.js";
 
@@ -58,6 +60,7 @@ export const ipcChannels = {
   settingsClearProviderSecret: "settings.clearProviderSecret",
   settingsSetPlannerPreferences: "settings.setPlannerPreferences",
   settingsSetSitePlannerSettings: "settings.setSitePlannerSettings",
+  settingsSetUiPreferences: "settings.setUiPreferences",
   settingsClearSiteSigningSecret: "settings.clearSiteSigningSecret",
   getCompatibilityInfo: "app.getCompatibilityInfo",
   exportBuildSiteBundle: "export.buildSiteBundle",
@@ -360,7 +363,8 @@ export const listChatMessagesResponseSchema = z.discriminatedUnion("ok", [
 export const postChatMessageRequestSchema = z.object({
   siteId: idSchema,
   threadId: idSchema,
-  text: z.string().min(1)
+  text: z.string().min(1),
+  attachments: z.array(imageAttachmentSchema).max(8).optional()
 });
 
 export const postChatMessageResponseSchema = z.discriminatedUnion("ok", [
@@ -378,7 +382,8 @@ export const postChatMessageResponseSchema = z.discriminatedUnion("ok", [
 export const createChatRequestRequestSchema = z.object({
   siteId: idSchema,
   threadId: idSchema,
-  userPrompt: z.string().min(1)
+  userPrompt: z.string().min(1),
+  attachments: z.array(imageAttachmentSchema).max(8).optional()
 });
 
 export const createChatRequestResponseSchema = z.discriminatedUnion("ok", [
@@ -398,7 +403,8 @@ export const answerClarificationRequestSchema = z.object({
   siteId: idSchema,
   threadId: idSchema,
   requestId: idSchema,
-  answer: z.string().min(1)
+  answer: z.string().min(1),
+  attachments: z.array(imageAttachmentSchema).max(8).optional()
 });
 
 export const answerClarificationResponseSchema =
@@ -408,7 +414,8 @@ export const amendRequestRequestSchema = z.object({
   siteId: idSchema,
   threadId: idSchema,
   requestId: idSchema,
-  text: z.string().min(1)
+  text: z.string().min(1),
+  attachments: z.array(imageAttachmentSchema).max(8).optional()
 });
 
 export const amendRequestResponseSchema = createChatRequestResponseSchema;
@@ -568,6 +575,7 @@ export const settingsGetStateResponseSchema = z.discriminatedUnion("ok", [
     configuredProviders: providerStatusResponseSchema.shape.configuredProviders,
     planner: plannerPreferencesSchema,
     sitePlannerSettings: sitePlannerSettingsSchema.optional(),
+    uiPreferences: uiPreferencesSchema,
     siteHasSigningSecret: z.boolean().optional()
   }),
   z.object({
@@ -599,6 +607,10 @@ export const settingsSetPlannerPreferencesRequestSchema = z.object({
 export const settingsSetSitePlannerSettingsRequestSchema = z.object({
   siteId: idSchema,
   settings: sitePlannerSettingsSchema
+});
+
+export const settingsSetUiPreferencesRequestSchema = z.object({
+  preferences: uiPreferencesSchema
 });
 
 export const settingsClearSiteSigningSecretRequestSchema = z.object({
@@ -845,6 +857,10 @@ export const ipcContracts = {
     request: settingsSetSitePlannerSettingsRequestSchema,
     response: settingsOkOnlyResponseSchema
   },
+  [ipcChannels.settingsSetUiPreferences]: {
+    request: settingsSetUiPreferencesRequestSchema,
+    response: settingsOkOnlyResponseSchema
+  },
   [ipcChannels.settingsClearSiteSigningSecret]: {
     request: settingsClearSiteSigningSecretRequestSchema,
     response: settingsOkOnlyResponseSchema
@@ -970,6 +986,9 @@ export interface SitePilotDesktopApi {
   ) => Promise<
     IpcResponse<typeof ipcChannels.settingsSetSitePlannerSettings>
   >;
+  setUiPreferences: (
+    request: IpcRequest<typeof ipcChannels.settingsSetUiPreferences>
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsSetUiPreferences>>;
   clearSiteSigningSecret: (
     request: IpcRequest<typeof ipcChannels.settingsClearSiteSigningSecret>
   ) => Promise<IpcResponse<typeof ipcChannels.settingsClearSiteSigningSecret>>;

@@ -3,6 +3,7 @@ import type { ChatThreadId, SiteId } from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
 import { buildPlannerContext } from "@sitepilot/services";
+import { loadPlannerSkillsForPrompt } from "./planner-skills-service.js";
 
 export type BuildPlannerContextResult =
   | { ok: true; context: PlannerContext }
@@ -103,6 +104,9 @@ export async function buildPlannerContextForThread(
     db.repositories.chatMessages.listByThreadId(threadId),
     db.repositories.requests.listByThreadId(threadId)
   ]);
+  const activeSkills = await loadPlannerSkillsForPrompt(
+    requests.at(-1)?.userPrompt ?? ""
+  );
 
   const priorChanges: string[] = [];
   const targetSummaries: string[] = [];
@@ -150,6 +154,7 @@ export async function buildPlannerContextForThread(
     builtAt,
     siteConfig,
     discoverySnapshot: discovery,
+    ...(activeSkills.length > 0 ? { activeSkills } : {}),
     messages,
     targetSummaries,
     priorChanges

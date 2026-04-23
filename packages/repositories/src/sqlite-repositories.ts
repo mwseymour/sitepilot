@@ -721,13 +721,14 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
           site_id: ChatMessage["siteId"];
           author_json: string;
           body_json: string;
+          attachments_json: string;
           request_id: ChatMessage["requestId"] | null;
           created_at: string;
           updated_at: string;
         }
       >(
-        `SELECT id, thread_id, site_id, author_json, body_json, request_id,
-                created_at, updated_at
+        `SELECT id, thread_id, site_id, author_json, body_json,
+                attachments_json, request_id, created_at, updated_at
          FROM chat_messages
          WHERE id = @id`
       )
@@ -737,12 +738,17 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
       return null;
     }
 
+    const attachments = parseJson<NonNullable<ChatMessage["attachments"]>>(
+      row.attachments_json
+    );
+
     return {
       id: row.id,
       threadId: row.thread_id,
       siteId: row.site_id,
       author: parseJson(row.author_json),
       body: parseJson(row.body_json),
+      ...(attachments.length > 0 ? { attachments } : {}),
       ...(row.request_id !== null ? { requestId: row.request_id } : {}),
       createdAt: row.created_at,
       updatedAt: row.updated_at
@@ -761,39 +767,47 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
           site_id: ChatMessage["siteId"];
           author_json: string;
           body_json: string;
+          attachments_json: string;
           request_id: ChatMessage["requestId"] | null;
           created_at: string;
           updated_at: string;
         }
       >(
-        `SELECT id, thread_id, site_id, author_json, body_json, request_id,
-                created_at, updated_at
+        `SELECT id, thread_id, site_id, author_json, body_json,
+                attachments_json, request_id, created_at, updated_at
          FROM chat_messages
          WHERE thread_id = @threadId
          ORDER BY created_at ASC`
       )
       .all({ threadId });
 
-    return rows.map((row) => ({
-      id: row.id,
-      threadId: row.thread_id,
-      siteId: row.site_id,
-      author: parseJson(row.author_json),
-      body: parseJson(row.body_json),
-      ...(row.request_id !== null ? { requestId: row.request_id } : {}),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    return rows.map((row) => {
+      const attachments = parseJson<NonNullable<ChatMessage["attachments"]>>(
+        row.attachments_json
+      );
+
+      return {
+        id: row.id,
+        threadId: row.thread_id,
+        siteId: row.site_id,
+        author: parseJson(row.author_json),
+        body: parseJson(row.body_json),
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(row.request_id !== null ? { requestId: row.request_id } : {}),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    });
   }
 
   public async save(message: ChatMessage): Promise<void> {
     upsert(
       this.connection,
       `INSERT INTO chat_messages (
-         id, thread_id, site_id, author_json, body_json, request_id,
-         created_at, updated_at
+         id, thread_id, site_id, author_json, body_json, attachments_json,
+         request_id, created_at, updated_at
        ) VALUES (
-         @id, @threadId, @siteId, @authorJson, @bodyJson, @requestId,
+         @id, @threadId, @siteId, @authorJson, @bodyJson, @attachmentsJson, @requestId,
          @createdAt, @updatedAt
        )
        ON CONFLICT(id) DO UPDATE SET
@@ -801,6 +815,7 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
          site_id = excluded.site_id,
          author_json = excluded.author_json,
          body_json = excluded.body_json,
+         attachments_json = excluded.attachments_json,
          request_id = excluded.request_id,
          updated_at = excluded.updated_at`,
       {
@@ -809,6 +824,7 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
         siteId: message.siteId,
         authorJson: serializeJson(message.author),
         bodyJson: serializeJson(message.body),
+        attachmentsJson: serializeJson(message.attachments ?? []),
         requestId: message.requestId ?? null,
         createdAt: message.createdAt,
         updatedAt: message.updatedAt
@@ -942,6 +958,7 @@ class SqliteRequestRepository implements RequestRepository {
           requested_by_json: string;
           status: Request["status"];
           user_prompt: string;
+          attachments_json: string;
           latest_plan_id: Request["latestPlanId"] | null;
           latest_execution_run_id: Request["latestExecutionRunId"] | null;
           created_at: string;
@@ -949,7 +966,8 @@ class SqliteRequestRepository implements RequestRepository {
         }
       >(
         `SELECT id, site_id, thread_id, requested_by_json, status, user_prompt,
-                latest_plan_id, latest_execution_run_id, created_at, updated_at
+                attachments_json, latest_plan_id, latest_execution_run_id,
+                created_at, updated_at
          FROM requests
          WHERE id = @id`
       )
@@ -959,6 +977,10 @@ class SqliteRequestRepository implements RequestRepository {
       return null;
     }
 
+    const attachments = parseJson<NonNullable<Request["attachments"]>>(
+      row.attachments_json
+    );
+
     return {
       id: row.id,
       siteId: row.site_id,
@@ -966,6 +988,7 @@ class SqliteRequestRepository implements RequestRepository {
       requestedBy: parseJson(row.requested_by_json),
       status: row.status,
       userPrompt: row.user_prompt,
+      ...(attachments.length > 0 ? { attachments } : {}),
       latestPlanId: row.latest_plan_id ?? undefined,
       latestExecutionRunId: row.latest_execution_run_id ?? undefined,
       createdAt: row.created_at,
@@ -986,6 +1009,7 @@ class SqliteRequestRepository implements RequestRepository {
           requested_by_json: string;
           status: Request["status"];
           user_prompt: string;
+          attachments_json: string;
           latest_plan_id: Request["latestPlanId"] | null;
           latest_execution_run_id: Request["latestExecutionRunId"] | null;
           created_at: string;
@@ -993,25 +1017,33 @@ class SqliteRequestRepository implements RequestRepository {
         }
       >(
         `SELECT id, site_id, thread_id, requested_by_json, status, user_prompt,
-                latest_plan_id, latest_execution_run_id, created_at, updated_at
+                attachments_json, latest_plan_id, latest_execution_run_id,
+                created_at, updated_at
          FROM requests
          WHERE thread_id = @threadId
          ORDER BY created_at ASC`
       )
       .all({ threadId });
 
-    return rows.map((row) => ({
-      id: row.id,
-      siteId: row.site_id,
-      threadId: row.thread_id,
-      requestedBy: parseJson(row.requested_by_json),
-      status: row.status,
-      userPrompt: row.user_prompt,
-      latestPlanId: row.latest_plan_id ?? undefined,
-      latestExecutionRunId: row.latest_execution_run_id ?? undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    return rows.map((row) => {
+      const attachments = parseJson<NonNullable<Request["attachments"]>>(
+        row.attachments_json
+      );
+
+      return {
+        id: row.id,
+        siteId: row.site_id,
+        threadId: row.thread_id,
+        requestedBy: parseJson(row.requested_by_json),
+        status: row.status,
+        userPrompt: row.user_prompt,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        latestPlanId: row.latest_plan_id ?? undefined,
+        latestExecutionRunId: row.latest_execution_run_id ?? undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    });
   }
 
   public async listBySiteId(siteId: Request["siteId"]): Promise<Request[]> {
@@ -1025,6 +1057,7 @@ class SqliteRequestRepository implements RequestRepository {
           requested_by_json: string;
           status: Request["status"];
           user_prompt: string;
+          attachments_json: string;
           latest_plan_id: Request["latestPlanId"] | null;
           latest_execution_run_id: Request["latestExecutionRunId"] | null;
           created_at: string;
@@ -1032,7 +1065,8 @@ class SqliteRequestRepository implements RequestRepository {
         }
       >(
         `SELECT id, site_id, thread_id, requested_by_json, status, user_prompt,
-                latest_plan_id, latest_execution_run_id, created_at, updated_at
+                attachments_json, latest_plan_id, latest_execution_run_id,
+                created_at, updated_at
          FROM requests
          WHERE site_id = @siteId
          ORDER BY created_at DESC
@@ -1040,18 +1074,25 @@ class SqliteRequestRepository implements RequestRepository {
       )
       .all({ siteId });
 
-    return rows.map((row) => ({
-      id: row.id,
-      siteId: row.site_id,
-      threadId: row.thread_id,
-      requestedBy: parseJson(row.requested_by_json),
-      status: row.status,
-      userPrompt: row.user_prompt,
-      latestPlanId: row.latest_plan_id ?? undefined,
-      latestExecutionRunId: row.latest_execution_run_id ?? undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    return rows.map((row) => {
+      const attachments = parseJson<NonNullable<Request["attachments"]>>(
+        row.attachments_json
+      );
+
+      return {
+        id: row.id,
+        siteId: row.site_id,
+        threadId: row.thread_id,
+        requestedBy: parseJson(row.requested_by_json),
+        status: row.status,
+        userPrompt: row.user_prompt,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        latestPlanId: row.latest_plan_id ?? undefined,
+        latestExecutionRunId: row.latest_execution_run_id ?? undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    });
   }
 
   public async save(request: Request): Promise<void> {
@@ -1059,10 +1100,10 @@ class SqliteRequestRepository implements RequestRepository {
       this.connection,
       `INSERT INTO requests (
          id, site_id, thread_id, requested_by_json, status, user_prompt,
-         latest_plan_id, latest_execution_run_id, created_at, updated_at
+         attachments_json, latest_plan_id, latest_execution_run_id, created_at, updated_at
        ) VALUES (
          @id, @siteId, @threadId, @requestedByJson, @status, @userPrompt,
-         @latestPlanId, @latestExecutionRunId, @createdAt, @updatedAt
+         @attachmentsJson, @latestPlanId, @latestExecutionRunId, @createdAt, @updatedAt
        )
        ON CONFLICT(id) DO UPDATE SET
          site_id = excluded.site_id,
@@ -1070,6 +1111,7 @@ class SqliteRequestRepository implements RequestRepository {
          requested_by_json = excluded.requested_by_json,
          status = excluded.status,
          user_prompt = excluded.user_prompt,
+         attachments_json = excluded.attachments_json,
          latest_plan_id = excluded.latest_plan_id,
          latest_execution_run_id = excluded.latest_execution_run_id,
          updated_at = excluded.updated_at`,
@@ -1080,6 +1122,7 @@ class SqliteRequestRepository implements RequestRepository {
         requestedByJson: serializeJson(request.requestedBy),
         status: request.status,
         userPrompt: request.userPrompt,
+        attachmentsJson: serializeJson(request.attachments ?? []),
         latestPlanId: request.latestPlanId ?? null,
         latestExecutionRunId: request.latestExecutionRunId ?? null,
         createdAt: request.createdAt,

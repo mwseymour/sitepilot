@@ -1,6 +1,7 @@
 import type {
   ProviderStatusResponse,
-  SitePlannerSettings
+  SitePlannerSettings,
+  UiPreferences
 } from "@sitepilot/contracts";
 import type { SiteId, WorkspaceId } from "@sitepilot/domain";
 
@@ -18,6 +19,7 @@ export type SettingsStateResult =
       ok: true;
       configuredProviders: ProviderStatusResponse["configuredProviders"];
       planner: PlannerPreferences;
+      uiPreferences: UiPreferences;
       sitePlannerSettings?: SitePlannerSettings;
       siteHasSigningSecret?: boolean;
     }
@@ -27,10 +29,21 @@ const DEFAULT_SITE_PLANNER_SETTINGS: SitePlannerSettings = {
   bypassApprovalRequests: false
 };
 
+const DEFAULT_UI_PREFERENCES: UiPreferences = {
+  developerToolsEnabled: false
+};
+
 function sitePlannerSettingsKey(siteId: SiteId) {
   return {
     namespace: "app",
     keyId: `planner_settings:site:${siteId}`
+  } as const;
+}
+
+function uiPreferencesKey() {
+  return {
+    namespace: "app",
+    keyId: "ui_preferences:global"
   } as const;
 }
 
@@ -56,6 +69,26 @@ function parseSitePlannerSettings(
   }
 }
 
+function parseUiPreferences(raw: string | undefined): Partial<UiPreferences> {
+  if (!raw) {
+    return {};
+  }
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    const record = value as Record<string, unknown>;
+    const out: Partial<UiPreferences> = {};
+    if (typeof record.developerToolsEnabled === "boolean") {
+      out.developerToolsEnabled = record.developerToolsEnabled;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 export async function loadSitePlannerSettings(
   storage: ReturnType<typeof getSecureStorage>,
   siteId: SiteId
@@ -73,6 +106,23 @@ export async function saveSitePlannerSettings(
   settings: SitePlannerSettings
 ): Promise<void> {
   await storage.set(sitePlannerSettingsKey(siteId), JSON.stringify(settings));
+}
+
+export async function loadUiPreferences(
+  storage: ReturnType<typeof getSecureStorage>
+): Promise<UiPreferences> {
+  const raw = await storage.get(uiPreferencesKey());
+  return {
+    ...DEFAULT_UI_PREFERENCES,
+    ...parseUiPreferences(raw)
+  };
+}
+
+export async function saveUiPreferences(
+  storage: ReturnType<typeof getSecureStorage>,
+  preferences: UiPreferences
+): Promise<void> {
+  await storage.set(uiPreferencesKey(), JSON.stringify(preferences));
 }
 
 export async function getSettingsState(input: {
@@ -103,6 +153,7 @@ export async function getSettingsState(input: {
       ? (input.workspaceId as WorkspaceId)
       : undefined
   );
+  const uiPreferences = await loadUiPreferences(storage);
 
   let siteHasSigningSecret: boolean | undefined;
   let sitePlannerSettings: SitePlannerSettings | undefined;
@@ -122,6 +173,7 @@ export async function getSettingsState(input: {
     ok: true,
     configuredProviders: configured,
     planner,
+    uiPreferences,
     ...(sitePlannerSettings !== undefined ? { sitePlannerSettings } : {}),
     ...(siteHasSigningSecret !== undefined ? { siteHasSigningSecret } : {})
   };
@@ -192,5 +244,12 @@ export async function setSitePlannerSettings(input: {
     input.siteId,
     input.settings
   );
+  return { ok: true };
+}
+
+export async function setUiPreferences(input: {
+  preferences: UiPreferences;
+}): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  await saveUiPreferences(getSecureStorage(), input.preferences);
   return { ok: true };
 }

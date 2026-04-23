@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   actionPlanSchema,
+  type ImageAttachmentPayload,
   type Action,
   type ActionPlan,
   type PlannerContext
@@ -13,13 +14,14 @@ import type {
   SiteId
 } from "@sitepilot/domain";
 import type {
+  ChatContentPart,
   ChatMessage,
   ChatModelClient
 } from "@sitepilot/provider-adapters";
 
 import { extractJsonObject } from "./json-extract.js";
 
-const PLANNER_PROMPT_VERSION = "sitepilot-plan-v3";
+const PLANNER_PROMPT_VERSION = "sitepilot-plan-v4";
 const ADVANCED_BLOCK_NAMES = new Set([
   "core/buttons",
   "core/columns",
@@ -42,6 +44,7 @@ const HIGH_RISK_BLOCK_NAMES = new Set([
 ]);
 const CONTENT_KEYS = ["content", "postContent", "post_content"] as const;
 const BLOCK_KEYS = ["blocks", "contentBlocks", "content_blocks"] as const;
+const MAX_PLANNER_IMAGES = 3;
 const BLOCK_COMMENT_RE =
   /<!--\s*(\/?)wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)(?:\s+([\s\S]*?))?\s*(\/)?-->/gi;
 
@@ -76,6 +79,18 @@ function userCorpusForRequest(
     .map((m) => m.text)
     .join("\n")
     .trim();
+}
+
+function imagePartsForRequest(
+  attachments: ImageAttachmentPayload[] | undefined
+): ChatContentPart[] {
+  return (attachments ?? [])
+    .slice(0, MAX_PLANNER_IMAGES)
+    .map((attachment) => ({
+      type: "image" as const,
+      mediaType: attachment.mediaType,
+      dataUrl: attachment.dataUrl
+    }));
 }
 
 function normalizeActionType(type: string): string {
@@ -668,6 +683,7 @@ export async function buildLlmActionPlan(input: {
   requestId: RequestId;
   siteId: SiteId;
   nowIso: string;
+  requestAttachments?: ImageAttachmentPayload[];
   client: ChatModelClient;
   model: string;
 }): Promise<{
@@ -698,6 +714,7 @@ export async function buildLlmActionPlan(input: {
   "validationWarnings": string[]
 }
 Use the operator request and site context. Keep actions conservative.
+If plannerContext.activeSkills is present, treat each skill's instructions as active additional constraints for this plan only.
 Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input.
 If an exact post_id is not known but the target can be uniquely discovered at execution time, include lookup fields such as lookup_status, lookup_slug, lookup_title, lookup_search, and lookup_post_type in the update action input (same object as post_id would use). Example: {"type":"update_post_fields","input":{"lookup_title":"Hello Matt","lookup_status":"draft","content":"..."}}.
 Do not propose update actions that lack both a concrete post_id and resolvable lookup fields.
@@ -724,9 +741,14 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     2
   );
 
+  const userContent: ChatMessage["content"] = [
+    { type: "text", text: user },
+    ...imagePartsForRequest(input.requestAttachments)
+  ];
+
   const messages: ChatMessage[] = [
     { role: "system", content: system },
-    { role: "user", content: user }
+    { role: "user", content: userContent }
   ];
 
   const result = await input.client.complete(messages, input.model);

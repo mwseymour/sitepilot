@@ -4,6 +4,7 @@ export { createAnthropicChatClient } from "./anthropic-adapter.js";
 export { createOpenAiChatClient } from "./openai-adapter.js";
 export { estimateUsageCostUsd } from "./cost-estimate.js";
 export type {
+  ChatContentPart,
   ChatCompletionResult,
   ChatMessage,
   ChatModelClient,

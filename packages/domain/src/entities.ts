@@ -124,12 +124,20 @@ export interface ChatThread extends EntityTimestamps {
   archivedAt?: IsoTimestamp;
 }
 
+export interface ImageAttachment {
+  fileName: string;
+  mediaType: string;
+  sizeBytes: number;
+  dataUrl: string;
+}
+
 export interface ChatMessage extends EntityTimestamps {
   id: ChatMessageId;
   threadId: ChatThreadId;
   siteId: SiteId;
   author: ActorRef | { kind: "system" | "assistant" };
   body: LocalizedTextBlock;
+  attachments?: ImageAttachment[];
   requestId?: RequestId;
 }
 
@@ -140,6 +148,7 @@ export interface Request extends EntityTimestamps {
   requestedBy: ActorRef;
   status: RequestStatus;
   userPrompt: string;
+  attachments?: ImageAttachment[];
   latestPlanId?: ActionPlanId;
   latestExecutionRunId?: ExecutionRunId;
 }

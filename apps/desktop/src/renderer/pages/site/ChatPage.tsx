@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 import type {
   ChatMessagePayload,
   ChatThreadPayload,
+  ImageAttachmentPayload,
   SitePilotDesktopApi
 } from "@sitepilot/contracts";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
@@ -31,6 +32,10 @@ type RequestBundleOk = Extract<
 
 /** When false, dry-run entry points are hidden; execution still supports `dryRun` in code paths. */
 const SHOW_DRY_RUN_UI = false;
+const MAX_IMAGE_ATTACHMENTS = 8;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 1280;
+const IMAGE_JPEG_QUALITY = 0.82;
 
 function roleLabel(m: MessageRow): string {
   if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
@@ -53,6 +58,59 @@ function roleIcon(m: MessageRow): string {
     return m.author.kind === "assistant" ? "AI" : "SYS";
   }
   return "YOU";
+}
+
+function formatAttachmentCount(count: number): string {
+  return `${count} image${count === 1 ? "" : "s"}`;
+}
+
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`Failed to read ${file.name}.`));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function fileToImageAttachment(
+  file: File
+): Promise<ImageAttachmentPayload> {
+  const image = await loadImageElement(file);
+  const scale = Math.min(
+    1,
+    MAX_IMAGE_DIMENSION / Math.max(image.width, image.height)
+  );
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error(`Failed to process ${file.name}.`);
+  }
+  context.drawImage(image, 0, 0, width, height);
+  const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
+
+  const base64 = dataUrl.split(",")[1] ?? "";
+  const sizeBytes = Math.ceil((base64.length * 3) / 4);
+
+  return new Promise((resolve, reject) => {
+    resolve({
+      fileName: file.name,
+      mediaType: "image/jpeg",
+      sizeBytes,
+      dataUrl
+    });
+  });
 }
 
 function actionUnavailableReason(
@@ -120,6 +178,9 @@ export function ChatPage(): ReactElement | null {
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [requestPrompt, setRequestPrompt] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<
+    ImageAttachmentPayload[]
+  >([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [plannerJson, setPlannerJson] = useState<string | null>(null);
@@ -128,6 +189,7 @@ export function ChatPage(): ReactElement | null {
     null
   );
   const [bundle, setBundle] = useState<RequestBundleOk | null>(null);
+  const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(false);
   const [execBusy, setExecBusy] = useState(false);
   const [lastExecHint, setLastExecHint] = useState<string | null>(null);
   const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
@@ -135,6 +197,7 @@ export function ChatPage(): ReactElement | null {
   );
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -173,6 +236,22 @@ export function ChatPage(): ReactElement | null {
     }
     void loadThreads();
   }, [data, loadThreads]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUiPreferences(): Promise<void> {
+      const state = await window.sitePilotDesktop.getSettingsState({});
+      if (!cancelled && state.ok) {
+        setDeveloperToolsEnabled(state.uiPreferences.developerToolsEnabled);
+      }
+    }
+
+    void loadUiPreferences();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (threads.length === 0) {
@@ -215,6 +294,10 @@ export function ChatPage(): ReactElement | null {
       setMessages([]);
     }
   }, [selectedThreadId, loadMessages]);
+
+  useEffect(() => {
+    setPendingAttachments([]);
+  }, [selectedThreadId]);
 
   const loadBundle = useCallback(async () => {
     if (!selectedThreadId || lastRequestId === null) {
@@ -289,7 +372,7 @@ export function ChatPage(): ReactElement | null {
 
     const title = editingThreadTitle.trim();
     if (title.length === 0) {
-      setErr("Thread title cannot be empty.");
+      setErr("Request title cannot be empty.");
       return;
     }
 
@@ -343,7 +426,7 @@ export function ChatPage(): ReactElement | null {
   async function onCreateThread(): Promise<void> {
     setBusy(true);
     setErr(null);
-    const title = `Thread ${new Date().toLocaleString()}`;
+    const title = `Request ${new Date().toLocaleString()}`;
     const res = await window.sitePilotDesktop.createChatThread({
       siteId,
       title
@@ -401,6 +484,7 @@ export function ChatPage(): ReactElement | null {
     }
 
     const text = requestPrompt.trim();
+    const attachments = pendingAttachments;
     setBusy(true);
     setErr(null);
 
@@ -409,7 +493,8 @@ export function ChatPage(): ReactElement | null {
         siteId,
         threadId: selectedThreadId,
         requestId: bundle.request.id,
-        answer: text
+        answer: text,
+        ...(attachments.length > 0 ? { attachments } : {})
       });
       setBusy(false);
       if (!res.ok) {
@@ -417,6 +502,7 @@ export function ChatPage(): ReactElement | null {
         return;
       }
       setRequestPrompt("");
+      setPendingAttachments([]);
       await loadMessages(selectedThreadId);
       await loadBundle();
       return;
@@ -430,7 +516,8 @@ export function ChatPage(): ReactElement | null {
         siteId,
         threadId: selectedThreadId,
         requestId: bundle.request.id,
-        text
+        text,
+        ...(attachments.length > 0 ? { attachments } : {})
       });
       setBusy(false);
       if (!res.ok) {
@@ -438,6 +525,7 @@ export function ChatPage(): ReactElement | null {
         return;
       }
       setRequestPrompt("");
+      setPendingAttachments([]);
       setPlanValidationJson(null);
       await loadMessages(selectedThreadId);
       await loadBundle();
@@ -467,7 +555,8 @@ export function ChatPage(): ReactElement | null {
       const res = await window.sitePilotDesktop.postChatMessage({
         siteId,
         threadId: selectedThreadId,
-        text
+        text,
+        ...(attachments.length > 0 ? { attachments } : {})
       });
       setBusy(false);
       if (!res.ok) {
@@ -475,6 +564,7 @@ export function ChatPage(): ReactElement | null {
         return;
       }
       setRequestPrompt("");
+      setPendingAttachments([]);
       await loadMessages(selectedThreadId);
       await loadBundle();
       return;
@@ -483,7 +573,8 @@ export function ChatPage(): ReactElement | null {
     const res = await window.sitePilotDesktop.createChatRequest({
       siteId,
       threadId: selectedThreadId,
-      userPrompt: text
+      userPrompt: text,
+      ...(attachments.length > 0 ? { attachments } : {})
     });
     setBusy(false);
     if (!res.ok) {
@@ -494,8 +585,44 @@ export function ChatPage(): ReactElement | null {
     setPlanValidationJson(null);
     setLastExecHint(null);
     setRequestPrompt("");
+    setPendingAttachments([]);
     await loadMessages(selectedThreadId);
     await loadThreads();
+  }
+
+  async function onPickAttachments(
+    fileList: FileList | null
+  ): Promise<void> {
+    if (!fileList || fileList.length === 0) {
+      return;
+    }
+
+    const files = [...fileList];
+    if (pendingAttachments.length + files.length > MAX_IMAGE_ATTACHMENTS) {
+      setErr(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images per message.`);
+      return;
+    }
+
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        setErr(`${file.name} is not an image.`);
+        return;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setErr(`${file.name} is larger than 8 MB.`);
+        return;
+      }
+    }
+
+    try {
+      const attachments = await Promise.all(
+        files.map((file) => fileToImageAttachment(file))
+      );
+      setPendingAttachments((current) => [...current, ...attachments]);
+      setErr(null);
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Failed to read image.");
+    }
   }
 
   async function onGeneratePlan(): Promise<void> {
@@ -635,7 +762,7 @@ export function ChatPage(): ReactElement | null {
           title: "Request waiting for approval",
           helper:
             "This request is waiting on approval. Execution stays blocked until approval, but you can still leave a note here if needed.",
-          placeholder: "Add a note for this thread…",
+          placeholder: "Add a note for this request…",
           actionLabel: "Add note"
         };
       case "approved":
@@ -647,7 +774,7 @@ export function ChatPage(): ReactElement | null {
                 ? "Use the Dry-run plan or Execute plan buttons above. This box is only for optional notes."
                 : "Use the Execute plan button above. This box is only for optional notes."
               : "Use the action buttons in the plan below. This box is only for optional notes.",
-          placeholder: "Add a note for this thread…",
+          placeholder: "Add a note for this request…",
           actionLabel: "Add note"
         };
       case "executing":
@@ -655,14 +782,14 @@ export function ChatPage(): ReactElement | null {
           title: "Add note",
           helper:
             "Execution is running. You can leave notes here while SitePilot processes the request.",
-          placeholder: "Add a note for this thread…",
+          placeholder: "Add a note for this request…",
           actionLabel: "Add note"
         };
       default:
         return {
           title: "New request",
           helper:
-            "The last request is closed. Start a new request here in the same thread or create a new thread.",
+            "The last request is closed. Start a new request here in the same request history or create a new request.",
           placeholder: "Ask SitePilot to do the next thing…",
           actionLabel: "Send"
         };
@@ -676,14 +803,24 @@ export function ChatPage(): ReactElement | null {
   const activityLabel =
     execProgressLabel ??
     (deletingThreadId !== null
-      ? "Deleting thread"
+      ? "Deleting request"
       : renamingThreadId !== null
-        ? "Saving thread"
+        ? "Saving request"
         : busy
           ? "Working"
           : null);
 
   const chatEnabled = data.site.activationStatus === "active";
+  const developerMessages = [
+    ...(err ? [`Error: ${err}`] : []),
+    ...(activityLabel ? [`Activity: ${activityLabel}`] : []),
+    ...(execProgressLabel ? [`Execution: ${execProgressLabel}`] : []),
+    ...(lastExecHint ? [`Hint: ${lastExecHint}`] : [])
+  ];
+  const pendingAttachmentBytes = pendingAttachments.reduce(
+    (total, attachment) => total + attachment.sizeBytes,
+    0
+  );
 
   if (!chatEnabled) {
     return (
@@ -711,14 +848,14 @@ export function ChatPage(): ReactElement | null {
       ) : null}
       <aside className="chat-threads">
         <div className="chat-threads-header">
-          <h2>Threads</h2>
+          <h2>Requests</h2>
           <button
             type="button"
             className="btn btn-secondary btn-small"
             disabled={busy}
             onClick={() => void onCreateThread()}
           >
-            New thread
+            New request
           </button>
         </div>
         <ul className="chat-thread-list">
@@ -886,7 +1023,7 @@ export function ChatPage(): ReactElement | null {
               {pendingDeleteThreadId === t.id ? (
                 <div className="chat-thread-confirm">
                   <p className="small-print">
-                    Delete this thread and its request history?
+                    Delete this request and its history?
                   </p>
                   <div className="chat-thread-confirm-actions">
                     <button
@@ -917,277 +1054,434 @@ export function ChatPage(): ReactElement | null {
       <section className="chat-main">
         {err ? <p className="workspace-error">{err}</p> : null}
         {!selectedThreadId ? (
-          <p className="muted">Create a thread to start messaging.</p>
+          <p className="muted">Create a request to start messaging.</p>
         ) : (
           <>
             <header className="chat-main-header">
               <div>
-                <h2>{selectedThread?.title ?? "Thread"}</h2>
+                <h2>{selectedThread?.title ?? "Request"}</h2>
                 <p className="muted small-print">
                   {selectedThread?.type.replaceAll("_", " ") ?? "general request"}
                 </p>
               </div>
             </header>
-            <div ref={messagesRef} className="chat-messages">
-              {messages.map((m) => (
-                <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>
-                  <header className="chat-msg-meta">
-                    <span className="chat-msg-author">
-                      <span className="chat-msg-icon">{roleIcon(m)}</span>
-                      <span>{roleLabel(m)}</span>
-                    </span>
-                    <time dateTime={m.createdAt}>{m.createdAt}</time>
-                  </header>
-                  <p className="chat-msg-body">{m.body.value}</p>
-                </article>
-              ))}
-            </div>
-            {bundle ? (
-              <div className="chat-request-panel">
-                <h3>Current request</h3>
-                <p className="chat-request-current">{bundle.request.userPrompt}</p>
-                <div className="chat-request-meta">
-                  <h4>Request status</h4>
-                  <p className="small-print">
-                    <span className="badge">{bundle.request.status}</span>
-                    {bundle.pendingApproval ? (
-                      <>
-                        {" "}
-                        <span className="badge badge-warn">
-                          Pending approval
-                        </span>{" "}
-                        <Link
-                          className="small-print"
-                          to={`/site/${siteId}/approvals`}
-                        >
-                          Open approvals
-                        </Link>
-                      </>
-                    ) : null}
-                  </p>
+            <div className="chat-content-grid">
+              <div className="chat-primary-column">
+                <div ref={messagesRef} className="chat-messages">
+                  {messages.map((m) => (
+                    <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>
+                      <header className="chat-msg-meta">
+                        <span className="chat-msg-author">
+                          <span className="chat-msg-icon">{roleIcon(m)}</span>
+                          <span>{roleLabel(m)}</span>
+                        </span>
+                        <time dateTime={m.createdAt}>{m.createdAt}</time>
+                      </header>
+                      <p className="chat-msg-body">{m.body.value}</p>
+                      {m.attachments && m.attachments.length > 0 ? (
+                        <div className="chat-image-grid">
+                          {m.attachments.map((attachment) => (
+                            <figure
+                              key={`${m.id}-${attachment.fileName}`}
+                              className="chat-image-card"
+                            >
+                              <img
+                                src={attachment.dataUrl}
+                                alt={attachment.fileName}
+                                className="chat-image-preview"
+                              />
+                              <figcaption className="small-print">
+                                {attachment.fileName}
+                              </figcaption>
+                            </figure>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
                 </div>
-                <div className="action-row">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={busy || !canGeneratePlan}
-                    onClick={() => void onGeneratePlan()}
-                  >
-                    Generate action plan
-                  </button>
-                </div>
-                {bundle.plan && executableActions.length > 0 ? (
-                  <div className="chat-plan-runbar">
-                    <div>
-                      <h4>Run plan</h4>
+
+                <div className="chat-composer-card">
+                  <h3>{composerState.title}</h3>
+                  <p className="muted small-print">{composerState.helper}</p>
+                  <textarea
+                    rows={3}
+                    value={requestPrompt}
+                    placeholder={composerState.placeholder}
+                    onFocus={savePendingThreadRename}
+                    onChange={(e) => {
+                      setRequestPrompt(e.target.value);
+                    }}
+                  />
+                  {pendingAttachments.length > 0 ? (
+                    <div className="chat-composer-attachments">
                       <p className="muted small-print">
-                        {canRunPlanDirectly
-                          ? bundle.request.status === "approved"
-                            ? "The approved plan is ready to run."
-                            : SHOW_DRY_RUN_UI
-                              ? "You can dry-run this plan now. Execution unlocks after approval."
-                              : "Execution unlocks after approval."
-                          : "This plan has multiple runnable actions. Use the action buttons below for now."}
+                        {formatAttachmentCount(pendingAttachments.length)} queued
                       </p>
-                    </div>
-                    {canRunPlanDirectly ? (
-                      <div className="chat-plan-runbar-actions">
-                        {SHOW_DRY_RUN_UI ? (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={execBusy || busy}
-                            onClick={() => void onRunPlan(true)}
+                      <p className="muted small-print">
+                        Images are resized before planning so they are sent as
+                        compressed references instead of full-size originals.
+                        The planner uses up to 3 images per request.
+                      </p>
+                      <div className="chat-image-grid">
+                        {pendingAttachments.map((attachment, index) => (
+                          <figure
+                            key={`pending-${attachment.fileName}-${index}`}
+                            className="chat-image-card"
                           >
-                            {execBusy && execProgressLabel === "Running dry-run…"
-                              ? "Running dry-run…"
-                              : "Dry-run plan"}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          disabled={
-                            execBusy ||
-                            busy ||
-                            bundle.request.status !== "approved"
-                          }
-                          onClick={() => void onRunPlan(false)}
-                        >
-                          {execBusy && execProgressLabel === "Executing…"
-                            ? "Executing…"
-                            : "Execute plan"}
-                        </button>
+                            <img
+                              src={attachment.dataUrl}
+                              alt={attachment.fileName}
+                              className="chat-image-preview"
+                            />
+                            <figcaption className="small-print">
+                              {attachment.fileName}
+                            </figcaption>
+                            <button
+                              type="button"
+                              className="chat-image-remove"
+                              onClick={() => {
+                                setPendingAttachments((current) =>
+                                  current.filter(
+                                    (_, currentIndex) => currentIndex !== index
+                                  )
+                                );
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </figure>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="action-row">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={
+                        busy || pendingAttachments.length >= MAX_IMAGE_ATTACHMENTS
+                      }
+                      onClick={() => attachmentInputRef.current?.click()}
+                    >
+                      Add images
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={busy || requestPrompt.trim().length === 0}
+                      onClick={() => void onSubmitPrompt()}
+                    >
+                      {composerState.actionLabel}
+                    </button>
+                    {bundle?.pendingApproval ? (
+                      <Link
+                        className="btn btn-secondary"
+                        to={`/site/${siteId}/approvals`}
+                      >
+                        Open approvals
+                      </Link>
+                    ) : null}
+                  </div>
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    onChange={(event) => {
+                      void onPickAttachments(event.target.files);
+                      event.target.value = "";
+                    }}
+                  />
+                </div>
+              </div>
+
+              <aside className="chat-side-column">
+                {bundle ? (
+                  <div className="chat-request-panel">
+                    <h3>Current request</h3>
+                    <p className="chat-request-current">{bundle.request.userPrompt}</p>
+                    {bundle.request.attachments &&
+                    bundle.request.attachments.length > 0 ? (
+                      <div className="chat-request-attachments">
+                        <p className="muted small-print">
+                          Attached{" "}
+                          {formatAttachmentCount(bundle.request.attachments.length)}
+                        </p>
+                        <div className="chat-image-grid">
+                          {bundle.request.attachments.map((attachment) => (
+                            <figure
+                              key={`request-${attachment.fileName}-${attachment.sizeBytes}`}
+                              className="chat-image-card"
+                            >
+                              <img
+                                src={attachment.dataUrl}
+                                alt={attachment.fileName}
+                                className="chat-image-preview"
+                              />
+                              <figcaption className="small-print">
+                                {attachment.fileName}
+                              </figcaption>
+                            </figure>
+                          ))}
+                        </div>
                       </div>
                     ) : null}
-                  </div>
-                ) : null}
-                {bundle.lastExecution ? (
-                  <p className="muted small-print">
-                    Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
-                    <code className="break-all">
-                      {bundle.lastExecution.idempotencyKey}
-                    </code>
-                  </p>
-                ) : null}
-                {bundle.plan ? (
-                  <div className="chat-bundle-panel">
-                    <h4>Planned actions</h4>
-                    <ul className="chat-action-list">
-                      {bundle.plan.proposedActions.map((action) => {
-                        const spec = actionToMcpToolCall(
-                          action.type,
-                          action.input,
-                          true
-                        );
-                        const remote = spec !== null;
-                        return (
-                          <li key={action.id} className="chat-action-row">
-                            <div>
-                              <strong>{action.type}</strong>
-                              {remote ? (
-                                <span className="muted small-print">
-                                  {" "}
-                                  → {spec.toolName}
-                                </span>
-                              ) : (
-                                <span className="muted small-print">
-                                  {" "}
-                                  ({actionUnavailableReason(
-                                    action.type,
-                                    action.input
-                                  )})
-                                </span>
-                              )}
-                            </div>
-                            <div className="chat-action-buttons">
-                              {remote ? (
-                                <>
-                                  {SHOW_DRY_RUN_UI ? (
-                                    <button
-                                      type="button"
-                                      className="btn btn-secondary btn-small"
-                                      disabled={execBusy || busy}
-                                      onClick={() =>
-                                        void onExecuteAction(action.id, true)
-                                      }
-                                    >
-                                      Dry-run
-                                    </button>
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary btn-small"
-                                    disabled={
-                                      execBusy ||
-                                      busy ||
-                                      bundle.request.status !== "approved"
-                                    }
-                                    onClick={() =>
-                                      void onExecuteAction(action.id, false)
-                                    }
-                                  >
-                                    Execute
-                                  </button>
-                                </>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {bundle.request.status !== "approved" ? (
+                    <div className="chat-request-meta">
+                      <h4>Request status</h4>
+                      <p className="small-print">
+                        <span className="badge">{bundle.request.status}</span>
+                        {bundle.pendingApproval ? (
+                          <>
+                            {" "}
+                            <span className="badge badge-warn">
+                              Pending approval
+                            </span>{" "}
+                            <Link
+                              className="small-print"
+                              to={`/site/${siteId}/approvals`}
+                            >
+                              Open approvals
+                            </Link>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                    <div className="action-row">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={busy || !canGeneratePlan}
+                        onClick={() => void onGeneratePlan()}
+                      >
+                        Generate action plan
+                      </button>
+                    </div>
+                    {bundle.plan && executableActions.length > 0 ? (
+                      <div className="chat-plan-runbar">
+                        <div>
+                          <h4>Run plan</h4>
+                          <p className="muted small-print">
+                            {canRunPlanDirectly
+                              ? bundle.request.status === "approved"
+                                ? "The approved plan is ready to run."
+                                : SHOW_DRY_RUN_UI
+                                  ? "You can dry-run this plan now. Execution unlocks after approval."
+                                  : "Execution unlocks after approval."
+                              : "This plan has multiple runnable actions. Use the action buttons below for now."}
+                          </p>
+                        </div>
+                        {canRunPlanDirectly ? (
+                          <div className="chat-plan-runbar-actions">
+                            {SHOW_DRY_RUN_UI ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                disabled={execBusy || busy}
+                                onClick={() => void onRunPlan(true)}
+                              >
+                                {execBusy &&
+                                execProgressLabel === "Running dry-run…"
+                                  ? "Running dry-run…"
+                                  : "Dry-run plan"}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              disabled={
+                                execBusy ||
+                                busy ||
+                                bundle.request.status !== "approved"
+                              }
+                              onClick={() => void onRunPlan(false)}
+                            >
+                              {execBusy && execProgressLabel === "Executing…"
+                                ? "Executing…"
+                                : "Execute plan"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {bundle.lastExecution ? (
                       <p className="muted small-print">
-                        Execute stays disabled until the request is approved.
+                        Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
+                        <code className="break-all">
+                          {bundle.lastExecution.idempotencyKey}
+                        </code>
                       </p>
                     ) : null}
-                  </div>
-                ) : (
-                  <p className="muted small-print">
-                    No plan yet. Keep refining the request, then generate a plan.
-                  </p>
-                )}
-              </div>
-            ) : null}
-
-            <div className="chat-composer-card">
-              <h3>{composerState.title}</h3>
-              <p className="muted small-print">{composerState.helper}</p>
-              <textarea
-                rows={3}
-                value={requestPrompt}
-                placeholder={composerState.placeholder}
-                onFocus={savePendingThreadRename}
-                onChange={(e) => {
-                  setRequestPrompt(e.target.value);
-                }}
-              />
-              <div className="action-row">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={busy || requestPrompt.trim().length === 0}
-                  onClick={() => void onSubmitPrompt()}
-                >
-                  {composerState.actionLabel}
-                </button>
-                {bundle?.pendingApproval ? (
-                  <Link
-                    className="btn btn-secondary"
-                    to={`/site/${siteId}/approvals`}
-                  >
-                    Open approvals
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-
-            {execProgressLabel ? (
-              <p className="small-print workspace-note">{execProgressLabel}</p>
-            ) : null}
-            {lastExecHint ? (
-              <p className="small-print workspace-note">{lastExecHint}</p>
-            ) : null}
-            {planValidationJson ? (
-              <pre className="diag-json">{planValidationJson}</pre>
-            ) : null}
-            <details className="chat-debug-panel">
-              <summary>Developer tools</summary>
-              {bundle?.plan ? (
-                <div className="chat-planner-panel">
-                  <h3>Planned action input</h3>
-                  <pre className="diag-json">
-                    {JSON.stringify(bundle.plan.proposedActions, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-              {bundle?.lastExecution?.toolInvocation ? (
-                <div className="chat-planner-panel">
-                  <h3>Last MCP call</h3>
-                  <pre className="diag-json">
-                    {JSON.stringify(
-                      bundle.lastExecution.toolInvocation,
-                      null,
-                      2
+                    {bundle.plan ? (
+                      <div className="chat-bundle-panel">
+                        <h4>Planned actions</h4>
+                        <ul className="chat-action-list">
+                          {bundle.plan.proposedActions.map((action) => {
+                            const spec = actionToMcpToolCall(
+                              action.type,
+                              action.input,
+                              true
+                            );
+                            const remote = spec !== null;
+                            return (
+                              <li key={action.id} className="chat-action-row">
+                                <div>
+                                  <strong>{action.type}</strong>
+                                  {remote ? (
+                                    <span className="muted small-print">
+                                      {" "}
+                                      → {spec.toolName}
+                                    </span>
+                                  ) : (
+                                    <span className="muted small-print">
+                                      {" "}
+                                      ({actionUnavailableReason(
+                                        action.type,
+                                        action.input
+                                      )})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="chat-action-buttons">
+                                  {remote ? (
+                                    <>
+                                      {SHOW_DRY_RUN_UI ? (
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary btn-small"
+                                          disabled={execBusy || busy}
+                                          onClick={() =>
+                                            void onExecuteAction(action.id, true)
+                                          }
+                                        >
+                                          Dry-run
+                                        </button>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary btn-small"
+                                        disabled={
+                                          execBusy ||
+                                          busy ||
+                                          bundle.request.status !== "approved"
+                                        }
+                                        onClick={() =>
+                                          void onExecuteAction(action.id, false)
+                                        }
+                                      >
+                                        Execute
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        {bundle.request.status !== "approved" ? (
+                          <p className="muted small-print">
+                            Execute stays disabled until the request is approved.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="muted small-print">
+                        No plan yet. Keep refining the request, then generate a
+                        plan.
+                      </p>
                     )}
-                  </pre>
-                </div>
-              ) : null}
-              <div className="chat-planner-panel">
-                <h3>Planner context</h3>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={busy}
-                  onClick={() => void onBuildPlannerContext()}
-                >
-                  Build planner context
-                </button>
-                {plannerJson ? (
-                  <pre className="diag-json">{plannerJson}</pre>
+                  </div>
                 ) : null}
-              </div>
-            </details>
+
+                {developerToolsEnabled ? (
+                  <details className="chat-debug-panel">
+                    <summary>Developer tools</summary>
+                    {developerMessages.length > 0 ? (
+                      <div className="chat-planner-panel">
+                        <h3>Feedback log</h3>
+                        <ul className="small-print">
+                          {developerMessages.map((message) => (
+                            <li key={message}>{message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                {bundle ? (
+                  <div className="chat-planner-panel">
+                    <h3>Current request prompt</h3>
+                    <pre className="diag-json">{bundle.request.userPrompt}</pre>
+                  </div>
+                ) : null}
+                    {pendingAttachments.length > 0 ? (
+                      <div className="chat-planner-panel">
+                        <h3>Pending image context</h3>
+                        <p className="small-print">
+                          {formatAttachmentCount(pendingAttachments.length)} ·{" "}
+                          {Math.round(pendingAttachmentBytes / 1024)} KB after
+                          compression · planner limit 3 images
+                        </p>
+                      </div>
+                    ) : null}
+                    {planValidationJson ? (
+                      <div className="chat-planner-panel">
+                        <h3>Plan validation</h3>
+                        <pre className="diag-json">{planValidationJson}</pre>
+                      </div>
+                    ) : null}
+                    {bundle?.plan ? (
+                      <div className="chat-planner-panel">
+                        <h3>Planned action input</h3>
+                        <pre className="diag-json">
+                          {JSON.stringify(bundle.plan.proposedActions, null, 2)}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {bundle?.lastExecution?.toolInvocation ? (
+                      <div className="chat-planner-panel">
+                        <h3>Last MCP request</h3>
+                        <p className="muted small-print">
+                          Tool: {bundle.lastExecution.toolInvocation.toolName}
+                        </p>
+                        <pre className="diag-json">
+                          {JSON.stringify(
+                            bundle.lastExecution.toolInvocation.input,
+                            null,
+                            2
+                          )}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {bundle?.lastExecution?.toolInvocation?.output ? (
+                      <div className="chat-planner-panel">
+                        <h3>Last MCP response</h3>
+                        <pre className="diag-json">
+                          {JSON.stringify(
+                            bundle.lastExecution.toolInvocation.output,
+                            null,
+                            2
+                          )}
+                        </pre>
+                      </div>
+                    ) : null}
+                    <div className="chat-planner-panel">
+                      <h3>Planner context</h3>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-small"
+                        disabled={busy}
+                        onClick={() => void onBuildPlannerContext()}
+                      >
+                        Build planner context
+                      </button>
+                      {plannerJson ? (
+                        <pre className="diag-json">{plannerJson}</pre>
+                      ) : null}
+                    </div>
+                  </details>
+                ) : null}
+              </aside>
+            </div>
           </>
         )}
       </section>

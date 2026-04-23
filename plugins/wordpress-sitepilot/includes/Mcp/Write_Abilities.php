@@ -173,6 +173,56 @@ final class Write_Abilities {
 				),
 			)
 		);
+
+		wp_register_ability(
+			'sitepilot/upload-media-asset',
+			array(
+				'label'               => __( 'Upload media asset', 'sitepilot' ),
+				'description'         => __( 'Uploads a base64-encoded image into the Media Library and returns its attachment id and URL. Respects dry_run previews.', 'sitepilot' ),
+				'category'            => 'sitepilot',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'file_name'   => array( 'type' => 'string', 'minLength' => 1 ),
+						'media_type'  => array( 'type' => 'string', 'minLength' => 1 ),
+						'data_base64' => array( 'type' => 'string', 'minLength' => 1 ),
+						'alt_text'    => array( 'type' => 'string' ),
+						'dry_run'     => array( 'type' => 'boolean', 'default' => false ),
+					),
+					'required'             => array( 'file_name', 'media_type', 'data_base64' ),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'ok'            => array( 'type' => 'boolean' ),
+						'dry_run'       => array( 'type' => 'boolean' ),
+						'attachment_id' => array( 'type' => 'integer' ),
+						'url'           => array( 'type' => 'string' ),
+						'file_name'     => array( 'type' => 'string' ),
+						'media_type'    => array( 'type' => 'string' ),
+						'bytes'         => array( 'type' => 'integer' ),
+						'preview'       => array( 'type' => 'object' ),
+						'error'         => array( 'type' => 'string' ),
+					),
+					'required'   => array( 'ok', 'dry_run', 'file_name', 'media_type' ),
+				),
+				'execute_callback'    => static function ( array $input ) {
+					return self::exec_upload_media_asset( $input );
+				},
+				'permission_callback' => static function ( $input = array() ) {
+					unset( $input );
+					return self::trusted_or_can_upload_files();
+				},
+				'meta'                => array(
+					'annotations' => array(
+						'readonly'    => false,
+						'destructive' => false,
+						'idempotent'  => false,
+					),
+				),
+			)
+		);
 	}
 
 	private static function trusted_or_can_edit_posts(): bool {
@@ -193,6 +243,14 @@ final class Write_Abilities {
 		}
 		$post = get_post( $post_id );
 		return $post instanceof \WP_Post;
+	}
+
+	private static function trusted_or_can_upload_files(): bool {
+		if ( current_user_can( 'upload_files' ) ) {
+			return true;
+		}
+		$sid = Signed_Request_Verifier::get_authenticated_site_id();
+		return $sid !== '' && Store::get_site( $sid ) !== null;
 	}
 
 	/**
@@ -680,6 +738,136 @@ final class Write_Abilities {
 				'post_content' => get_post_field( 'post_content', (int) $post_id ),
 				'post_status'  => get_post_status( (int) $post_id ),
 			),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $input Input.
+	 * @return array<string, mixed>
+	 */
+	private static function exec_upload_media_asset( array $input ): array {
+		$dry_run   = ! empty( $input['dry_run'] );
+		$file_name = sanitize_file_name( wp_basename( (string) ( $input['file_name'] ?? '' ) ) );
+		$media_type = sanitize_text_field( (string) ( $input['media_type'] ?? '' ) );
+		$data_base64 = preg_replace( '/\s+/', '', (string) ( $input['data_base64'] ?? '' ) ) ?? '';
+		$alt_text = sanitize_text_field( (string) ( $input['alt_text'] ?? '' ) );
+
+		if ( '' === $file_name ) {
+			return array(
+				'ok'         => false,
+				'dry_run'    => $dry_run,
+				'file_name'  => '',
+				'media_type' => $media_type,
+				'error'      => 'file_name_required',
+			);
+		}
+
+		if ( '' === $media_type || ! str_starts_with( strtolower( $media_type ), 'image/' ) ) {
+			return array(
+				'ok'         => false,
+				'dry_run'    => $dry_run,
+				'file_name'  => $file_name,
+				'media_type' => $media_type,
+				'error'      => 'invalid_media_type',
+			);
+		}
+
+		if ( '' === $data_base64 ) {
+			return array(
+				'ok'         => false,
+				'dry_run'    => $dry_run,
+				'file_name'  => $file_name,
+				'media_type' => $media_type,
+				'error'      => 'data_base64_required',
+			);
+		}
+
+		$binary = base64_decode( $data_base64, true );
+		if ( false === $binary ) {
+			return array(
+				'ok'         => false,
+				'dry_run'    => $dry_run,
+				'file_name'  => $file_name,
+				'media_type' => $media_type,
+				'error'      => 'invalid_data_base64',
+			);
+		}
+
+		$bytes = strlen( $binary );
+		if ( $dry_run ) {
+			return array(
+				'ok'         => true,
+				'dry_run'    => true,
+				'file_name'  => $file_name,
+				'media_type' => $media_type,
+				'bytes'      => $bytes,
+				'preview'    => array(
+					'file_name'  => $file_name,
+					'media_type' => $media_type,
+					'bytes'      => $bytes,
+					'alt_text'   => $alt_text,
+				),
+			);
+		}
+
+		$upload = wp_upload_bits( $file_name, null, $binary );
+		if ( ! is_array( $upload ) || ! empty( $upload['error'] ) ) {
+			return array(
+				'ok'         => false,
+				'dry_run'    => false,
+				'file_name'  => $file_name,
+				'media_type' => $media_type,
+				'bytes'      => $bytes,
+				'error'      => is_array( $upload ) && isset( $upload['error'] ) ? (string) $upload['error'] : 'upload_failed',
+			);
+		}
+
+		$attachment = array(
+			'post_mime_type' => $media_type,
+			'post_title'     => pathinfo( $file_name, PATHINFO_FILENAME ),
+			'post_content'   => '',
+			'post_status'    => 'inherit',
+			'guid'           => (string) $upload['url'],
+		);
+
+		$attachment_id = wp_insert_attachment( $attachment, (string) $upload['file'] );
+		if ( is_wp_error( $attachment_id ) ) {
+			return array(
+				'ok'         => false,
+				'dry_run'    => false,
+				'file_name'  => $file_name,
+				'media_type' => $media_type,
+				'bytes'      => $bytes,
+				'error'      => $attachment_id->get_error_message(),
+			);
+		}
+
+		if ( '' !== $alt_text ) {
+			update_post_meta( (int) $attachment_id, '_wp_attachment_image_alt', $alt_text );
+		}
+
+		if ( defined( 'ABSPATH' ) ) {
+			$admin_file = ABSPATH . 'wp-admin/includes/image.php';
+			if ( file_exists( $admin_file ) ) {
+				require_once $admin_file;
+			}
+		}
+
+		if ( function_exists( 'wp_generate_attachment_metadata' ) && function_exists( 'wp_update_attachment_metadata' ) ) {
+			$metadata = wp_generate_attachment_metadata( (int) $attachment_id, (string) $upload['file'] );
+			if ( ! is_wp_error( $metadata ) && is_array( $metadata ) ) {
+				wp_update_attachment_metadata( (int) $attachment_id, $metadata );
+			}
+		}
+
+		return array(
+			'ok'            => true,
+			'dry_run'       => false,
+			'attachment_id' => (int) $attachment_id,
+			'url'           => (string) $upload['url'],
+			'file_name'     => $file_name,
+			'media_type'    => $media_type,
+			'bytes'         => $bytes,
 		);
 	}
 

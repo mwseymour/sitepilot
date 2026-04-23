@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 
-import type { PlannerPreferencesPayload } from "@sitepilot/contracts";
+import type {
+  PlannerPreferencesPayload,
+  UiPreferences
+} from "@sitepilot/contracts";
 
 export function SettingsPage(): ReactElement {
   const [err, setErr] = useState<string | null>(null);
@@ -13,6 +16,7 @@ export function SettingsPage(): ReactElement {
   const [planner, setPlanner] = useState<PlannerPreferencesPayload | null>(
     null
   );
+  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(null);
   const [openaiSecret, setOpenaiSecret] = useState("");
   const [anthropicSecret, setAnthropicSecret] = useState("");
 
@@ -31,6 +35,7 @@ export function SettingsPage(): ReactElement {
     setErr(null);
     setProviders(state.configuredProviders);
     setPlanner(state.planner);
+    setUiPreferences(state.uiPreferences);
   }, []);
 
   useEffect(() => {
@@ -104,6 +109,23 @@ export function SettingsPage(): ReactElement {
     await load();
   }
 
+  async function onSaveUiPreferences(): Promise<void> {
+    if (!uiPreferences) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.setUiPreferences({
+      preferences: uiPreferences
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    await load();
+  }
+
   return (
     <main className="app-shell home-shell">
       <section className="hero-card">
@@ -119,6 +141,37 @@ export function SettingsPage(): ReactElement {
       </section>
       {err ? <p className="workspace-error">{err}</p> : null}
       {compat ? <p className="muted small-print">{compat}</p> : null}
+
+      {uiPreferences ? (
+        <section className="panel-card">
+          <h2>Developer Tools</h2>
+          <p className="muted small-print">
+            Show the diagnostics panel on the Requests page, including planner
+            validation, MCP payloads, and surfaced error messages.
+          </p>
+          <label className="settings-field">
+            <span>Enable developer tools</span>
+            <input
+              type="checkbox"
+              checked={uiPreferences.developerToolsEnabled}
+              disabled={busy}
+              onChange={(e) => {
+                setUiPreferences({
+                  developerToolsEnabled: e.target.checked
+                });
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void onSaveUiPreferences()}
+          >
+            Save developer tools setting
+          </button>
+        </section>
+      ) : null}
 
       <section className="panel-card">
         <h2>Configured providers</h2>

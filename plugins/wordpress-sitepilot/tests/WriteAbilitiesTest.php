@@ -26,6 +26,16 @@ final class WriteAbilitiesTest extends TestCase {
 	}
 
 	/**
+	 * @param array<string, mixed> $input
+	 * @return array<string, mixed>
+	 */
+	private function upload_media( array $input ): array {
+		$method = new ReflectionMethod( Write_Abilities::class, 'exec_upload_media_asset' );
+		$method->setAccessible( true );
+		return $method->invoke( null, $input );
+	}
+
+	/**
 	 * @return array<int, array<string, mixed>>
 	 */
 	private function paragraph_blocks(): array {
@@ -210,6 +220,45 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertTrue( $result['ok'] );
 		$this->assertStringContainsString( '<!-- wp:paragraph -->', $result['after']['post_content'] );
 		$this->assertSame( '<!-- wp:paragraph --><p>Old</p><!-- /wp:paragraph -->', $result['before']['post_content'] );
+	}
+
+	public function test_upload_media_asset_dry_run_returns_preview(): void {
+		$result = $this->upload_media(
+			array(
+				'file_name'   => 'hero.png',
+				'media_type'  => 'image/png',
+				'data_base64' => base64_encode( 'fake-image-bytes' ),
+				'alt_text'    => 'Hero image',
+				'dry_run'     => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertTrue( $result['dry_run'] );
+		$this->assertSame( 'hero.png', $result['file_name'] );
+		$this->assertSame( 'image/png', $result['media_type'] );
+		$this->assertSame( strlen( 'fake-image-bytes' ), $result['bytes'] );
+		$this->assertSame( 'Hero image', $result['preview']['alt_text'] );
+	}
+
+	public function test_upload_media_asset_persists_attachment_and_returns_url(): void {
+		$result = $this->upload_media(
+			array(
+				'file_name'   => 'gallery-shot.jpg',
+				'media_type'  => 'image/jpeg',
+				'data_base64' => base64_encode( 'binary-jpeg-data' ),
+				'alt_text'    => 'Gallery shot',
+				'dry_run'     => false,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertFalse( $result['dry_run'] );
+		$this->assertSame( 'gallery-shot.jpg', $result['file_name'] );
+		$this->assertSame( 'image/jpeg', $result['media_type'] );
+		$this->assertSame( 'https://example.test/wp-content/uploads/gallery-shot.jpg', $result['url'] );
+		$this->assertGreaterThan( 0, $result['attachment_id'] );
+		$this->assertSame( 'Gallery shot', $GLOBALS['sitepilot_test_attachment_meta'][ $result['attachment_id'] ]['_wp_attachment_image_alt'] );
 	}
 
 	public function test_blocks_take_precedence_over_legacy_content(): void {

@@ -4,6 +4,17 @@ import type {
   ChatModelClient
 } from "./types.js";
 
+type AnthropicTextBlock = { type: "text"; text: string };
+type AnthropicImageBlock = {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: string;
+    data: string;
+  };
+};
+type AnthropicContentBlock = AnthropicTextBlock | AnthropicImageBlock;
+
 type AnthropicMessageResponse = {
   content?: Array<{ type?: string; text?: string }>;
   usage?: {
@@ -15,22 +26,54 @@ type AnthropicMessageResponse = {
 
 function splitSystemUser(messages: ChatMessage[]): {
   system: string;
-  user: string;
+  user: AnthropicContentBlock[];
 } {
   const systemParts: string[] = [];
-  const userParts: string[] = [];
+  const userParts: AnthropicContentBlock[] = [];
+
+  const appendUserContent = (content: ChatMessage["content"]) => {
+    if (typeof content === "string") {
+      userParts.push({ type: "text", text: content });
+      return;
+    }
+
+    for (const part of content) {
+      if (part.type === "text") {
+        userParts.push({ type: "text", text: part.text });
+        continue;
+      }
+      const match = part.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) {
+        continue;
+      }
+      userParts.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: part.mediaType || match[1] || "image/png",
+          data: match[2] || ""
+        }
+      });
+    }
+  };
+
   for (const m of messages) {
     if (m.role === "system") {
-      systemParts.push(m.content);
-    } else if (m.role === "user") {
-      userParts.push(m.content);
+      systemParts.push(
+        typeof m.content === "string"
+          ? m.content
+          : m.content
+              .filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join("\n\n")
+      );
     } else {
-      userParts.push(m.content);
+      appendUserContent(m.content);
     }
   }
   return {
     system: systemParts.join("\n\n"),
-    user: userParts.join("\n\n")
+    user: userParts
   };
 }
 

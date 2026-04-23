@@ -4,6 +4,15 @@ import type {
   ChatModelClient
 } from "./types.js";
 
+type OpenAiInputPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+type OpenAiApiMessage = {
+  role: ChatMessage["role"];
+  content: string | OpenAiInputPart[];
+};
+
 type OpenAiChatResponse = {
   choices?: Array<{ message?: { content?: string } }>;
   usage?: {
@@ -28,6 +37,21 @@ export function createOpenAiChatClient(
       messages: ChatMessage[],
       model: string
     ): Promise<ChatCompletionResult> {
+      const apiMessages: OpenAiApiMessage[] = messages.map((message) => ({
+        role: message.role,
+        content:
+          typeof message.content === "string"
+            ? message.content
+            : message.content.map((part) =>
+                part.type === "text"
+                  ? { type: "text", text: part.text }
+                  : {
+                      type: "image_url",
+                      image_url: { url: part.dataUrl }
+                    }
+              )
+      }));
+
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
@@ -36,7 +60,7 @@ export function createOpenAiChatClient(
         },
         body: JSON.stringify({
           model,
-          messages,
+          messages: apiMessages,
           response_format: { type: "json_object" }
         })
       });

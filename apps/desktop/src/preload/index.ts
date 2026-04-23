@@ -74,6 +74,8 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.settingsSetPlannerPreferences, request),
   setSitePlannerSettings: (request) =>
     invokeIpc(ipcChannels.settingsSetSitePlannerSettings, request),
+  setUiPreferences: (request) =>
+    invokeIpc(ipcChannels.settingsSetUiPreferences, request),
   clearSiteSigningSecret: (request) =>
     invokeIpc(ipcChannels.settingsClearSiteSigningSecret, request),
   getCompatibilityInfo: () => invokeIpc(ipcChannels.getCompatibilityInfo, {}),

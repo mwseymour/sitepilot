@@ -5,6 +5,7 @@ import {
   actorSchema,
   auditEventTypeSchema,
   idSchema,
+  imageAttachmentSchema,
   isoTimestampSchema,
   jsonValueSchema,
   localizedTextBlockSchema,
@@ -85,6 +86,16 @@ export const siteConfigSchema = z.object({
 
 export const sitePlannerSettingsSchema = z.object({
   bypassApprovalRequests: z.boolean()
+});
+
+export const uiPreferencesSchema = z.object({
+  developerToolsEnabled: z.boolean()
+});
+
+const plannerContextAttachmentSchema = z.object({
+  fileName: z.string().min(1),
+  mediaType: z.string().regex(/^image\//),
+  sizeBytes: z.number().int().nonnegative()
 });
 
 export const actionSchema = z.object({
@@ -223,6 +234,7 @@ export const chatMessageSchema = z.object({
   siteId: idSchema,
   author: z.union([actorSchema, systemActorSchema]),
   body: localizedTextBlockSchema,
+  attachments: z.array(imageAttachmentSchema).optional(),
   requestId: idSchema.optional(),
   ...timestampsSchema.shape
 });
@@ -234,6 +246,7 @@ export const requestSchema = z.object({
   requestedBy: actorSchema,
   status: requestStatusSchema,
   userPrompt: z.string().min(1),
+  attachments: z.array(imageAttachmentSchema).optional(),
   latestPlanId: idSchema.optional(),
   latestExecutionRunId: idSchema.optional(),
   ...timestampsSchema.shape
@@ -281,12 +294,21 @@ export const plannerContextSchema = z.object({
   builtAt: isoTimestampSchema,
   siteConfig: siteConfigSchema.nullable(),
   discoverySummary: z.record(jsonValueSchema).nullable(),
+  activeSkills: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        instructions: z.string().min(1)
+      })
+    )
+    .optional(),
   messages: z.array(
     z.object({
       messageId: idSchema,
       role: z.enum(["user", "assistant", "system"]),
       format: z.enum(["plain_text", "markdown", "html"]),
       text: z.string(),
+      attachments: z.array(plannerContextAttachmentSchema).optional(),
       createdAt: isoTimestampSchema,
       requestId: idSchema.optional()
     })
@@ -310,3 +332,4 @@ export type ClarificationRoundPayload = z.infer<
 >;
 export type PlannerContext = z.infer<typeof plannerContextSchema>;
 export type SitePlannerSettings = z.infer<typeof sitePlannerSettingsSchema>;
+export type UiPreferences = z.infer<typeof uiPreferencesSchema>;

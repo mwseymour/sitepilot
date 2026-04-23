@@ -63,6 +63,8 @@ namespace {
 	$GLOBALS['sitepilot_test_posts'] = array(
 		12 => new WP_Post( 12, 'Existing title', '<!-- wp:paragraph --><p>Old</p><!-- /wp:paragraph -->', 'Old excerpt' ),
 	);
+	$GLOBALS['sitepilot_test_uploads'] = array();
+	$GLOBALS['sitepilot_test_attachment_meta'] = array();
 
 	function __( string $text, string $domain = '' ): string {
 		unset( $domain );
@@ -80,6 +82,11 @@ namespace {
 
 	function sanitize_text_field( string $value ): string {
 		return trim( strip_tags( $value ) );
+	}
+
+	function sanitize_file_name( string $value ): string {
+		$value = trim( $value );
+		return preg_replace( '/[^A-Za-z0-9._-]/', '-', $value ) ?? '';
 	}
 
 	function sanitize_textarea_field( string $value ): string {
@@ -163,7 +170,51 @@ namespace {
 	}
 
 	function update_post_meta( int $post_id, string $key, string $value ): void {
-		unset( $post_id, $key, $value );
+		$GLOBALS['sitepilot_test_attachment_meta'][ $post_id ][ $key ] = $value;
+	}
+
+	function wp_basename( string $path ): string {
+		return basename( $path );
+	}
+
+	function wp_upload_bits( string $name, mixed $deprecated, string $bits ): array {
+		unset( $deprecated );
+		$file = '/tmp/' . $name;
+		$url  = 'https://example.test/wp-content/uploads/' . rawurlencode( $name );
+		$GLOBALS['sitepilot_test_uploads'][] = array(
+			'name'  => $name,
+			'bits'  => $bits,
+			'file'  => $file,
+			'url'   => $url,
+		);
+		return array(
+			'file'  => $file,
+			'url'   => $url,
+			'error' => false,
+		);
+	}
+
+	function wp_insert_attachment( array $attachment, string $file ): int|WP_Error {
+		unset( $file );
+		$post_id                                    = 200 + count( $GLOBALS['sitepilot_test_uploads'] );
+		$GLOBALS['sitepilot_test_posts'][ $post_id ] = new WP_Post(
+			$post_id,
+			(string) ( $attachment['post_title'] ?? '' ),
+			'',
+			''
+		);
+		return $post_id;
+	}
+
+	function wp_generate_attachment_metadata( int $attachment_id, string $file ): array {
+		return array(
+			'attachment_id' => $attachment_id,
+			'file'          => $file,
+		);
+	}
+
+	function wp_update_attachment_metadata( int $attachment_id, array $metadata ): void {
+		$GLOBALS['sitepilot_test_attachment_meta'][ $attachment_id ]['metadata'] = $metadata;
 	}
 
 	function serialize_blocks( array $blocks ): string {

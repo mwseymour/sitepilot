@@ -190,6 +190,9 @@ export async function generateActionPlanForRequest(
         requestId,
         siteId,
         nowIso: ts,
+        ...(request.attachments !== undefined
+          ? { requestAttachments: request.attachments }
+          : {}),
         client,
         model: chosen.model
       });
@@ -216,6 +219,9 @@ export async function generateActionPlanForRequest(
         requestId,
         siteId,
         nowIso: ts,
+        ...(request.attachments !== undefined
+          ? { requestAttachments: request.attachments }
+          : {}),
         client,
         model: chosen.model
       });

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
+import type {
+  ActionPlan as ContractActionPlan,
+  ImageAttachmentPayload
+} from "@sitepilot/contracts";
 import type {
   ActorRef,
   AuditEntryId,
@@ -83,6 +86,20 @@ async function saveThreadUpdatedAt(thread: ChatThread, updatedAt: string) {
     ...thread,
     updatedAt
   });
+}
+
+function normalizeAttachments(
+  attachments: ImageAttachmentPayload[] | undefined
+): ImageAttachmentPayload[] {
+  return attachments ?? [];
+}
+
+function mergeAttachments(
+  existing: ImageAttachmentPayload[] | undefined,
+  incoming: ImageAttachmentPayload[] | undefined
+): ImageAttachmentPayload[] | undefined {
+  const merged = [...normalizeAttachments(existing), ...normalizeAttachments(incoming)];
+  return merged.length > 0 ? merged : undefined;
 }
 
 async function saveAssistantThreadMessage(input: {
@@ -520,7 +537,8 @@ export type PostMessageResult =
 export async function postChatMessage(
   siteId: SiteId,
   threadId: ChatThreadId,
-  text: string
+  text: string,
+  attachments?: ImageAttachmentPayload[]
 ): Promise<PostMessageResult> {
   const gate = await requireActiveSite(siteId);
   if (!gate.ok) {
@@ -538,6 +556,9 @@ export async function postChatMessage(
     siteId,
     author: DEFAULT_OPERATOR,
     body: { format: "plain_text", value: text },
+    ...(attachments !== undefined && attachments.length > 0
+      ? { attachments }
+      : {}),
     createdAt: ts,
     updatedAt: ts
   };
@@ -570,7 +591,8 @@ export type CreateRequestResult =
 export async function createTypedRequestForThread(
   siteId: SiteId,
   threadId: ChatThreadId,
-  userPrompt: string
+  userPrompt: string,
+  attachments?: ImageAttachmentPayload[]
 ): Promise<CreateRequestResult> {
   const gate = await requireActiveSite(siteId);
   if (!gate.ok) {
@@ -602,6 +624,9 @@ export async function createTypedRequestForThread(
     requestedBy: DEFAULT_OPERATOR,
     status,
     userPrompt,
+    ...(attachments !== undefined && attachments.length > 0
+      ? { attachments }
+      : {}),
     createdAt: ts,
     updatedAt: ts
   };
@@ -625,6 +650,9 @@ export async function createTypedRequestForThread(
     siteId,
     author: DEFAULT_OPERATOR,
     body: { format: "plain_text", value: userPrompt },
+    ...(attachments !== undefined && attachments.length > 0
+      ? { attachments }
+      : {}),
     requestId: request.id,
     createdAt: ts,
     updatedAt: ts
@@ -715,7 +743,8 @@ export async function answerClarificationForRequest(
   siteId: SiteId,
   threadId: ChatThreadId,
   requestId: RequestId,
-  answer: string
+  answer: string,
+  attachments?: ImageAttachmentPayload[]
 ): Promise<CreateRequestResult> {
   const gate = await requireActiveSite(siteId);
   if (!gate.ok) {
@@ -767,6 +796,9 @@ export async function answerClarificationForRequest(
     requestId,
     author: DEFAULT_OPERATOR,
     body: { format: "plain_text", value: trimmed },
+    ...(attachments !== undefined && attachments.length > 0
+      ? { attachments }
+      : {}),
     createdAt: ts,
     updatedAt: ts
   });
@@ -803,11 +835,18 @@ export async function answerClarificationForRequest(
   let nextStatus: Request["status"] = analysis.needsClarification
     ? "clarifying"
     : "new";
+  const mergedRequestAttachments = mergeAttachments(
+    request.attachments,
+    attachments
+  );
 
   const updatedRequest: Request = {
     ...request,
     status: nextStatus,
     userPrompt: mergedPrompt,
+    ...(mergedRequestAttachments !== undefined
+      ? { attachments: mergedRequestAttachments }
+      : {}),
     updatedAt: ts
   };
   await db.repositories.requests.save(updatedRequest);
@@ -892,7 +931,8 @@ export async function amendRequestForThread(
   siteId: SiteId,
   threadId: ChatThreadId,
   requestId: RequestId,
-  text: string
+  text: string,
+  attachments?: ImageAttachmentPayload[]
 ): Promise<CreateRequestResult> {
   const gate = await requireActiveSite(siteId);
   if (!gate.ok) {
@@ -948,10 +988,17 @@ export async function amendRequestForThread(
     requestId,
     author: DEFAULT_OPERATOR,
     body: { format: "plain_text", value: trimmed },
+    ...(attachments !== undefined && attachments.length > 0
+      ? { attachments }
+      : {}),
     createdAt: ts,
     updatedAt: ts
   });
 
+  const mergedRequestAttachments = mergeAttachments(
+    request.attachments,
+    attachments
+  );
   const updatedRequest: Request = {
     id: request.id,
     siteId: request.siteId,
@@ -959,6 +1006,9 @@ export async function amendRequestForThread(
     requestedBy: request.requestedBy,
     status: "new",
     userPrompt: `${request.userPrompt}\n\nAdditional context:\n${trimmed}`,
+    ...(mergedRequestAttachments !== undefined
+      ? { attachments: mergedRequestAttachments }
+      : {}),
     ...(request.latestExecutionRunId !== undefined
       ? { latestExecutionRunId: request.latestExecutionRunId }
       : {}),

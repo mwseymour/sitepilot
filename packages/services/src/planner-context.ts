@@ -18,6 +18,7 @@ export type BuildPlannerContextInput = {
   builtAt: string;
   siteConfig: SiteConfig | null;
   discoverySnapshot: DiscoverySnapshot | null;
+  activeSkills?: PlannerContext["activeSkills"];
   messages: ChatMessage[];
   targetSummaries?: string[];
   priorChanges?: string[];
@@ -37,11 +38,23 @@ export function buildPlannerContext(
     discoverySummary: input.discoverySnapshot
       ? input.discoverySnapshot.summary
       : null,
+    ...(input.activeSkills !== undefined && input.activeSkills.length > 0
+      ? { activeSkills: input.activeSkills }
+      : {}),
     messages: input.messages.map((m) => ({
       messageId: m.id,
       role: messageRole(m),
       format: m.body.format,
       text: m.body.value,
+      ...(m.attachments !== undefined && m.attachments.length > 0
+        ? {
+            attachments: m.attachments.map((attachment) => ({
+              fileName: attachment.fileName,
+              mediaType: attachment.mediaType,
+              sizeBytes: attachment.sizeBytes
+            }))
+          }
+        : {}),
       createdAt: m.createdAt,
       ...(m.requestId !== undefined ? { requestId: m.requestId } : {})
     })),

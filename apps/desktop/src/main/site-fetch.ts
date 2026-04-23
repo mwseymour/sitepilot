@@ -1,5 +1,6 @@
 import { request as httpRequest } from "node:http";
 import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import type { LookupFunction } from "node:net";
 
 const insecureLoopbackHttpsAgent = new HttpsAgent({
   rejectUnauthorized: false
@@ -26,6 +27,26 @@ function isLoopbackHostname(hostname: string): boolean {
 
 function shouldBypassTlsVerification(url: URL): boolean {
   return url.protocol === "https:" && isLoopbackHostname(url.hostname);
+}
+
+function loopbackLookup(hostname: string): LookupFunction | undefined {
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    return (_target, optionsOrCallback, callback) => {
+      const options =
+        typeof optionsOrCallback === "function" ? undefined : optionsOrCallback;
+      const done =
+        typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
+      if (!done) {
+        return;
+      }
+      if (options?.all) {
+        done(null, [{ address: "127.0.0.1", family: 4 }]);
+        return;
+      }
+      done(null, "127.0.0.1", 4);
+    };
+  }
+  return undefined;
 }
 
 async function readRequestBody(body: BodyInit | null | undefined): Promise<Buffer> {
@@ -83,7 +104,8 @@ export async function fetchSiteUrl(
       {
         method: init?.method ?? "GET",
         headers: requestHeaders,
-        agent: url.protocol === "https:" ? insecureLoopbackHttpsAgent : undefined
+        agent: url.protocol === "https:" ? insecureLoopbackHttpsAgent : undefined,
+        lookup: loopbackLookup(url.hostname)
       },
       (res) => {
         const chunks: Buffer[] = [];

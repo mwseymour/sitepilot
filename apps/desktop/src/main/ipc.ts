@@ -62,6 +62,7 @@ import {
   getSettingsState,
   setPlannerPreferences,
   setSitePlannerSettings,
+  setUiPreferences,
   setProviderSecret
 } from "./settings-service.js";
 
@@ -87,6 +88,7 @@ function contractRequestPayload(entity: Request) {
     requestedBy: entity.requestedBy,
     status: entity.status,
     userPrompt: entity.userPrompt,
+    ...(entity.attachments !== undefined ? { attachments: entity.attachments } : {}),
     ...(entity.latestPlanId !== undefined
       ? { latestPlanId: entity.latestPlanId }
       : {}),
@@ -242,7 +244,8 @@ export function registerIpcHandlers(): void {
     const result = await postChatMessage(
       request.siteId as SiteId,
       request.threadId as ChatThreadId,
-      request.text
+      request.text,
+      request.attachments
     );
     return parseResponse(ipcChannels.postChatMessage, result);
   });
@@ -252,7 +255,8 @@ export function registerIpcHandlers(): void {
     const result = await createTypedRequestForThread(
       request.siteId as SiteId,
       request.threadId as ChatThreadId,
-      request.userPrompt
+      request.userPrompt,
+      request.attachments
     );
     if (!result.ok) {
       return parseResponse(ipcChannels.createChatRequest, result);
@@ -272,7 +276,8 @@ export function registerIpcHandlers(): void {
       request.siteId as SiteId,
       request.threadId as ChatThreadId,
       request.requestId as RequestId,
-      request.text
+      request.text,
+      request.attachments
     );
     if (!result.ok) {
       return parseResponse(ipcChannels.amendRequest, result);
@@ -292,7 +297,8 @@ export function registerIpcHandlers(): void {
       request.siteId as SiteId,
       request.threadId as ChatThreadId,
       request.requestId as RequestId,
-      request.answer
+      request.answer,
+      request.attachments
     );
     if (!result.ok) {
       return parseResponse(ipcChannels.answerClarification, result);
@@ -566,6 +572,17 @@ export function registerIpcHandlers(): void {
         ipcChannels.settingsSetSitePlannerSettings,
         result
       );
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.settingsSetUiPreferences,
+    async (_event, payload) => {
+      const req = parseRequest(ipcChannels.settingsSetUiPreferences, payload);
+      const result = await setUiPreferences({
+        preferences: req.preferences
+      });
+      return parseResponse(ipcChannels.settingsSetUiPreferences, result);
     }
   );
 

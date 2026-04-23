@@ -318,5 +318,14 @@ export const sqliteMigrations: SqliteMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_audit_entries_request_created
         ON audit_entries(request_id, created_at)`
     ]
+  },
+  {
+    id: "004_request_and_message_attachments",
+    description:
+      "Persist inline image attachments on requests and chat messages.",
+    statements: [
+      `ALTER TABLE requests ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`
+    ]
   }
 ];

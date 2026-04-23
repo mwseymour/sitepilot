@@ -1,8 +1,19 @@
 export type ChatRole = "system" | "user" | "assistant";
 
+export type ChatContentPart =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "image";
+      mediaType: string;
+      dataUrl: string;
+    };
+
 export type ChatMessage = {
   role: ChatRole;
-  content: string;
+  content: string | ChatContentPart[];
 };
 
 export type TokenUsage = {

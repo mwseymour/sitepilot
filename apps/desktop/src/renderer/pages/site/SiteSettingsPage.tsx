@@ -9,7 +9,8 @@ import { Link } from "react-router-dom";
 
 import type {
   PlannerPreferencesPayload,
-  SitePlannerSettings
+  SitePlannerSettings,
+  UiPreferences
 } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
@@ -23,6 +24,7 @@ export function SiteSettingsPage(): ReactElement {
   const [planner, setPlanner] = useState<PlannerPreferencesPayload | null>(
     null
   );
+  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(null);
   const [sitePlannerSettings, setSitePlannerSettings] =
     useState<SitePlannerSettings | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -41,6 +43,7 @@ export function SiteSettingsPage(): ReactElement {
     }
     setErr(null);
     setPlanner(state.planner);
+    setUiPreferences(state.uiPreferences);
     setSitePlannerSettings(
       state.sitePlannerSettings ?? { bypassApprovalRequests: false }
     );
@@ -147,6 +150,24 @@ export function SiteSettingsPage(): ReactElement {
       return;
     }
     setHint("Site approval bypass setting saved.");
+    await load();
+  }
+
+  async function onSaveUiPreferences(): Promise<void> {
+    if (!uiPreferences) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.setUiPreferences({
+      preferences: uiPreferences
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setHint("Developer tools setting saved.");
     await load();
   }
 
@@ -284,6 +305,38 @@ export function SiteSettingsPage(): ReactElement {
             onClick={() => void onSaveSitePlannerSettings()}
           >
             Save site approval setting
+          </button>
+        </section>
+      ) : null}
+
+      {uiPreferences ? (
+        <section className="settings-site-section">
+          <h2>Developer tools</h2>
+          <p className="muted small-print">
+            Show the developer diagnostics panel on the Requests page, including
+            surfaced error messages, plan validation, and MCP request/response
+            payloads.
+          </p>
+          <label className="settings-field">
+            <span>Enable developer panel</span>
+            <input
+              type="checkbox"
+              checked={uiPreferences.developerToolsEnabled}
+              disabled={busy}
+              onChange={(e) => {
+                setUiPreferences({
+                  developerToolsEnabled: e.target.checked
+                });
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void onSaveUiPreferences()}
+          >
+            Save developer tools setting
           </button>
         </section>
       ) : null}
