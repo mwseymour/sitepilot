@@ -32,8 +32,8 @@ export function HomePage(): ReactElement {
         <p className="eyebrow">SitePilot</p>
         <h1>Workspaces</h1>
         <p className="lede">
-          Open a registered site to manage discovery, configuration, chat, and
-          diagnostics. Site configuration must be confirmed before chat is
+          Open a registered site to manage discovery, discovery checks, chat, and
+          diagnostics. The latest reviewed setup must be confirmed before chat is
           enabled.
         </p>
         <div className="action-row">

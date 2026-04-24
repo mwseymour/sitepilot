@@ -5,6 +5,12 @@ use PHPUnit\Framework\TestCase;
 use SitePilot\Mcp\Write_Abilities;
 
 final class WriteAbilitiesTest extends TestCase {
+	protected function setUp(): void {
+		parent::setUp();
+		$GLOBALS['sitepilot_test_post_meta'] = array();
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post( 12, 'Existing title', '<!-- wp:paragraph --><p>Old</p><!-- /wp:paragraph -->', 'Old excerpt' );
+	}
+
 	/**
 	 * @param array<string, mixed> $input
 	 * @return array<string, mixed>
@@ -33,6 +39,35 @@ final class WriteAbilitiesTest extends TestCase {
 		$method = new ReflectionMethod( Write_Abilities::class, 'exec_upload_media_asset' );
 		$method->setAccessible( true );
 		return $method->invoke( null, $input );
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @return array<string, mixed>
+	 */
+	private function seo_meta( array $input ): array {
+		$method = new ReflectionMethod( Write_Abilities::class, 'exec_set_post_seo_meta' );
+		$method->setAccessible( true );
+		return $method->invoke( null, $input );
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @return array<string, mixed>
+	 */
+	private function featured_image( array $input ): array {
+		$method = new ReflectionMethod( Write_Abilities::class, 'exec_set_post_featured_image' );
+		$method->setAccessible( true );
+		return $method->invoke( null, $input );
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function parsed_blocks_schema(): array {
+		$method = new ReflectionMethod( Write_Abilities::class, 'parsed_blocks_schema' );
+		$method->setAccessible( true );
+		return $method->invoke( null );
 	}
 
 	/**
@@ -103,6 +138,50 @@ final class WriteAbilitiesTest extends TestCase {
 				'innerBlocks'  => array(),
 				'innerHTML'    => '<div style="height:40px" aria-hidden="true" class="wp-block-spacer"></div>',
 				'innerContent' => array( '<div style="height:40px" aria-hidden="true" class="wp-block-spacer"></div>' ),
+			),
+		);
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function four_column_heading_blocks(): array {
+		$columns = array();
+		foreach ( array( '1', '2', '3', '4' ) as $label ) {
+			$columns[] = array(
+				'blockName'    => 'core/column',
+				'attrs'        => array(),
+				'innerBlocks'  => array(
+					array(
+						'blockName'    => 'core/heading',
+						'attrs'        => array( 'level' => 2 ),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<h2>' . $label . '</h2>',
+						'innerContent' => array( '<h2>' . $label . '</h2>' ),
+					),
+				),
+				'innerHTML'    => '<div class="wp-block-column"></div>',
+				'innerContent' => array( '<div class="wp-block-column">', null, '</div>' ),
+			);
+		}
+
+		return array(
+			array(
+				'blockName'    => 'core/columns',
+				'attrs'        => array(),
+				'innerBlocks'  => $columns,
+				'innerHTML'    => '<div class="wp-block-columns"></div>',
+				'innerContent' => array(
+					'<div class="wp-block-columns">',
+					null,
+					"\n\n",
+					null,
+					"\n\n",
+					null,
+					"\n\n",
+					null,
+					'</div>',
+				),
 			),
 		);
 	}
@@ -599,6 +678,131 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertTrue( $result['ok'] );
 		$this->assertStringContainsString( '<!-- wp:paragraph -->', $result['after']['post_content'] );
 		$this->assertSame( '<!-- wp:paragraph --><p>Old</p><!-- /wp:paragraph -->', $result['before']['post_content'] );
+	}
+
+	public function test_parsed_blocks_schema_treats_attrs_as_json_values_not_schema_types(): void {
+		$schema = $this->parsed_blocks_schema();
+
+		$this->assertSame( 'array', $schema['type'] );
+		$this->assertSame( 'object', $schema['items']['type'] );
+		$this->assertSame(
+			array( 'string', 'number', 'integer', 'boolean', 'array', 'object', 'null' ),
+			$schema['items']['properties']['attrs']['additionalProperties']['type']
+		);
+		$this->assertSame(
+			array( 'string', 'null' ),
+			$schema['items']['properties']['innerContent']['items']['type']
+		);
+	}
+
+	public function test_update_post_with_blocks_merges_unique_top_level_block_into_existing_content(): void {
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post(
+			12,
+			'Existing title',
+			'<!-- wp:heading --><h2>All executable blocks</h2><!-- /wp:heading -->'
+			. '<!-- wp:paragraph --><p>Intro copy</p><!-- /wp:paragraph -->'
+			. '<!-- wp:columns --><div class="wp-block-columns"><!-- wp:column --><div class="wp-block-column"><!-- wp:paragraph --><p>Old grouped paragraph</p><!-- /wp:paragraph --></div><!-- /wp:column --></div><!-- /wp:columns -->'
+			. '<!-- wp:details {"summary":"Expandable details"} --><details class="wp-block-details"><summary>Expandable details</summary><!-- wp:paragraph --><p>Hidden details content.</p><!-- /wp:paragraph --></details><!-- /wp:details -->',
+			''
+		);
+
+		$result = $this->update_post(
+			array(
+				'post_id' => 12,
+				'blocks'  => $this->four_column_heading_blocks(),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringContainsString( '<!-- wp:heading --><h2>All executable blocks</h2><!-- /wp:heading -->', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<!-- wp:paragraph --><p>Intro copy</p><!-- /wp:paragraph -->', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<!-- wp:details {"summary":"Expandable details"} -->', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<h2>4</h2>', $result['after']['post_content'] );
+		$this->assertStringNotContainsString( 'Old grouped paragraph', $result['after']['post_content'] );
+	}
+
+	public function test_update_post_with_replace_content_true_overwrites_existing_content(): void {
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post(
+			12,
+			'Existing title',
+			'<!-- wp:heading --><h2>Keep me only when merging</h2><!-- /wp:heading -->',
+			''
+		);
+
+		$result = $this->update_post(
+			array(
+				'post_id'         => 12,
+				'blocks'          => $this->four_column_heading_blocks(),
+				'replace_content' => true,
+				'dry_run'         => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringNotContainsString( 'Keep me only when merging', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<h2>1</h2>', $result['after']['post_content'] );
+	}
+
+	public function test_set_post_seo_meta_uses_sitepilot_keys_by_default(): void {
+		$result = $this->seo_meta(
+			array(
+				'post_id'         => 12,
+				'seo_title'       => 'SitePilot Title',
+				'seo_description' => 'SitePilot Description',
+				'dry_run'         => false,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertSame( 'sitepilot', $result['meta_provider'] );
+		$this->assertSame( 'SitePilot Title', $GLOBALS['sitepilot_test_post_meta'][12]['_sitepilot_seo_title'] );
+		$this->assertSame( 'SitePilot Description', $GLOBALS['sitepilot_test_post_meta'][12]['_sitepilot_seo_description'] );
+	}
+
+	public function test_set_post_seo_meta_uses_yoast_keys_when_requested(): void {
+		$result = $this->seo_meta(
+			array(
+				'post_id'         => 12,
+				'seo_title'       => 'Yoast Title',
+				'seo_description' => 'Yoast Description',
+				'meta_provider'   => 'yoast',
+				'dry_run'         => false,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertSame( 'yoast', $result['meta_provider'] );
+		$this->assertSame( 'Yoast Title', $GLOBALS['sitepilot_test_post_meta'][12]['_yoast_wpseo_title'] );
+		$this->assertSame( 'Yoast Description', $GLOBALS['sitepilot_test_post_meta'][12]['_yoast_wpseo_metadesc'] );
+	}
+
+	public function test_set_post_featured_image_updates_thumbnail_meta(): void {
+		$GLOBALS['sitepilot_test_posts'][201] = new WP_Post( 201, 'Image', '', '' );
+
+		$result = $this->featured_image(
+			array(
+				'post_id'       => 12,
+				'attachment_id' => 201,
+				'dry_run'       => false,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertSame( 201, $result['attachment_id'] );
+		$this->assertSame( '201', $GLOBALS['sitepilot_test_post_meta'][12]['_thumbnail_id'] );
+	}
+
+	public function test_set_post_featured_image_requires_attachment_id(): void {
+		$result = $this->featured_image(
+			array(
+				'post_id' => 12,
+				'dry_run' => false,
+			)
+		);
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertSame( 'missing_attachment_id', $result['error'] );
 	}
 
 	public function test_upload_media_asset_dry_run_returns_preview(): void {

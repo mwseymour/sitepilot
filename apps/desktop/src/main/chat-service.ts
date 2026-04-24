@@ -959,15 +959,12 @@ export async function amendRequestForThread(
       message: "Answer the clarification question instead of amending the request."
     };
   }
-  if (
-    request.status === "awaiting_approval" ||
-    request.status === "approved" ||
-    request.status === "executing"
-  ) {
+  if (request.status === "executing") {
     return {
       ok: false,
       code: "request_locked",
-      message: "This request is already in approval or execution. Start a new thread for a new task."
+      message:
+        "This request is executing right now. Wait for it to finish before revising the request."
     };
   }
 

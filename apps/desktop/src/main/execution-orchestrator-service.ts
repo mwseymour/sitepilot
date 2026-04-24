@@ -4,7 +4,9 @@ import {
   explainUnsupportedBlockName,
   findUnsupportedParsedBlockNames,
   findUnsupportedSerializedBlockNames,
+  siteConfigSchema,
   type ImageAttachmentPayload,
+  type SiteConfig,
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
 } from "@sitepilot/contracts";
 import {
@@ -24,7 +26,9 @@ import type {
 } from "@sitepilot/domain";
 import {
   actionToMcpToolCall,
+  actionSupportsPostLookup,
   buildPostLookupArguments,
+  findNumericPostId,
   canResolveActionViaPostLookup,
   resolvePostIdFromLookupResult
 } from "@sitepilot/services";
@@ -72,6 +76,73 @@ function retryIdempotencyKey(baseKey: string): string {
   return `${baseKey}:retry:${randomUUID()}`;
 }
 
+function normalizeActionType(actionType: string): string {
+  return actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+}
+
+function actionCreatesDraftPost(actionType: string): boolean {
+  const t = normalizeActionType(actionType);
+  return (
+    t === "create_draft_post" ||
+    t === "create_draft_content" ||
+    t === "create_post_draft" ||
+    t === "sitepilot_create_draft_post"
+  );
+}
+
+function extractPostIdFromToolOutput(output: Record<string, unknown> | undefined): number | undefined {
+  const postId = output?.["post_id"];
+  if (typeof postId === "number" && Number.isFinite(postId) && postId > 0) {
+    return postId;
+  }
+  return undefined;
+}
+
+function actionIsExecutable(actionType: string, input: Record<string, unknown>): boolean {
+  return (
+    actionToMcpToolCall(actionType, input, true) !== null ||
+    canResolveActionViaPostLookup(actionType, input) ||
+    (actionSupportsPostLookup(actionType) && findNumericPostId(input) === undefined)
+  );
+}
+
+async function loadActiveSiteConfig(
+  siteId: SiteId
+): Promise<SiteConfig | null> {
+  const db = getDatabase();
+  const row = await db.repositories.siteConfigs.getActiveBySiteId(siteId);
+  if (!row) {
+    return null;
+  }
+
+  try {
+    return siteConfigSchema.parse(row.document);
+  } catch {
+    return null;
+  }
+}
+
+function applySeoMetaProviderToSpec(
+  spec: { toolName: string; arguments: Record<string, unknown> },
+  siteConfig: SiteConfig | null
+): { toolName: string; arguments: Record<string, unknown> } {
+  if (spec.toolName !== "sitepilot-set-post-seo-meta" || !siteConfig) {
+    return spec;
+  }
+
+  return {
+    ...spec,
+    arguments: {
+      ...spec.arguments,
+      meta_provider: siteConfig.sections.seoPolicy.metaProvider
+    }
+  };
+}
+
 type UploadedMediaAsset = {
   attachmentId: number;
   url: string;
@@ -97,6 +168,43 @@ function normalizeBlockName(value: unknown): string {
 function dataUrlToBase64(dataUrl: string): string | null {
   const match = /^data:[^;]+;base64,(.+)$/s.exec(dataUrl);
   return match?.[1] ?? null;
+}
+
+function hydrateUploadMediaArgumentsFromAttachment(input: {
+  attachment: ImageAttachmentPayload;
+  spec: { toolName: string; arguments: Record<string, unknown> };
+}):
+  | { ok: true; spec: { toolName: string; arguments: Record<string, unknown> } }
+  | { ok: false; code: string; message: string } {
+  const dataBase64 = dataUrlToBase64(input.attachment.dataUrl);
+  if (!dataBase64) {
+    return {
+      ok: false,
+      code: "invalid_attachment_data",
+      message: `Image attachment "${input.attachment.fileName}" is not valid base64 image data.`
+    };
+  }
+
+  return {
+    ok: true,
+    spec: {
+      ...input.spec,
+      arguments: {
+        ...input.spec.arguments,
+        file_name:
+          typeof input.spec.arguments.file_name === "string" &&
+          input.spec.arguments.file_name.trim().length > 0
+            ? input.spec.arguments.file_name
+            : input.attachment.fileName,
+        media_type:
+          typeof input.spec.arguments.media_type === "string" &&
+          input.spec.arguments.media_type.trim().length > 0
+            ? input.spec.arguments.media_type
+            : input.attachment.mediaType,
+        data_base64: dataBase64
+      }
+    }
+  };
 }
 
 function imageBlockHtml(attrs: Record<string, unknown>): string {
@@ -447,9 +555,64 @@ async function hydrateSpecMediaInputs(input: {
 
   if (
     input.spec.toolName !== "sitepilot-create-draft-post" &&
-    input.spec.toolName !== "sitepilot-update-post-fields"
+    input.spec.toolName !== "sitepilot-update-post-fields" &&
+    input.spec.toolName !== "sitepilot-set-post-featured-image" &&
+    input.spec.toolName !== "sitepilot-upload-media-asset"
   ) {
     return { ok: true, spec: input.spec };
+  }
+
+  if (input.spec.toolName === "sitepilot-upload-media-asset") {
+    const hasDataBase64 =
+      typeof input.spec.arguments.data_base64 === "string" &&
+      input.spec.arguments.data_base64.trim().length > 0;
+    if (hasDataBase64) {
+      return { ok: true, spec: input.spec };
+    }
+    return hydrateUploadMediaArgumentsFromAttachment({
+      attachment: input.requestAttachments[0]!,
+      spec: input.spec
+    });
+  }
+
+  if (input.spec.toolName === "sitepilot-set-post-featured-image") {
+    const existingAttachmentId = input.spec.arguments.attachment_id;
+    if (
+      typeof existingAttachmentId === "number" &&
+      Number.isFinite(existingAttachmentId) &&
+      existingAttachmentId > 0
+    ) {
+      return { ok: true, spec: input.spec };
+    }
+
+    const uploadResult = await uploadAttachmentsToMediaLibrary({
+      attachments: [input.requestAttachments[0]!],
+      mcpClient: input.mcpClient
+    });
+    if (!uploadResult.ok) {
+      return uploadResult;
+    }
+
+    const attachment = uploadResult.uploads[0];
+    if (!attachment) {
+      return {
+        ok: false,
+        code: "media_upload_invalid_result",
+        message:
+          "Featured image upload did not return a usable attachment id."
+      };
+    }
+
+    return {
+      ok: true,
+      spec: {
+        ...input.spec,
+        arguments: {
+          ...input.spec.arguments,
+          attachment_id: attachment.attachmentId
+        }
+      }
+    };
   }
 
   if (!Array.isArray(input.spec.arguments.blocks)) {
@@ -618,6 +781,166 @@ async function reuseCompletedRun(
   };
 }
 
+async function loadCompletedPostIdForAction(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  planId: ActionPlanId;
+  actionId: ActionId;
+}): Promise<number | undefined> {
+  const db = getDatabase();
+  const idem = defaultIdempotencyKey(input);
+  const run = await db.repositories.executionRuns.getByIdempotencyKey(idem);
+  if (!run || run.status !== "completed") {
+    return undefined;
+  }
+
+  const invocations = await db.repositories.toolInvocations.listByExecutionRunId(run.id);
+  for (const invocation of invocations) {
+    if (invocation.status !== "succeeded") {
+      continue;
+    }
+    const postId = extractPostIdFromToolOutput(
+      invocation.output as Record<string, unknown> | undefined
+    );
+    if (postId !== undefined) {
+      return postId;
+    }
+  }
+
+  return undefined;
+}
+
+async function hasCompletedActionRun(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  planId: ActionPlanId;
+  actionId: ActionId;
+}): Promise<boolean> {
+  const db = getDatabase();
+  const idem = defaultIdempotencyKey(input);
+  const run = await db.repositories.executionRuns.getByIdempotencyKey(idem);
+  return run?.status === "completed";
+}
+
+async function resolvePostIdFromEarlierCreateAction(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  planId: ActionPlanId;
+  plan: { proposedActions: Array<{ id: string; type: string; input: Record<string, unknown> }> };
+  actionId: ActionId;
+  dryRun: boolean;
+}): Promise<
+  | { ok: true; postId: number }
+  | { ok: false; code: string; message: string }
+> {
+  const actionIndex = input.plan.proposedActions.findIndex(
+    (action) => action.id === input.actionId
+  );
+  if (actionIndex < 0) {
+    return {
+      ok: false,
+      code: "action_not_found",
+      message: "Action not in this plan."
+    };
+  }
+
+  const priorCreates = input.plan.proposedActions
+    .slice(0, actionIndex)
+    .filter((action) => actionCreatesDraftPost(action.type));
+
+  if (priorCreates.length === 0) {
+    return {
+      ok: false,
+      code: "post_dependency_missing",
+      message: "No earlier create post action exists in this plan to supply a post id."
+    };
+  }
+
+  if (priorCreates.length > 1) {
+    return {
+      ok: false,
+      code: "post_dependency_ambiguous",
+      message:
+        "More than one earlier create post action exists in this plan, so the target post id is ambiguous."
+    };
+  }
+
+  const createAction = priorCreates[0]!;
+  const existingPostId = await loadCompletedPostIdForAction({
+    siteId: input.siteId,
+    requestId: input.requestId,
+    planId: input.planId,
+    actionId: createAction.id as ActionId
+  });
+  if (existingPostId !== undefined) {
+    return { ok: true, postId: existingPostId };
+  }
+
+  if (input.dryRun) {
+    return {
+      ok: false,
+      code: "post_dependency_unavailable_in_dry_run",
+      message:
+        "Dry-run cannot resolve a post id from the planned create post action until that action has executed."
+    };
+  }
+
+  const createResult = await executePlanAction({
+    siteId: input.siteId,
+    requestId: input.requestId,
+    planId: input.planId,
+    actionId: createAction.id as ActionId,
+    dryRun: false
+  });
+  if (!createResult.ok) {
+    return createResult;
+  }
+
+  const createdPostId = extractPostIdFromToolOutput(createResult.mcpResult);
+  if (createdPostId === undefined) {
+    return {
+      ok: false,
+      code: "post_dependency_missing",
+      message:
+        "The earlier create post action completed but did not return a usable post id."
+    };
+  }
+
+  return { ok: true, postId: createdPostId };
+}
+
+async function deriveRequestStatusAfterSuccessfulAction(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  planId: ActionPlanId;
+  plan: { proposedActions: Array<{ id: string; type: string; input: Record<string, unknown> }> };
+  completedActionId: ActionId;
+}): Promise<"completed" | "partially_completed"> {
+  const executableActions = input.plan.proposedActions.filter((action) =>
+    actionIsExecutable(action.type, action.input)
+  );
+
+  if (executableActions.length <= 1) {
+    return "completed";
+  }
+
+  const completionChecks = await Promise.all(
+    executableActions.map(async (action) => {
+      if (action.id === input.completedActionId) {
+        return true;
+      }
+      return hasCompletedActionRun({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        planId: input.planId,
+        actionId: action.id as ActionId
+      });
+    })
+  );
+
+  return completionChecks.every(Boolean) ? "completed" : "partially_completed";
+}
+
 export async function executePlanAction(
   input: ExecutePlanActionInput
 ): Promise<ExecutePlanActionResult> {
@@ -632,7 +955,12 @@ export async function executePlanAction(
     };
   }
 
-  if (!input.dryRun && request.status !== "approved") {
+  if (
+    !input.dryRun &&
+    request.status !== "approved" &&
+    request.status !== "partially_completed" &&
+    request.status !== "completed"
+  ) {
     return {
       ok: false,
       code: "not_approved",
@@ -662,10 +990,43 @@ export async function executePlanAction(
     };
   }
 
-  let spec = actionToMcpToolCall(action.type, action.input, input.dryRun);
-
-  const needsLookup = !spec && canResolveActionViaPostLookup(action.type, action.input);
   let resolvedInput = action.input;
+  if (
+    actionSupportsPostLookup(action.type) &&
+    findNumericPostId(resolvedInput) === undefined &&
+    !canResolveActionViaPostLookup(action.type, resolvedInput)
+  ) {
+    const priorCreateResolution = await resolvePostIdFromEarlierCreateAction({
+      siteId: input.siteId,
+      requestId: input.requestId,
+      planId: input.planId,
+      plan,
+      actionId: input.actionId,
+      dryRun: input.dryRun
+    });
+    if (!priorCreateResolution.ok) {
+      await appendExecutionMessage({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        author: { kind: "system" },
+        text: `Could not resolve a target post for "${action.type}": ${priorCreateResolution.message}`
+      });
+      return priorCreateResolution;
+    }
+    resolvedInput = {
+      ...resolvedInput,
+      post_id: priorCreateResolution.postId
+    };
+  }
+
+  const activeSiteConfig = await loadActiveSiteConfig(input.siteId);
+  let spec = actionToMcpToolCall(action.type, resolvedInput, input.dryRun);
+  if (spec) {
+    spec = applySeoMetaProviderToSpec(spec, activeSiteConfig);
+  }
+
+  const needsLookup =
+    !spec && canResolveActionViaPostLookup(action.type, resolvedInput);
   let mcpClient: McpHttpClient | undefined;
 
   if (needsLookup) {
@@ -676,7 +1037,7 @@ export async function executePlanAction(
     mcpClient = mcp.client;
     const resolution = await resolveActionPostId({
       actionType: action.type,
-      actionInput: action.input,
+      actionInput: resolvedInput,
       mcpClient
     });
     if (!resolution.ok) {
@@ -690,6 +1051,9 @@ export async function executePlanAction(
     }
     resolvedInput = resolution.actionInput;
     spec = actionToMcpToolCall(action.type, resolvedInput, input.dryRun);
+    if (spec) {
+      spec = applySeoMetaProviderToSpec(spec, activeSiteConfig);
+    }
   }
 
   if (!spec) {
@@ -1032,10 +1396,18 @@ export async function executePlanAction(
     updatedAt: doneTs
   });
 
+  const nextRequestStatus = await deriveRequestStatusAfterSuccessfulAction({
+    siteId: input.siteId,
+    requestId: input.requestId,
+    planId: input.planId,
+    plan,
+    completedActionId: input.actionId
+  });
+
   await db.repositories.requests.save({
     ...request,
     latestExecutionRunId: runId,
-    status: "completed",
+    status: nextRequestStatus,
     updatedAt: doneTs
   });
 

@@ -291,6 +291,28 @@ export function SiteConfigForm({
       <fieldset className="config-fieldset">
         <legend>SEO policy</legend>
         <label className="field">
+          <span>SEO meta provider</span>
+          <select
+            value={s.seoPolicy.metaProvider}
+            onChange={(e) =>
+              onChange({
+                ...value,
+                sections: {
+                  ...value.sections,
+                  seoPolicy: {
+                    ...s.seoPolicy,
+                    metaProvider:
+                      e.target.value === "yoast" ? "yoast" : "sitepilot"
+                  }
+                }
+              })
+            }
+          >
+            <option value="sitepilot">SitePilot default meta fields</option>
+            <option value="yoast">Yoast SEO meta fields</option>
+          </select>
+        </label>
+        <label className="field">
           <span>Title patterns (one per line)</span>
           <textarea
             rows={2}

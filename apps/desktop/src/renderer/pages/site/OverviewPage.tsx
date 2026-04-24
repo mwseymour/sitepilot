@@ -14,7 +14,7 @@ export function OverviewPage(): ReactElement | null {
     return null;
   }
 
-  const { site, discoveryRevision } = data;
+  const { site, discoveryRevision, discoveryReviewRequired } = data;
 
   return (
     <article className="panel-card">
@@ -35,13 +35,23 @@ export function OverviewPage(): ReactElement | null {
           <dt>Discovery revision</dt>
           <dd>{discoveryRevision ?? "None"}</dd>
         </div>
+        <div>
+          <dt>Discovery check</dt>
+          <dd>
+            {discoveryRevision === null
+              ? "Not run"
+              : discoveryReviewRequired
+                ? "Review needed"
+                : "Up to date"}
+          </dd>
+        </div>
       </dl>
       <div className="action-row">
         <Link className="btn btn-secondary" to={`/site/${siteId}/diagnostics`}>
           Run diagnostics
         </Link>
         <Link className="btn btn-primary" to={`/site/${siteId}/config`}>
-          Site configuration
+          Discovery check
         </Link>
       </div>
     </article>

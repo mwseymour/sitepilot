@@ -31,7 +31,7 @@ export function ConfigPage(): ReactElement | null {
       if (!res.ok) {
         setError(res.message);
       } else {
-        setMessage("Draft saved from discovery snapshot.");
+        setMessage("Draft saved from the latest discovery snapshot.");
         await reload();
       }
     } catch {
@@ -83,7 +83,7 @@ export function ConfigPage(): ReactElement | null {
         setError(res.message);
       } else {
         setDraft(res.siteConfig);
-        setMessage("Site configuration confirmed. Chat can be enabled.");
+        setMessage("Discovery check confirmed. Chat can be enabled.");
         await reload();
       }
     } catch {
@@ -102,27 +102,44 @@ export function ConfigPage(): ReactElement | null {
   }
 
   const canActivate = draft ? draft.activationStatus !== "active" : false;
+  const hasDiscovery = data.discoveryRevision !== null;
+  const needsDiscoveryReview = data.discoveryReviewRequired;
+  const generateLabel =
+    draft === null
+      ? "Generate draft from discovery"
+      : needsDiscoveryReview
+        ? "Regenerate draft from latest discovery"
+        : "Generate fresh draft from discovery";
 
   return (
     <article className="panel-card config-page">
       <header className="panel-header">
         <div>
-          <h1>Site configuration</h1>
+          <h1>Discovery check</h1>
           <p className="lede">
-            Review sections populated from discovery, adjust policies, then
-            save. When you are satisfied, confirm to activate the site (required
-            before chat).
+            Review the latest discovery snapshot against the saved site setup,
+            regenerate the draft when discovery changes, then confirm the
+            latest version before chat is enabled.
           </p>
+          {draft ? (
+            <p className="muted">
+              {needsDiscoveryReview
+                ? `Discovery revision ${data.discoveryRevision ?? "unknown"} is newer than this saved setup. Regenerate the draft and review changes.`
+                : hasDiscovery
+                  ? `Saved setup already reflects discovery revision ${data.discoveryRevision}.`
+                  : "No discovery snapshot available yet."}
+            </p>
+          ) : null}
         </div>
         <div className="action-row panel-actions">
-          {data.siteConfig === null ? (
+          {hasDiscovery ? (
             <button
               type="button"
               className="btn btn-primary"
               disabled={busy}
               onClick={() => void onGenerateDraft()}
             >
-              Generate draft from discovery
+              {generateLabel}
             </button>
           ) : null}
         </div>
@@ -152,15 +169,18 @@ export function ConfigPage(): ReactElement | null {
               </button>
             ) : (
               <p className="muted inline-status">
-                This configuration version is active.
+                {needsDiscoveryReview
+                  ? "An active setup exists, but a newer discovery snapshot needs review."
+                  : "This reviewed setup is active."}
               </p>
             )}
           </div>
         </>
       ) : (
         <p className="muted">
-          No configuration version yet. Run discovery from Diagnostics, then
-          generate a first-pass draft here.
+          {hasDiscovery
+            ? "No saved setup yet. Generate a first-pass draft from the latest discovery snapshot."
+            : "No discovery snapshot yet. Run discovery from Diagnostics first."}
         </p>
       )}
     </article>

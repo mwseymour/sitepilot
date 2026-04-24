@@ -25,15 +25,24 @@ export type GetSiteWorkspaceResult =
       site: SiteSummary;
       siteConfig: SiteConfig | null;
       discoveryRevision: number | null;
+      latestDiscoverySnapshotId: string | null;
+      siteConfigGeneratedFromDiscoverySnapshotId: string | null;
+      discoveryReviewRequired: boolean;
     }
   | { ok: false; code: string; message: string };
 
-async function discoveryRevision(
+async function latestDiscoverySnapshot(
   db: ReturnType<typeof getDatabase>,
   siteId: SiteId
-): Promise<number | null> {
+): Promise<{
+  revision: number | null;
+  snapshotId: string | null;
+}> {
   const snap = await db.repositories.discoverySnapshots.getLatest(siteId);
-  return snap ? snap.revision : null;
+  return {
+    revision: snap ? snap.revision : null,
+    snapshotId: snap ? snap.id : null
+  };
 }
 
 /**
@@ -52,6 +61,8 @@ export async function getSiteWorkspaceState(
     };
   }
 
+  const latestDiscovery = await latestDiscoverySnapshot(db, siteId);
+
   const versions = await db.repositories.siteConfigs.listVersions(siteId);
   const sorted = [...versions].sort((a, b) => b.version - a.version);
   const latest = sorted[0];
@@ -60,17 +71,28 @@ export async function getSiteWorkspaceState(
       ok: true,
       site: toSiteSummary(site),
       siteConfig: null,
-      discoveryRevision: await discoveryRevision(db, siteId)
+      discoveryRevision: latestDiscovery.revision,
+      latestDiscoverySnapshotId: latestDiscovery.snapshotId,
+      siteConfigGeneratedFromDiscoverySnapshotId: null,
+      discoveryReviewRequired: latestDiscovery.snapshotId !== null
     };
   }
 
   try {
     const siteConfig = parseConfigDocument(latest.document);
+    const generatedFromDiscoverySnapshotId =
+      siteConfig.metadata.generatedFromDiscoverySnapshotId ?? null;
     return {
       ok: true,
       site: toSiteSummary(site),
       siteConfig,
-      discoveryRevision: await discoveryRevision(db, siteId)
+      discoveryRevision: latestDiscovery.revision,
+      latestDiscoverySnapshotId: latestDiscovery.snapshotId,
+      siteConfigGeneratedFromDiscoverySnapshotId:
+        generatedFromDiscoverySnapshotId,
+      discoveryReviewRequired:
+        latestDiscovery.snapshotId !== null &&
+        latestDiscovery.snapshotId !== generatedFromDiscoverySnapshotId
     };
   } catch {
     return {

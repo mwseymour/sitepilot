@@ -263,7 +263,10 @@ export type GenerateSiteConfigDraftResponse = z.infer<
 export const siteWorkspaceStateSchema = z.object({
   site: siteSummarySchema,
   siteConfig: siteConfigSchema.nullable(),
-  discoveryRevision: z.number().int().nonnegative().nullable()
+  discoveryRevision: z.number().int().nonnegative().nullable(),
+  latestDiscoverySnapshotId: idSchema.nullable(),
+  siteConfigGeneratedFromDiscoverySnapshotId: idSchema.nullable(),
+  discoveryReviewRequired: z.boolean()
 });
 
 export const getSiteWorkspaceResponseSchema = z.discriminatedUnion("ok", [

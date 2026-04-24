@@ -62,6 +62,10 @@ type NormalizedBlocksResult = {
   warnings: string[];
 };
 
+type ExecutableBlockDemoOptions = {
+  imageFileName: string | undefined;
+};
+
 function lastUserPlainText(context: PlannerContext): string {
   const users = context.messages.filter((m) => m.role === "user");
   const last = users[users.length - 1];
@@ -83,6 +87,12 @@ function userCorpusForRequest(
     .map((m) => m.text)
     .join("\n")
     .trim();
+}
+
+function requestAsksForEveryExecutableBlock(requestText: string): boolean {
+  return /\b(one of every|every|all)\b[\s\S]{0,60}\b(executable|supported|available|core)?\s*blocks?\b/i.test(
+    requestText
+  );
 }
 
 function imagePartsForRequest(
@@ -1374,7 +1384,8 @@ function normalizePostContent(
 
 function normalizePlanPostContent(
   plan: ActionPlan,
-  requestText: string
+  requestText: string,
+  requestAttachments?: ImageAttachmentPayload[]
 ): ActionPlan {
   const validationWarnings = [...plan.validationWarnings];
   const proposedActions = plan.proposedActions.map((action) => {
@@ -1389,9 +1400,13 @@ function normalizePlanPostContent(
     if (blockKey !== undefined && Array.isArray(blockTarget[blockKey])) {
       const normalizedBlocks = normalizeParsedBlocks(blockTarget[blockKey]);
       validationWarnings.push(...normalizedBlocks.warnings);
-      const unsupportedBlocks = findUnsupportedParsedBlockNames(
-        normalizedBlocks.blocks
-      );
+      const nextBlocks = maybeExpandToEverySupportedBlockDemo({
+        blocks: normalizedBlocks.blocks,
+        requestText,
+        requestAttachments,
+        validationWarnings
+      });
+      const unsupportedBlocks = findUnsupportedParsedBlockNames(nextBlocks);
       if (unsupportedBlocks.length > 0) {
         validationWarnings.push(
           `Structured parsed blocks include unsupported block types that execution will reject: ${unsupportedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. Add blocked blocks manually in the WordPress post editor for now.`
@@ -1399,7 +1414,7 @@ function normalizePlanPostContent(
       }
       const nextBlockTarget = {
         ...blockTarget,
-        [blockKey]: normalizedBlocks.blocks
+        [blockKey]: nextBlocks
       };
       return {
         ...action,
@@ -1429,6 +1444,21 @@ function normalizePlanPostContent(
 
     const normalized = normalizePostContent(currentContent, requestText);
     validationWarnings.push(...normalized.warnings);
+    const demoBlocks = buildEverySupportedBlockDemoIfRequested({
+      requestText,
+      currentBlocks: [],
+      requestAttachments,
+      validationWarnings
+    });
+    if (demoBlocks !== null) {
+      return {
+        ...action,
+        input: {
+          ...input,
+          blocks: demoBlocks
+        }
+      } satisfies Action;
+    }
     const unsupportedSerializedBlocks = findUnsupportedSerializedBlockNames(
       normalized.content
     );
@@ -1455,6 +1485,321 @@ function normalizePlanPostContent(
     proposedActions,
     validationWarnings: [...new Set(validationWarnings)]
   });
+}
+
+function collectParsedBlockNames(blocks: unknown[]): string[] {
+  const names = new Set<string>();
+
+  const visit = (value: unknown): void => {
+    const record = objectValue(value);
+    const blockName = normalizeBlockName(record.blockName);
+    if (blockName.length > 0) {
+      names.add(blockName);
+    }
+    const innerBlocks = Array.isArray(record.innerBlocks) ? record.innerBlocks : [];
+    for (const innerBlock of innerBlocks) {
+      visit(innerBlock);
+    }
+  };
+
+  for (const block of blocks) {
+    visit(block);
+  }
+
+  return [...names];
+}
+
+function uploadLikeImageUrl(fileName: string): string {
+  return `https://example.test/wp-content/uploads/${encodeURIComponent(fileName)}`;
+}
+
+function buildEverySupportedBlockDemo(
+  options: ExecutableBlockDemoOptions = { imageFileName: undefined }
+): unknown[] {
+  const primaryImageUrl =
+    options.imageFileName !== undefined
+      ? uploadLikeImageUrl(options.imageFileName)
+      : "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg";
+
+  return [
+    {
+      blockName: "core/heading",
+      attrs: { level: 2 },
+      innerBlocks: [],
+      innerHTML: "All executable blocks",
+      innerContent: ["All executable blocks"]
+    },
+    {
+      blockName: "core/paragraph",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML: "One instance of every currently executable Gutenberg block.",
+      innerContent: ["One instance of every currently executable Gutenberg block."]
+    },
+    {
+      blockName: "core/image",
+      attrs: {
+        id: 0,
+        url: primaryImageUrl,
+        alt: "Example image"
+      },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/list",
+      attrs: {},
+      innerBlocks: [
+        {
+          blockName: "core/list-item",
+          attrs: {},
+          innerBlocks: [],
+          innerHTML: "Single list item",
+          innerContent: ["Single list item"]
+        }
+      ],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/buttons",
+      attrs: {},
+      innerBlocks: [
+        {
+          blockName: "core/button",
+          attrs: {
+            url: "https://example.com",
+            text: "Example button"
+          },
+          innerBlocks: [],
+          innerHTML: "Example button",
+          innerContent: ["Example button"]
+        }
+      ],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/columns",
+      attrs: {},
+      innerBlocks: [
+        {
+          blockName: "core/column",
+          attrs: { width: "100%" },
+          innerBlocks: [
+            {
+              blockName: "core/group",
+              attrs: {},
+              innerBlocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "Grouped paragraph inside a single column.",
+                  innerContent: ["Grouped paragraph inside a single column."]
+                }
+              ],
+              innerHTML: "",
+              innerContent: []
+            }
+          ],
+          innerHTML: "",
+          innerContent: []
+        }
+      ],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/details",
+      attrs: { summary: "Expandable details" },
+      innerBlocks: [
+        {
+          blockName: "core/paragraph",
+          attrs: {},
+          innerBlocks: [],
+          innerHTML: "Hidden details content.",
+          innerContent: ["Hidden details content."]
+        }
+      ],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/media-text",
+      attrs: {
+        mediaPosition: "left",
+        mediaType: "image",
+        mediaUrl: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
+        mediaAlt: "Example media"
+      },
+      innerBlocks: [
+        {
+          blockName: "core/paragraph",
+          attrs: {},
+          innerBlocks: [],
+          innerHTML: "Media and text side by side.",
+          innerContent: ["Media and text side by side."]
+        }
+      ],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/code",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML: "const demo = true;",
+      innerContent: ["const demo = true;"]
+    },
+    {
+      blockName: "core/preformatted",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML: "Preformatted sample",
+      innerContent: ["Preformatted sample"]
+    },
+    {
+      blockName: "core/verse",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML: "Line one\nLine two",
+      innerContent: ["Line one\nLine two"]
+    },
+    {
+      blockName: "core/quote",
+      attrs: { citation: "SitePilot" },
+      innerBlocks: [],
+      innerHTML: "<p>Quoted sample text.</p>",
+      innerContent: ["<p>Quoted sample text.</p>"]
+    },
+    {
+      blockName: "core/pullquote",
+      attrs: {
+        value: "Pullquote sample text.",
+        citation: "SitePilot"
+      },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/separator",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/shortcode",
+      attrs: { text: "[gallery ids=\"1\"]" },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/html",
+      attrs: { content: "<div class=\"sample-html\">Custom HTML block</div>" },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/file",
+      attrs: {
+        href: "https://example.com/files/sample.pdf",
+        fileName: "Sample PDF",
+        showDownloadButton: true
+      },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/table",
+      attrs: {
+        body: [
+          {
+            cells: [{ tag: "td", content: "Table cell" }]
+          }
+        ],
+        caption: "Sample table"
+      },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/video",
+      attrs: {
+        src: "https://example.com/video/sample.mp4"
+      },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/spacer",
+      attrs: { height: 40 },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    },
+    {
+      blockName: "core/more",
+      attrs: { customText: "Continue reading" },
+      innerBlocks: [],
+      innerHTML: "",
+      innerContent: []
+    }
+  ];
+}
+
+function buildEverySupportedBlockDemoIfRequested(input: {
+  requestText: string;
+  currentBlocks: unknown[];
+  requestAttachments: ImageAttachmentPayload[] | undefined;
+  validationWarnings: string[];
+}): unknown[] | null {
+  if (!requestAsksForEveryExecutableBlock(input.requestText)) {
+    return null;
+  }
+
+  const currentNames = new Set(collectParsedBlockNames(input.currentBlocks));
+  const missingNames = SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.filter(
+    (name) => !currentNames.has(name)
+  );
+
+  if (missingNames.length === 0) {
+    return null;
+  }
+
+  const demoBlocks = buildEverySupportedBlockDemo({
+    imageFileName: input.requestAttachments?.[0]?.fileName
+  });
+  const normalized = normalizeParsedBlocks(demoBlocks);
+  input.validationWarnings.push(...normalized.warnings);
+  input.validationWarnings.push(
+    `Planner omitted supported executable block types for an explicit all-block request (${missingNames.join(", ")}); replaced the partial block set with a complete executable-block demo.`
+  );
+  return normalized.blocks;
+}
+
+function maybeExpandToEverySupportedBlockDemo(input: {
+  blocks: unknown[];
+  requestText: string;
+  requestAttachments: ImageAttachmentPayload[] | undefined;
+  validationWarnings: string[];
+}): unknown[] {
+  return (
+    buildEverySupportedBlockDemoIfRequested({
+      requestText: input.requestText,
+      currentBlocks: input.blocks,
+      requestAttachments: input.requestAttachments,
+      validationWarnings: input.validationWarnings
+    }) ?? input.blocks
+  );
 }
 
 export function buildStubActionPlan(input: {
@@ -1534,6 +1879,12 @@ export async function buildLlmActionPlan(input: {
   plan: ActionPlan;
   usage: { inputTokens: number; outputTokens: number; provider: string };
 }> {
+  const requestText = userCorpusForRequest(input.context, input.requestId);
+  const exhaustiveBlockInstruction = requestAsksForEveryExecutableBlock(
+    requestText
+  )
+    ? `The operator explicitly asked for one of every executable/supported block. Do not minimize this request. Use input.blocks and include at least one instance of every currently supported executable Gutenberg block, counting nested child blocks such as core/button inside core/buttons, core/list-item inside core/list, and core/column inside core/columns.`
+    : "";
   const system = `You are SitePilot's planning engine. Reply with a single JSON object only (no markdown) that matches this shape:
 {
   "requestSummary": string (non-empty),
@@ -1562,7 +1913,10 @@ If plannerContext.activeSkills is present, treat each skill's instructions as ac
 Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input.
 If an exact post_id is not known but the target can be uniquely discovered at execution time, include lookup fields such as lookup_status, lookup_slug, lookup_title, lookup_search, and lookup_post_type in the update action input (same object as post_id would use). Example: {"type":"update_post_fields","input":{"lookup_title":"Hello Matt","lookup_status":"draft","content":"..."}}.
 Do not propose update actions that lack both a concrete post_id and resolvable lookup fields.
-Do not invent deliverables, sections, media, layouts, or block types the operator did not ask for. Default to the smallest faithful set of blocks, usually headings, paragraphs, and lists only. Do not add image/media-text/columns/gallery/buttons/cover/separator/spacer/embed/table/video blocks unless the request explicitly requires them.
+For update_post_fields, default to preserving unaffected existing post content. If you are only changing one existing block or section, provide only the replacement blocks for that target and let execution merge them into the existing post. Only set input.replace_content to true when the operator explicitly wants to replace, overwrite, clear, or rebuild the whole body.
+When the operator asks to set or change a featured image, use a featured-image action such as {"type":"set_post_featured_image","input":{"post_id":123}}. Do not use SEO/meta actions for featured images. If the request includes an attached image, prefer a single featured-image action and let execution use the attached image; do not emit a separate upload action unless the workflow explicitly requires it.
+Do not invent deliverables, sections, media, layouts, or block types the operator did not ask for.
+${exhaustiveBlockInstruction}
 For each proposed action, put tool arguments directly in the action.input object. Do not wrap tool arguments in a nested input object inside action.input.
 For content-writing actions, use structured block data instead of hand-written serialized HTML whenever the request needs nested, layout, media, spacer, columns, gallery, cover, or other non-trivial Gutenberg blocks. Use input.blocks as an array of WordPress parsed block objects that can be passed to WordPress serialize_blocks(): each block has blockName, attrs, innerBlocks, innerHTML, and innerContent. Parsed blockName values for WordPress core blocks must use the "core/name" form such as "core/columns", "core/column", "core/paragraph", "core/image", and "core/spacer"; never use comment prefixes such as "wp:columns" in parsed blockName. Use input.content only for simple text-only block markup when no nested layout, media, or spacer block is needed. If input.blocks is present, it is the authoritative post body and downstream tools will prefer it over input.content.
 Only use parsed Gutenberg blocks that SitePilot explicitly supports for execution right now: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. If the request would require any other block, do not invent it. Use simpler supported blocks where faithful, otherwise surface the limitation in validationWarnings.
@@ -1623,7 +1977,8 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
   const parsedPlan = actionPlanSchema.parse(merged);
   const plan = normalizePlanPostContent(
     parsedPlan,
-    userCorpusForRequest(input.context, input.requestId)
+    requestText,
+    input.requestAttachments
   );
 
   return {

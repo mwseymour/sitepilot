@@ -5,7 +5,7 @@ import type { ConnectivityDiagnosticsResult } from "@sitepilot/contracts";
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 
 export function DiagnosticsPage(): ReactElement {
-  const { siteId, reload } = useSiteWorkspace();
+  const { siteId, data, reload } = useSiteWorkspace();
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState<ConnectivityDiagnosticsResult | null>(null);
   const [discoveryMsg, setDiscoveryMsg] = useState<string | null>(null);
@@ -36,10 +36,12 @@ export function DiagnosticsPage(): ReactElement {
       if (!res.ok) {
         setErr(res.message);
       } else {
-        setDiscoveryMsg(
-          `Discovery snapshot saved (revision ${res.snapshot.revision}).`
-        );
         await reload();
+        setDiscoveryMsg(
+          data?.siteConfig
+            ? `Discovery snapshot saved (revision ${res.snapshot.revision}). Review the discovery check to sync the saved setup.`
+            : `Discovery snapshot saved (revision ${res.snapshot.revision}). Generate a draft from discovery next.`
+        );
       }
     } catch {
       setErr("Discovery refresh failed.");

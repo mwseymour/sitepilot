@@ -46,7 +46,11 @@ export function actionSupportsPostLookup(actionType: string): boolean {
     t === "edit_post_fields" ||
     t === "sitepilot_update_post_fields" ||
     t === "set_post_seo_meta" ||
-    t === "sitepilot_set_post_seo_meta"
+    t === "sitepilot_set_post_seo_meta" ||
+    t === "set_featured_image" ||
+    t === "set_post_featured_image" ||
+    t === "update_post_featured_image" ||
+    t === "sitepilot_set_post_featured_image"
   );
 }
 

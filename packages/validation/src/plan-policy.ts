@@ -63,7 +63,11 @@ function canResolveActionViaPostLookup(
     t === "edit_post_fields" ||
     t === "sitepilot_update_post_fields" ||
     t === "set_post_seo_meta" ||
-    t === "sitepilot_set_post_seo_meta";
+    t === "sitepilot_set_post_seo_meta" ||
+    t === "set_featured_image" ||
+    t === "set_post_featured_image" ||
+    t === "update_post_featured_image" ||
+    t === "sitepilot_set_post_featured_image";
 
   if (!supportsLookup || findNumericPostId(input) !== undefined) {
     return false;
@@ -120,6 +124,32 @@ function canResolveActionViaPostLookup(
   );
 }
 
+function actionCreatesDraftPost(actionType: string): boolean {
+  const t = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+
+  return (
+    t === "create_draft_post" ||
+    t === "create_draft_content" ||
+    t === "create_post_draft" ||
+    t === "sitepilot_create_draft_post"
+  );
+}
+
+function canResolveActionViaEarlierCreate(
+  plan: ActionPlan,
+  actionIndex: number
+): boolean {
+  const priorCreates = plan.proposedActions
+    .slice(0, actionIndex)
+    .filter((action) => actionCreatesDraftPost(action.type));
+
+  return priorCreates.length === 1;
+}
+
 /**
  * Deterministic policy and capability checks for a schema-valid plan (T25).
  */
@@ -130,7 +160,7 @@ export function validateActionPlan(
   const blocked: string[] = [];
   const clarification: string[] = [];
 
-  for (const action of plan.proposedActions) {
+  for (const [actionIndex, action] of plan.proposedActions.entries()) {
     const t = action.type
       .trim()
       .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -150,9 +180,13 @@ export function validateActionPlan(
         t.includes("update_post_fields") ||
         t.includes("update_post_content") ||
         t.includes("edit_post_fields") ||
-        t.includes("set_post_seo_meta")) &&
+        t.includes("set_post_seo_meta") ||
+        t.includes("set_post_featured_image") ||
+        t === "set_featured_image" ||
+        t === "update_post_featured_image") &&
       findNumericPostId(action.input) === undefined &&
-      !canResolveActionViaPostLookup(action.type, action.input)
+      !canResolveActionViaPostLookup(action.type, action.input) &&
+      !canResolveActionViaEarlierCreate(plan, actionIndex)
     ) {
       clarification.push(
         `Action "${action.type}" is missing the target post id. Ask which page or post should be updated before execution.`

@@ -29,9 +29,20 @@ type RequestBundleOk = Extract<
   Awaited<ReturnType<SitePilotDesktopApi["getRequestBundle"]>>,
   { ok: true }
 >;
+type ExecutePlanActionOk = Extract<
+  Awaited<ReturnType<SitePilotDesktopApi["executePlanAction"]>>,
+  { ok: true }
+>;
 
-/** When false, dry-run entry points are hidden; execution still supports `dryRun` in code paths. */
-const SHOW_DRY_RUN_UI = false;
+type DryRunPreview = {
+  actionId: string;
+  actionType: string;
+  toolName?: string;
+  requestInput?: Record<string, unknown>;
+  mcpResult: ExecutePlanActionOk["mcpResult"];
+};
+
+const SHOW_DRY_RUN_UI = true;
 const MAX_IMAGE_ATTACHMENTS = 8;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 1280;
@@ -165,6 +176,72 @@ function actionCanResolveViaLookup(
   );
 }
 
+function actionCreatesDraftPost(actionType: string): boolean {
+  const normalized = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+
+  return (
+    normalized === "create_draft_post" ||
+    normalized === "create_draft_content" ||
+    normalized === "create_post_draft" ||
+    normalized === "sitepilot_create_draft_post"
+  );
+}
+
+function actionCanResolveViaPlannedCreate(
+  actionType: string,
+  input: Record<string, unknown>,
+  priorActions: Array<{ type: string }>
+): boolean {
+  const normalized = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+
+  const isPostTargetedWrite =
+    normalized === "update_post" ||
+    normalized === "update_post_fields" ||
+    normalized === "update_post_content" ||
+    normalized === "edit_post_fields" ||
+    normalized === "sitepilot_update_post_fields" ||
+    normalized === "set_post_seo_meta" ||
+    normalized === "sitepilot_set_post_seo_meta";
+
+  if (!isPostTargetedWrite || findNumericPostId(input) !== undefined) {
+    return false;
+  }
+
+  return priorActions.filter((action) => actionCreatesDraftPost(action.type)).length === 1;
+}
+
+function requestCanExecute(status: string): boolean {
+  return (
+    status === "approved" ||
+    status === "partially_completed" ||
+    status === "completed"
+  );
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function extractBeforeAfter(
+  value: unknown
+): { before: Record<string, unknown> | null; after: unknown } {
+  const record = recordValue(value);
+  return {
+    before: recordValue(record?.before),
+    after: record?.after ?? null
+  };
+}
+
 export function ChatPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [threads, setThreads] = useState<ThreadRow[]>([]);
@@ -195,6 +272,7 @@ export function ChatPage(): ReactElement | null {
   const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
     null
   );
+  const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -341,11 +419,18 @@ export function ChatPage(): ReactElement | null {
 
   const executableActions = useMemo(
     () =>
-      bundle?.plan?.proposedActions.filter(
-        (action) =>
+      bundle?.plan?.proposedActions.filter((action, actionIndex, actions) => {
+        const priorActions = actions.slice(0, actionIndex);
+        return (
           actionToMcpToolCall(action.type, action.input, true) !== null ||
-          actionCanResolveViaLookup(action.type, action.input)
-      ) ?? [],
+          actionCanResolveViaLookup(action.type, action.input) ||
+          actionCanResolveViaPlannedCreate(
+            action.type,
+            action.input,
+            priorActions
+          )
+        );
+      }) ?? [],
     [bundle?.plan]
   );
   const canRunPlanDirectly = executableActions.length === 1;
@@ -535,23 +620,30 @@ export function ChatPage(): ReactElement | null {
     if (
       bundle &&
       (bundle.request.status === "awaiting_approval" ||
-        bundle.request.status === "approved" ||
-        bundle.request.status === "executing")
+        bundle.request.status === "approved")
     ) {
-      if (
-        bundle.request.status === "approved" &&
-        /^(execute|run|go|dry[\s-]?run)$/i.test(text)
-      ) {
-        setBusy(false);
-        setLastExecHint(
-          canRunPlanDirectly
-            ? SHOW_DRY_RUN_UI
-              ? "Use the Dry-run plan or Execute plan button above."
-              : "Use the Execute plan button above."
-            : "Use the action buttons in the planned actions list below."
-        );
+      const res = await window.sitePilotDesktop.amendRequest({
+        siteId,
+        threadId: selectedThreadId,
+        requestId: bundle.request.id,
+        text,
+        ...(attachments.length > 0 ? { attachments } : {})
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
         return;
       }
+      setRequestPrompt("");
+      setPendingAttachments([]);
+      setPlanValidationJson(null);
+      setLastExecHint(null);
+      await loadMessages(selectedThreadId);
+      await loadBundle();
+      return;
+    }
+
+    if (bundle && bundle.request.status === "executing") {
       const res = await window.sitePilotDesktop.postChatMessage({
         siteId,
         threadId: selectedThreadId,
@@ -589,6 +681,26 @@ export function ChatPage(): ReactElement | null {
     await loadMessages(selectedThreadId);
     await loadThreads();
   }
+
+  const handleComposerKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        event.key !== "Enter" ||
+        !event.metaKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        busy ||
+        requestPrompt.trim().length === 0
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      void onSubmitPrompt();
+    },
+    [busy, onSubmitPrompt, requestPrompt]
+  );
 
   async function onPickAttachments(
     fileList: FileList | null
@@ -673,6 +785,13 @@ export function ChatPage(): ReactElement | null {
     if (!bundle?.plan || lastRequestId === null) {
       return;
     }
+    const action = bundle.plan.proposedActions.find(
+      (candidate) => candidate.id === actionId
+    );
+    const requestInput =
+      action !== undefined
+        ? actionToMcpToolCall(action.type, action.input, true)?.arguments
+        : undefined;
     setExecBusy(true);
     setErr(null);
     setLastExecHint(null);
@@ -689,6 +808,17 @@ export function ChatPage(): ReactElement | null {
     if (!res.ok) {
       setErr(res.message);
       return;
+    }
+    if (dryRun && action !== undefined) {
+      setDryRunPreview({
+        actionId,
+        actionType: action.type,
+        ...(res.toolName !== undefined ? { toolName: res.toolName } : {}),
+        ...(requestInput !== undefined ? { requestInput } : {}),
+        mcpResult: res.mcpResult
+      });
+    } else if (!dryRun) {
+      setDryRunPreview(null);
     }
     if (res.skipped) {
       setLastExecHint(
@@ -719,6 +849,10 @@ export function ChatPage(): ReactElement | null {
     }
     await onExecuteAction(firstExecutableAction.id, dryRun);
   }
+
+  useEffect(() => {
+    setDryRunPreview(null);
+  }, [selectedThreadId, lastRequestId]);
 
   if (loading) {
     return <p className="muted">Loading workspace…</p>;
@@ -759,23 +893,23 @@ export function ChatPage(): ReactElement | null {
         };
       case "awaiting_approval":
         return {
-          title: "Request waiting for approval",
+          title: "Revise request",
           helper:
-            "This request is waiting on approval. Execution stays blocked until approval, but you can still leave a note here if needed.",
-          placeholder: "Add a note for this request…",
-          actionLabel: "Add note"
+            "Add changes here to revise the request. SitePilot will update it and you can generate a fresh action plan after that.",
+          placeholder: "Describe how the request should change…",
+          actionLabel: "Update request"
         };
       case "approved":
         return {
-          title: "Add note",
+          title: "Revise request",
           helper:
             canRunPlanDirectly
               ? SHOW_DRY_RUN_UI
-                ? "Use the Dry-run plan or Execute plan buttons above. This box is only for optional notes."
-                : "Use the Execute plan button above. This box is only for optional notes."
-              : "Use the action buttons in the plan below. This box is only for optional notes.",
-          placeholder: "Add a note for this request…",
-          actionLabel: "Add note"
+                ? "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
+                : "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
+              : "Add changes here to revise the approved request. SitePilot will update it and you can generate a fresh action plan.",
+          placeholder: "Describe how the approved request should change…",
+          actionLabel: "Update request"
         };
       case "executing":
         return {
@@ -827,12 +961,12 @@ export function ChatPage(): ReactElement | null {
       <article className="panel-card gate-card">
         <h1>Chat disabled</h1>
         <p className="lede">
-          Chat stays off until site configuration is reviewed and activation
-          completes. Finish your site config and confirm it to enable chat for
+          Chat stays off until the discovery check is reviewed and activation
+          completes. Review the latest discovered setup and confirm it to enable chat for
           this site.
         </p>
         <Link className="btn btn-primary" to={`/site/${siteId}/config`}>
-          Go to site configuration
+          Go to discovery check
         </Link>
       </article>
     );
@@ -1109,6 +1243,7 @@ export function ChatPage(): ReactElement | null {
                     value={requestPrompt}
                     placeholder={composerState.placeholder}
                     onFocus={savePendingThreadRename}
+                    onKeyDown={handleComposerKeyDown}
                     onChange={(e) => {
                       setRequestPrompt(e.target.value);
                     }}
@@ -1264,7 +1399,7 @@ export function ChatPage(): ReactElement | null {
                           <h4>Run plan</h4>
                           <p className="muted small-print">
                             {canRunPlanDirectly
-                              ? bundle.request.status === "approved"
+                              ? requestCanExecute(bundle.request.status)
                                 ? "The approved plan is ready to run."
                                 : SHOW_DRY_RUN_UI
                                   ? "You can dry-run this plan now. Execution unlocks after approval."
@@ -1293,7 +1428,7 @@ export function ChatPage(): ReactElement | null {
                               disabled={
                                 execBusy ||
                                 busy ||
-                                bundle.request.status !== "approved"
+                                !requestCanExecute(bundle.request.status)
                               }
                               onClick={() => void onRunPlan(false)}
                             >
@@ -1313,17 +1448,88 @@ export function ChatPage(): ReactElement | null {
                         </code>
                       </p>
                     ) : null}
+                    {dryRunPreview ? (
+                      <div className="chat-bundle-panel">
+                        <div className="chat-plan-runbar">
+                          <div>
+                            <h4>Dry-run Preview</h4>
+                            <p className="muted small-print">
+                              {dryRunPreview.actionType}
+                              {dryRunPreview.toolName
+                                ? ` → ${dryRunPreview.toolName}`
+                                : ""}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-small"
+                            onClick={() => setDryRunPreview(null)}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        {dryRunPreview.requestInput ? (
+                          <>
+                            <h5>Planned MCP request</h5>
+                            <pre className="diag-json">
+                              {JSON.stringify(dryRunPreview.requestInput, null, 2)}
+                            </pre>
+                          </>
+                        ) : null}
+                        <div className="chat-diff-grid">
+                          <div>
+                            <h5>Before</h5>
+                            <pre className="diag-json">
+                              {JSON.stringify(
+                                extractBeforeAfter(dryRunPreview.mcpResult).before,
+                                null,
+                                2
+                              )}
+                            </pre>
+                          </div>
+                          <div>
+                            <h5>After</h5>
+                            <pre className="diag-json">
+                              {JSON.stringify(
+                                extractBeforeAfter(dryRunPreview.mcpResult).after,
+                                null,
+                                2
+                              )}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     {bundle.plan ? (
                       <div className="chat-bundle-panel">
                         <h4>Planned actions</h4>
                         <ul className="chat-action-list">
                           {bundle.plan.proposedActions.map((action) => {
+                            const planActions = bundle.plan?.proposedActions ?? [];
+                            const actionIndex =
+                              planActions.findIndex(
+                                (candidate) => candidate.id === action.id
+                              );
+                            const priorActions =
+                              actionIndex > 0
+                                ? planActions.slice(0, actionIndex)
+                                : [];
                             const spec = actionToMcpToolCall(
                               action.type,
                               action.input,
                               true
                             );
-                            const remote = spec !== null;
+                            const remote =
+                              spec !== null ||
+                              actionCanResolveViaLookup(
+                                action.type,
+                                action.input
+                              ) ||
+                              actionCanResolveViaPlannedCreate(
+                                action.type,
+                                action.input,
+                                priorActions
+                              );
                             return (
                               <li key={action.id} className="chat-action-row">
                                 <div>
@@ -1331,7 +1537,14 @@ export function ChatPage(): ReactElement | null {
                                   {remote ? (
                                     <span className="muted small-print">
                                       {" "}
-                                      → {spec.toolName}
+                                      →{" "}
+                                      {spec?.toolName ??
+                                        (actionCanResolveViaLookup(
+                                          action.type,
+                                          action.input
+                                        )
+                                          ? "target via lookup"
+                                          : "target via planned create")}
                                     </span>
                                   ) : (
                                     <span className="muted small-print">
@@ -1364,7 +1577,7 @@ export function ChatPage(): ReactElement | null {
                                         disabled={
                                           execBusy ||
                                           busy ||
-                                          bundle.request.status !== "approved"
+                                          !requestCanExecute(bundle.request.status)
                                         }
                                         onClick={() =>
                                           void onExecuteAction(action.id, false)
@@ -1379,7 +1592,7 @@ export function ChatPage(): ReactElement | null {
                             );
                           })}
                         </ul>
-                        {bundle.request.status !== "approved" ? (
+                        {!requestCanExecute(bundle.request.status) ? (
                           <p className="muted small-print">
                             Execute stays disabled until the request is approved.
                           </p>

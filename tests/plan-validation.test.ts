@@ -122,4 +122,39 @@ describe("validateActionPlan (T25)", () => {
     });
     expect(outcome.kind).toBe("pass");
   });
+
+  it("passes when SEO metadata targets a post created earlier in the same plan", () => {
+    const plan = actionPlanSchema.parse({
+      ...basePlan,
+      proposedActions: [
+        {
+          id: "act-create",
+          type: "create_draft_post",
+          version: 1,
+          input: { title: "New Post", post_type: "post" },
+          targetEntityRefs: [],
+          permissionRequirement: "edit_posts",
+          riskLevel: "low",
+          dryRunCapable: true,
+          rollbackSupported: true
+        },
+        {
+          id: "act-seo",
+          type: "sitepilot-set-post-seo-meta",
+          version: 1,
+          input: { metaDescription: "wibble" },
+          targetEntityRefs: [],
+          permissionRequirement: "edit_posts",
+          riskLevel: "low",
+          dryRunCapable: false,
+          rollbackSupported: false
+        }
+      ]
+    });
+    const outcome = validateActionPlan(plan, {
+      discoveryCapabilities: ["read", "edit_drafts"],
+      siteConfigPublishRequiresApproval: false
+    });
+    expect(outcome.kind).toBe("pass");
+  });
 });

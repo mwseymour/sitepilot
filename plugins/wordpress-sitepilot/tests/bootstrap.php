@@ -65,6 +65,7 @@ namespace {
 	);
 	$GLOBALS['sitepilot_test_uploads'] = array();
 	$GLOBALS['sitepilot_test_attachment_meta'] = array();
+	$GLOBALS['sitepilot_test_post_meta'] = array();
 
 	function __( string $text, string $domain = '' ): string {
 		unset( $domain );
@@ -165,11 +166,12 @@ namespace {
 	}
 
 	function get_post_meta( int $post_id, string $key, bool $single = true ): string {
-		unset( $post_id, $key, $single );
-		return '';
+		unset( $single );
+		return (string) ( $GLOBALS['sitepilot_test_post_meta'][ $post_id ][ $key ] ?? '' );
 	}
 
 	function update_post_meta( int $post_id, string $key, string $value ): void {
+		$GLOBALS['sitepilot_test_post_meta'][ $post_id ][ $key ] = $value;
 		$GLOBALS['sitepilot_test_attachment_meta'][ $post_id ][ $key ] = $value;
 	}
 

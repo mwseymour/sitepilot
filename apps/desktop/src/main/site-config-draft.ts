@@ -290,6 +290,7 @@ export function buildSiteConfigDraftFromDiscovery(
       },
       seoPolicy: {
         titlePatterns,
+        metaProvider: seo.yoast ? "yoast" : "sitepilot",
         redirectsRequireApproval: true,
         internalLinkingExpectation:
           "Prefer contextual internal links between related posts and pages; avoid orphan content where possible."

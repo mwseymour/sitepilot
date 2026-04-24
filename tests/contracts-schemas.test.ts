@@ -36,6 +36,7 @@ describe("contracts schemas", () => {
         },
         seoPolicy: {
           titlePatterns: ["{Page Title} | Example Site"],
+          metaProvider: "yoast",
           redirectsRequireApproval: true,
           internalLinkingExpectation: "Link to relevant service pages"
         },
@@ -138,6 +139,7 @@ describe("contracts schemas", () => {
     });
 
     expect(parsed.sections.contentModel.thirdPartyBlocks).toEqual([]);
+    expect(parsed.sections.seoPolicy.metaProvider).toBe("sitepilot");
   });
 
   it("accepts a valid action plan payload", () => {

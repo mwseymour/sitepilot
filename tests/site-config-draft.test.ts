@@ -91,6 +91,7 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
       "acf/testimonial",
       "gravityforms/form"
     ]);
+    expect(draft.sections.seoPolicy.metaProvider).toBe("yoast");
     expect(draft.sections.seoPolicy.titlePatterns[0]).toContain("%%");
     expect(draft.sections.toolAccessPolicy.enabledTools).toEqual([
       "sitepilot-site-discovery",
@@ -117,6 +118,7 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
     expect(draft.sections.identity.siteName).toBe("Local Site");
     expect(draft.sections.identity.baseUrl).toBe("https://local.test/");
     expect(draft.sections.structure.publicSections.length).toBeGreaterThan(0);
+    expect(draft.sections.seoPolicy.metaProvider).toBe("sitepilot");
     expect(draft.sections.contentModel.thirdPartyBlocks).toEqual([]);
   });
 });

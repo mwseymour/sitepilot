@@ -75,7 +75,7 @@ function SiteWorkspaceChrome(): ReactElement {
   const links: { to: string; label: string; icon: string }[] = [
     { to: `overview`, label: "Overview", icon: "overview" },
     { to: `chat`, label: "Requests", icon: "requests" },
-    { to: `config`, label: "Site config", icon: "config" },
+    { to: `config`, label: "Discovery check", icon: "config" },
     { to: `approvals`, label: "Approvals", icon: "approvals" },
     { to: `audit`, label: "Audit", icon: "audit" },
     { to: `diagnostics`, label: "Diagnostics", icon: "diagnostics" },

@@ -43,6 +43,22 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("maps sitepilot-upload-media-asset tool ids", () => {
+    const call = actionToMcpToolCall(
+      "sitepilot-upload-media-asset",
+      { fileName: "test.jpeg", mediaType: "image/jpeg" },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-upload-media-asset",
+      arguments: {
+        file_name: "test.jpeg",
+        media_type: "image/jpeg",
+        dry_run: false
+      }
+    });
+  });
+
   it("passes structured blocks through to create_draft_post", () => {
     const call = actionToMcpToolCall(
       "create_draft_post",
@@ -158,6 +174,43 @@ describe("actionToMcpToolCall", () => {
       arguments: {
         post_id: 12,
         dry_run: false,
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Fresh body</p>",
+            innerContent: ["<p>Fresh body</p>"]
+          }
+        ]
+      }
+    });
+  });
+
+  it("passes replace_content through to update_post_fields", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        replace_content: true,
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Fresh body</p>",
+            innerContent: ["<p>Fresh body</p>"]
+          }
+        ]
+      },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        replace_content: true,
         blocks: [
           {
             blockName: "core/paragraph",
@@ -295,6 +348,70 @@ describe("actionToMcpToolCall", () => {
         dry_run: false,
         seo_title: "S",
         seo_description: "D"
+      }
+    });
+  });
+
+  it("maps meta_desc alias for set_post_seo_meta", () => {
+    const call = actionToMcpToolCall(
+      "set_post_seo_meta",
+      { postId: 3, meta_desc: "wibble" },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-set-post-seo-meta",
+      arguments: {
+        post_id: 3,
+        dry_run: false,
+        seo_description: "wibble"
+      }
+    });
+  });
+
+  it("reroutes update_post_fields meta_desc-only input to SEO meta", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      { post_id: 46, meta_desc: "wibble" },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-set-post-seo-meta",
+      arguments: {
+        post_id: 46,
+        dry_run: false,
+        seo_description: "wibble"
+      }
+    });
+  });
+
+  it("maps set_post_featured_image", () => {
+    const call = actionToMcpToolCall(
+      "set_post_featured_image",
+      { post_id: 46, attachment_id: 201 },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-set-post-featured-image",
+      arguments: {
+        post_id: 46,
+        attachment_id: 201,
+        dry_run: false
+      }
+    });
+  });
+
+  it("reroutes seo-meta featured_image-only input to featured image tool", () => {
+    const call = actionToMcpToolCall(
+      "sitepilot-set-post-seo-meta",
+      { post_id: 46, featured_image: "https://example.test/test.jpeg" },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-set-post-featured-image",
+      arguments: {
+        post_id: 46,
+        featured_image_url: "https://example.test/test.jpeg",
+        dry_run: false
       }
     });
   });

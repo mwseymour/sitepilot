@@ -41,7 +41,7 @@ final class Write_Abilities {
 						),
 						'title'     => array( 'type' => 'string', 'minLength' => 1 ),
 						'content'   => array( 'type' => 'string' ),
-						'blocks'    => array( 'type' => 'array' ),
+						'blocks'    => self::parsed_blocks_schema(),
 						'dry_run'   => array( 'type' => 'boolean', 'default' => false ),
 					),
 					'required'             => array( 'title' ),
@@ -92,7 +92,8 @@ final class Write_Abilities {
 						'post_id'   => array( 'type' => 'integer', 'minimum' => 1 ),
 						'title'     => array( 'type' => 'string' ),
 						'content'   => array( 'type' => 'string' ),
-						'blocks'    => array( 'type' => 'array' ),
+						'blocks'    => self::parsed_blocks_schema(),
+						'replace_content' => array( 'type' => 'boolean', 'default' => false ),
 						'excerpt'   => array( 'type' => 'string' ),
 						'dry_run'   => array( 'type' => 'boolean', 'default' => false ),
 					),
@@ -105,6 +106,7 @@ final class Write_Abilities {
 						'ok'      => array( 'type' => 'boolean' ),
 						'dry_run' => array( 'type' => 'boolean' ),
 						'post_id' => array( 'type' => 'integer' ),
+						'meta_provider' => array( 'type' => 'string' ),
 						'before'  => array( 'type' => 'object' ),
 						'after'   => array( 'type' => 'object' ),
 						'error'   => array( 'type' => 'string' ),
@@ -132,7 +134,7 @@ final class Write_Abilities {
 			'sitepilot/set-post-seo-meta',
 			array(
 				'label'               => __( 'Set post SEO meta', 'sitepilot' ),
-				'description'         => __( 'Stores SitePilot SEO title and description in post meta (_sitepilot_seo_*). Respects dry_run previews.', 'sitepilot' ),
+				'description'         => __( 'Stores SEO title and description in SitePilot or provider-specific post meta fields, with dry_run previews.', 'sitepilot' ),
 				'category'            => 'sitepilot',
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -140,6 +142,7 @@ final class Write_Abilities {
 						'post_id'          => array( 'type' => 'integer', 'minimum' => 1 ),
 						'seo_title'        => array( 'type' => 'string', 'maxLength' => 200 ),
 						'seo_description'  => array( 'type' => 'string', 'maxLength' => 320 ),
+						'meta_provider'    => array( 'type' => 'string', 'enum' => array( 'sitepilot', 'yoast' ) ),
 						'dry_run'          => array( 'type' => 'boolean', 'default' => false ),
 					),
 					'required'             => array( 'post_id' ),
@@ -159,6 +162,53 @@ final class Write_Abilities {
 				),
 				'execute_callback'    => static function ( array $input ) {
 					return self::exec_set_post_seo_meta( $input );
+				},
+				'permission_callback' => static function ( $input = array() ) {
+					unset( $input );
+					return self::trusted_or_can_edit_posts();
+				},
+				'meta'                => array(
+					'annotations' => array(
+						'readonly'    => false,
+						'destructive' => false,
+						'idempotent'  => false,
+					),
+				),
+			)
+		);
+
+		wp_register_ability(
+			'sitepilot/set-post-featured-image',
+			array(
+				'label'               => __( 'Set post featured image', 'sitepilot' ),
+				'description'         => __( 'Sets the featured image on a post using an attachment id, with dry_run previews.', 'sitepilot' ),
+				'category'            => 'sitepilot',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'post_id'            => array( 'type' => 'integer', 'minimum' => 1 ),
+						'attachment_id'      => array( 'type' => 'integer', 'minimum' => 1 ),
+						'featured_image_url' => array( 'type' => 'string' ),
+						'dry_run'            => array( 'type' => 'boolean', 'default' => false ),
+					),
+					'required'             => array( 'post_id' ),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'ok'            => array( 'type' => 'boolean' ),
+						'dry_run'       => array( 'type' => 'boolean' ),
+						'post_id'       => array( 'type' => 'integer' ),
+						'attachment_id' => array( 'type' => 'integer' ),
+						'before'        => array( 'type' => 'object' ),
+						'after'         => array( 'type' => 'object' ),
+						'error'         => array( 'type' => 'string' ),
+					),
+					'required'   => array( 'ok', 'dry_run', 'post_id' ),
+				),
+				'execute_callback'    => static function ( array $input ) {
+					return self::exec_set_post_featured_image( $input );
 				},
 				'permission_callback' => static function ( $input = array() ) {
 					unset( $input );
@@ -222,6 +272,60 @@ final class Write_Abilities {
 					),
 				),
 			)
+		);
+	}
+
+	/**
+	 * Returns a permissive JSON schema for parsed Gutenberg blocks.
+	 *
+	 * The schema stays shallow on recursive nodes to remain compatible with the
+	 * REST validator while still typing block attrs as values rather than schemas.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function parsed_blocks_schema(): array {
+		return array(
+			'type'  => 'array',
+			'items' => self::parsed_block_schema(),
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function parsed_block_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'blockName'    => array( 'type' => 'string' ),
+				'attrs'        => array(
+					'type'                 => 'object',
+					'additionalProperties' => self::json_value_schema(),
+					'default'              => array(),
+				),
+				'innerBlocks'  => array(
+					'type'  => 'array',
+					'items' => array( 'type' => 'object' ),
+				),
+				'innerHTML'    => array( 'type' => 'string' ),
+				'innerContent' => array(
+					'type'  => 'array',
+					'items' => array(
+						'type' => array( 'string', 'null' ),
+					),
+				),
+			),
+			'required'             => array( 'blockName', 'attrs', 'innerBlocks', 'innerHTML', 'innerContent' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function json_value_schema(): array {
+		return array(
+			'type' => array( 'string', 'number', 'integer', 'boolean', 'array', 'object', 'null' ),
 		);
 	}
 
@@ -1428,12 +1532,190 @@ final class Write_Abilities {
 			return array(
 				'ok'      => true,
 				'content' => serialize_blocks( $blocks ),
+				'blocks'  => $blocks,
 			);
 		}
 
 		return array(
 			'ok'      => true,
 			'content' => isset( $input['content'] ) ? wp_kses_post( (string) $input['content'] ) : '',
+		);
+	}
+
+	/**
+	 * @param string $content Serialized post content.
+	 * @return array<string, mixed>
+	 */
+	private static function split_top_level_serialized_segments( string $content ): array {
+		$segments = array();
+		$cursor   = 0;
+		$length   = strlen( $content );
+		$pattern  = '/<!--\s*(\/?)wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)(?:\s+([\s\S]*?))?\s*(\/)?-->/i';
+
+		while ( preg_match( $pattern, $content, $match, PREG_OFFSET_CAPTURE, $cursor ) ) {
+			$is_closing = isset( $match[1][0] ) && '/' === $match[1][0];
+			$start      = (int) $match[0][1];
+			if ( $is_closing ) {
+				return array(
+					'ok'    => false,
+					'error' => 'unexpected closing block delimiter while scanning existing post_content',
+				);
+			}
+
+			if ( $start > $cursor ) {
+				$segments[] = array(
+					'type' => 'raw',
+					'raw'  => substr( $content, $cursor, $start - $cursor ),
+				);
+			}
+
+			$block_name = self::normalize_block_name( (string) $match[2][0] );
+			$end        = self::find_serialized_block_end( $content, $start );
+			if ( null === $end ) {
+				return array(
+					'ok'    => false,
+					'error' => 'unbalanced block delimiters in existing post_content',
+				);
+			}
+
+			$segments[] = array(
+				'type'      => 'block',
+				'blockName' => $block_name,
+				'raw'       => substr( $content, $start, $end - $start ),
+			);
+			$cursor = $end;
+		}
+
+		if ( $cursor < $length ) {
+			$segments[] = array(
+				'type' => 'raw',
+				'raw'  => substr( $content, $cursor ),
+			);
+		}
+
+		return array(
+			'ok'       => true,
+			'segments' => $segments,
+		);
+	}
+
+	/**
+	 * @param string $content Serialized post content.
+	 * @param int    $start_offset Offset of the opening delimiter.
+	 * @return int|null
+	 */
+	private static function find_serialized_block_end( string $content, int $start_offset ): ?int {
+		$pattern = '/<!--\s*(\/?)wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)(?:\s+([\s\S]*?))?\s*(\/)?-->/i';
+		$offset  = $start_offset;
+		$stack   = array();
+
+		while ( preg_match( $pattern, $content, $match, PREG_OFFSET_CAPTURE, $offset ) ) {
+			$is_closing   = isset( $match[1][0] ) && '/' === $match[1][0];
+			$raw_name     = (string) $match[2][0];
+			$full_match   = (string) $match[0][0];
+			$match_offset = (int) $match[0][1];
+			$match_end    = $match_offset + strlen( $full_match );
+			$self_closing = isset( $match[4][0] ) && '/' === $match[4][0];
+
+			if ( $match_offset < $start_offset ) {
+				$offset = $match_end;
+				continue;
+			}
+
+			if ( $is_closing ) {
+				if ( empty( $stack ) ) {
+					return null;
+				}
+				$open = array_pop( $stack );
+				if ( $open !== $raw_name ) {
+					return null;
+				}
+				if ( empty( $stack ) ) {
+					return $match_end;
+				}
+				$offset = $match_end;
+				continue;
+			}
+
+			if ( $self_closing ) {
+				if ( empty( $stack ) ) {
+					return $match_end;
+				}
+				$offset = $match_end;
+				continue;
+			}
+
+			$stack[] = $raw_name;
+			$offset  = $match_end;
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param string                          $existing_content Existing serialized post content.
+	 * @param array<int, array<string, mixed>> $incoming_blocks Incoming parsed blocks.
+	 * @return array<string, mixed>
+	 */
+	private static function merge_blocks_into_existing_content( string $existing_content, array $incoming_blocks ): array {
+		if ( '' === trim( $existing_content ) ) {
+			return array(
+				'ok'      => true,
+				'content' => serialize_blocks( $incoming_blocks ),
+			);
+		}
+
+		$split = self::split_top_level_serialized_segments( $existing_content );
+		if ( ! $split['ok'] ) {
+			return array(
+				'ok'    => false,
+				'error' => 'merge_blocks_failed: ' . $split['error'],
+			);
+		}
+
+		$segments = $split['segments'];
+		$used     = array();
+
+		foreach ( $incoming_blocks as $incoming_block ) {
+			$incoming_name = isset( $incoming_block['blockName'] ) ? self::normalize_block_name( (string) $incoming_block['blockName'] ) : '';
+			$matches       = array();
+
+			foreach ( $segments as $index => $segment ) {
+				if ( ! is_array( $segment ) || 'block' !== ( $segment['type'] ?? '' ) ) {
+					continue;
+				}
+				if ( $incoming_name !== ( $segment['blockName'] ?? '' ) ) {
+					continue;
+				}
+				if ( in_array( $index, $used, true ) ) {
+					continue;
+				}
+				$matches[] = $index;
+			}
+
+			if ( 1 !== count( $matches ) ) {
+				return array(
+					'ok'    => false,
+					'error' => 'merge_blocks_failed: could not uniquely match existing top-level block "' . $incoming_name . '" for update',
+				);
+			}
+
+			$match_index                    = $matches[0];
+			$segments[ $match_index ]['raw'] = serialize_blocks( array( $incoming_block ) );
+			$used[]                         = $match_index;
+		}
+
+		return array(
+			'ok'      => true,
+			'content' => implode(
+				'',
+				array_map(
+					static function ( array $segment ): string {
+						return isset( $segment['raw'] ) ? (string) $segment['raw'] : '';
+					},
+					$segments
+				)
+			),
 		);
 	}
 
@@ -1791,8 +2073,9 @@ final class Write_Abilities {
 	 * @return array<string, mixed>
 	 */
 	private static function exec_update_post_fields( array $input ): array {
-		$dry_run = ! empty( $input['dry_run'] );
-		$post_id = absint( $input['post_id'] );
+		$dry_run         = ! empty( $input['dry_run'] );
+		$replace_content = ! empty( $input['replace_content'] );
+		$post_id         = absint( $input['post_id'] );
 		if ( $post_id < 1 ) {
 			return array(
 				'ok'      => false,
@@ -1841,7 +2124,20 @@ final class Write_Abilities {
 					'error'   => $content['error'],
 				);
 			}
-			$after['post_content'] = $content['content'];
+			if ( array_key_exists( 'blocks', $input ) && ! $replace_content && isset( $content['blocks'] ) && is_array( $content['blocks'] ) ) {
+				$merged = self::merge_blocks_into_existing_content( $before['post_content'], $content['blocks'] );
+				if ( ! $merged['ok'] ) {
+					return array(
+						'ok'      => false,
+						'dry_run' => $dry_run,
+						'post_id' => $post_id,
+						'error'   => $merged['error'],
+					);
+				}
+				$after['post_content'] = $merged['content'];
+			} else {
+				$after['post_content'] = $content['content'];
+			}
 		}
 		if ( array_key_exists( 'excerpt', $input ) ) {
 			$after['post_excerpt'] = sanitize_textarea_field( (string) $input['excerpt'] );
@@ -1926,8 +2222,9 @@ final class Write_Abilities {
 			);
 		}
 
-		$key_title = '_sitepilot_seo_title';
-		$key_desc  = '_sitepilot_seo_description';
+		$provider  = self::normalize_seo_meta_provider( $input['meta_provider'] ?? '' );
+		$key_title = 'yoast' === $provider ? '_yoast_wpseo_title' : '_sitepilot_seo_title';
+		$key_desc  = 'yoast' === $provider ? '_yoast_wpseo_metadesc' : '_sitepilot_seo_description';
 
 		$before = array(
 			$key_title => (string) get_post_meta( $post_id, $key_title, true ),
@@ -1953,6 +2250,7 @@ final class Write_Abilities {
 				'ok'      => true,
 				'dry_run' => true,
 				'post_id' => $post_id,
+				'meta_provider' => $provider,
 				'before'  => $before,
 				'after'   => $after,
 			);
@@ -1969,11 +2267,104 @@ final class Write_Abilities {
 			'ok'      => true,
 			'dry_run' => false,
 			'post_id' => $post_id,
+			'meta_provider' => $provider,
 			'before'  => $before,
 			'after'   => array(
 				$key_title => (string) get_post_meta( $post_id, $key_title, true ),
 				$key_desc  => (string) get_post_meta( $post_id, $key_desc, true ),
 			),
 		);
+	}
+
+	/**
+	 * @param array<string, mixed> $input Input.
+	 * @return array<string, mixed>
+	 */
+	private static function exec_set_post_featured_image( array $input ): array {
+		$dry_run       = ! empty( $input['dry_run'] );
+		$post_id       = absint( $input['post_id'] );
+		$attachment_id = absint( $input['attachment_id'] ?? 0 );
+		if ( $post_id < 1 ) {
+			return array(
+				'ok'      => false,
+				'dry_run' => $dry_run,
+				'post_id' => 0,
+				'error'   => 'invalid_post_id',
+			);
+		}
+
+		$post = get_post( $post_id );
+		if ( ! $post instanceof \WP_Post ) {
+			return array(
+				'ok'      => false,
+				'dry_run' => $dry_run,
+				'post_id' => $post_id,
+				'error'   => 'post_not_found',
+			);
+		}
+
+		if ( ! self::trusted_or_can_edit_post( $post_id ) ) {
+			return array(
+				'ok'      => false,
+				'dry_run' => $dry_run,
+				'post_id' => $post_id,
+				'error'   => 'insufficient_capability',
+			);
+		}
+
+		if ( $attachment_id < 1 ) {
+			return array(
+				'ok'      => false,
+				'dry_run' => $dry_run,
+				'post_id' => $post_id,
+				'error'   => 'missing_attachment_id',
+			);
+		}
+
+		$attachment = get_post( $attachment_id );
+		if ( ! $attachment instanceof \WP_Post ) {
+			return array(
+				'ok'            => false,
+				'dry_run'       => $dry_run,
+				'post_id'       => $post_id,
+				'attachment_id' => $attachment_id,
+				'error'         => 'attachment_not_found',
+			);
+		}
+
+		$before = array(
+			'_thumbnail_id' => (string) get_post_meta( $post_id, '_thumbnail_id', true ),
+		);
+		$after = array(
+			'_thumbnail_id' => (string) $attachment_id,
+		);
+
+		if ( $dry_run ) {
+			return array(
+				'ok'            => true,
+				'dry_run'       => true,
+				'post_id'       => $post_id,
+				'attachment_id' => $attachment_id,
+				'before'        => $before,
+				'after'         => $after,
+			);
+		}
+
+		update_post_meta( $post_id, '_thumbnail_id', (string) $attachment_id );
+
+		return array(
+			'ok'            => true,
+			'dry_run'       => false,
+			'post_id'       => $post_id,
+			'attachment_id' => $attachment_id,
+			'before'        => $before,
+			'after'         => array(
+				'_thumbnail_id' => (string) get_post_meta( $post_id, '_thumbnail_id', true ),
+			),
+		);
+	}
+
+	private static function normalize_seo_meta_provider( $provider ): string {
+		return 'yoast' === sanitize_key( (string) $provider ) ? 'yoast' : 'sitepilot';
 	}
 }

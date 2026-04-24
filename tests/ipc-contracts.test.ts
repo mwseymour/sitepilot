@@ -123,7 +123,10 @@ describe("ipc contracts", () => {
           activationStatus: "config_required"
         },
         siteConfig: null,
-        discoveryRevision: null
+        discoveryRevision: null,
+        latestDiscoverySnapshotId: null,
+        siteConfigGeneratedFromDiscoverySnapshotId: null,
+        discoveryReviewRequired: false
       }),
       saveSiteConfig: async () => ({
         ok: false,

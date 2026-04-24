@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { PlannerContext } from "@sitepilot/contracts";
+import {
+  SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES,
+  type PlannerContext
+} from "@sitepilot/contracts";
 import type {
   ChatModelClient,
   ChatMessage
@@ -46,6 +49,31 @@ function makeClient(
       };
     }
   };
+}
+
+function collectBlockNames(blocks: unknown[]): string[] {
+  const names = new Set<string>();
+
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (typeof record.blockName === "string") {
+      names.add(record.blockName);
+    }
+    if (Array.isArray(record.innerBlocks)) {
+      for (const innerBlock of record.innerBlocks) {
+        visit(innerBlock);
+      }
+    }
+  };
+
+  for (const block of blocks) {
+    visit(block);
+  }
+
+  return [...names];
 }
 
 describe("buildLlmActionPlan", () => {
@@ -1101,6 +1129,143 @@ describe("buildLlmActionPlan", () => {
     );
     expect(systemPrompt).toContain(
       'never use comment prefixes such as "wp:columns" in parsed blockName'
+    );
+  });
+
+  it("instructs the model to include every supported block for explicit all-block requests", async () => {
+    let systemPrompt = "";
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add every executable block",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 50,
+              blocks: []
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      }),
+      (messages) => {
+        systemPrompt = messages[0]?.content ?? "";
+      }
+    );
+
+    await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Add one of every executable block you can to post 50."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(systemPrompt).toContain(
+      "The operator explicitly asked for one of every executable/supported block."
+    );
+    expect(systemPrompt).toContain(
+      "counting nested child blocks such as core/button inside core/buttons"
+    );
+  });
+
+  it("replaces partial parsed blocks with a complete supported block demo for explicit all-block requests", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add every executable block",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 50,
+              blocks: [
+                {
+                  blockName: "core/heading",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<h2>Sample Heading</h2>",
+                  innerContent: ["<h2>Sample Heading</h2>"]
+                },
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Sample paragraph.</p>",
+                  innerContent: ["<p>Sample paragraph.</p>"]
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Add one of every executable block you can to post 50."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestAttachments: [
+        {
+          fileName: "Totally-Communications-team.jpg",
+          mediaType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as unknown[];
+    const blockNames = collectBlockNames(blocks);
+
+    for (const supportedBlockName of SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES) {
+      expect(blockNames).toContain(supportedBlockName);
+    }
+
+    expect(
+      result.plan.validationWarnings.some((warning) =>
+        warning.includes(
+          "replaced the partial block set with a complete executable-block demo"
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(blocks)).toContain(
+      "Totally-Communications-team.jpg"
     );
   });
 });

@@ -378,7 +378,7 @@ export function SiteSettingsPage(): ReactElement {
         <h1>Site settings</h1>
         <p className="lede">Activate the site to manage trust and exports.</p>
         <Link className="btn btn-primary" to={`/site/${siteId}/config`}>
-          Site configuration
+          Discovery check
         </Link>
       </article>
     );

@@ -40,6 +40,7 @@ const siteConfigSectionsSchema = z.object({
   }),
   seoPolicy: z.object({
     titlePatterns: z.array(z.string().min(1)),
+    metaProvider: z.enum(["sitepilot", "yoast"]).default("sitepilot"),
     redirectsRequireApproval: z.boolean(),
     internalLinkingExpectation: z.string().min(1)
   }),
