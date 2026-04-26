@@ -156,6 +156,21 @@ function pickObject(
     : undefined;
 }
 
+function pickNumberFrom(
+  inputs: Record<string, unknown>[],
+  ...keys: string[]
+): number | undefined {
+  for (const input of inputs) {
+    for (const key of keys) {
+      const value = input[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -221,20 +236,31 @@ function headingTagName(attrs: Record<string, unknown>): string {
   return `h${normalized}`;
 }
 
+function normalizeHeadingHtml(
+  html: string,
+  attrs: Record<string, unknown>
+): string {
+  const tagName = headingTagName(attrs);
+  const text = extractTextContent(html);
+  return `<${tagName} class="wp-block-heading">${escapeHtml(text)}</${tagName}>`;
+}
+
 function normalizeTextChunk(
   chunk: string,
   blockName: string,
   attrs: Record<string, unknown> = {}
 ): string {
   if (/<[a-z][\s\S]*>/i.test(chunk)) {
+    if (blockName === "core/heading") {
+      return normalizeHeadingHtml(chunk, attrs);
+    }
     return chunk;
   }
   if (blockName === "core/paragraph") {
     return `<p>${escapeHtml(chunk)}</p>`;
   }
   if (blockName === "core/heading") {
-    const tagName = headingTagName(attrs);
-    return `<${tagName}>${escapeHtml(chunk)}</${tagName}>`;
+    return normalizeHeadingHtml(chunk, attrs);
   }
   return escapeHtml(chunk);
 }
@@ -1513,6 +1539,1128 @@ function uploadLikeImageUrl(fileName: string): string {
   return `https://example.test/wp-content/uploads/${encodeURIComponent(fileName)}`;
 }
 
+function requestMentionsInlineImagePlacement(requestText: string): boolean {
+  if (
+    /\b(featured image|thumbnail|post thumbnail|set as featured|set as thumbnail)\b/i.test(
+      requestText
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    /\b(between|after|before)\b[\s\S]{0,40}\b(?:paragraph|para|paras|paragraphs)\b/i.test(requestText) ||
+    /\b(before|after)\b[\s\S]{0,30}\b(?:the\s+)?(?:heading|image|photo|picture|button|quote|table|details|separator|spacer|list)\b/i.test(
+      requestText
+    ) ||
+    /\b(at|to|in)\s+the\s+(end|top|start|beginning)\b[\s\S]{0,20}\b(content|body|post|article)\b/i.test(
+      requestText
+    ) ||
+    /\b(end|top|start|beginning)\s+of\s+the\s+(content|content area|body|post|article)\b/i.test(
+      requestText
+    ) ||
+    /\b(add|insert|place)\b[\s\S]{0,30}\b(image|photo|picture)\b[\s\S]{0,30}\b(in|inside|within)\b[\s\S]{0,20}\b(content|content area|body|post|article)\b/i.test(
+      requestText
+    )
+  );
+}
+
+type InlineImagePlacement =
+  | { kind: "after_paragraph"; afterParagraph: number }
+  | {
+      kind: "relative_block";
+      blockName: string;
+      position: "before" | "after";
+      fromEnd?: boolean;
+    }
+  | { kind: "start" }
+  | { kind: "end" };
+
+function requestMentionsContentInsertionPlacement(requestText: string): boolean {
+  return (
+    /\b(between|after|before)\b[\s\S]{0,40}\b(?:paragraph|para|paras|paragraphs)\b/i.test(
+      requestText
+    ) ||
+    /\b(before|after)\b[\s\S]{0,30}\b(?:the\s+)?(?:heading|image|photo|picture|button|quote|table|details|separator|spacer|list)\b/i.test(
+      requestText
+    ) ||
+    /\badd\b[\s\S]{0,40}\b(at the end|at the top|at the start|at the beginning)\b/i.test(
+      requestText
+    ) ||
+    /\b(at|to|in)\s+the\s+(end|top|start|beginning)\b[\s\S]{0,20}\b(content|body|post|article)\b/i.test(
+      requestText
+    ) ||
+    /\b(end|top|start|beginning)\s+of\s+the\s+(content|content area|body|post|article)\b/i.test(
+      requestText
+    )
+  );
+}
+
+function extractInlineImagePlacement(
+  requestText: string
+): InlineImagePlacement | undefined {
+  const betweenMatch = requestText.match(
+    /\bbetween\s+(?:paragraph|para|paras|paragraphs)\s+(\d+)\s+and\s+(\d+)\b/i
+  );
+  if (betweenMatch) {
+    const left = Number.parseInt(betweenMatch[1] ?? "", 10);
+    const right = Number.parseInt(betweenMatch[2] ?? "", 10);
+    if (Number.isFinite(left) && Number.isFinite(right) && right === left + 1) {
+      return { kind: "after_paragraph", afterParagraph: left };
+    }
+  }
+
+  const afterMatch = requestText.match(
+    /\bafter\s+(?:paragraph|para|paras|paragraphs)\s+(\d+)\b/i
+  );
+  if (afterMatch) {
+    const value = Number.parseInt(afterMatch[1] ?? "", 10);
+    if (Number.isFinite(value) && value >= 1) {
+      return { kind: "after_paragraph", afterParagraph: value };
+    }
+  }
+
+  const beforeMatch = requestText.match(
+    /\bbefore\s+(?:paragraph|para|paras|paragraphs)\s+(\d+)\b/i
+  );
+  if (beforeMatch) {
+    const value = Number.parseInt(beforeMatch[1] ?? "", 10);
+    if (Number.isFinite(value) && value >= 2) {
+      return { kind: "after_paragraph", afterParagraph: value - 1 };
+    }
+    if (value === 1) {
+      return { kind: "start" };
+    }
+  }
+
+  if (
+    /\b(at|to|in)\s+the\s+(end)\b[\s\S]{0,20}\b(content|body|post|article)\b/i.test(
+      requestText
+    ) ||
+    /\bend\s+of\s+the\s+(content|content area|body|post|article)\b/i.test(
+      requestText
+    )
+  ) {
+    return { kind: "end" };
+  }
+
+  if (
+    /\b(at|to|in)\s+the\s+(top|start|beginning)\b[\s\S]{0,20}\b(content|body|post|article)\b/i.test(
+      requestText
+    ) ||
+    /\b(top|start|beginning)\s+of\s+the\s+(content|content area|body|post|article)\b/i.test(
+      requestText
+    )
+  ) {
+    return { kind: "start" };
+  }
+
+  const relativeBlockMatch = requestText.match(
+    /\b(before|after)\b[\s\S]{0,30}\b(?:the\s+)?(?:(first|last|previous|newly added|just added|recently added)\s+)?(heading|image|photo|picture|button|quote|table|details|separator|spacer|list)\b(?:[\s\S]{0,20}\b(just added|newly added|recently added|last|previous)\b)?/i
+  );
+  if (relativeBlockMatch) {
+    const position = (relativeBlockMatch[1] ?? "").toLowerCase();
+    const ordinalHint = (
+      relativeBlockMatch[2] ?? relativeBlockMatch[4] ?? ""
+    ).toLowerCase();
+    const noun = (relativeBlockMatch[3] ?? "").toLowerCase();
+    const blockNameMap: Record<string, string> = {
+      heading: "core/heading",
+      image: "core/image",
+      photo: "core/image",
+      picture: "core/image",
+      button: "core/button",
+      quote: "core/quote",
+      table: "core/table",
+      details: "core/details",
+      separator: "core/separator",
+      spacer: "core/spacer",
+      list: "core/list"
+    };
+    const blockName = blockNameMap[noun];
+    if (
+      (position === "before" || position === "after") &&
+      typeof blockName === "string"
+    ) {
+      return {
+        kind: "relative_block",
+        blockName,
+        position,
+        fromEnd:
+          ordinalHint === "last" ||
+          ordinalHint === "previous" ||
+          ordinalHint === "newly added" ||
+          ordinalHint === "just added" ||
+          ordinalHint === "recently added"
+      };
+    }
+  }
+
+  return { kind: "end" };
+}
+
+function attachmentFileNameToAltText(fileName: string): string {
+  const withoutExtension = fileName.replace(/\.[^.]+$/, "");
+  const normalized = withoutExtension
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.length > 0 ? normalized : "Image";
+}
+
+function requestAsksForHeading(requestText: string): boolean {
+  return /\bheading\b/i.test(requestText);
+}
+
+function requestAsksToAddHeading(requestText: string): boolean {
+  return /\badd\b[\s\S]{0,20}\bheading\b/i.test(requestText);
+}
+
+function requestAsksForParagraph(requestText: string): boolean {
+  return /\bparagraph\b/i.test(requestText);
+}
+
+function requestAsksToAddParagraph(requestText: string): boolean {
+  return /\badd\b[\s\S]{0,20}\bparagraph\b/i.test(requestText);
+}
+
+function requestAsksForLink(requestText: string): boolean {
+  return /\b(link|href)\b/i.test(requestText);
+}
+
+function requestAsksForImage(requestText: string): boolean {
+  return /\b(image|photo|picture)\b/i.test(requestText);
+}
+
+const REQUESTED_INSERTED_BLOCK_TYPE_PATTERNS: Array<[string, RegExp]> = [
+  ["core/heading", /\bheading\b/i],
+  ["core/paragraph", /\bparagraph\b/i],
+  ["core/image", /\b(image|photo|picture)\b/i],
+  ["core/button", /\bbutton\b/i],
+  ["core/buttons", /\bbuttons\b/i],
+  ["core/quote", /\bquote\b/i],
+  ["core/pullquote", /\bpullquote\b/i],
+  ["core/table", /\btable\b/i],
+  ["core/details", /\bdetails\b/i],
+  ["core/separator", /\bseparator\b/i],
+  ["core/spacer", /\bspacer\b/i],
+  ["core/list", /\blist\b/i],
+  ["core/file", /\bfile\b/i],
+  ["core/video", /\bvideo\b/i],
+  ["core/code", /\bcode\b/i],
+  ["core/preformatted", /\bpreformatted\b/i],
+  ["core/html", /\bhtml\b/i],
+  ["core/shortcode", /\bshortcode\b/i],
+  ["core/verse", /\bverse\b/i],
+  ["core/group", /\bgroup\b/i],
+  ["core/columns", /\bcolumns?\b/i],
+  ["core/media-text", /\bmedia[-\s]?text\b/i]
+];
+
+function insertionTargetPhrase(requestText: string): string {
+  const match = requestText.match(
+    /\b(?:add|insert|place|put|append|prepend)\b([\s\S]{0,120})/i
+  );
+  if (!match) {
+    return "";
+  }
+
+  const tail = match[1] ?? "";
+  const locatorIndex = tail.search(
+    /\b(?:after|before|between|at|into|in)\b/i
+  );
+  return (locatorIndex >= 0 ? tail.slice(0, locatorIndex) : tail).trim();
+}
+
+function requestedInsertedBlockNamesForPlacement(requestText: string): string[] {
+  const names = new Set<string>();
+  const targetPhrase = insertionTargetPhrase(requestText);
+  const source = targetPhrase.length > 0 ? targetPhrase : requestText;
+  for (const [blockName, pattern] of REQUESTED_INSERTED_BLOCK_TYPE_PATTERNS) {
+    if (pattern.test(source)) {
+      names.add(blockName);
+    }
+  }
+  return [...names];
+}
+
+function parseMarkdownImageBlock(markdown: string): Record<string, unknown> | null {
+  const match = markdown.match(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"([^\"]*)\")?\)/i);
+  if (!match) {
+    return null;
+  }
+
+  const alt = (match[1] ?? "").trim() || "Image";
+  const url = (match[2] ?? "").trim();
+  if (url.length === 0) {
+    return null;
+  }
+
+  const html = `<figure class="wp-block-image"><img src="${escapeHtml(
+    url
+  )}" alt="${escapeHtml(alt)}"/></figure>`;
+
+  return {
+    blockName: "core/image",
+    attrs: {
+      id: 0,
+      url,
+      alt
+    },
+    innerBlocks: [],
+    innerHTML: html,
+    innerContent: [html]
+  };
+}
+
+function parseImageBlockFromParagraphLikeHtml(
+  innerHTML: string
+): Record<string, unknown> | null {
+  const normalized = innerHTML
+    .replace(/^<p>/i, "")
+    .replace(/<\/p>$/i, "")
+    .trim();
+  return parseMarkdownImageBlock(normalized);
+}
+
+function parseSingleParagraphBlockFromContent(
+  content: string
+): Record<string, unknown> | null {
+  const trimmed = content.trim();
+  const serializedMatch = trimmed.match(
+    /^<!--\s*wp:paragraph(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:paragraph\s*-->$/i
+  );
+  if (serializedMatch) {
+    let attrs: Record<string, unknown> = {};
+    if (serializedMatch[1]) {
+      try {
+        const parsed = JSON.parse(serializedMatch[1]) as unknown;
+        attrs = objectValue(parsed);
+      } catch {
+        attrs = {};
+      }
+    }
+    const innerHTML = serializedMatch[2]?.trim() ?? "";
+    return {
+      blockName: "core/paragraph",
+      attrs,
+      innerBlocks: [],
+      innerHTML,
+      innerContent: innerHTML.length > 0 ? [innerHTML] : []
+    };
+  }
+
+  if (/<a\b/i.test(trimmed) || /<p\b/i.test(trimmed)) {
+    const innerHTML = /<p\b/i.test(trimmed) ? trimmed : `<p>${trimmed}</p>`;
+    return {
+      blockName: "core/paragraph",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML,
+      innerContent: [innerHTML]
+    };
+  }
+
+  return null;
+}
+
+function decodeMinimalHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&");
+}
+
+function extractSerializedParagraphBlocks(
+  content: string
+): Record<string, unknown>[] {
+  const paragraphBlocks: Record<string, unknown>[] = [];
+  const pattern =
+    /<!--\s*wp:paragraph(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:paragraph\s*-->/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    let attrs: Record<string, unknown> = {};
+    if (typeof match[1] === "string" && match[1].trim().length > 0) {
+      try {
+        const parsed = JSON.parse(match[1]) as unknown;
+        attrs = objectValue(parsed);
+      } catch {
+        attrs = {};
+      }
+    }
+    const innerHTML = match[2]?.trim() ?? "";
+    paragraphBlocks.push({
+      blockName: "core/paragraph",
+      attrs,
+      innerBlocks: [],
+      innerHTML,
+      innerContent: innerHTML.length > 0 ? [innerHTML] : []
+    });
+  }
+
+  return paragraphBlocks;
+}
+
+function extractSerializedBlocksByBlockNames(
+  content: string,
+  blockNames: string[]
+): Record<string, unknown>[] {
+  const recovered: Record<string, unknown>[] = [];
+
+  for (const blockName of blockNames) {
+    const normalizedBlockName = normalizeBlockName(blockName);
+    if (!normalizedBlockName.startsWith("core/")) {
+      continue;
+    }
+
+    const rawName = normalizedBlockName.slice("core/".length).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pairedPattern = new RegExp(
+      `<!--\\s*wp:${rawName}(?:\\s+(\\{[\\s\\S]*?\\}))?\\s*-->([\\s\\S]*?)<!--\\s*\\/wp:${rawName}\\s*-->`,
+      "gi"
+    );
+    let match: RegExpExecArray | null;
+    while ((match = pairedPattern.exec(content)) !== null) {
+      let attrs: Record<string, unknown> = {};
+      if (typeof match[1] === "string" && match[1].trim().length > 0) {
+        try {
+          attrs = objectValue(JSON.parse(match[1]) as unknown);
+        } catch {
+          attrs = {};
+        }
+      }
+      const innerHTML = match[2]?.trim() ?? "";
+      recovered.push({
+        blockName: normalizedBlockName,
+        attrs,
+        innerBlocks: [],
+        innerHTML,
+        innerContent: innerHTML.length > 0 ? [innerHTML] : []
+      });
+    }
+
+    const selfClosingPattern = new RegExp(
+      `<!--\\s*wp:${rawName}(?:\\s+(\\{[\\s\\S]*?\\}))?\\s*\\/-->`,
+      "gi"
+    );
+    while ((match = selfClosingPattern.exec(content)) !== null) {
+      let attrs: Record<string, unknown> = {};
+      if (typeof match[1] === "string" && match[1].trim().length > 0) {
+        try {
+          attrs = objectValue(JSON.parse(match[1]) as unknown);
+        } catch {
+          attrs = {};
+        }
+      }
+      recovered.push({
+        blockName: normalizedBlockName,
+        attrs,
+        innerBlocks: [],
+        innerHTML: "",
+        innerContent: []
+      });
+    }
+  }
+
+  return recovered;
+}
+
+function buildInlineImageBlockForAttachment(
+  attachment: ImageAttachmentPayload
+): Record<string, unknown> {
+  const url = uploadLikeImageUrl(attachment.fileName);
+  const alt = attachmentFileNameToAltText(attachment.fileName);
+  const html = `<figure class="wp-block-image"><img src="${escapeHtml(
+    url
+  )}" alt="${escapeHtml(alt)}"/></figure>`;
+  return {
+    blockName: "core/image",
+    attrs: {
+      id: 0,
+      url,
+      alt
+    },
+    innerBlocks: [],
+    innerHTML: html,
+    innerContent: [html]
+  };
+}
+
+function collectParsedBlockNamesFromUnknown(blocks: unknown[]): string[] {
+  const names = new Set<string>();
+
+  const visit = (value: unknown): void => {
+    const record = objectValue(value);
+    const blockName = normalizeBlockName(record.blockName);
+    if (blockName.length > 0) {
+      names.add(blockName);
+    }
+    const innerBlocks = Array.isArray(record.innerBlocks) ? record.innerBlocks : [];
+    for (const innerBlock of innerBlocks) {
+      visit(innerBlock);
+    }
+  };
+
+  for (const block of blocks) {
+    visit(block);
+  }
+
+  return [...names];
+}
+
+function recoverRequestedBlocksFromMalformedParsedBlocks(input: {
+  requestText: string;
+  rawBlocks: unknown[];
+}): Record<string, unknown>[] {
+  const recovered: Record<string, unknown>[] = [];
+  const requestedBlockNames = requestedInsertedBlockNamesForPlacement(
+    input.requestText
+  );
+
+  const visit = (value: unknown): void => {
+    const record = objectValue(value);
+    const innerHTML =
+      typeof record.innerHTML === "string" ? record.innerHTML : "";
+    if (innerHTML.includes("&lt;!--")) {
+      const decoded = decodeMinimalHtmlEntities(innerHTML);
+      if (requestedBlockNames.includes("core/image")) {
+        const markdownImageBlock = parseMarkdownImageBlock(decoded);
+        if (markdownImageBlock !== null) {
+          recovered.push(markdownImageBlock);
+        }
+      }
+      if (requestedBlockNames.length > 0) {
+        recovered.push(
+          ...(normalizeParsedBlocks(
+            extractSerializedBlocksByBlockNames(decoded, requestedBlockNames)
+          ).blocks as Record<string, unknown>[])
+        );
+      }
+    }
+
+    const innerBlocks = Array.isArray(record.innerBlocks) ? record.innerBlocks : [];
+    for (const innerBlock of innerBlocks) {
+      visit(innerBlock);
+    }
+  };
+
+  for (const block of input.rawBlocks) {
+    visit(block);
+  }
+
+  return recovered;
+}
+
+function recoverRequestedBlocksFromEscapedParagraphBlocks(input: {
+  requestText: string;
+  blocks: unknown[];
+}): Record<string, unknown>[] {
+  const requestedBlockNames = requestedInsertedBlockNamesForPlacement(
+    input.requestText
+  );
+  if (requestedBlockNames.length === 0) {
+    return [];
+  }
+
+  const recovered: Record<string, unknown>[] = [];
+  for (const block of input.blocks) {
+    const record = objectValue(block);
+    if (normalizeBlockName(record.blockName) !== "core/paragraph") {
+      continue;
+    }
+    const innerHTML =
+      typeof record.innerHTML === "string" ? record.innerHTML : "";
+    if (!innerHTML.includes("&lt;!--")) {
+      continue;
+    }
+
+    const decoded = decodeMinimalHtmlEntities(innerHTML);
+    if (requestedBlockNames.includes("core/image")) {
+      const markdownImageBlock = parseMarkdownImageBlock(decoded);
+      if (markdownImageBlock !== null) {
+        recovered.push(markdownImageBlock);
+      }
+    }
+    recovered.push(
+      ...(normalizeParsedBlocks(
+        extractSerializedBlocksByBlockNames(decoded, requestedBlockNames)
+      ).blocks as Record<string, unknown>[])
+    );
+  }
+
+  return recovered;
+}
+
+function selectInsertedBlocksForPlacementRequest(input: {
+  requestText: string;
+  actionInput: Record<string, unknown>;
+}): Record<string, unknown>[] | null {
+  const requestedBlockNames = requestedInsertedBlockNamesForPlacement(
+    input.requestText
+  );
+  const asksForImage = requestAsksForImage(input.requestText);
+  const asksForHeading = requestAsksForHeading(input.requestText);
+  const asksToAddHeading = requestAsksToAddHeading(input.requestText);
+  const asksForParagraph = requestAsksForParagraph(input.requestText);
+  const asksToAddParagraph = requestAsksToAddParagraph(input.requestText);
+
+  const rawBlocks = Array.isArray(input.actionInput.blocks)
+    ? input.actionInput.blocks
+    : [];
+  const blocks = rawBlocks.length > 0
+    ? normalizeParsedBlocks(rawBlocks).blocks
+    : [];
+
+  if (blocks.length > 0) {
+    if (requestedBlockNames.length > 0) {
+      const requestedBlocks = blocks.filter((block) =>
+        requestedBlockNames.includes(normalizeBlockName(objectValue(block).blockName))
+      ) as Record<string, unknown>[];
+      if (requestedBlocks.length > 0) {
+        return requestedBlocks;
+      }
+    }
+
+    if (requestedBlockNames.length > 0) {
+      const recoveredRequestedBlocks = recoverRequestedBlocksFromEscapedParagraphBlocks(
+        {
+          requestText: input.requestText,
+          blocks
+        }
+      ).filter((block) =>
+        requestedBlockNames.includes(normalizeBlockName(objectValue(block).blockName))
+      ) as Record<string, unknown>[];
+      if (recoveredRequestedBlocks.length > 0) {
+        return recoveredRequestedBlocks;
+      }
+    }
+
+    if (asksForImage) {
+      const imageBlocks = blocks.filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
+      ) as Record<string, unknown>[];
+      if (imageBlocks.length > 0) {
+        return imageBlocks;
+      }
+
+      const markdownImageParagraphs = blocks
+        .map((block) => {
+          const record = objectValue(block);
+          if (normalizeBlockName(record.blockName) !== "core/paragraph") {
+            return null;
+          }
+          const innerHTML =
+            typeof record.innerHTML === "string" ? record.innerHTML : "";
+          return parseImageBlockFromParagraphLikeHtml(innerHTML);
+        })
+        .filter((block): block is Record<string, unknown> => block !== null);
+      if (markdownImageParagraphs.length > 0) {
+        return markdownImageParagraphs;
+      }
+    }
+
+    if (asksToAddHeading) {
+      const headingBlocks = blocks.filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+      ) as Record<string, unknown>[];
+      if (headingBlocks.length > 0) {
+        return headingBlocks;
+      }
+    }
+
+    if (asksToAddParagraph) {
+      const paragraphBlocks = blocks.filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+      ) as Record<string, unknown>[];
+      if (paragraphBlocks.length > 0) {
+        return paragraphBlocks;
+      }
+    }
+
+    if (asksForHeading) {
+      const headingBlocks = blocks.filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+      ) as Record<string, unknown>[];
+      if (headingBlocks.length > 0) {
+        return headingBlocks;
+      }
+    }
+
+    if (
+      asksForParagraph &&
+      !asksForHeading &&
+      !asksToAddParagraph &&
+      requestedBlockNames.length === 0
+    ) {
+      const paragraphBlocks = blocks.filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+      ) as Record<string, unknown>[];
+      if (paragraphBlocks.length > 0) {
+        return paragraphBlocks;
+      }
+    }
+
+    if (requestAsksForLink(input.requestText)) {
+      const linkParagraphs = blocks.filter((block) => {
+        const record = objectValue(block);
+        return (
+          normalizeBlockName(record.blockName) === "core/paragraph" &&
+          typeof record.innerHTML === "string" &&
+          /<a\b/i.test(record.innerHTML)
+        );
+      }) as Record<string, unknown>[];
+      if (linkParagraphs.length > 0) {
+        return linkParagraphs;
+      }
+    }
+
+    const nonParagraphBlocks = blocks.filter(
+      (block) => normalizeBlockName(objectValue(block).blockName) !== "core/paragraph"
+    ) as Record<string, unknown>[];
+    if (nonParagraphBlocks.length > 0) {
+      return nonParagraphBlocks;
+    }
+
+  }
+
+    if (rawBlocks.length > 0) {
+    const recoveredBlocks = recoverRequestedBlocksFromMalformedParsedBlocks({
+      requestText: input.requestText,
+      rawBlocks
+    });
+    if (recoveredBlocks.length > 0) {
+      if (requestedBlockNames.length > 0) {
+        const requestedBlocks = recoveredBlocks.filter((block) =>
+          requestedBlockNames.includes(normalizeBlockName(objectValue(block).blockName))
+        ) as Record<string, unknown>[];
+        if (requestedBlocks.length > 0) {
+          return requestedBlocks;
+        }
+      }
+
+      if (asksForImage) {
+        const imageBlocks = recoveredBlocks.filter(
+          (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
+        ) as Record<string, unknown>[];
+        if (imageBlocks.length > 0) {
+          return imageBlocks;
+        }
+      }
+
+      if (asksToAddHeading || asksForHeading) {
+        const headingBlocks = recoveredBlocks.filter(
+          (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+          ) as Record<string, unknown>[];
+        if (headingBlocks.length > 0) {
+          return headingBlocks;
+        }
+      }
+
+      if (
+        asksToAddParagraph ||
+        (asksForParagraph &&
+          !asksForHeading &&
+          requestedBlockNames.length === 0)
+      ) {
+        const paragraphBlocks = recoveredBlocks.filter(
+          (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+        ) as Record<string, unknown>[];
+        if (paragraphBlocks.length > 0) {
+          return paragraphBlocks;
+        }
+      }
+    }
+  }
+
+  if (blocks.length === 1) {
+    return blocks as Record<string, unknown>[];
+  }
+
+  const content =
+    typeof input.actionInput.content === "string" ? input.actionInput.content : null;
+  if (content !== null) {
+    const paragraphBlock = parseSingleParagraphBlockFromContent(content);
+    if (paragraphBlock !== null) {
+      return [paragraphBlock];
+    }
+  }
+
+  return null;
+}
+
+function normalizeInlineImagePlacementPlan(
+  plan: ActionPlan,
+  requestText: string,
+  requestAttachments: ImageAttachmentPayload[] | undefined
+): ActionPlan {
+  if (
+    requestAttachments === undefined ||
+    requestAttachments.length === 0 ||
+    !requestMentionsInlineImagePlacement(requestText)
+  ) {
+    return plan;
+  }
+
+  const placement = extractInlineImagePlacement(requestText);
+  if (placement === undefined) {
+    return plan;
+  }
+
+  const validationWarnings = [...plan.validationWarnings];
+  let rewroteInlinePlacement = false;
+  const proposedActions = plan.proposedActions.map((action) => {
+    const normalizedType = normalizeActionType(action.type);
+    const isFeaturedImageAction =
+      normalizedType === "set_post_featured_image" ||
+      normalizedType === "update_post_featured_image" ||
+      normalizedType === "set_featured_image" ||
+      normalizedType === "sitepilot_set_post_featured_image";
+    const isNotFeaturedImageAction =
+      normalizedType !== "set_post_featured_image" &&
+      normalizedType !== "update_post_featured_image" &&
+      normalizedType !== "set_featured_image" &&
+      normalizedType !== "sitepilot_set_post_featured_image";
+    const isUpdateAction =
+      normalizedType === "update_post_fields" ||
+      normalizedType === "update_post" ||
+      normalizedType === "update_post_content" ||
+      normalizedType === "edit_post_fields" ||
+      normalizedType === "sitepilot_update_post_fields";
+
+    if (isNotFeaturedImageAction && !isUpdateAction) {
+      return action;
+    }
+
+    const input = action.input as Record<string, unknown>;
+    const nestedInput = pickObject(input, "input");
+    const inputScopes =
+      nestedInput !== undefined ? [input, nestedInput] : [input];
+    const postId = pickNumberFrom(inputScopes, "postId", "post_id", "id");
+    if (postId === undefined) {
+      return action;
+    }
+
+    const existingBlocks = nestedInput !== undefined ? nestedInput.blocks : input.blocks;
+    if (isFeaturedImageAction && isUpdateAction === false) {
+      // continue to rewrite below
+    } else if (!isUpdateAction) {
+      return action;
+    }
+
+    rewroteInlinePlacement = true;
+    const placementInput =
+      placement.kind === "after_paragraph"
+        ? { insert_after_paragraph: placement.afterParagraph }
+        : placement.kind === "relative_block"
+          ? placement.position === "after"
+            ? {
+                insert_after_block: {
+                  block_name: placement.blockName,
+                  ...(placement.fromEnd === true ? { from_end: true } : {})
+                }
+              }
+            : {
+                insert_before_block: {
+                  block_name: placement.blockName,
+                  ...(placement.fromEnd === true ? { from_end: true } : {})
+                }
+              }
+          : { insert_position: placement.kind };
+    return {
+      ...action,
+      type: "update_post_fields",
+      input: {
+        post_id: postId,
+        ...placementInput,
+        blocks: [buildInlineImageBlockForAttachment(requestAttachments[0]!)]
+      }
+    } satisfies Action;
+  });
+
+  if (!rewroteInlinePlacement) {
+    return plan;
+  }
+
+  const filteredActions = proposedActions.filter((action) => {
+    const normalizedType = normalizeActionType(action.type);
+    return (
+      normalizedType !== "upload_media_asset" &&
+      normalizedType !== "sitepilot_upload_media_asset"
+    );
+  });
+
+  validationWarnings.push(
+    placement.kind === "after_paragraph"
+      ? `Normalized the plan to a single inline post-content image insertion after paragraph ${placement.afterParagraph} because the operator requested placement within the body content.`
+      : placement.kind === "relative_block"
+        ? `Normalized the plan to a single inline post-content image insertion ${placement.position} ${placement.fromEnd === true ? "the most recent matching " : "the matching "}block because the operator requested placement within the body content.`
+      : `Normalized the plan to a single inline post-content image insertion at the ${placement.kind} of the content because the operator requested placement within the body content.`
+  );
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions: filteredActions,
+    validationWarnings: [...new Set(validationWarnings)]
+  });
+}
+
+function normalizeGenericContentInsertionPlan(
+  plan: ActionPlan,
+  requestText: string
+): ActionPlan {
+  if (!requestMentionsContentInsertionPlacement(requestText)) {
+    return plan;
+  }
+
+  const placement = extractInlineImagePlacement(requestText);
+  if (placement === undefined) {
+    return plan;
+  }
+
+  const validationWarnings = [...plan.validationWarnings];
+  let rewrotePlacement = false;
+  const proposedActions = plan.proposedActions.map((action) => {
+    const normalizedType = normalizeActionType(action.type);
+    const isUpdateAction =
+      normalizedType === "update_post_fields" ||
+      normalizedType === "update_post" ||
+      normalizedType === "update_post_content" ||
+      normalizedType === "edit_post_fields" ||
+      normalizedType === "sitepilot_update_post_fields";
+    if (!isUpdateAction) {
+      return action;
+    }
+
+    const input = action.input as Record<string, unknown>;
+    const nestedInput = pickObject(input, "input");
+    const actionInput = nestedInput ?? input;
+    const postId = pickNumberFrom([input, actionInput], "postId", "post_id", "id");
+    if (postId === undefined) {
+      return action;
+    }
+
+    let selectedBlocks = selectInsertedBlocksForPlacementRequest({
+      requestText,
+      actionInput
+    });
+    if (selectedBlocks === null) {
+      return action;
+    }
+
+    if (
+      (requestAsksToAddHeading(requestText) || requestAsksForHeading(requestText)) &&
+      selectedBlocks.every(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+      ) &&
+      Array.isArray(actionInput.blocks)
+    ) {
+      const recoveredHeadingBlocks = recoverRequestedBlocksFromMalformedParsedBlocks({
+        requestText,
+        rawBlocks: actionInput.blocks
+      }).filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+      ) as Record<string, unknown>[];
+      if (recoveredHeadingBlocks.length > 0) {
+        selectedBlocks = recoveredHeadingBlocks;
+      }
+    }
+
+    rewrotePlacement = true;
+    const placementInput =
+      placement.kind === "after_paragraph"
+        ? { insert_after_paragraph: placement.afterParagraph }
+        : placement.kind === "relative_block"
+          ? placement.position === "after"
+            ? {
+                insert_after_block: {
+                  block_name: placement.blockName,
+                  ...(placement.fromEnd === true ? { from_end: true } : {})
+                }
+              }
+            : {
+                insert_before_block: {
+                  block_name: placement.blockName,
+                  ...(placement.fromEnd === true ? { from_end: true } : {})
+                }
+              }
+          : { insert_position: placement.kind };
+
+    return {
+      ...action,
+      type: "update_post_fields",
+      input: {
+        post_id: postId,
+        ...placementInput,
+        blocks: selectedBlocks
+      }
+    } satisfies Action;
+  });
+
+  if (!rewrotePlacement) {
+    return plan;
+  }
+
+  validationWarnings.push(
+    placement.kind === "after_paragraph"
+      ? `Normalized the plan to an insertion edit after paragraph ${placement.afterParagraph} because the operator requested placement within the existing body content.`
+      : placement.kind === "relative_block"
+        ? `Normalized the plan to an insertion edit ${placement.position} ${placement.fromEnd === true ? "the most recent matching " : "the matching "}block because the operator requested placement within the existing body content.`
+      : `Normalized the plan to an insertion edit at the ${placement.kind} of the content because the operator requested placement within the existing body content.`
+  );
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions,
+    validationWarnings: [...new Set(validationWarnings)]
+  });
+}
+
+function requestLooksLikeSingleHeadingLevelChange(requestText: string): boolean {
+  if (!/\bheading\b/i.test(requestText)) {
+    return false;
+  }
+
+  if (/\b(all|every)\b[\s\S]{0,20}\bheadings?\b/i.test(requestText)) {
+    return false;
+  }
+
+  if (
+    /\b(change|make|turn|convert|update|switch|set)\b[\s\S]{0,40}\bheading\b[\s\S]{0,40}\bh[1-6]\b/i.test(
+      requestText
+    )
+  ) {
+    return true;
+  }
+
+  return /\bh[1-6]\b[\s\S]{0,20}\bto\b[\s\S]{0,20}\bh[1-6]\b/i.test(requestText);
+}
+
+function extractSerializedHeadingBlocks(content: string): Record<string, unknown>[] {
+  const headingBlocks: Record<string, unknown>[] = [];
+  const pattern =
+    /<!--\s*wp:heading(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:heading\s*-->/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    let attrs: Record<string, unknown> = {};
+    if (typeof match[1] === "string" && match[1].trim().length > 0) {
+      try {
+        const parsed = JSON.parse(match[1]) as unknown;
+        attrs = objectValue(parsed);
+      } catch {
+        attrs = {};
+      }
+    }
+    const innerHTML = match[2]?.trim() ?? "";
+    headingBlocks.push({
+      blockName: "core/heading",
+      attrs,
+      innerBlocks: [],
+      innerHTML,
+      innerContent: innerHTML.length > 0 ? [innerHTML] : []
+    });
+  }
+
+  return headingBlocks;
+}
+
+function normalizeSingleHeadingLevelUpdatePlan(
+  plan: ActionPlan,
+  requestText: string
+): ActionPlan {
+  if (!requestLooksLikeSingleHeadingLevelChange(requestText)) {
+    return plan;
+  }
+
+  const validationWarnings = [...plan.validationWarnings];
+  let rewrotePlan = false;
+
+  const proposedActions = plan.proposedActions.map((action) => {
+    const normalizedType = normalizeActionType(action.type);
+    const isUpdateAction =
+      normalizedType === "update_post_fields" ||
+      normalizedType === "update_post" ||
+      normalizedType === "update_post_content" ||
+      normalizedType === "edit_post_fields" ||
+      normalizedType === "sitepilot_update_post_fields";
+    if (!isUpdateAction) {
+      return action;
+    }
+
+    const input = action.input as Record<string, unknown>;
+    if (
+      input.replace_content === true ||
+      input.insert_after_paragraph !== undefined ||
+      input.insert_after_block !== undefined ||
+      input.insert_before_block !== undefined ||
+      input.insert_position !== undefined
+    ) {
+      return action;
+    }
+
+    let headingBlocks: Record<string, unknown>[] = [];
+    let candidateBlockCount = 0;
+
+    if (Array.isArray(input.blocks)) {
+      const normalizedBlocks = normalizeParsedBlocks(input.blocks).blocks;
+      candidateBlockCount = normalizedBlocks.length;
+      headingBlocks = normalizedBlocks.filter(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+      ) as Record<string, unknown>[];
+    } else {
+      const contentKey = pickContentKey(input);
+      const content = contentKey !== undefined ? input[contentKey] : undefined;
+      if (typeof content !== "string") {
+        return action;
+      }
+      headingBlocks = normalizeParsedBlocks(extractSerializedHeadingBlocks(content)).blocks as Record<
+        string,
+        unknown
+      >[];
+      candidateBlockCount = (content.match(/<!--\s*wp:/gi) ?? []).length / 2;
+    }
+
+    if (headingBlocks.length !== 1) {
+      return action;
+    }
+
+    rewrotePlan = true;
+    const { content, ...nextInput } = input;
+    const { postContent, ...nextInputWithoutPostContent } = nextInput as typeof nextInput & {
+      postContent?: unknown;
+    };
+    const { post_content, ...finalInput } = nextInputWithoutPostContent as typeof nextInputWithoutPostContent & {
+      post_content?: unknown;
+    };
+
+    if (candidateBlockCount > 1) {
+      validationWarnings.push(
+        "Collapsed a full-content heading-level update into a single heading block replacement so unaffected surrounding blocks are preserved."
+      );
+    }
+
+    return {
+      ...action,
+      input: {
+        ...finalInput,
+        blocks: headingBlocks
+      }
+    } satisfies Action;
+  });
+
+  if (!rewrotePlan) {
+    return plan;
+  }
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions,
+    validationWarnings: [...new Set(validationWarnings)]
+  });
+}
+
 function buildEverySupportedBlockDemo(
   options: ExecutableBlockDemoOptions = { imageFileName: undefined }
 ): unknown[] {
@@ -1975,8 +3123,21 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
   };
 
   const parsedPlan = actionPlanSchema.parse(merged);
-  const plan = normalizePlanPostContent(
+  const inlineNormalizedPlan = normalizeInlineImagePlacementPlan(
     parsedPlan,
+    requestText,
+    input.requestAttachments
+  );
+  const placementNormalizedPlan = normalizeGenericContentInsertionPlan(
+    inlineNormalizedPlan,
+    requestText
+  );
+  const headingLevelNormalizedPlan = normalizeSingleHeadingLevelUpdatePlan(
+    placementNormalizedPlan,
+    requestText
+  );
+  const plan = normalizePlanPostContent(
+    headingLevelNormalizedPlan,
     requestText,
     input.requestAttachments
   );

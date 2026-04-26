@@ -73,8 +73,11 @@ export function deriveRequestStatusAfterPlanning(input: {
   if (input.validation.kind === "blocked_approval") {
     return "awaiting_approval";
   }
-  if (input.currentStatus === "new" || input.currentStatus === "drafted") {
-    return "drafted";
+  if (
+    input.validation.kind === "pass" ||
+    input.validation.kind === "warnings"
+  ) {
+    return "approved";
   }
   return input.currentStatus;
 }

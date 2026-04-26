@@ -141,4 +141,22 @@ describe("site planner settings", () => {
       })
     ).toBe("approved");
   });
+
+  it("marks passing plans as approved for execution", async () => {
+    const { deriveRequestStatusAfterPlanning } = await import(
+      "../apps/desktop/src/main/plan-generation-service.js"
+    );
+
+    expect(
+      deriveRequestStatusAfterPlanning({
+        currentStatus: "drafted",
+        rawValidation: {
+          kind: "pass"
+        },
+        validation: {
+          kind: "pass"
+        }
+      })
+    ).toBe("approved");
+  });
 });

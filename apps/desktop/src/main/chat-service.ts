@@ -609,7 +609,8 @@ export async function createTypedRequestForThread(
 
   const analysis = analyzeClarification({
     userPrompt,
-    recentPromptsForSite: recentPrompts
+    recentPromptsForSite: recentPrompts,
+    ...(attachments !== undefined ? { attachments } : {})
   });
 
   const ts = nowIso();
@@ -826,19 +827,22 @@ export async function answerClarificationForRequest(
     .filter((item: Request) => item.id !== requestId)
     .map((item: Request) => item.userPrompt)
     .slice(0, 50);
+  const mergedRequestAttachments = mergeAttachments(
+    request.attachments,
+    attachments
+  );
   const analysis = analyzeClarification({
     userPrompt: mergedPrompt,
-    recentPromptsForSite: recent
+    recentPromptsForSite: recent,
+    ...(mergedRequestAttachments !== undefined
+      ? { attachments: mergedRequestAttachments }
+      : {})
   });
 
   let clarificationRound: ClarificationRound | undefined;
   let nextStatus: Request["status"] = analysis.needsClarification
     ? "clarifying"
     : "new";
-  const mergedRequestAttachments = mergeAttachments(
-    request.attachments,
-    attachments
-  );
 
   const updatedRequest: Request = {
     ...request,

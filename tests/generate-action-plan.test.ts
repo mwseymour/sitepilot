@@ -32,6 +32,33 @@ function makePlannerContext(text: string): PlannerContext {
   };
 }
 
+function makePlannerContextWithHistory(input: {
+  requestText: string;
+  requestId?: string;
+  targetSummaries?: string[];
+  priorChanges?: string[];
+}): PlannerContext {
+  return {
+    siteId: "site-1",
+    threadId: "thread-1",
+    builtAt: "2026-04-20T12:00:00.000Z",
+    siteConfig: null,
+    discoverySummary: null,
+    messages: [
+      {
+        messageId: "msg-1",
+        role: "user",
+        format: "plain_text",
+        text: input.requestText,
+        createdAt: "2026-04-20T12:00:00.000Z",
+        requestId: input.requestId ?? "req-1"
+      }
+    ],
+    targetSummaries: input.targetSummaries ?? [],
+    priorChanges: input.priorChanges ?? []
+  };
+}
+
 function makeClient(
   resultText: string,
   onComplete?: (messages: ChatMessage[]) => void
@@ -1267,5 +1294,1036 @@ describe("buildLlmActionPlan", () => {
     expect(JSON.stringify(blocks)).toContain(
       "Totally-Communications-team.jpg"
     );
+  });
+
+  it("rewrites attached inline image requests away from featured-image actions", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add image between paragraph 2 and 3",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:60"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "set_post_featured_image",
+            version: 1,
+            input: {
+              post_id: 60
+            },
+            targetEntityRefs: ["post:60"],
+            permissionRequirement: "edit_posts",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "Now add this image to that post - between paragraph 2 and 3",
+        targetSummaries: [
+          "This thread previously created a draft post with post_id=60. Reuse that post id for follow-up edits to the same draft."
+        ],
+        priorChanges: [
+          'Tool sitepilot-create-draft-post succeeded; post_id=60; post_type=post; post_status=draft; current_title="dry run test 2"'
+        ]
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestAttachments: [
+        {
+          fileName: "test.jpeg",
+          mediaType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.type).toBe("update_post_fields");
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 60,
+      insert_after_paragraph: 2
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/image",
+        attrs: expect.objectContaining({
+          id: 0,
+          url: "https://example.test/wp-content/uploads/test.jpeg",
+          alt: "test"
+        })
+      })
+    ]);
+  });
+
+  it("rewrites attached end-of-content image requests away from featured-image actions", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add image at end of content",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:60"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "set_post_featured_image",
+            version: 1,
+            input: {
+              post_id: 60
+            },
+            targetEntityRefs: ["post:60"],
+            permissionRequirement: "edit_posts",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "in post 60 - add this image at the end of the content area"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestAttachments: [
+        {
+          fileName: "Totally-Communications-team.jpg",
+          mediaType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.type).toBe("update_post_fields");
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 60,
+      insert_position: "end"
+    });
+  });
+
+  it("collapses invented replacement paragraphs into a single inline insertion edit", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add image between paragraphs 3 and 4",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:60"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 60,
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Paragraph content 1.</p>",
+                  innerContent: ["<p>Paragraph content 1.</p>"]
+                },
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Paragraph content 2.</p>",
+                  innerContent: ["<p>Paragraph content 2.</p>"]
+                },
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Paragraph content 3.</p>",
+                  innerContent: ["<p>Paragraph content 3.</p>"]
+                },
+                {
+                  blockName: "core/image",
+                  attrs: {
+                    id: 0,
+                    url: "https://test.localhost:8890/wp-content/uploads/medium-widget-1.png",
+                    alt: "Widget image"
+                  },
+                  innerBlocks: [],
+                  innerHTML:
+                    '<figure class="wp-block-image"><img src="https://test.localhost:8890/wp-content/uploads/medium-widget-1.png" alt="Widget image"/></figure>',
+                  innerContent: [
+                    '<figure class="wp-block-image"><img src="https://test.localhost:8890/wp-content/uploads/medium-widget-1.png" alt="Widget image"/></figure>'
+                  ]
+                },
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Paragraph content 4.</p>",
+                  innerContent: ["<p>Paragraph content 4.</p>"]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:60"],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "in post 60 add this image between paras 3 and 4\n\nClarification:\ninline"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestAttachments: [
+        {
+          fileName: "medium-widget-1.png",
+          mediaType: "image/png",
+          dataUrl: "data:image/png;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.type).toBe("update_post_fields");
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 60,
+      insert_after_paragraph: 3
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/image"
+      })
+    ]);
+  });
+
+  it("collapses invented surrounding paragraphs for heading insertion requests", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add a heading after paragraph 2",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:60"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 60,
+              replace_content: false,
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Content of the first paragraph.</p>",
+                  innerContent: ["<p>Content of the first paragraph.</p>"]
+                },
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Content of the second paragraph.</p>",
+                  innerContent: ["<p>Content of the second paragraph.</p>"]
+                },
+                {
+                  blockName: "core/heading",
+                  attrs: { level: 2 },
+                  innerBlocks: [],
+                  innerHTML: "<h2>New heading!</h2>",
+                  innerContent: ["<h2>New heading!</h2>"]
+                },
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Content after the new heading.</p>",
+                  innerContent: ["<p>Content after the new heading.</p>"]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:60"],
+            permissionRequirement: "edit_post",
+            riskLevel: "medium",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "in post 60 add a heading after paragraph 2 'New heading!'"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 60,
+      insert_after_paragraph: 2
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/heading",
+        attrs: expect.objectContaining({ level: 2 }),
+        innerHTML: '<h2 class="wp-block-heading">New heading!</h2>'
+      })
+    ]);
+  });
+
+  it("recovers heading insertions from malformed parsed paragraph blocks with escaped Gutenberg comments", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add a heading after paragraph 2",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:92"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 92,
+              insert_after_paragraph: 2,
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML:
+                    "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:paragraph --&gt;Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;\n&lt;!-- wp:paragraph --&gt;Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.&lt;!-- /wp:paragraph --&gt;</p>",
+                  innerContent: [
+                    "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:paragraph --&gt;Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;\n&lt;!-- wp:paragraph --&gt;Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.&lt;!-- /wp:paragraph --&gt;</p>"
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:92"],
+            permissionRequirement: "edit_post",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "Now add a heading after paragraph 2 'New heading!'"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-24T19:52:30.592Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 92,
+      insert_after_paragraph: 2
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/heading",
+        innerHTML: '<h2 class="wp-block-heading">New heading!</h2>'
+      })
+    ]);
+  });
+
+  it("rewrites image placement after the last heading to an inline insertion edit", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add an image after the heading",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:69"],
+        proposedActions: [
+          {
+            id: "1",
+            type: "set_post_featured_image",
+            version: 1,
+            input: {
+              post_id: 69
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "publishRequiresApproval",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: true
+          },
+          {
+            id: "2",
+            type: "upload_media_asset",
+            version: 1,
+            input: {
+              file: {
+                fileName:
+                  "Shared Ownership Properties  Shared Ownership Houses & Homes For Sale  First timer buyer homes.png",
+                mediaType: "image/png",
+                sizeBytes: 96162
+              }
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "publishRequiresApproval",
+            riskLevel: "medium",
+            dryRunCapable: false,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "Now add an image after the heading we just added"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestAttachments: [
+        {
+          fileName:
+            "Shared Ownership Properties  Shared Ownership Houses & Homes For Sale  First timer buyer homes.png",
+          mediaType: "image/png",
+          dataUrl: "data:image/png;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions).toHaveLength(1);
+    expect(result.plan.proposedActions[0]?.type).toBe("update_post_fields");
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 69,
+      insert_after_block: {
+        block_name: "core/heading",
+        from_end: true
+      }
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/image"
+      })
+    ]);
+  });
+
+  it("rewrites attached image updates after a heading even when the planner emits markdown image paragraphs", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add an image after the heading block",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:96"],
+        proposedActions: [
+          {
+            id: "action-2",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 96,
+              insert_after_block: {
+                block_name: "core/heading",
+                from_end: true
+              },
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML:
+                    "<p>![Image Description](https://test.localhost:8890/wp-content/uploads/medium-widget-1.png)</p>",
+                  innerContent: [
+                    "<p>![Image Description](https://test.localhost:8890/wp-content/uploads/medium-widget-1.png)</p>"
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["post_id"],
+            permissionRequirement: "none",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: false
+          },
+          {
+            id: "action-1",
+            type: "sitepilot-upload-media-asset",
+            version: 1,
+            input: {
+              post_id: 96,
+              file: {
+                name: "medium-widget-1.png",
+                type: "image/jpeg",
+                size: 8319
+              }
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "none",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "add this image after the heading block you just added"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-26T18:57:56.279Z",
+      requestAttachments: [
+        {
+          fileName: "medium-widget-1.png",
+          mediaType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions).toHaveLength(1);
+    expect(result.plan.proposedActions[0]?.type).toBe("update_post_fields");
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 96,
+      insert_after_block: {
+        block_name: "core/heading",
+        from_end: true
+      }
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/image",
+        attrs: expect.objectContaining({
+          url: "https://example.test/wp-content/uploads/medium-widget-1.png",
+          alt: "medium widget 1"
+        })
+      })
+    ]);
+  });
+
+  it("normalizes before-heading placement requests to block-relative insertion edits", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add a paragraph before the heading",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:60"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 60,
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Intro paragraph.</p>",
+                  innerContent: ["<p>Intro paragraph.</p>"]
+                },
+                {
+                  blockName: "core/heading",
+                  attrs: { level: 2 },
+                  innerBlocks: [],
+                  innerHTML: "<h2>Existing heading</h2>",
+                  innerContent: ["<h2>Existing heading</h2>"]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:60"],
+            permissionRequirement: "edit_post",
+            riskLevel: "medium",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "in post 60 add a paragraph before the heading"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 60,
+      insert_before_block: {
+        block_name: "core/heading"
+      }
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/paragraph"
+      })
+    ]);
+  });
+
+  it.each([
+    {
+      label: "button",
+      requestText: "add a button after paragraph 2",
+      block: {
+        blockName: "core/button",
+        attrs: { text: "Click me", url: "https://example.test" },
+        innerBlocks: [],
+        innerHTML:
+          '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://example.test">Click me</a></div>',
+        innerContent: [
+          '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://example.test">Click me</a></div>'
+        ]
+      }
+    },
+    {
+      label: "quote",
+      requestText: "add a quote after paragraph 2",
+      block: {
+        blockName: "core/quote",
+        attrs: {},
+        innerBlocks: [],
+        innerHTML: "<blockquote><p>Quoted text</p></blockquote>",
+        innerContent: ["<blockquote><p>Quoted text</p></blockquote>"]
+      }
+    },
+    {
+      label: "table",
+      requestText: "add a table after paragraph 2",
+      block: {
+        blockName: "core/table",
+        attrs: {
+          body: [
+            {
+              cells: [{ content: "A1" }, { content: "B1" }]
+            }
+          ]
+        },
+        innerBlocks: [],
+        innerHTML: "",
+        innerContent: []
+      }
+    },
+    {
+      label: "details",
+      requestText: "add details after paragraph 2",
+      block: {
+        blockName: "core/details",
+        attrs: { summary: "More info" },
+        innerBlocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<p>Hidden body</p>",
+            innerContent: ["<p>Hidden body</p>"]
+          }
+        ],
+        innerHTML: "",
+        innerContent: []
+      }
+    },
+    {
+      label: "separator",
+      requestText: "add a separator after paragraph 2",
+      block: {
+        blockName: "core/separator",
+        attrs: {},
+        innerBlocks: [],
+        innerHTML: "",
+        innerContent: []
+      }
+    },
+    {
+      label: "spacer",
+      requestText: "add a spacer after paragraph 2",
+      block: {
+        blockName: "core/spacer",
+        attrs: { height: "24px" },
+        innerBlocks: [],
+        innerHTML: "",
+        innerContent: []
+      }
+    }
+  ])(
+    "reduces copied surrounding content for $label insertion updates to the executable inserted block only",
+    async ({ requestText, block }) => {
+      const client = makeClient(
+        JSON.stringify({
+          requestSummary: "Insert a block after paragraph 2",
+          assumptions: [],
+          openQuestions: [],
+          targetEntities: ["post:60"],
+          proposedActions: [
+            {
+              id: "action-1",
+              type: "update_post_fields",
+              version: 1,
+              input: {
+                post_id: 60,
+                blocks: [
+                  {
+                    blockName: "core/paragraph",
+                    attrs: {},
+                    innerBlocks: [],
+                    innerHTML: "<p>Paragraph one.</p>",
+                    innerContent: ["<p>Paragraph one.</p>"]
+                  },
+                  {
+                    blockName: "core/paragraph",
+                    attrs: {},
+                    innerBlocks: [],
+                    innerHTML: "<p>Paragraph two.</p>",
+                    innerContent: ["<p>Paragraph two.</p>"]
+                  },
+                  block,
+                  {
+                    blockName: "core/paragraph",
+                    attrs: {},
+                    innerBlocks: [],
+                    innerHTML: "<p>Paragraph three.</p>",
+                    innerContent: ["<p>Paragraph three.</p>"]
+                  }
+                ]
+              },
+              targetEntityRefs: ["post:60"],
+              permissionRequirement: "edit_post",
+              riskLevel: "medium",
+              dryRunCapable: false,
+              rollbackSupported: true
+            }
+          ],
+          dependencies: [],
+          approvalRequired: false,
+          riskLevel: "medium",
+          rollbackNotes: [],
+          validationWarnings: []
+        })
+      );
+
+      const result = await buildLlmActionPlan({
+        context: makePlannerContextWithHistory({
+          requestText: `in post 60 ${requestText}`
+        }),
+        requestId: "req-1",
+        siteId: "site-1",
+        nowIso: "2026-04-20T12:00:00.000Z",
+        client,
+        model: "gpt-test"
+      });
+
+      expect(result.plan.proposedActions[0]?.input).toMatchObject({
+        post_id: 60,
+        insert_after_paragraph: 2
+      });
+      expect(
+        (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+      ).toEqual([expect.objectContaining({ blockName: block.blockName })]);
+    }
+  );
+
+  it.each([
+    {
+      label: "button",
+      requestText: "add a button after paragraph 2",
+      serialized:
+        '<!-- wp:button {"text":"Click me","url":"https://example.test"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://example.test">Click me</a></div><!-- /wp:button -->',
+      expectedBlockName: "core/button"
+    },
+    {
+      label: "quote",
+      requestText: "add a quote after paragraph 2",
+      serialized:
+        "<!-- wp:quote --><blockquote><p>Quoted text</p></blockquote><!-- /wp:quote -->",
+      expectedBlockName: "core/quote"
+    },
+    {
+      label: "table",
+      requestText: "add a table after paragraph 2",
+      serialized:
+        '<!-- wp:table {"body":[{"cells":[{"content":"A1"},{"content":"B1"}]}]} --><figure class="wp-block-table"><table><tbody><tr><td>A1</td><td>B1</td></tr></tbody></table></figure><!-- /wp:table -->',
+      expectedBlockName: "core/table"
+    },
+    {
+      label: "details",
+      requestText: "add details after paragraph 2",
+      serialized:
+        '<!-- wp:details {"summary":"More info"} --><details class="wp-block-details"><summary>More info</summary><p>Hidden body</p></details><!-- /wp:details -->',
+      expectedBlockName: "core/details"
+    },
+    {
+      label: "separator",
+      requestText: "add a separator after paragraph 2",
+      serialized: "<!-- wp:separator /-->",
+      expectedBlockName: "core/separator"
+    }
+  ])(
+    "recovers malformed escaped serialized $label blocks for insertion updates",
+    async ({ requestText, serialized, expectedBlockName }) => {
+      const escaped = serialized.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const client = makeClient(
+        JSON.stringify({
+          requestSummary: "Insert a block after paragraph 2",
+          assumptions: [],
+          openQuestions: [],
+          targetEntities: ["post:60"],
+          proposedActions: [
+            {
+              id: "action-1",
+              type: "update_post_fields",
+              version: 1,
+              input: {
+                post_id: 60,
+                insert_after_paragraph: 2,
+                blocks: [
+                  {
+                    blockName: "core/paragraph",
+                    attrs: {},
+                    innerBlocks: [],
+                    innerHTML: `<p>Paragraph one.${escaped}<p>Paragraph three.</p>`,
+                    innerContent: [`<p>Paragraph one.${escaped}<p>Paragraph three.</p>`]
+                  }
+                ]
+              },
+              targetEntityRefs: ["post:60"],
+              permissionRequirement: "edit_post",
+              riskLevel: "low",
+              dryRunCapable: false,
+              rollbackSupported: true
+            }
+          ],
+          dependencies: [],
+          approvalRequired: false,
+          riskLevel: "low",
+          rollbackNotes: [],
+          validationWarnings: []
+        })
+      );
+
+      const result = await buildLlmActionPlan({
+        context: makePlannerContextWithHistory({
+          requestText: `in post 60 ${requestText}`
+        }),
+        requestId: "req-1",
+        siteId: "site-1",
+        nowIso: "2026-04-20T12:00:00.000Z",
+        client,
+        model: "gpt-test"
+      });
+
+      expect(result.plan.proposedActions[0]?.input).toMatchObject({
+        post_id: 60,
+        insert_after_paragraph: 2
+      });
+      expect(
+        (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+      ).toEqual([expect.objectContaining({ blockName: expectedBlockName })]);
+    }
+  );
+
+  it("collapses heading-level follow-up edits to a single heading block replacement", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Change the H2 heading to a h3",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:72"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 72,
+              content:
+                '<!-- wp:paragraph --><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p><!-- /wp:paragraph -->\n<!-- wp:paragraph --><p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p><!-- /wp:paragraph -->\n<!-- wp:heading {"level":3} --><h3>New heading!</h3><!-- /wp:heading -->\n<!-- wp:image {"id":0,"alt":"Example image"} --><figure class="wp-block-image"><img src="https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png" alt="Example image" /></figure><!-- /wp:image -->\n<!-- wp:paragraph --><p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p><!-- /wp:paragraph -->\n<!-- wp:paragraph --><p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p><!-- /wp:paragraph -->'
+            },
+            targetEntityRefs: ["post:72"],
+            permissionRequirement: "edit_post",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText: "Change the H2 heading to a h3"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-24T19:33:11.717Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.type).toBe("update_post_fields");
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 72,
+      blocks: [
+        expect.objectContaining({
+          blockName: "core/heading",
+          attrs: expect.objectContaining({ level: 3 }),
+          innerHTML: '<h3 class="wp-block-heading">New heading!</h3>'
+        })
+      ]
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).content
+    ).toBeUndefined();
+    expect(
+      result.plan.validationWarnings.some((warning) =>
+        warning.includes("Collapsed a full-content heading-level update")
+      )
+    ).toBe(true);
+  });
+
+  it("normalizes end-of-content link requests to insertion blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Add a link at the end",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:60"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 60,
+              content:
+                '<!-- wp:paragraph --><p>Read more at <a href="https://www.google.com" target="_blank">Google</a>.</p><!-- /wp:paragraph -->'
+            },
+            targetEntityRefs: ["60"],
+            permissionRequirement: "write",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "Now add a link at the end linking to google.com - open in new tab"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 60,
+      insert_position: "end"
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/paragraph"
+      })
+    ]);
   });
 });

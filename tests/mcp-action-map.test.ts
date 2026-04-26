@@ -224,6 +224,263 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("passes insert_after_paragraph through to update_post_fields", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        insert_after_paragraph: 2,
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        insert_after_paragraph: 2,
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      }
+    });
+  });
+
+  it("recovers the intended non-paragraph block from a malformed escaped insertion payload", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        insert_after_paragraph: 2,
+        blocks: [
+          {
+            blockName: "core/paragraph",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML:
+              "<p>Lorem ipsum dolor sit amet.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:paragraph --&gt;Sed do eiusmod tempor incididunt ut labore.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;\n&lt;!-- wp:paragraph --&gt;Ut enim ad minim veniam.&lt;!-- /wp:paragraph --&gt;</p>",
+            innerContent: [
+              "<p>Lorem ipsum dolor sit amet.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:paragraph --&gt;Sed do eiusmod tempor incididunt ut labore.&lt;!-- /wp:paragraph --&gt;\n&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;\n&lt;!-- wp:paragraph --&gt;Ut enim ad minim veniam.&lt;!-- /wp:paragraph --&gt;</p>"
+            ]
+          }
+        ]
+      },
+      false
+    );
+
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        insert_after_paragraph: 2,
+        blocks: [
+          {
+            blockName: "core/heading",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "<h2>New heading!</h2>",
+            innerContent: ["<h2>New heading!</h2>"]
+          }
+        ]
+      }
+    });
+  });
+
+  it("passes insert_position through to update_post_fields", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        insert_position: "end",
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        insert_position: "end",
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      }
+    });
+  });
+
+  it("passes insert_after_block through to update_post_fields", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        insert_after_block: {
+          block_name: "core/heading",
+          from_end: true
+        },
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        insert_after_block: {
+          block_name: "core/heading",
+          from_end: true
+        },
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      }
+    });
+  });
+
+  it("passes insert_before_block through to update_post_fields", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      {
+        post_id: 12,
+        insert_before_block: {
+          block_name: "core/heading",
+          from_end: true
+        },
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-update-post-fields",
+      arguments: {
+        post_id: 12,
+        dry_run: false,
+        insert_before_block: {
+          block_name: "core/heading",
+          from_end: true
+        },
+        blocks: [
+          {
+            blockName: "core/image",
+            attrs: {
+              id: 0,
+              url: "https://example.test/wp-content/uploads/test.jpeg",
+              alt: "test"
+            },
+            innerBlocks: [],
+            innerHTML:
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+            innerContent: [
+              '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>'
+            ]
+          }
+        ]
+      }
+    });
+  });
+
   it("passes nested layout blocks through unchanged to update_post_fields", () => {
     const blocks = [
       {

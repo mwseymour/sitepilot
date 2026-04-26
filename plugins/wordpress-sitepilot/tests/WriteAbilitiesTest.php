@@ -310,6 +310,33 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( 'unsupported block "core/gallery"', $result['error'] );
 	}
 
+	public function test_update_post_rejects_escaped_serialized_gutenberg_markup_inside_paragraph_blocks(): void {
+		$result = $this->update_post(
+			array(
+				'post_id' => 12,
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/paragraph',
+						'attrs'        => array(),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<p>Lorem ipsum dolor sit amet.&lt;!-- /wp:paragraph --&gt;
+&lt;!-- wp:paragraph --&gt;Sed do eiusmod tempor incididunt ut labore.&lt;!-- /wp:paragraph --&gt;
+&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;</p>',
+						'innerContent' => array(
+							'<p>Lorem ipsum dolor sit amet.&lt;!-- /wp:paragraph --&gt;
+&lt;!-- wp:paragraph --&gt;Sed do eiusmod tempor incididunt ut labore.&lt;!-- /wp:paragraph --&gt;
+&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;</p>',
+						),
+					),
+				),
+			)
+		);
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertStringContainsString( 'invalid_blocks:', $result['error'] );
+		$this->assertStringContainsString( 'serialized block markup', $result['error'] );
+	}
+
 	public function test_blocked_cover_and_read_more_advise_manual_editor_fallback(): void {
 		$result = $this->create_draft(
 			array(
@@ -352,7 +379,7 @@ final class WriteAbilitiesTest extends TestCase {
 		);
 
 		$this->assertTrue( $result['ok'] );
-		$this->assertStringContainsString( '<h1>Hero Title</h1>', $result['preview']['post_content'] );
+		$this->assertStringContainsString( '<h1 class="wp-block-heading">Hero Title</h1>', $result['preview']['post_content'] );
 	}
 
 	public function test_create_draft_with_standalone_batch_one_blocks_serializes(): void {
@@ -742,6 +769,150 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertTrue( $result['ok'] );
 		$this->assertStringNotContainsString( 'Keep me only when merging', $result['after']['post_content'] );
 		$this->assertStringContainsString( '<h2>1</h2>', $result['after']['post_content'] );
+	}
+
+	public function test_update_post_can_insert_blocks_after_nth_paragraph_in_dry_run(): void {
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post(
+			12,
+			'Existing title',
+			'<!-- wp:paragraph --><p>Paragraph 1</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Paragraph 2</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Paragraph 3</p><!-- /wp:paragraph -->',
+			'Old excerpt'
+		);
+
+		$result = $this->update_post(
+			array(
+				'post_id'                => 12,
+				'insert_after_paragraph' => 2,
+				'blocks'                 => array(
+					array(
+						'blockName'    => 'core/image',
+						'attrs'        => array(
+							'id'  => 0,
+							'url' => 'https://example.test/wp-content/uploads/test.jpeg',
+							'alt' => 'test',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+						'innerContent' => array( '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>' ),
+					),
+				),
+				'dry_run'                => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringContainsString( '<p>Paragraph 1</p>', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<p>Paragraph 2</p><!-- wp:image {"id":0,"url":"https://example.test/wp-content/uploads/test.jpeg","alt":"test"} -->', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<p>Paragraph 3</p>', $result['after']['post_content'] );
+	}
+
+	public function test_update_post_can_insert_blocks_at_end_in_dry_run(): void {
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post(
+			12,
+			'Existing title',
+			'<!-- wp:paragraph --><p>Paragraph 1</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Paragraph 2</p><!-- /wp:paragraph -->',
+			'Old excerpt'
+		);
+
+		$result = $this->update_post(
+			array(
+				'post_id'         => 12,
+				'insert_position' => 'end',
+				'blocks'          => array(
+					array(
+						'blockName'    => 'core/image',
+						'attrs'        => array(
+							'id'  => 0,
+							'url' => 'https://example.test/wp-content/uploads/test.jpeg',
+							'alt' => 'test',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+						'innerContent' => array( '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>' ),
+					),
+				),
+				'dry_run'         => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringEndsWith(
+			'<!-- wp:image {"id":0,"url":"https://example.test/wp-content/uploads/test.jpeg","alt":"test"} --><figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure><!-- /wp:image -->',
+			$result['after']['post_content']
+		);
+	}
+
+	public function test_update_post_can_insert_blocks_after_matching_block_in_dry_run(): void {
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post(
+			12,
+			'Existing title',
+			'<!-- wp:paragraph --><p>Paragraph 1</p><!-- /wp:paragraph --><!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Heading A</h2><!-- /wp:heading --><!-- wp:paragraph --><p>Paragraph 2</p><!-- /wp:paragraph --><!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Heading B</h2><!-- /wp:heading -->',
+			'Old excerpt'
+		);
+
+		$result = $this->update_post(
+			array(
+				'post_id'            => 12,
+				'insert_after_block' => array(
+					'block_name' => 'core/heading',
+					'from_end'   => true,
+				),
+				'blocks'             => array(
+					array(
+						'blockName'    => 'core/image',
+						'attrs'        => array(
+							'id'  => 0,
+							'url' => 'https://example.test/wp-content/uploads/test.jpeg',
+							'alt' => 'test',
+						),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>',
+						'innerContent' => array( '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/test.jpeg" alt="test"/></figure>' ),
+					),
+				),
+				'dry_run'            => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringContainsString(
+			'<h2 class="wp-block-heading">Heading B</h2><!-- /wp:heading --><!-- wp:image {"id":0,"url":"https://example.test/wp-content/uploads/test.jpeg","alt":"test"} -->',
+			$result['after']['post_content']
+		);
+	}
+
+	public function test_update_post_can_insert_blocks_before_matching_block_in_dry_run(): void {
+		$GLOBALS['sitepilot_test_posts'][12] = new WP_Post(
+			12,
+			'Existing title',
+			'<!-- wp:paragraph --><p>Paragraph 1</p><!-- /wp:paragraph --><!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Heading A</h2><!-- /wp:heading -->',
+			'Old excerpt'
+		);
+
+		$result = $this->update_post(
+			array(
+				'post_id'             => 12,
+				'insert_before_block' => array(
+					'block_name' => 'core/heading',
+				),
+				'blocks'              => array(
+					array(
+						'blockName'    => 'core/paragraph',
+						'attrs'        => array(),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '<p>Inserted before heading</p>',
+						'innerContent' => array( '<p>Inserted before heading</p>' ),
+					),
+				),
+				'dry_run'             => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertStringContainsString(
+			'<p>Paragraph 1</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Inserted before heading</p><!-- /wp:paragraph --><!-- wp:heading {"level":2} -->',
+			$result['after']['post_content']
+		);
 	}
 
 	public function test_set_post_seo_meta_uses_sitepilot_keys_by_default(): void {

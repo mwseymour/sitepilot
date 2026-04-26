@@ -115,6 +115,142 @@ export type McpToolCall = {
   arguments: Record<string, unknown>;
 };
 
+type ParsedBlock = {
+  blockName: string;
+  attrs: Record<string, unknown>;
+  innerBlocks: ParsedBlock[];
+  innerHTML: string;
+  innerContent: Array<string | null>;
+};
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function normalizeRecoveredBlockName(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  if (trimmed.length === 0) {
+    return trimmed;
+  }
+  return trimmed.includes("/") ? trimmed : `core/${trimmed}`;
+}
+
+function containsEscapedSerializedGutenbergMarkup(value: string): boolean {
+  return /&lt;!--\s*\/?wp:/i.test(value);
+}
+
+function normalizeRecoveredInnerHtml(
+  blockName: string,
+  innerHtml: string,
+  attrs: Record<string, unknown>
+): string {
+  if (/<[a-z][\s\S]*>/i.test(innerHtml)) {
+    return innerHtml;
+  }
+  const text = escapeHtml(innerHtml.trim());
+  if (blockName === "core/paragraph") {
+    return `<p>${text}</p>`;
+  }
+  if (blockName === "core/heading") {
+    const level =
+      typeof attrs.level === "number" &&
+      Number.isInteger(attrs.level) &&
+      attrs.level >= 1 &&
+      attrs.level <= 6
+        ? attrs.level
+        : 2;
+    return `<h${level}>${text}</h${level}>`;
+  }
+  return text;
+}
+
+function parseRecoveredBlocksFromSerializedMarkup(value: string): ParsedBlock[] {
+  const decoded = decodeHtmlEntities(value);
+  const pattern =
+    /<!--\s*wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:\1\s*-->/gi;
+  const recovered: ParsedBlock[] = [];
+
+  for (const match of decoded.matchAll(pattern)) {
+    const rawName = match[1] ?? "";
+    const rawAttrs = match[2];
+    const rawInnerHtml = match[3] ?? "";
+    const blockName = normalizeRecoveredBlockName(rawName);
+    let attrs: Record<string, unknown> = {};
+    if (rawAttrs) {
+      try {
+        const parsed = JSON.parse(rawAttrs) as unknown;
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+          attrs = parsed as Record<string, unknown>;
+        }
+      } catch {
+        attrs = {};
+      }
+    }
+
+    const innerHTML = normalizeRecoveredInnerHtml(blockName, rawInnerHtml, attrs);
+    recovered.push({
+      blockName,
+      attrs,
+      innerBlocks: [],
+      innerHTML,
+      innerContent: [innerHTML]
+    });
+  }
+
+  return recovered;
+}
+
+function recoverMalformedSingleBlockArray(blocks: unknown[]): unknown[] {
+  if (blocks.length !== 1) {
+    return blocks;
+  }
+  const onlyBlock = blocks[0];
+  if (
+    onlyBlock === null ||
+    typeof onlyBlock !== "object" ||
+    Array.isArray(onlyBlock) ||
+    typeof (onlyBlock as { innerHTML?: unknown }).innerHTML !== "string"
+  ) {
+    return blocks;
+  }
+
+  const innerHTML = (onlyBlock as { innerHTML: string }).innerHTML;
+  if (!containsEscapedSerializedGutenbergMarkup(innerHTML)) {
+    return blocks;
+  }
+
+  const recovered = parseRecoveredBlocksFromSerializedMarkup(innerHTML);
+  if (recovered.length === 0) {
+    return blocks;
+  }
+
+  const nonParagraphBlocks = recovered.filter(
+    (block) => block.blockName !== "core/paragraph"
+  );
+  return nonParagraphBlocks.length > 0 ? nonParagraphBlocks : recovered;
+}
+
+function sanitizeStructuredBlocks(blocks: unknown[] | undefined): unknown[] | undefined {
+  if (blocks === undefined) {
+    return undefined;
+  }
+  return recoverMalformedSingleBlockArray(blocks);
+}
+
 /**
  * Maps a persisted plan action to a SitePilot WordPress MCP tool (T28/T29).
  */
@@ -164,11 +300,13 @@ export function actionToMcpToolCall(
       "postContent",
       "post_content"
     );
-    const blocks = pickArrayFrom(
+    const blocks = sanitizeStructuredBlocks(
+      pickArrayFrom(
       inputScopes,
       "blocks",
       "contentBlocks",
       "content_blocks"
+      )
     );
     return {
       toolName: "sitepilot-create-draft-post",
@@ -223,17 +361,39 @@ export function actionToMcpToolCall(
     };
     const title = pickStringFrom(inputScopes, "title", "postTitle");
     const content = pickStringFrom(inputScopes, "content", "postContent");
-    const blocks = pickArrayFrom(
+    const blocks = sanitizeStructuredBlocks(
+      pickArrayFrom(
       inputScopes,
       "blocks",
       "contentBlocks",
       "content_blocks"
+      )
     );
     const excerpt = pickStringFrom(inputScopes, "excerpt", "postExcerpt");
     const replaceContent = pickBooleanFrom(
       inputScopes,
       "replaceContent",
       "replace_content"
+    );
+    const insertAfterParagraph = pickNumberFrom(
+      inputScopes,
+      "insertAfterParagraph",
+      "insert_after_paragraph"
+    );
+    const insertPosition = pickStringFrom(
+      inputScopes,
+      "insertPosition",
+      "insert_position"
+    );
+    const insertAfterBlock = pickObject(
+      nestedInput ?? input,
+      "insertAfterBlock",
+      "insert_after_block"
+    );
+    const insertBeforeBlock = pickObject(
+      nestedInput ?? input,
+      "insertBeforeBlock",
+      "insert_before_block"
     );
     const seoDescription = pickStringFrom(
       inputScopes,
@@ -275,6 +435,18 @@ export function actionToMcpToolCall(
     }
     if (replaceContent !== undefined) {
       args.replace_content = replaceContent;
+    }
+    if (insertAfterParagraph !== undefined) {
+      args.insert_after_paragraph = insertAfterParagraph;
+    }
+    if (insertPosition !== undefined) {
+      args.insert_position = insertPosition;
+    }
+    if (insertAfterBlock !== undefined) {
+      args.insert_after_block = insertAfterBlock;
+    }
+    if (insertBeforeBlock !== undefined) {
+      args.insert_before_block = insertBeforeBlock;
     }
     return {
       toolName: "sitepilot-update-post-fields",

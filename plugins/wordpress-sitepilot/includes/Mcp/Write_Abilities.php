@@ -94,6 +94,29 @@ final class Write_Abilities {
 						'content'   => array( 'type' => 'string' ),
 						'blocks'    => self::parsed_blocks_schema(),
 						'replace_content' => array( 'type' => 'boolean', 'default' => false ),
+						'insert_after_paragraph' => array( 'type' => 'integer', 'minimum' => 0 ),
+						'insert_after_block' => array(
+							'type'                 => 'object',
+							'properties'           => array(
+								'block_name' => array( 'type' => 'string' ),
+								'from_end'   => array( 'type' => 'boolean', 'default' => false ),
+							),
+							'required'             => array( 'block_name' ),
+							'additionalProperties' => false,
+						),
+						'insert_before_block' => array(
+							'type'                 => 'object',
+							'properties'           => array(
+								'block_name' => array( 'type' => 'string' ),
+								'from_end'   => array( 'type' => 'boolean', 'default' => false ),
+							),
+							'required'             => array( 'block_name' ),
+							'additionalProperties' => false,
+						),
+						'insert_position' => array(
+							'type' => 'string',
+							'enum' => array( 'start', 'end' ),
+						),
 						'excerpt'   => array( 'type' => 'string' ),
 						'dry_run'   => array( 'type' => 'boolean', 'default' => false ),
 					),
@@ -396,6 +419,11 @@ final class Write_Abilities {
 				$path . ' uses unsupported block "' . $block_name . '". ' . self::unsupported_block_reason( $block_name )
 			);
 		}
+		if ( self::contains_disallowed_serialized_markup( $block_name, $value['innerHTML'] ) ) {
+			return self::invalid_blocks(
+				$path . '.innerHTML contains escaped or embedded Gutenberg block delimiters; send parsed blocks instead of serialized block markup'
+			);
+		}
 
 		$attrs = self::sanitize_block_attrs( $value['attrs'] );
 		if ( ! is_array( $attrs ) ) {
@@ -419,6 +447,11 @@ final class Write_Abilities {
 		$inner_content = array();
 		foreach ( $value['innerContent'] as $index => $chunk ) {
 			if ( is_string( $chunk ) ) {
+				if ( self::contains_disallowed_serialized_markup( $block_name, $chunk ) ) {
+					return self::invalid_blocks(
+						$path . '.innerContent[' . $index . '] contains escaped or embedded Gutenberg block delimiters; send parsed blocks instead of serialized block markup'
+					);
+				}
 				$inner_content[] = wp_kses_post( self::normalize_text_chunk( $chunk, $block_name, $attrs ) );
 				continue;
 			}
@@ -548,6 +581,28 @@ final class Write_Abilities {
 				'innerHTML'    => $inner_html,
 				'innerContent' => $inner_content,
 			),
+		);
+	}
+
+	private static function contains_disallowed_serialized_markup( string $block_name, string $value ): bool {
+		if ( ! self::disallows_embedded_block_delimiters( $block_name ) ) {
+			return false;
+		}
+		return 1 === preg_match( '/(?:&lt;|<)!--\s*\/?wp:/i', $value );
+	}
+
+	private static function disallows_embedded_block_delimiters( string $block_name ): bool {
+		return in_array(
+			$block_name,
+			array(
+				'core/paragraph',
+				'core/heading',
+				'core/quote',
+				'core/pullquote',
+				'core/button',
+				'core/list-item',
+			),
+			true
 		);
 	}
 
@@ -1126,10 +1181,8 @@ final class Write_Abilities {
 	 */
 	private static function normalize_heading_html( string $html, array $attrs ): string {
 		$tag = self::heading_tag_name( $attrs );
-		$normalized = preg_replace( '/^<h[1-6]\b/i', '<' . $tag, trim( $html ) );
-		$normalized = is_string( $normalized ) ? $normalized : trim( $html );
-		$normalized = preg_replace( '/<\/h[1-6]>\s*$/i', '</' . $tag . '>', $normalized );
-		return is_string( $normalized ) ? $normalized : trim( $html );
+		$text = htmlspecialchars( self::extract_text_content( $html ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		return '<' . $tag . ' class="wp-block-heading">' . $text . '</' . $tag . '>';
 	}
 
 	/**
@@ -1720,6 +1773,200 @@ final class Write_Abilities {
 	}
 
 	/**
+	 * @param string                          $existing_content Existing serialized post content.
+	 * @param array<int, array<string, mixed>> $incoming_blocks Incoming parsed blocks.
+	 * @param int                             $after_paragraph  Insert after the Nth top-level paragraph block.
+	 * @return array<string, mixed>
+	 */
+	private static function insert_blocks_after_nth_paragraph( string $existing_content, array $incoming_blocks, int $after_paragraph ): array {
+		if ( $after_paragraph < 0 ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_after_paragraph must be zero or greater',
+			);
+		}
+
+		$split = self::split_top_level_serialized_segments( $existing_content );
+		if ( ! $split['ok'] ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_blocks_failed: ' . $split['error'],
+			);
+		}
+
+		$segments            = $split['segments'];
+		$paragraph_count     = 0;
+		$insert_segment_index = null;
+
+		if ( 0 === $after_paragraph ) {
+			$insert_segment_index = 0;
+		} else {
+			foreach ( $segments as $index => $segment ) {
+				if ( ! is_array( $segment ) || 'block' !== ( $segment['type'] ?? '' ) ) {
+					continue;
+				}
+				if ( 'core/paragraph' !== ( $segment['blockName'] ?? '' ) ) {
+					continue;
+				}
+				++$paragraph_count;
+				if ( $paragraph_count === $after_paragraph ) {
+					$insert_segment_index = $index + 1;
+					break;
+				}
+			}
+		}
+
+		if ( null === $insert_segment_index ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_blocks_failed: could not find paragraph ' . $after_paragraph . ' in existing post_content',
+			);
+		}
+
+		$insertion = array(
+			array(
+				'type' => 'raw',
+				'raw'  => serialize_blocks( $incoming_blocks ),
+			),
+		);
+
+		array_splice( $segments, $insert_segment_index, 0, $insertion );
+
+		return array(
+			'ok'      => true,
+			'content' => implode(
+				'',
+				array_map(
+					static function ( array $segment ): string {
+						return isset( $segment['raw'] ) ? (string) $segment['raw'] : '';
+					},
+					$segments
+				)
+			),
+		);
+	}
+
+	/**
+	 * @param string                          $existing_content Existing serialized post content.
+	 * @param array<int, array<string, mixed>> $incoming_blocks Incoming parsed blocks.
+	 * @param string                          $block_name       Top-level block name to match.
+	 * @param bool                            $before           Insert before instead of after.
+	 * @param bool                            $from_end         Match the last occurrence instead of the first.
+	 * @return array<string, mixed>
+	 */
+	private static function insert_blocks_relative_to_matching_block( string $existing_content, array $incoming_blocks, string $block_name, bool $before, bool $from_end ): array {
+		if ( '' === $block_name ) {
+			return array(
+				'ok'    => false,
+				'error' => $before ? 'insert_before_block.block_name is required' : 'insert_after_block.block_name is required',
+			);
+		}
+
+		$split = self::split_top_level_serialized_segments( $existing_content );
+		if ( ! $split['ok'] ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_blocks_failed: ' . $split['error'],
+			);
+		}
+
+		$segments = $split['segments'];
+		$matching_indexes = array();
+		foreach ( $segments as $index => $segment ) {
+			if ( ! is_array( $segment ) || 'block' !== ( $segment['type'] ?? '' ) ) {
+				continue;
+			}
+			if ( $block_name === ( $segment['blockName'] ?? '' ) ) {
+				$matching_indexes[] = $index;
+			}
+		}
+
+		if ( empty( $matching_indexes ) ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_blocks_failed: could not find block ' . $block_name . ' in existing post_content',
+			);
+		}
+
+		$target_index = $from_end ? end( $matching_indexes ) : reset( $matching_indexes );
+		if ( false === $target_index ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_blocks_failed: could not resolve target block insertion point',
+			);
+		}
+
+		$insert_segment_index = $before ? (int) $target_index : ( (int) $target_index + 1 );
+		$insertion = array(
+			array(
+				'type' => 'raw',
+				'raw'  => serialize_blocks( $incoming_blocks ),
+			),
+		);
+
+		array_splice( $segments, $insert_segment_index, 0, $insertion );
+
+		return array(
+			'ok'      => true,
+			'content' => implode(
+				'',
+				array_map(
+					static function ( array $segment ): string {
+						return isset( $segment['raw'] ) ? (string) $segment['raw'] : '';
+					},
+					$segments
+				)
+			),
+		);
+	}
+
+	/**
+	 * @param string                          $existing_content Existing serialized post content.
+	 * @param array<int, array<string, mixed>> $incoming_blocks Incoming parsed blocks.
+	 * @param string                          $position         start|end.
+	 * @return array<string, mixed>
+	 */
+	private static function insert_blocks_at_content_boundary( string $existing_content, array $incoming_blocks, string $position ): array {
+		if ( ! in_array( $position, array( 'start', 'end' ), true ) ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_position must be "start" or "end"',
+			);
+		}
+
+		$split = self::split_top_level_serialized_segments( $existing_content );
+		if ( ! $split['ok'] ) {
+			return array(
+				'ok'    => false,
+				'error' => 'insert_blocks_failed: ' . $split['error'],
+			);
+		}
+
+		$segments   = $split['segments'];
+		$insertion  = array(
+			array(
+				'type' => 'raw',
+				'raw'  => serialize_blocks( $incoming_blocks ),
+			),
+		);
+		$insert_at = 'start' === $position ? 0 : count( $segments );
+		array_splice( $segments, $insert_at, 0, $insertion );
+
+		return array(
+			'ok'      => true,
+			'content' => implode(
+				'',
+				array_map(
+					static function ( array $segment ): string {
+						return isset( $segment['raw'] ) ? (string) $segment['raw'] : '';
+					},
+					$segments
+				)
+			),
+		);
+	}
+
+	/**
 	 * @param string $message Validation detail.
 	 * @return array<string, mixed>
 	 */
@@ -2075,6 +2322,10 @@ final class Write_Abilities {
 	private static function exec_update_post_fields( array $input ): array {
 		$dry_run         = ! empty( $input['dry_run'] );
 		$replace_content = ! empty( $input['replace_content'] );
+		$insert_after_paragraph = array_key_exists( 'insert_after_paragraph', $input ) ? (int) $input['insert_after_paragraph'] : null;
+		$insert_after_block = isset( $input['insert_after_block'] ) && is_array( $input['insert_after_block'] ) ? $input['insert_after_block'] : null;
+		$insert_before_block = isset( $input['insert_before_block'] ) && is_array( $input['insert_before_block'] ) ? $input['insert_before_block'] : null;
+		$insert_position = isset( $input['insert_position'] ) ? (string) $input['insert_position'] : null;
 		$post_id         = absint( $input['post_id'] );
 		if ( $post_id < 1 ) {
 			return array(
@@ -2125,7 +2376,29 @@ final class Write_Abilities {
 				);
 			}
 			if ( array_key_exists( 'blocks', $input ) && ! $replace_content && isset( $content['blocks'] ) && is_array( $content['blocks'] ) ) {
-				$merged = self::merge_blocks_into_existing_content( $before['post_content'], $content['blocks'] );
+				if ( null !== $insert_after_paragraph ) {
+					$merged = self::insert_blocks_after_nth_paragraph( $before['post_content'], $content['blocks'], $insert_after_paragraph );
+				} elseif ( null !== $insert_after_block ) {
+					$merged = self::insert_blocks_relative_to_matching_block(
+						$before['post_content'],
+						$content['blocks'],
+						self::normalize_block_name( (string) ( $insert_after_block['block_name'] ?? '' ) ),
+						false,
+						! empty( $insert_after_block['from_end'] )
+					);
+				} elseif ( null !== $insert_before_block ) {
+					$merged = self::insert_blocks_relative_to_matching_block(
+						$before['post_content'],
+						$content['blocks'],
+						self::normalize_block_name( (string) ( $insert_before_block['block_name'] ?? '' ) ),
+						true,
+						! empty( $insert_before_block['from_end'] )
+					);
+				} elseif ( null !== $insert_position ) {
+					$merged = self::insert_blocks_at_content_boundary( $before['post_content'], $content['blocks'], $insert_position );
+				} else {
+					$merged = self::merge_blocks_into_existing_content( $before['post_content'], $content['blocks'] );
+				}
 				if ( ! $merged['ok'] ) {
 					return array(
 						'ok'      => false,

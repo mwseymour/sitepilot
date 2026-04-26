@@ -1159,6 +1159,27 @@ export async function executePlanAction(
           error instanceof Error ? error.message : "MCP tool call failed."
       };
     }
+    const mcpResult = normalizeMcpToolResult(raw);
+    const toolOk =
+      mcpResult.ok === true ||
+      (typeof mcpResult.ok === "boolean" && mcpResult.ok);
+    if (!toolOk) {
+      const siteMessage =
+        typeof mcpResult.error === "string" && mcpResult.error.trim().length > 0
+          ? mcpResult.error
+          : "The site reported that the action did not succeed.";
+      await appendExecutionMessage({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        author: { kind: "system" },
+        text: `Dry-run failed for ${spec.toolName}: ${siteMessage}`
+      });
+      return {
+        ok: false,
+        code: "tool_reported_failure",
+        message: siteMessage
+      };
+    }
     await appendExecutionMessage({
       siteId: input.siteId,
       requestId: input.requestId,
@@ -1169,7 +1190,7 @@ export async function executePlanAction(
       ok: true,
       dryRun: true,
       toolName: spec.toolName,
-      mcpResult: normalizeMcpToolResult(raw)
+      mcpResult
     };
   }
 

@@ -1059,6 +1059,35 @@ h2 {
   margin-top: 0.75rem;
 }
 
+.chat-diff-view {
+  margin: 0.35rem 0 0;
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.chat-diff-line {
+  display: block;
+  margin: 0 -0.75rem;
+  padding: 0.08rem 0.75rem;
+}
+
+.chat-diff-line-context {
+  color: var(--text-soft);
+}
+
+.chat-diff-line-added {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.chat-diff-line-removed {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
 .chat-action-list {
   list-style: none;
   margin: 0.35rem 0 0;
@@ -1237,6 +1266,14 @@ h2 {
 
 .chat-debug-panel[open] summary {
   margin-bottom: 0.75rem;
+}
+
+.chat-debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.85rem;
 }
 
 @media (max-width: 900px) {

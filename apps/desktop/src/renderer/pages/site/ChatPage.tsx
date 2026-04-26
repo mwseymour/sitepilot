@@ -242,6 +242,119 @@ function extractBeforeAfter(
   };
 }
 
+type DiffLine = {
+  kind: "context" | "added" | "removed";
+  text: string;
+};
+
+function stringifyDiffValue(value: unknown): string {
+  if (value === undefined) {
+    return "undefined";
+  }
+
+  const serialized = JSON.stringify(value, null, 2);
+  return serialized ?? String(value);
+}
+
+function buildDiffLines(beforeValue: unknown, afterValue: unknown): DiffLine[] {
+  const beforeLines = stringifyDiffValue(beforeValue).split("\n");
+  const afterLines = stringifyDiffValue(afterValue).split("\n");
+  const lineCounts = Array.from({ length: beforeLines.length + 1 }, () =>
+    Array<number>(afterLines.length + 1).fill(0)
+  );
+
+  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
+    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
+      lineCounts[beforeIndex]![afterIndex] =
+        beforeLines[beforeIndex] === afterLines[afterIndex]
+          ? (lineCounts[beforeIndex + 1]?.[afterIndex + 1] ?? 0) + 1
+          : Math.max(
+              lineCounts[beforeIndex + 1]?.[afterIndex] ?? 0,
+              lineCounts[beforeIndex]?.[afterIndex + 1] ?? 0
+            );
+    }
+  }
+
+  const diffLines: DiffLine[] = [];
+  let beforeIndex = 0;
+  let afterIndex = 0;
+
+  while (beforeIndex < beforeLines.length && afterIndex < afterLines.length) {
+    if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
+      diffLines.push({ kind: "context", text: `  ${beforeLines[beforeIndex]}` });
+      beforeIndex += 1;
+      afterIndex += 1;
+      continue;
+    }
+
+    const skipBeforeScore = lineCounts[beforeIndex + 1]?.[afterIndex] ?? 0;
+    const skipAfterScore = lineCounts[beforeIndex]?.[afterIndex + 1] ?? 0;
+
+    if (skipBeforeScore >= skipAfterScore) {
+      diffLines.push({ kind: "removed", text: `- ${beforeLines[beforeIndex]}` });
+      beforeIndex += 1;
+      continue;
+    }
+
+    diffLines.push({ kind: "added", text: `+ ${afterLines[afterIndex]}` });
+    afterIndex += 1;
+  }
+
+  while (beforeIndex < beforeLines.length) {
+    diffLines.push({ kind: "removed", text: `- ${beforeLines[beforeIndex]}` });
+    beforeIndex += 1;
+  }
+
+  while (afterIndex < afterLines.length) {
+    diffLines.push({ kind: "added", text: `+ ${afterLines[afterIndex]}` });
+    afterIndex += 1;
+  }
+
+  return diffLines;
+}
+
+function parseJsonDebugValue(value: string | null): unknown {
+  if (value === null) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function summarizeImageAttachment(
+  attachment: ImageAttachmentPayload
+): Record<string, unknown> {
+  return {
+    fileName: attachment.fileName,
+    mediaType: attachment.mediaType,
+    sizeBytes: attachment.sizeBytes
+  };
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  const succeeded = document.execCommand("copy");
+  textarea.remove();
+  if (!succeeded) {
+    throw new Error("Clipboard copy is not available in this environment.");
+  }
+}
+
 export function ChatPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [threads, setThreads] = useState<ThreadRow[]>([]);
@@ -273,9 +386,11 @@ export function ChatPage(): ReactElement | null {
     null
   );
   const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(null);
+  const [debugCopyLabel, setDebugCopyLabel] = useState("Copy debug log");
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const debugCopyResetTimerRef = useRef<number | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -854,6 +969,14 @@ export function ChatPage(): ReactElement | null {
     setDryRunPreview(null);
   }, [selectedThreadId, lastRequestId]);
 
+  useEffect(() => {
+    return () => {
+      if (debugCopyResetTimerRef.current !== null) {
+        window.clearTimeout(debugCopyResetTimerRef.current);
+      }
+    };
+  }, []);
+
   if (loading) {
     return <p className="muted">Loading workspace…</p>;
   }
@@ -955,6 +1078,108 @@ export function ChatPage(): ReactElement | null {
     (total, attachment) => total + attachment.sizeBytes,
     0
   );
+  const debugExport = useMemo(
+    () => ({
+      exportedAt: new Date().toISOString(),
+      siteId,
+      site: {
+        id: data.site.id,
+        name: data.site.name,
+        activationStatus: data.site.activationStatus,
+        workspaceId: data.site.workspaceId,
+        environment: data.site.environment,
+        baseUrl: data.site.baseUrl
+      },
+      uiState: {
+        selectedThreadId,
+        lastRequestId,
+        developerToolsEnabled,
+        busy,
+        execBusy,
+        activityLabel,
+        execProgressLabel,
+        lastExecHint,
+        error: err
+      },
+      threadList: threads,
+      selectedThread: selectedThread ?? null,
+      messages: messages.map((message) => ({
+        ...message,
+        attachments:
+          message.attachments?.map((attachment) =>
+            summarizeImageAttachment(attachment)
+          ) ?? []
+      })),
+      currentRequestPromptDraft: requestPrompt,
+      pendingAttachments: pendingAttachments.map((attachment) =>
+        summarizeImageAttachment(attachment)
+      ),
+      debugPanels: {
+        feedbackLog: developerMessages,
+        currentRequestPrompt: bundle?.request.userPrompt ?? null,
+        planValidation: parseJsonDebugValue(planValidationJson),
+        plannedActions: bundle?.plan?.proposedActions ?? null,
+        lastMcpRequest: bundle?.lastExecution?.toolInvocation
+          ? {
+              toolName: bundle.lastExecution.toolInvocation.toolName,
+              input: bundle.lastExecution.toolInvocation.input
+            }
+          : null,
+        lastMcpResponse: bundle?.lastExecution?.toolInvocation?.output ?? null,
+        plannerContext: parseJsonDebugValue(plannerJson),
+        dryRunPreview
+      },
+      bundle,
+      workspaceData: data
+    }),
+    [
+      activityLabel,
+      busy,
+      bundle,
+      data.site.activationStatus,
+      data.site.baseUrl,
+      data.site.environment,
+      data.site.id,
+      data.site.name,
+      data.site.workspaceId,
+      developerMessages,
+      developerToolsEnabled,
+      dryRunPreview,
+      err,
+      execBusy,
+      execProgressLabel,
+      lastExecHint,
+      lastRequestId,
+      messages,
+      pendingAttachments,
+      planValidationJson,
+      plannerJson,
+      requestPrompt,
+      selectedThread,
+      selectedThreadId,
+      siteId,
+      threads
+    ]
+  );
+
+  const onCopyDebugLog = useCallback(async (): Promise<void> => {
+    try {
+      await copyTextToClipboard(JSON.stringify(debugExport, null, 2));
+      setDebugCopyLabel("Copied");
+    } catch (error) {
+      setDebugCopyLabel(
+        error instanceof Error ? "Copy failed" : "Copy unavailable"
+      );
+    }
+
+    if (debugCopyResetTimerRef.current !== null) {
+      window.clearTimeout(debugCopyResetTimerRef.current);
+    }
+    debugCopyResetTimerRef.current = window.setTimeout(() => {
+      setDebugCopyLabel("Copy debug log");
+      debugCopyResetTimerRef.current = null;
+    }, 2000);
+  }, [debugExport]);
 
   if (!chatEnabled) {
     return (
@@ -1450,6 +1675,14 @@ export function ChatPage(): ReactElement | null {
                     ) : null}
                     {dryRunPreview ? (
                       <div className="chat-bundle-panel">
+                        {(() => {
+                          const { before, after } = extractBeforeAfter(
+                            dryRunPreview.mcpResult
+                          );
+                          const diffLines = buildDiffLines(before, after);
+
+                          return (
+                            <>
                         <div className="chat-plan-runbar">
                           <div>
                             <h4>Dry-run Preview</h4>
@@ -1476,28 +1709,20 @@ export function ChatPage(): ReactElement | null {
                             </pre>
                           </>
                         ) : null}
-                        <div className="chat-diff-grid">
-                          <div>
-                            <h5>Before</h5>
-                            <pre className="diag-json">
-                              {JSON.stringify(
-                                extractBeforeAfter(dryRunPreview.mcpResult).before,
-                                null,
-                                2
-                              )}
-                            </pre>
-                          </div>
-                          <div>
-                            <h5>After</h5>
-                            <pre className="diag-json">
-                              {JSON.stringify(
-                                extractBeforeAfter(dryRunPreview.mcpResult).after,
-                                null,
-                                2
-                              )}
-                            </pre>
-                          </div>
-                        </div>
+                        <h5>Diff</h5>
+                        <pre className="chat-diff-view" aria-label="Dry-run diff">
+                          {diffLines.map((line, index) => (
+                            <span
+                              key={`${line.kind}-${index}-${line.text}`}
+                              className={`chat-diff-line chat-diff-line-${line.kind}`}
+                            >
+                              {line.text}
+                            </span>
+                          ))}
+                        </pre>
+                            </>
+                          );
+                        })()}
                       </div>
                     ) : null}
                     {bundle.plan ? (
@@ -1610,6 +1835,20 @@ export function ChatPage(): ReactElement | null {
                 {developerToolsEnabled ? (
                   <details className="chat-debug-panel">
                     <summary>Developer tools</summary>
+                    <div className="chat-debug-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-small"
+                        disabled={busy || execBusy}
+                        onClick={() => void onCopyDebugLog()}
+                      >
+                        {debugCopyLabel}
+                      </button>
+                      <span className="muted small-print">
+                        Copies chat history, request state, plan data, and last
+                        execution details as JSON.
+                      </span>
+                    </div>
                     {developerMessages.length > 0 ? (
                       <div className="chat-planner-panel">
                         <h3>Feedback log</h3>
