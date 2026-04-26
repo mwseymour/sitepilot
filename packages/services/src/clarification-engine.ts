@@ -70,8 +70,37 @@ function requestMentionsExistingBlockEdit(prompt: string): boolean {
 }
 
 function requestHasExplicitBlockLocator(prompt: string): boolean {
+  const clarificationMatch = prompt.match(
+    /\bClarification:\s*([^\n]+(?:\n(?!\n)[^\n]+)*)/i
+  );
+  const clarificationText = clarificationMatch?.[1]?.trim() ?? "";
+  const clarificationTokens = (
+    clarificationText.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []
+  ).filter(
+    (token) =>
+      !new Set([
+        "the",
+        "this",
+        "that",
+        "it",
+        "one",
+        "block",
+        "heading",
+        "title",
+        "image",
+        "paragraph"
+      ]).has(token)
+  );
+
   return (
     /["'][^"']+["']/.test(prompt) ||
+    (clarificationText.length > 0 &&
+      (/["'][^"']+["']/.test(clarificationText) ||
+        /\b(first|second|third|fourth|fifth|last|final|previous|next|newly added|just added|recently added)\b/i.test(
+          clarificationText
+        ) ||
+        (/\b(heading|title|block)\b/i.test(clarificationText) &&
+          clarificationTokens.length >= 1))) ||
     /\b(heading|title|block)\b[\s\S]{0,20}\b(with|text|called|named)\b[\s\S]{0,80}[a-z0-9][^\n]*[!?.,:]?/i.test(
       prompt
     ) ||

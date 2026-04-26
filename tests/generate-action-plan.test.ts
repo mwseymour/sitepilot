@@ -2326,4 +2326,347 @@ describe("buildLlmActionPlan", () => {
       })
     ]);
   });
+
+  it("strips prompt prose from mixed-intent end-of-content link insertions", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary:
+          "Update the draft post to add a featured image, a link, and set a meta description.",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:102"],
+        proposedActions: [
+          {
+            id: "action-2",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 102,
+              insert_position: "end",
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML:
+                    "<p>Add this image as featured image. And add a link to <a href='https://www.google.com' target='_blank'>Wibble</a> after the last paragraph.</p>",
+                  innerContent: [
+                    "<p>Add this image as featured image. And add a link to <a href='https://www.google.com' target='_blank'>Wibble</a> after the last paragraph.</p>"
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          },
+          {
+            id: "action-1",
+            type: "set_post_featured_image",
+            version: 1,
+            input: {
+              post_id: 102
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          },
+          {
+            id: "action-3",
+            type: "sitepilot-set-post-seo-meta",
+            version: 1,
+            input: {
+              post_id: 102,
+              meta: {
+                meta_description: "aliens coming!"
+              }
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "Add this image as featured image. And add a link to Google.com opening in a new tab with the text of 'Wibble' after the last paragraph. Set meta description as 'aliens coming!'"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const insertedBlocks = (
+      result.plan.proposedActions.find((action) => action.id === "action-2")
+        ?.input as Record<string, unknown>
+    ).blocks as Array<Record<string, unknown>>;
+
+    expect(insertedBlocks).toEqual([
+      expect.objectContaining({
+        blockName: "core/paragraph"
+      })
+    ]);
+    expect(insertedBlocks[0]?.innerHTML).toContain("https://www.google.com");
+    expect(insertedBlocks[0]?.innerHTML).toContain(">Wibble</a>");
+    expect(insertedBlocks[0]?.innerHTML).toContain('target=\'_blank\'');
+  });
+
+  it("appends an SEO meta action when the request explicitly asks for meta description and the planner omits it", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary:
+          "Update the draft post to add a featured image, a link, and set a meta description.",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:102"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "set_post_featured_image",
+            version: 1,
+            input: {
+              post_id: 102
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          },
+          {
+            id: "action-2",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 102,
+              insert_position: "end",
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML:
+                    "<p>Add this image as featured image. And add a link to <a href='https://www.google.com' target='_blank'>Wibble</a> after the last paragraph.</p>",
+                  innerContent: [
+                    "<p>Add this image as featured image. And add a link to <a href='https://www.google.com' target='_blank'>Wibble</a> after the last paragraph.</p>"
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "Add this image as featured image. And add a link to Google.com opening in a new tab with the text of 'Wibble' after the last paragraph. Set meta description as 'aliens coming!'"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const seoAction = result.plan.proposedActions.find(
+      (action) => action.type === "sitepilot-set-post-seo-meta"
+    );
+    expect(seoAction?.input).toMatchObject({
+      post_id: 102,
+      meta: {
+        meta_description: "aliens coming!"
+      }
+    });
+    expect(result.plan.validationWarnings).toContain(
+      "Planner omitted an explicit SEO meta-description request; appended a deterministic SEO meta action."
+    );
+  });
+
+  it("appends a featured-image action when the request explicitly asks for featured image and the planner omits it", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary:
+          "Update the draft post to add a featured image, a link, and set a meta description.",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:102"],
+        proposedActions: [
+          {
+            id: "action-2",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 102,
+              insert_position: "end",
+              blocks: [
+                {
+                  blockName: "core/image",
+                  attrs: {
+                    id: 0,
+                    url: "https://example.test/wp-content/uploads/Totally-Communications-team.jpg",
+                    alt: "Totally Communications team"
+                  },
+                  innerBlocks: [],
+                  innerHTML:
+                    '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/Totally-Communications-team.jpg" alt="Totally Communications team"/></figure>',
+                  innerContent: [
+                    '<figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/Totally-Communications-team.jpg" alt="Totally Communications team"/></figure>'
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          },
+          {
+            id: "action-3",
+            type: "sitepilot-set-post-seo-meta",
+            version: 1,
+            input: {
+              post_id: 102,
+              meta: {
+                meta_description: "aliens coming!"
+              }
+            },
+            targetEntityRefs: ["post:102"],
+            permissionRequirement: "write",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "Add this image as featured image. And add a link to Google.com opening in a new tab with the text of 'Wibble' after the last paragraph. Set meta description as 'aliens coming!'"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestAttachments: [
+        {
+          fileName: "Totally-Communications-team.jpg",
+          mediaType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,ZmFrZQ=="
+        }
+      ],
+      client,
+      model: "gpt-test"
+    });
+
+    expect(
+      result.plan.proposedActions.some(
+        (action) => action.type === "set_post_featured_image"
+      )
+    ).toBe(true);
+    expect(result.plan.validationWarnings).toContain(
+      "Planner omitted an explicit featured-image request; appended a deterministic featured-image action."
+    );
+  });
+
+  it("synthesizes a requested link block when the planner only returns link text", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary:
+          "Add a link to Google.com opening in a new tab with the text of Wibble after the last paragraph.",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:111"],
+        proposedActions: [
+          {
+            id: "1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 111,
+              insert_position: "end",
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Wibble</p>",
+                  innerContent: ["<p>Wibble</p>"]
+                }
+              ]
+            },
+            targetEntityRefs: ["111"],
+            permissionRequirement: "editor",
+            riskLevel: "low",
+            dryRunCapable: false,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "And add a link to Google.com opening in a new tab with the text of 'Wibble' after the last paragraph."
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const insertedBlocks = (
+      result.plan.proposedActions[0]?.input as Record<string, unknown>
+    ).blocks as Array<Record<string, unknown>>;
+
+    expect(insertedBlocks).toEqual([
+      expect.objectContaining({
+        blockName: "core/paragraph"
+      })
+    ]);
+    expect(insertedBlocks[0]?.innerHTML).toContain("https://Google.com");
+    expect(insertedBlocks[0]?.innerHTML).toContain(">Wibble</a>");
+    expect(insertedBlocks[0]?.innerHTML).toContain('target="_blank"');
+  });
 });

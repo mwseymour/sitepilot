@@ -548,7 +548,7 @@ export function ChatPage(): ReactElement | null {
       }) ?? [],
     [bundle?.plan]
   );
-  const canRunPlanDirectly = executableActions.length === 1;
+  const canRunPlanDirectly = executableActions.length > 0;
   const selectedThread = threads.find((thread) => thread.id === selectedThreadId);
 
   const cancelThreadRename = useCallback(() => {
@@ -957,12 +957,13 @@ export function ChatPage(): ReactElement | null {
       setLastExecHint("Run actions individually below for this plan.");
       return;
     }
-    const firstExecutableAction = executableActions[0];
-    if (!firstExecutableAction) {
+    if (executableActions.length === 0) {
       setLastExecHint("No executable actions are available.");
       return;
     }
-    await onExecuteAction(firstExecutableAction.id, dryRun);
+    for (const action of executableActions) {
+      await onExecuteAction(action.id, dryRun);
+    }
   }
 
   useEffect(() => {
@@ -1625,11 +1626,15 @@ export function ChatPage(): ReactElement | null {
                           <p className="muted small-print">
                             {canRunPlanDirectly
                               ? requestCanExecute(bundle.request.status)
-                                ? "The approved plan is ready to run."
+                                ? executableActions.length > 1
+                                  ? "The approved plan is ready to run end-to-end."
+                                  : "The approved plan is ready to run."
                                 : SHOW_DRY_RUN_UI
-                                  ? "You can dry-run this plan now. Execution unlocks after approval."
+                                  ? executableActions.length > 1
+                                    ? "You can dry-run every executable action in this plan now. Execution unlocks after approval."
+                                    : "You can dry-run this plan now. Execution unlocks after approval."
                                   : "Execution unlocks after approval."
-                              : "This plan has multiple runnable actions. Use the action buttons below for now."}
+                              : "Run actions individually below for this plan."}
                           </p>
                         </div>
                         {canRunPlanDirectly ? (
@@ -1644,7 +1649,9 @@ export function ChatPage(): ReactElement | null {
                                 {execBusy &&
                                 execProgressLabel === "Running dry-run…"
                                   ? "Running dry-run…"
-                                  : "Dry-run plan"}
+                                  : executableActions.length > 1
+                                    ? "Dry-run all"
+                                    : "Dry-run plan"}
                               </button>
                             ) : null}
                             <button
@@ -1659,7 +1666,9 @@ export function ChatPage(): ReactElement | null {
                             >
                               {execBusy && execProgressLabel === "Executing…"
                                 ? "Executing…"
-                                : "Execute plan"}
+                                : executableActions.length > 1
+                                  ? "Execute all"
+                                  : "Execute plan"}
                             </button>
                           </div>
                         ) : null}

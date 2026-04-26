@@ -96,6 +96,15 @@ describe("analyzeClarification", () => {
     expect(out.needsClarification).toBe(false);
   });
 
+  it("treats a plain heading-text clarification answer as a resolved block target", () => {
+    const out = analyzeClarification({
+      userPrompt:
+        "Change the hello me heading from h2 to h4\n\nClarification:\nhello me heading",
+      recentPromptsForSite: []
+    });
+    expect(out.needsClarification).toBe(false);
+  });
+
   it("asks for clarification when an image is attached but the prompt asks for a non-image edit", () => {
     const out = analyzeClarification({
       userPrompt: "Now add a heading after paragraph 2 'New heading!'",

@@ -1732,6 +1732,12 @@ function requestAsksForImage(requestText: string): boolean {
   return /\b(image|photo|picture)\b/i.test(requestText);
 }
 
+function requestAsksForFeaturedImage(requestText: string): boolean {
+  return /\b(featured image|thumbnail|post thumbnail|set as featured|set as thumbnail)\b/i.test(
+    requestText
+  );
+}
+
 const REQUESTED_INSERTED_BLOCK_TYPE_PATTERNS: Array<[string, RegExp]> = [
   ["core/heading", /\bheading\b/i],
   ["core/paragraph", /\bparagraph\b/i],
@@ -1862,6 +1868,130 @@ function parseSingleParagraphBlockFromContent(
   }
 
   return null;
+}
+
+function extractAnchorTags(html: string): string[] {
+  return [...html.matchAll(/<a\b[\s\S]*?<\/a>/gi)].map((match) => match[0]);
+}
+
+function normalizeAnchorHtmlForStandaloneParagraph(anchorHtml: string): string {
+  if (
+    /target\s*=\s*(['"])_blank\1/i.test(anchorHtml) &&
+    !/\brel\s*=/i.test(anchorHtml)
+  ) {
+    return anchorHtml.replace(
+      /<a\b/i,
+      '<a rel="noreferrer noopener"'
+    );
+  }
+  return anchorHtml;
+}
+
+function extractRequestedLinkUrl(requestText: string): string | null {
+  const directUrlMatch = requestText.match(
+    /\b(https?:\/\/[^\s'")]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s'")]*)?)\b/i
+  );
+  if (!directUrlMatch) {
+    return null;
+  }
+
+  const rawUrl = (directUrlMatch[1] ?? "").trim().replace(/[.,]$/, "");
+  if (rawUrl.length === 0) {
+    return null;
+  }
+  return /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+}
+
+function extractRequestedLinkText(requestText: string): string | null {
+  const quotedTextMatch = requestText.match(
+    /\btext\s+of\s+['"]([^'"]+)['"]/i
+  );
+  if (quotedTextMatch) {
+    const value = (quotedTextMatch[1] ?? "").trim();
+    return value.length > 0 ? value : null;
+  }
+
+  const fallbackQuotedTextMatch = requestText.match(
+    /\btext\s+['"]([^'"]+)['"]/i
+  );
+  if (fallbackQuotedTextMatch) {
+    const value = (fallbackQuotedTextMatch[1] ?? "").trim();
+    return value.length > 0 ? value : null;
+  }
+
+  return null;
+}
+
+function requestOpensLinkInNewTab(requestText: string): boolean {
+  return /\b(new tab|opening in a new tab|open in a new tab|target blank)\b/i.test(
+    requestText
+  );
+}
+
+function buildRequestedLinkParagraphBlock(
+  requestText: string
+): Record<string, unknown> | null {
+  const url = extractRequestedLinkUrl(requestText);
+  if (url === null) {
+    return null;
+  }
+
+  const linkText = extractRequestedLinkText(requestText) ?? url;
+  const target = requestOpensLinkInNewTab(requestText) ? ' target="_blank"' : "";
+  const rel =
+    requestOpensLinkInNewTab(requestText) ? ' rel="noreferrer noopener"' : "";
+  const innerHTML = `<p><a href="${escapeHtml(url)}"${target}${rel}>${escapeHtml(
+    linkText
+  )}</a></p>`;
+
+  return {
+    blockName: "core/paragraph",
+    attrs: {},
+    innerBlocks: [],
+    innerHTML,
+    innerContent: [innerHTML]
+  };
+}
+
+function paragraphContainsInstructionalPromptLeak(
+  innerHTML: string
+): boolean {
+  const withoutAnchors = innerHTML.replace(/<a\b[\s\S]*?<\/a>/gi, " ");
+  const text = stripHtmlToPlainText(withoutAnchors).join(" ").toLowerCase();
+  if (text.length === 0) {
+    return false;
+  }
+
+  return (
+    /\b(add|insert|place|put|append|set|update|change)\b/.test(text) ||
+    /\b(featured image|meta description|last paragraph|new tab|heading block)\b/.test(
+      text
+    )
+  );
+}
+
+function maybeExtractLinkOnlyParagraphBlock(
+  block: Record<string, unknown>
+): Record<string, unknown> {
+  const innerHTML =
+    typeof block.innerHTML === "string" ? block.innerHTML : "";
+  const anchors = extractAnchorTags(innerHTML).map(normalizeAnchorHtmlForStandaloneParagraph);
+  if (
+    anchors.length === 0 ||
+    !paragraphContainsInstructionalPromptLeak(innerHTML)
+  ) {
+    return block;
+  }
+
+  const normalizedInnerHTML = `<p>${anchors.join(" ")}</p>`;
+  return {
+    ...block,
+    blockName: "core/paragraph",
+    attrs: objectValue(block.attrs),
+    innerBlocks: [],
+    innerHTML: normalizedInnerHTML,
+    innerContent: [normalizedInnerHTML]
+  };
 }
 
 function decodeMinimalHtmlEntities(raw: string): string {
@@ -2100,7 +2230,10 @@ function selectInsertedBlocksForPlacementRequest(input: {
   const requestedBlockNames = requestedInsertedBlockNamesForPlacement(
     input.requestText
   );
-  const asksForImage = requestAsksForImage(input.requestText);
+  const asksForInlineImage =
+    requestAsksForImage(input.requestText) &&
+    !requestAsksForFeaturedImage(input.requestText) &&
+    requestMentionsInlineImagePlacement(input.requestText);
   const asksForHeading = requestAsksForHeading(input.requestText);
   const asksToAddHeading = requestAsksToAddHeading(input.requestText);
   const asksForParagraph = requestAsksForParagraph(input.requestText);
@@ -2137,7 +2270,7 @@ function selectInsertedBlocksForPlacementRequest(input: {
       }
     }
 
-    if (asksForImage) {
+    if (asksForInlineImage) {
       const imageBlocks = blocks.filter(
         (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
       ) as Record<string, unknown>[];
@@ -2191,6 +2324,7 @@ function selectInsertedBlocksForPlacementRequest(input: {
     if (
       asksForParagraph &&
       !asksForHeading &&
+      !requestAsksForLink(input.requestText) &&
       !asksToAddParagraph &&
       requestedBlockNames.length === 0
     ) {
@@ -2210,9 +2344,18 @@ function selectInsertedBlocksForPlacementRequest(input: {
           typeof record.innerHTML === "string" &&
           /<a\b/i.test(record.innerHTML)
         );
-      }) as Record<string, unknown>[];
+      }).map((block) =>
+        maybeExtractLinkOnlyParagraphBlock(block as Record<string, unknown>)
+      ) as Record<string, unknown>[];
       if (linkParagraphs.length > 0) {
         return linkParagraphs;
+      }
+
+      const synthesizedLinkBlock = buildRequestedLinkParagraphBlock(
+        input.requestText
+      );
+      if (synthesizedLinkBlock !== null) {
+        return [synthesizedLinkBlock];
       }
     }
 
@@ -2240,7 +2383,7 @@ function selectInsertedBlocksForPlacementRequest(input: {
         }
       }
 
-      if (asksForImage) {
+      if (asksForInlineImage) {
         const imageBlocks = recoveredBlocks.filter(
           (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
         ) as Record<string, unknown>[];
@@ -2262,6 +2405,7 @@ function selectInsertedBlocksForPlacementRequest(input: {
         asksToAddParagraph ||
         (asksForParagraph &&
           !asksForHeading &&
+          !requestAsksForLink(input.requestText) &&
           requestedBlockNames.length === 0)
       ) {
         const paragraphBlocks = recoveredBlocks.filter(
@@ -2275,6 +2419,19 @@ function selectInsertedBlocksForPlacementRequest(input: {
   }
 
   if (blocks.length === 1) {
+    if (requestAsksForLink(input.requestText)) {
+      const synthesizedLinkBlock = buildRequestedLinkParagraphBlock(
+        input.requestText
+      );
+      if (synthesizedLinkBlock !== null) {
+        const onlyBlock = objectValue(blocks[0]);
+        const innerHTML =
+          typeof onlyBlock.innerHTML === "string" ? onlyBlock.innerHTML : "";
+        if (!/<a\b/i.test(innerHTML)) {
+          return [synthesizedLinkBlock];
+        }
+      }
+    }
     return blocks as Record<string, unknown>[];
   }
 
@@ -2283,6 +2440,14 @@ function selectInsertedBlocksForPlacementRequest(input: {
   if (content !== null) {
     const paragraphBlock = parseSingleParagraphBlockFromContent(content);
     if (paragraphBlock !== null) {
+      if (requestAsksForLink(input.requestText)) {
+        const synthesizedLinkBlock = buildRequestedLinkParagraphBlock(
+          input.requestText
+        );
+        if (synthesizedLinkBlock !== null) {
+          return [synthesizedLinkBlock];
+        }
+      }
       return [paragraphBlock];
     }
   }
@@ -2658,6 +2823,215 @@ function normalizeSingleHeadingLevelUpdatePlan(
     ...plan,
     proposedActions,
     validationWarnings: [...new Set(validationWarnings)]
+  });
+}
+
+function extractRequestedMetaDescription(requestText: string): string | null {
+  const quotedMatch = requestText.match(
+    /\b(?:meta description|meta desc|seo description)\b[\s\S]{0,20}\b(?:as|to)\b[\s\S]{0,10}['"]([^'"]+)['"]/i
+  );
+  if (quotedMatch) {
+    const value = (quotedMatch[1] ?? "").trim();
+    return value.length > 0 ? value : null;
+  }
+
+  const trailingMatch = requestText.match(
+    /\b(?:set|update|change|write|add)\b[\s\S]{0,20}\b(?:meta description|meta desc|seo description)\b[\s\S]{0,10}\b(?:as|to)\b\s*([^\n.]+?)(?:[.!?]\s*|$)/i
+  );
+  if (trailingMatch) {
+    const value = (trailingMatch[1] ?? "").trim().replace(/^['"]|['"]$/g, "");
+    return value.length > 0 ? value : null;
+  }
+
+  return null;
+}
+
+function actionContainsSeoDescription(action: Action): boolean {
+  const normalizedType = normalizeActionType(action.type);
+  const input = action.input as Record<string, unknown>;
+  const nestedInput = pickObject(input, "input");
+  const scopes =
+    nestedInput !== undefined ? [input, nestedInput] : [input];
+  const metaObject = scopes
+    .map((scope) => pickObject(scope, "meta"))
+    .find((value) => value !== undefined);
+
+  if (
+    normalizedType === "set_post_seo_meta" ||
+    normalizedType === "sitepilot_set_post_seo_meta"
+  ) {
+    return (
+      scopes.some(
+        (scope) =>
+          typeof scope.seo_description === "string" ||
+          typeof scope.meta_description === "string" ||
+          typeof scope.meta_desc === "string"
+      ) ||
+      (metaObject !== undefined &&
+        (typeof metaObject.meta_description === "string" ||
+          typeof metaObject.seo_description === "string"))
+    );
+  }
+
+  return (
+    normalizedType === "update_post_fields" &&
+    (scopes.some(
+      (scope) =>
+        typeof scope.seo_description === "string" ||
+        typeof scope.meta_description === "string" ||
+        typeof scope.meta_desc === "string"
+    ) ||
+      (metaObject !== undefined &&
+        (typeof metaObject.meta_description === "string" ||
+          typeof metaObject.seo_description === "string")))
+  );
+}
+
+function ensureExplicitSeoMetaAction(
+  plan: ActionPlan,
+  requestText: string
+): ActionPlan {
+  const metaDescription = extractRequestedMetaDescription(requestText);
+  if (metaDescription === null) {
+    return plan;
+  }
+
+  if (plan.proposedActions.some((action) => actionContainsSeoDescription(action))) {
+    return plan;
+  }
+
+  const postId =
+    plan.proposedActions
+      .map((action) => {
+        const input = action.input as Record<string, unknown>;
+        const nestedInput = pickObject(input, "input");
+        return pickNumberFrom(
+          nestedInput !== undefined ? [input, nestedInput] : [input],
+          "postId",
+          "post_id",
+          "id"
+        );
+      })
+      .find((value) => value !== undefined) ?? undefined;
+
+  if (postId === undefined) {
+    return plan;
+  }
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions: [
+      ...plan.proposedActions,
+      {
+        id: randomUUID() as ActionId,
+        type: "sitepilot-set-post-seo-meta",
+        version: 1,
+        input: {
+          post_id: postId,
+          meta: {
+            meta_description: metaDescription
+          }
+        },
+        targetEntityRefs: ["post"],
+        permissionRequirement: "required",
+        riskLevel: plan.riskLevel === "low" ? "low" : "medium",
+        dryRunCapable: false,
+        rollbackSupported: true
+      }
+    ],
+    validationWarnings: [
+      ...new Set([
+        ...plan.validationWarnings,
+        "Planner omitted an explicit SEO meta-description request; appended a deterministic SEO meta action."
+      ])
+    ]
+  });
+}
+
+function actionContainsFeaturedImage(action: Action): boolean {
+  const normalizedType = normalizeActionType(action.type);
+  if (
+    normalizedType === "set_post_featured_image" ||
+    normalizedType === "update_post_featured_image" ||
+    normalizedType === "set_featured_image" ||
+    normalizedType === "sitepilot_set_post_featured_image"
+  ) {
+    return true;
+  }
+
+  const input = action.input as Record<string, unknown>;
+  const nestedInput = pickObject(input, "input");
+  const scopes = nestedInput !== undefined ? [input, nestedInput] : [input];
+  return scopes.some(
+    (scope) =>
+      typeof scope.featured_image === "string" ||
+      typeof scope.featuredImage === "string" ||
+      typeof scope.featured_image_url === "string" ||
+      typeof scope.featuredImageUrl === "string" ||
+      typeof scope.featured_image_id === "number" ||
+      typeof scope.featuredImageId === "number"
+  );
+}
+
+function ensureExplicitFeaturedImageAction(
+  plan: ActionPlan,
+  requestText: string,
+  requestAttachments: ImageAttachmentPayload[] | undefined
+): ActionPlan {
+  if (
+    requestAttachments === undefined ||
+    requestAttachments.length === 0 ||
+    !requestAsksForFeaturedImage(requestText)
+  ) {
+    return plan;
+  }
+
+  if (plan.proposedActions.some((action) => actionContainsFeaturedImage(action))) {
+    return plan;
+  }
+
+  const postId =
+    plan.proposedActions
+      .map((action) => {
+        const input = action.input as Record<string, unknown>;
+        const nestedInput = pickObject(input, "input");
+        return pickNumberFrom(
+          nestedInput !== undefined ? [input, nestedInput] : [input],
+          "postId",
+          "post_id",
+          "id"
+        );
+      })
+      .find((value) => value !== undefined) ?? undefined;
+
+  if (postId === undefined) {
+    return plan;
+  }
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions: [
+      {
+        id: randomUUID() as ActionId,
+        type: "set_post_featured_image",
+        version: 1,
+        input: {
+          post_id: postId
+        },
+        targetEntityRefs: ["post"],
+        permissionRequirement: "required",
+        riskLevel: plan.riskLevel === "low" ? "low" : "medium",
+        dryRunCapable: false,
+        rollbackSupported: true
+      },
+      ...plan.proposedActions
+    ],
+    validationWarnings: [
+      ...new Set([
+        ...plan.validationWarnings,
+        "Planner omitted an explicit featured-image request; appended a deterministic featured-image action."
+      ])
+    ]
   });
 }
 
@@ -3128,16 +3502,25 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     requestText,
     input.requestAttachments
   );
-  const placementNormalizedPlan = normalizeGenericContentInsertionPlan(
+  const featuredImageCompletedPlan = ensureExplicitFeaturedImageAction(
     inlineNormalizedPlan,
+    requestText,
+    input.requestAttachments
+  );
+  const placementNormalizedPlan = normalizeGenericContentInsertionPlan(
+    featuredImageCompletedPlan,
     requestText
   );
   const headingLevelNormalizedPlan = normalizeSingleHeadingLevelUpdatePlan(
     placementNormalizedPlan,
     requestText
   );
-  const plan = normalizePlanPostContent(
+  const seoCompletedPlan = ensureExplicitSeoMetaAction(
     headingLevelNormalizedPlan,
+    requestText
+  );
+  const plan = normalizePlanPostContent(
+    seoCompletedPlan,
     requestText,
     input.requestAttachments
   );

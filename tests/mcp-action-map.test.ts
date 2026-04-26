@@ -641,6 +641,38 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("reroutes update_post_fields nested meta_description input to SEO meta", () => {
+    const call = actionToMcpToolCall(
+      "update_post_fields",
+      { post_id: 46, meta: { meta_description: "aliens coming!" } },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-set-post-seo-meta",
+      arguments: {
+        post_id: 46,
+        dry_run: false,
+        seo_description: "aliens coming!"
+      }
+    });
+  });
+
+  it("maps nested meta_description for set_post_seo_meta", () => {
+    const call = actionToMcpToolCall(
+      "set_post_seo_meta",
+      { postId: 3, meta: { meta_description: "aliens coming!" } },
+      false
+    );
+    expect(call).toEqual({
+      toolName: "sitepilot-set-post-seo-meta",
+      arguments: {
+        post_id: 3,
+        dry_run: false,
+        seo_description: "aliens coming!"
+      }
+    });
+  });
+
   it("maps set_post_featured_image", () => {
     const call = actionToMcpToolCall(
       "set_post_featured_image",

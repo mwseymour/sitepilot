@@ -82,6 +82,19 @@ function pickArrayFrom(
   return undefined;
 }
 
+function pickObjectFrom(
+  inputs: Record<string, unknown>[],
+  ...keys: string[]
+): Record<string, unknown> | undefined {
+  for (const input of inputs) {
+    const value = pickObject(input, ...keys);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function pickNumberFrom(
   inputs: Record<string, unknown>[],
   ...keys: string[]
@@ -396,7 +409,12 @@ export function actionToMcpToolCall(
       "insert_before_block"
     );
     const seoDescription = pickStringFrom(
-      inputScopes,
+      [
+        ...inputScopes,
+        ...(pickObjectFrom(inputScopes, "meta") !== undefined
+          ? [pickObjectFrom(inputScopes, "meta")!]
+          : [])
+      ],
       "seoDescription",
       "seo_description",
       "metaDescription",
@@ -472,13 +490,23 @@ export function actionToMcpToolCall(
       dry_run: dryRun
     };
     const seoTitle = pickStringFrom(
-      inputScopes,
+      [
+        ...inputScopes,
+        ...(pickObjectFrom(inputScopes, "meta") !== undefined
+          ? [pickObjectFrom(inputScopes, "meta")!]
+          : [])
+      ],
       "seoTitle",
       "seo_title",
       "metaTitle"
     );
     const seoDescription = pickStringFrom(
-      inputScopes,
+      [
+        ...inputScopes,
+        ...(pickObjectFrom(inputScopes, "meta") !== undefined
+          ? [pickObjectFrom(inputScopes, "meta")!]
+          : [])
+      ],
       "seoDescription",
       "seo_description",
       "metaDescription",
