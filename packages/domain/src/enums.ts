@@ -23,6 +23,7 @@ export const siteActivationStatuses = [
 export type SiteActivationStatus = (typeof siteActivationStatuses)[number];
 
 export const threadTypes = [
+  "conversation",
   "general_request",
   "content_creation",
   "content_update",

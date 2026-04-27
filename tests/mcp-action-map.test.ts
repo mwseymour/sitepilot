@@ -26,6 +26,40 @@ describe("actionToMcpToolCall", () => {
     });
   });
 
+  it("maps find_posts actions to the readonly MCP tool", () => {
+    const call = actionToMcpToolCall(
+      "find_posts",
+      { postType: "post", category: "news", limit: 20 },
+      false
+    );
+
+    expect(call).toEqual({
+      toolName: "sitepilot-find-posts",
+      arguments: {
+        post_type: "post",
+        category: "news",
+        limit: 20
+      }
+    });
+  });
+
+  it("maps get_post_content actions to the readonly post tool", () => {
+    const call = actionToMcpToolCall(
+      "get_post_content",
+      { title: "hello world", post_type: "post", status: "any" },
+      false
+    );
+
+    expect(call).toEqual({
+      toolName: "sitepilot-get-post",
+      arguments: {
+        title: "hello world",
+        post_type: "post",
+        status: "any"
+      }
+    });
+  });
+
   it("maps createDraftPost camelCase actions", () => {
     const call = actionToMcpToolCall(
       "createDraftPost",

@@ -62,7 +62,11 @@ describe("site planner settings", () => {
     expect(result).toMatchObject({
       ok: true,
       sitePlannerSettings: { bypassApprovalRequests: false },
-      siteHasSigningSecret: false
+      siteHasSigningSecret: false,
+      uiPreferences: {
+        developerToolsEnabled: false,
+        preserveOriginalImageUploads: false
+      }
     });
   });
 

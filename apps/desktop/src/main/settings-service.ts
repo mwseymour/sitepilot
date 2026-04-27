@@ -38,7 +38,8 @@ const DEFAULT_SITE_PLANNER_SETTINGS: SitePlannerSettings = {
 };
 
 const DEFAULT_UI_PREFERENCES: UiPreferences = {
-  developerToolsEnabled: false
+  developerToolsEnabled: false,
+  preserveOriginalImageUploads: false
 };
 
 function sitePlannerSettingsKey(siteId: SiteId) {
@@ -97,6 +98,9 @@ function parseUiPreferences(raw: string | undefined): Partial<UiPreferences> {
     const out: Partial<UiPreferences> = {};
     if (typeof record.developerToolsEnabled === "boolean") {
       out.developerToolsEnabled = record.developerToolsEnabled;
+    }
+    if (typeof record.preserveOriginalImageUploads === "boolean") {
+      out.preserveOriginalImageUploads = record.preserveOriginalImageUploads;
     }
     return out;
   } catch {

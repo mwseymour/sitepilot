@@ -25,6 +25,7 @@ import {
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
 
 import { getDatabase } from "./app-database.js";
+import { buildConversationReply } from "./conversation-service.js";
 
 export const DEFAULT_OPERATOR: ActorRef = {
   userProfileId: "local-operator" as UserProfileId,
@@ -139,6 +140,12 @@ async function buildThreadReply(
   text: string
 ): Promise<{ requestId?: RequestId; text: string }> {
   const db = getDatabase();
+  const thread = await db.repositories.chatThreads.getById(threadId);
+  if (thread?.type === "conversation") {
+    return {
+      text: await buildConversationReply({ siteId, threadId, text })
+    };
+  }
   const requests = await db.repositories.requests.listByThreadId(threadId);
   const request = requests.at(-1);
 
@@ -207,7 +214,7 @@ async function buildThreadReply(
       return {
         requestId: request.id,
         text:
-          "Note recorded. Review the current request panel below for the next step."
+          "Note recorded. Review in Current Request panel."
       };
   }
 }
@@ -668,8 +675,7 @@ export async function createTypedRequestForThread(
       author: { kind: "assistant" },
       body: {
         format: "plain_text",
-        value:
-          "Request recorded. Review it below, then generate an action plan when you're ready."
+        value: "Review in Current Request panel."
       },
       requestId: request.id,
       createdAt: ts,

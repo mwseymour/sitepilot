@@ -264,6 +264,66 @@ function sanitizeStructuredBlocks(blocks: unknown[] | undefined): unknown[] | un
   return recoverMalformedSingleBlockArray(blocks);
 }
 
+function buildFindPostsToolArguments(
+  input: Record<string, unknown>
+): Record<string, unknown> {
+  const nestedInput = pickObject(input, "input");
+  const inputScopes =
+    nestedInput !== undefined ? [input, nestedInput] : [input];
+  const postType = pickStringFrom(inputScopes, "postType", "post_type");
+  const status = pickStringFrom(inputScopes, "status", "postStatus", "post_status");
+  const slug = pickStringFrom(inputScopes, "slug", "postSlug", "post_slug");
+  const title = pickStringFrom(inputScopes, "title", "postTitle", "post_title");
+  const search = pickStringFrom(inputScopes, "search", "query", "text");
+  const category = pickStringFrom(
+    inputScopes,
+    "category",
+    "categorySlug",
+    "category_slug"
+  );
+  const limit = pickNumberFrom(inputScopes, "limit", "count", "maxResults");
+
+  return {
+    ...(postType !== undefined ? { post_type: postType } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(slug !== undefined ? { slug } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(search !== undefined ? { search } : {}),
+    ...(category !== undefined ? { category } : {}),
+    ...(limit !== undefined ? { limit } : {})
+  };
+}
+
+function buildGetPostToolArguments(
+  input: Record<string, unknown>
+): Record<string, unknown> {
+  const nestedInput = pickObject(input, "input");
+  const inputScopes =
+    nestedInput !== undefined ? [input, nestedInput] : [input];
+  const postId = pickNumberFrom(inputScopes, "postId", "post_id", "id");
+  const postType = pickStringFrom(inputScopes, "postType", "post_type");
+  const status = pickStringFrom(inputScopes, "status", "postStatus", "post_status");
+  const slug = pickStringFrom(inputScopes, "slug", "postSlug", "post_slug");
+  const title = pickStringFrom(inputScopes, "title", "postTitle", "post_title");
+  const search = pickStringFrom(inputScopes, "search", "query", "text");
+  const category = pickStringFrom(
+    inputScopes,
+    "category",
+    "categorySlug",
+    "category_slug"
+  );
+
+  return {
+    ...(postId !== undefined ? { post_id: postId } : {}),
+    ...(postType !== undefined ? { post_type: postType } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(slug !== undefined ? { slug } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(search !== undefined ? { search } : {}),
+    ...(category !== undefined ? { category } : {})
+  };
+}
+
 /**
  * Maps a persisted plan action to a SitePilot WordPress MCP tool (T28/T29).
  */
@@ -285,6 +345,34 @@ export function actionToMcpToolCall(
     t === "comment"
   ) {
     return null;
+  }
+
+  if (
+    t === "find_posts" ||
+    t === "list_posts" ||
+    t === "search_posts" ||
+    t === "query_posts" ||
+    t === "get_posts" ||
+    t === "sitepilot_find_posts"
+  ) {
+    return {
+      toolName: "sitepilot-find-posts",
+      arguments: buildFindPostsToolArguments(input)
+    };
+  }
+
+  if (
+    t === "get_post" ||
+    t === "read_post" ||
+    t === "get_post_text" ||
+    t === "get_post_content" ||
+    t === "read_post_content" ||
+    t === "sitepilot_get_post"
+  ) {
+    return {
+      toolName: "sitepilot-get-post",
+      arguments: buildGetPostToolArguments(input)
+    };
   }
 
   if (

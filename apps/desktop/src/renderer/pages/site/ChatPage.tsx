@@ -12,7 +12,8 @@ import type {
   ChatMessagePayload,
   ChatThreadPayload,
   ImageAttachmentPayload,
-  SitePilotDesktopApi
+  SitePilotDesktopApi,
+  UiPreferences
 } from "@sitepilot/contracts";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
 import {
@@ -47,6 +48,57 @@ const MAX_IMAGE_ATTACHMENTS = 8;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 1280;
 const IMAGE_JPEG_QUALITY = 0.82;
+
+type ChatMode = "request" | "conversation";
+
+type ThreadTypeMeta = {
+  label: string;
+  description: string;
+};
+
+const THREAD_TYPE_META: Record<string, ThreadTypeMeta> = {
+  conversation: {
+    label: "Conversation",
+    description:
+      "Read-only MCP chat. Use Requests when you want SitePilot to execute changes."
+  },
+  general_request: {
+    label: "Standard request",
+    description: "Default planning and execution workflow for site changes."
+  },
+  content_creation: {
+    label: "Content creation",
+    description: "Create new draft content."
+  },
+  content_update: {
+    label: "Content update",
+    description: "Revise existing posts or pages."
+  },
+  media_request: {
+    label: "Media request",
+    description: "Image and media-related changes."
+  },
+  seo_request: {
+    label: "SEO request",
+    description: "SEO metadata and search visibility changes."
+  },
+  taxonomy_request: {
+    label: "Taxonomy request",
+    description: "Category, tag, and taxonomy changes."
+  },
+  publish_request: {
+    label: "Publish request",
+    description: "Publishing and go-live tasks."
+  },
+  maintenance_diagnostic: {
+    label: "Maintenance diagnostic",
+    description: "Read-only inspection or maintenance work."
+  },
+  approval_discussion: {
+    label: "Approval discussion",
+    description: "Approval-related review and discussion."
+  }
+};
 
 function roleLabel(m: MessageRow): string {
   if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
@@ -92,8 +144,33 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 }
 
 async function fileToImageAttachment(
-  file: File
+  file: File,
+  preserveOriginal: boolean
 ): Promise<ImageAttachmentPayload> {
+  if (preserveOriginal) {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error(`Failed to read ${file.name}.`));
+      };
+      reader.onerror = () => {
+        reject(new Error(`Failed to read ${file.name}.`));
+      };
+      reader.readAsDataURL(file);
+    });
+
+    return {
+      fileName: file.name,
+      mediaType: file.type || "image/jpeg",
+      sizeBytes: file.size,
+      dataUrl
+    };
+  }
+
   const image = await loadImageElement(file);
   const scale = Math.min(
     1,
@@ -114,7 +191,7 @@ async function fileToImageAttachment(
   const base64 = dataUrl.split(",")[1] ?? "";
   const sizeBytes = Math.ceil((base64.length * 3) / 4);
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     resolve({
       fileName: file.name,
       mediaType: "image/jpeg",
@@ -122,6 +199,16 @@ async function fileToImageAttachment(
       dataUrl
     });
   });
+}
+
+function threadTypeMeta(type: string | undefined): ThreadTypeMeta {
+  if (type && type in THREAD_TYPE_META) {
+    return THREAD_TYPE_META[type];
+  }
+  return {
+    label: "Request",
+    description: "Request thread."
+  };
 }
 
 function actionUnavailableReason(
@@ -355,8 +442,13 @@ async function copyTextToClipboard(text: string): Promise<void> {
   }
 }
 
-export function ChatPage(): ReactElement | null {
+export function ChatPage({
+  mode = "request"
+}: {
+  mode?: ChatMode;
+}): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
+  const isConversationMode = mode === "conversation";
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<
@@ -379,7 +471,7 @@ export function ChatPage(): ReactElement | null {
     null
   );
   const [bundle, setBundle] = useState<RequestBundleOk | null>(null);
-  const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(false);
+  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(null);
   const [execBusy, setExecBusy] = useState(false);
   const [lastExecHint, setLastExecHint] = useState<string | null>(null);
   const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
@@ -399,8 +491,14 @@ export function ChatPage(): ReactElement | null {
       return;
     }
     setErr(null);
-    setThreads(res.threads);
-  }, [siteId]);
+    setThreads(
+      res.threads.filter((thread) =>
+        isConversationMode
+          ? thread.type === "conversation"
+          : thread.type !== "conversation"
+      )
+    );
+  }, [isConversationMode, siteId]);
 
   const loadMessages = useCallback(
     async (threadId: string) => {
@@ -436,7 +534,7 @@ export function ChatPage(): ReactElement | null {
     async function loadUiPreferences(): Promise<void> {
       const state = await window.sitePilotDesktop.getSettingsState({});
       if (!cancelled && state.ok) {
-        setDeveloperToolsEnabled(state.uiPreferences.developerToolsEnabled);
+        setUiPreferences(state.uiPreferences);
       }
     }
 
@@ -493,6 +591,10 @@ export function ChatPage(): ReactElement | null {
   }, [selectedThreadId]);
 
   const loadBundle = useCallback(async () => {
+    if (isConversationMode) {
+      setBundle(null);
+      return;
+    }
     if (!selectedThreadId || lastRequestId === null) {
       setBundle(null);
       return;
@@ -509,7 +611,7 @@ export function ChatPage(): ReactElement | null {
     }
     setErr(null);
     setBundle(res);
-  }, [siteId, selectedThreadId, lastRequestId]);
+  }, [isConversationMode, siteId, selectedThreadId, lastRequestId]);
 
   useEffect(() => {
     void loadBundle();
@@ -626,10 +728,11 @@ export function ChatPage(): ReactElement | null {
   async function onCreateThread(): Promise<void> {
     setBusy(true);
     setErr(null);
-    const title = `Request ${new Date().toLocaleString()}`;
+    const title = `${isConversationMode ? "Conversation" : "Request"} ${new Date().toLocaleString()}`;
     const res = await window.sitePilotDesktop.createChatThread({
       siteId,
-      title
+      title,
+      type: isConversationMode ? "conversation" : "general_request"
     });
     setBusy(false);
     if (!res.ok) {
@@ -687,6 +790,25 @@ export function ChatPage(): ReactElement | null {
     const attachments = pendingAttachments;
     setBusy(true);
     setErr(null);
+
+    if (isConversationMode) {
+      const res = await window.sitePilotDesktop.postChatMessage({
+        siteId,
+        threadId: selectedThreadId,
+        text,
+        ...(attachments.length > 0 ? { attachments } : {})
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      setRequestPrompt("");
+      setPendingAttachments([]);
+      await loadMessages(selectedThreadId);
+      await loadThreads();
+      return;
+    }
 
     if (bundle?.request.status === "clarifying") {
       const res = await window.sitePilotDesktop.answerClarification({
@@ -843,7 +965,12 @@ export function ChatPage(): ReactElement | null {
 
     try {
       const attachments = await Promise.all(
-        files.map((file) => fileToImageAttachment(file))
+        files.map((file) =>
+          fileToImageAttachment(
+            file,
+            uiPreferences?.preserveOriginalImageUploads ?? false
+          )
+        )
       );
       setPendingAttachments((current) => [...current, ...attachments]);
       setErr(null);
@@ -987,6 +1114,16 @@ export function ChatPage(): ReactElement | null {
   }
 
   const composerState = useMemo(() => {
+    if (isConversationMode) {
+      return {
+        title: "Conversation",
+        helper:
+          "Read-only MCP chat. Ask questions, look up posts, or inspect site content. Use Requests for changes or execution.",
+        placeholder: "Ask about site content or request a read-only lookup…",
+        actionLabel: "Send"
+      };
+    }
+
     if (!bundle) {
       return {
         title: "New request",
@@ -1052,18 +1189,22 @@ export function ChatPage(): ReactElement | null {
           actionLabel: "Send"
         };
     }
-  }, [bundle, canRunPlanDirectly]);
+  }, [bundle, canRunPlanDirectly, isConversationMode]);
 
   const canGeneratePlan =
+    !isConversationMode &&
     selectedThreadId !== null &&
     bundle !== null &&
     (bundle.request.status === "new" || bundle.request.status === "drafted");
+  const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
+  const preserveOriginalImageUploads =
+    uiPreferences?.preserveOriginalImageUploads ?? false;
   const activityLabel =
     execProgressLabel ??
     (deletingThreadId !== null
-      ? "Deleting request"
+      ? `Deleting ${isConversationMode ? "conversation" : "request"}`
       : renamingThreadId !== null
-        ? "Saving request"
+        ? `Saving ${isConversationMode ? "conversation" : "request"}`
         : busy
           ? "Working"
           : null);
@@ -1095,6 +1236,7 @@ export function ChatPage(): ReactElement | null {
         selectedThreadId,
         lastRequestId,
         developerToolsEnabled,
+        preserveOriginalImageUploads,
         busy,
         execBusy,
         activityLabel,
@@ -1155,6 +1297,7 @@ export function ChatPage(): ReactElement | null {
       pendingAttachments,
       planValidationJson,
       plannerJson,
+      preserveOriginalImageUploads,
       requestPrompt,
       selectedThread,
       selectedThreadId,
@@ -1208,14 +1351,14 @@ export function ChatPage(): ReactElement | null {
       ) : null}
       <aside className="chat-threads">
         <div className="chat-threads-header">
-          <h2>Requests</h2>
+          <h2>{isConversationMode ? "Conversations" : "Requests"}</h2>
           <button
             type="button"
             className="btn btn-secondary btn-small"
             disabled={busy}
             onClick={() => void onCreateThread()}
           >
-            New request
+            {isConversationMode ? "New conversation" : "New request"}
           </button>
         </div>
         <ul className="chat-thread-list">
@@ -1383,7 +1526,7 @@ export function ChatPage(): ReactElement | null {
               {pendingDeleteThreadId === t.id ? (
                 <div className="chat-thread-confirm">
                   <p className="small-print">
-                    Delete this request and its history?
+                    Delete this {isConversationMode ? "conversation" : "request"} and its history?
                   </p>
                   <div className="chat-thread-confirm-actions">
                     <button
@@ -1414,14 +1557,22 @@ export function ChatPage(): ReactElement | null {
       <section className="chat-main">
         {err ? <p className="workspace-error">{err}</p> : null}
         {!selectedThreadId ? (
-          <p className="muted">Create a request to start messaging.</p>
+          <p className="muted">
+            Create a {isConversationMode ? "conversation" : "request"} to start messaging.
+          </p>
         ) : (
           <>
             <header className="chat-main-header">
               <div>
-                <h2>{selectedThread?.title ?? "Request"}</h2>
+                <h2>
+                  {selectedThread?.title ??
+                    (isConversationMode ? "Conversation" : "Request")}
+                </h2>
                 <p className="muted small-print">
-                  {selectedThread?.type.replaceAll("_", " ") ?? "general request"}
+                  {threadTypeMeta(selectedThread?.type).label}
+                </p>
+                <p className="muted small-print">
+                  {threadTypeMeta(selectedThread?.type).description}
                 </p>
               </div>
             </header>
@@ -1480,9 +1631,14 @@ export function ChatPage(): ReactElement | null {
                         {formatAttachmentCount(pendingAttachments.length)} queued
                       </p>
                       <p className="muted small-print">
-                        Images are resized before planning so they are sent as
-                        compressed references instead of full-size originals.
-                        The planner uses up to 3 images per request.
+                        {preserveOriginalImageUploads
+                          ? isConversationMode
+                            ? "Original image files will be sent at full size."
+                            : "Original image files will be kept at full size for planning and upload."
+                          : "Images are resized before planning so they are sent as compressed references instead of full-size originals."}
+                        {!isConversationMode
+                          ? " The planner uses up to 3 images per request."
+                          : ""}
                       </p>
                       <div className="chat-image-grid">
                         {pendingAttachments.map((attachment, index) => (
@@ -1558,7 +1714,7 @@ export function ChatPage(): ReactElement | null {
                 </div>
               </div>
 
-              <aside className="chat-side-column">
+              {!isConversationMode ? <aside className="chat-side-column">
                 {bundle ? (
                   <div className="chat-request-panel">
                     <h3>Current request</h3>
@@ -1941,7 +2097,7 @@ export function ChatPage(): ReactElement | null {
                     </div>
                   </details>
                 ) : null}
-              </aside>
+              </aside> : null}
             </div>
           </>
         )}

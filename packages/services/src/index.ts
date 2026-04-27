@@ -4,6 +4,7 @@ export { analyzeClarification } from "./clarification-engine.js";
 export type { ClarificationAnalysis } from "./clarification-engine.js";
 export { buildPlannerContext } from "./planner-context.js";
 export type { BuildPlannerContextInput } from "./planner-context.js";
+export { extractJsonObject } from "./json-extract.js";
 export {
   buildLlmActionPlan,
   buildStubActionPlan

@@ -168,7 +168,7 @@ final class Abilities_Registrar {
 			'sitepilot/find-posts',
 			array(
 				'label'               => __( 'Find posts', 'sitepilot' ),
-				'description'         => __( 'Finds posts by status, slug, title, search text, and post type.', 'sitepilot' ),
+				'description'         => __( 'Finds posts by status, slug, title, search text, category, and post type.', 'sitepilot' ),
 				'category'            => 'sitepilot',
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -178,6 +178,7 @@ final class Abilities_Registrar {
 						'slug'      => array( 'type' => 'string' ),
 						'title'     => array( 'type' => 'string' ),
 						'search'    => array( 'type' => 'string' ),
+						'category'  => array( 'type' => 'string' ),
 						'limit'     => array(
 							'type'    => 'integer',
 							'minimum' => 1,
@@ -200,6 +201,63 @@ final class Abilities_Registrar {
 				),
 				'execute_callback'    => static function ( array $input ) {
 					return Post_Query::find_posts( $input );
+				},
+				'permission_callback' => static function ( $input = array() ) {
+					unset( $input );
+					return current_user_can( 'read' );
+				},
+				'meta'                => array(
+					'annotations' => array(
+						'readonly'    => true,
+						'destructive' => false,
+						'idempotent'  => true,
+					),
+				),
+			)
+		);
+
+		wp_register_ability(
+			'sitepilot/get-post',
+			array(
+				'label'               => __( 'Get post', 'sitepilot' ),
+				'description'         => __( 'Returns a single post, including its raw stored content, by id or a unique lookup.', 'sitepilot' ),
+				'category'            => 'sitepilot',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'post_id'   => array( 'type' => 'integer', 'minimum' => 1 ),
+						'post_type' => array( 'type' => 'string', 'default' => 'any' ),
+						'status'    => array( 'type' => 'string', 'default' => 'any' ),
+						'slug'      => array( 'type' => 'string' ),
+						'title'     => array( 'type' => 'string' ),
+						'search'    => array( 'type' => 'string' ),
+						'category'  => array( 'type' => 'string' ),
+					),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'ok'             => array( 'type' => 'boolean' ),
+						'post_id'        => array( 'type' => 'integer' ),
+						'post_type'      => array( 'type' => 'string' ),
+						'post_status'    => array( 'type' => 'string' ),
+						'post_title'     => array( 'type' => 'string' ),
+						'post_name'      => array( 'type' => 'string' ),
+						'post_excerpt'   => array( 'type' => 'string' ),
+						'post_content'   => array( 'type' => 'string' ),
+						'post_date_gmt'  => array( 'type' => 'string' ),
+						'modified_gmt'   => array( 'type' => 'string' ),
+						'permalink'      => array( 'type' => 'string' ),
+						'category_slugs' => array( 'type' => 'array' ),
+						'error'          => array( 'type' => 'string' ),
+						'total_matches'  => array( 'type' => 'integer' ),
+						'matches'        => array( 'type' => 'array' ),
+					),
+					'required'   => array( 'ok' ),
+				),
+				'execute_callback'    => static function ( array $input ) {
+					return Post_Query::get_post( $input );
 				},
 				'permission_callback' => static function ( $input = array() ) {
 					unset( $input );

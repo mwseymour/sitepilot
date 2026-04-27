@@ -1,3 +1,5 @@
+import { detectRequestedPostTypeIntent } from "./post-type-intent.js";
+
 export type ClarificationAnalysis = {
   /** True when the prompt is too underspecified to plan safely. */
   needsClarification: boolean;
@@ -180,6 +182,12 @@ export function analyzeClarification(input: {
   if (requestHasAmbiguousExistingBlockTarget(trimmed)) {
     questions.push(
       "Which exact block should change? Quote the current text, or say something like the first/last matching heading or its position in the content."
+    );
+  }
+
+  if (detectRequestedPostTypeIntent(trimmed).kind === "ambiguous") {
+    questions.push(
+      "Do you want this handled as a page or a post? If you mean a specific post type, say it explicitly."
     );
   }
 

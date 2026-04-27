@@ -440,6 +440,65 @@ describe("buildLlmActionPlan", () => {
     );
   });
 
+  it("normalizes explicit page requests when the planner wrongly returns post", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a new page with every block",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Every Block Demo",
+              post_type: "post",
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "<p>Demo content.</p>",
+                  innerContent: ["<p>Demo content.</p>"]
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a new page with every block (page post type, not posts)"
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_type: "page"
+    });
+    expect(result.plan.validationWarnings).toContain(
+      "Planner output used the wrong post type for an explicit operator request; normalized this action to page."
+    );
+  });
+
   it("canonicalizes list containers and list items", async () => {
     const client = makeClient(
       JSON.stringify({

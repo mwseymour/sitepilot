@@ -91,7 +91,8 @@ export const sitePlannerSettingsSchema = z.object({
 });
 
 export const uiPreferencesSchema = z.object({
-  developerToolsEnabled: z.boolean()
+  developerToolsEnabled: z.boolean(),
+  preserveOriginalImageUploads: z.boolean()
 });
 
 const plannerContextAttachmentSchema = z.object({

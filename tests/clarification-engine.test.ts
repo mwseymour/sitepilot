@@ -135,4 +135,24 @@ describe("analyzeClarification", () => {
     });
     expect(out.needsClarification).toBe(false);
   });
+
+  it("does not ask for clarification when the operator explicitly corrects post type to page", () => {
+    const out = analyzeClarification({
+      userPrompt:
+        "Create a new page with every block (page post type, not posts)",
+      recentPromptsForSite: []
+    });
+    expect(out.needsClarification).toBe(false);
+  });
+
+  it("asks for clarification when page vs post intent is genuinely ambiguous", () => {
+    const out = analyzeClarification({
+      userPrompt: "Create this for a page or a post, whichever fits best",
+      recentPromptsForSite: []
+    });
+    expect(out.needsClarification).toBe(true);
+    expect(out.questions).toContain(
+      "Do you want this handled as a page or a post? If you mean a specific post type, say it explicitly."
+    );
+  });
 });

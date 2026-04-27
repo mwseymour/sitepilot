@@ -20,11 +20,26 @@ function renderNavIcon(kind: string): ReactElement {
           <path d="M6 5h12M6 10h12M6 15h8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       );
+    case "conversations":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="workspace-link-icon">
+          <path d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v5A2.5 2.5 0 0 1 16.5 15H11l-4 4v-4H7.5A2.5 2.5 0 0 1 5 12.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
     case "config":
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true" className="workspace-link-icon">
           <path d="M12 8.5A3.5 3.5 0 1 0 12 15.5A3.5 3.5 0 1 0 12 8.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
           <path d="M19 12a7 7 0 0 0-.08-1l2.05-1.6-2-3.46-2.47.8a7.1 7.1 0 0 0-1.72-1L14.5 3h-5l-.28 2.74a7.1 7.1 0 0 0-1.72 1l-2.47-.8-2 3.46L5.08 11a7 7 0 0 0 0 2l-2.05 1.6 2 3.46 2.47-.8a7.1 7.1 0 0 0 1.72 1L9.5 21h5l.28-2.74a7.1 7.1 0 0 0 1.72-1l2.47.8 2-3.46L18.92 13c.05-.33.08-.66.08-1Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "checklist":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="workspace-link-icon">
+          <path d="M9.5 7h8M9.5 12h8M9.5 17h8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="m5.5 6 1.2 1.2L8.8 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="m5.5 11 1.2 1.2L8.8 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="m5.5 16 1.2 1.2L8.8 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
     case "approvals":
@@ -75,7 +90,8 @@ function SiteWorkspaceChrome(): ReactElement {
   const links: { to: string; label: string; icon: string }[] = [
     { to: `overview`, label: "Overview", icon: "overview" },
     { to: `chat`, label: "Requests", icon: "requests" },
-    { to: `config`, label: "Discovery check", icon: "config" },
+    { to: `conversations`, label: "Conversations", icon: "conversations" },
+    { to: `config`, label: "Discovery check", icon: "checklist" },
     { to: `approvals`, label: "Approvals", icon: "approvals" },
     { to: `audit`, label: "Audit", icon: "audit" },
     { to: `diagnostics`, label: "Diagnostics", icon: "diagnostics" },

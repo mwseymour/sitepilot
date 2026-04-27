@@ -21,6 +21,14 @@
   --chat-assistant-bg: rgba(16, 185, 129, 0.12);
   --chat-system-accent: #f59e0b;
   --chat-system-bg: rgba(245, 158, 11, 0.12);
+  --scrollbar-thumb: rgba(148, 163, 184, 0.45);
+  --scrollbar-track: transparent;
+  --status-inactive-bg: rgba(148, 163, 184, 0.2);
+  --status-inactive-text: #e2e8f0;
+  --status-config-bg: rgba(251, 191, 36, 0.2);
+  --status-config-text: #fde68a;
+  --status-active-bg: rgba(34, 197, 94, 0.2);
+  --status-active-text: #bbf7d0;
   background:
     radial-gradient(
       circle at top left,
@@ -58,6 +66,10 @@
   --chat-assistant-bg: rgba(15, 118, 110, 0.1);
   --chat-system-accent: #b45309;
   --chat-system-bg: rgba(217, 119, 6, 0.1);
+  --scrollbar-thumb: rgba(100, 116, 139, 0.5);
+  --status-inactive-text: #334155;
+  --status-config-text: #92400e;
+  --status-active-text: #166534;
   background:
     radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 30%),
     radial-gradient(circle at top right, rgba(16, 185, 129, 0.12), transparent 26%),
@@ -66,6 +78,7 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
 }
 
 body {
@@ -333,18 +346,18 @@ h2 {
 }
 
 .activation-inactive {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e2e8f0;
+  background: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
 }
 
 .activation-config_required {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fde68a;
+  background: var(--status-config-bg);
+  color: var(--status-config-text);
 }
 
 .activation-active {
-  background: rgba(34, 197, 94, 0.2);
-  color: #bbf7d0;
+  background: var(--status-active-bg);
+  color: var(--status-active-text);
 }
 
 .panel-card {

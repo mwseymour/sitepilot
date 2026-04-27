@@ -55,6 +55,10 @@ export function App(): ReactElement {
             <Route index element={<Navigate to="overview" replace />} />
             <Route path="overview" element={<OverviewPage />} />
             <Route path="chat" element={<ChatPage />} />
+            <Route
+              path="conversations"
+              element={<ChatPage mode="conversation" />}
+            />
             <Route path="config" element={<ConfigPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="audit" element={<AuditPage />} />

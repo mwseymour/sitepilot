@@ -144,7 +144,7 @@ export function SettingsPage(): ReactElement {
 
       {uiPreferences ? (
         <section className="panel-card">
-          <h2>Developer Tools</h2>
+          <h2>UI preferences</h2>
           <p className="muted small-print">
             Show the diagnostics panel on the Requests page, including planner
             validation, MCP payloads, and surfaced error messages.
@@ -157,18 +157,38 @@ export function SettingsPage(): ReactElement {
               disabled={busy}
               onChange={(e) => {
                 setUiPreferences({
+                  ...uiPreferences,
                   developerToolsEnabled: e.target.checked
                 });
               }}
             />
           </label>
+          <label className="settings-field">
+            <span>Preserve original image uploads</span>
+            <input
+              type="checkbox"
+              checked={uiPreferences.preserveOriginalImageUploads}
+              disabled={busy}
+              onChange={(e) => {
+                setUiPreferences({
+                  ...uiPreferences,
+                  preserveOriginalImageUploads: e.target.checked
+                });
+              }}
+            />
+          </label>
+          <p className="muted small-print">
+            When enabled, attached images keep their original bytes and MIME
+            type instead of being resized and re-encoded before planning or
+            upload.
+          </p>
           <button
             type="button"
             className="btn btn-primary"
             disabled={busy}
             onClick={() => void onSaveUiPreferences()}
           >
-            Save developer tools setting
+            Save UI preferences
           </button>
         </section>
       ) : null}

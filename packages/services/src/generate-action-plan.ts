@@ -24,6 +24,7 @@ import type {
 } from "@sitepilot/provider-adapters";
 
 import { extractJsonObject } from "./json-extract.js";
+import { detectRequestedPostTypeIntent } from "./post-type-intent.js";
 
 const PLANNER_PROMPT_VERSION = "sitepilot-plan-v4";
 const ADVANCED_BLOCK_NAMES = new Set([
@@ -1503,6 +1504,100 @@ function normalizePlanPostContent(
         ...input,
         [contentKey]: normalized.content
       }
+    } satisfies Action;
+  });
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions,
+    validationWarnings: [...new Set(validationWarnings)]
+  });
+}
+
+function normalizePlanRequestedPostType(
+  plan: ActionPlan,
+  requestText: string
+): ActionPlan {
+  const postTypeIntent = detectRequestedPostTypeIntent(requestText);
+  if (postTypeIntent.kind !== "explicit") {
+    return plan;
+  }
+
+  const validationWarnings = [...plan.validationWarnings];
+  const proposedActions = plan.proposedActions.map((action) => {
+    const normalizedType = normalizeActionType(action.type);
+    const input = action.input as Record<string, unknown>;
+    const nestedInput = pickObject(input, "input");
+    const scopes =
+      nestedInput !== undefined ? [input, nestedInput] : [input];
+    let changed = false;
+
+    const nextInput = { ...input };
+    let nextNestedInput = nestedInput !== undefined ? { ...nestedInput } : undefined;
+
+    if (
+      normalizedType === "create_draft_post" ||
+      normalizedType === "create_draft_content" ||
+      normalizedType === "create_post_draft" ||
+      normalizedType === "sitepilot_create_draft_post"
+    ) {
+      const currentPostType = scopes.find(
+        (scope) => typeof scope.post_type === "string"
+      )?.post_type;
+      if (currentPostType !== postTypeIntent.postType) {
+        if (nextNestedInput !== undefined && "post_type" in nextNestedInput) {
+          nextNestedInput.post_type = postTypeIntent.postType;
+        } else {
+          nextInput.post_type = postTypeIntent.postType;
+        }
+        changed = true;
+      }
+    }
+
+    if (
+      normalizedType === "update_post_fields" ||
+      normalizedType === "update_post" ||
+      normalizedType === "update_post_content" ||
+      normalizedType === "edit_post_fields" ||
+      normalizedType === "sitepilot_update_post_fields"
+    ) {
+      const hasConcretePostId =
+        pickNumberFrom(scopes, "postId", "post_id", "id") !== undefined;
+      if (!hasConcretePostId) {
+        const currentLookupPostType = scopes.find(
+          (scope) => typeof scope.lookup_post_type === "string"
+        )?.lookup_post_type;
+        if (currentLookupPostType !== postTypeIntent.postType) {
+          if (
+            nextNestedInput !== undefined &&
+            "lookup_post_type" in nextNestedInput
+          ) {
+            nextNestedInput.lookup_post_type = postTypeIntent.postType;
+          } else {
+            nextInput.lookup_post_type = postTypeIntent.postType;
+          }
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) {
+      return action;
+    }
+
+    validationWarnings.push(
+      `Planner output used the wrong post type for an explicit operator request; normalized this action to ${postTypeIntent.postType}.`
+    );
+
+    return {
+      ...action,
+      input:
+        nextNestedInput !== undefined
+          ? {
+              ...nextInput,
+              input: nextNestedInput
+            }
+          : nextInput
     } satisfies Action;
   });
 
@@ -3338,6 +3433,11 @@ export function buildStubActionPlan(input: {
     summary.length > 80
       ? `Draft: ${summary.slice(0, 77)}…`
       : `Draft: ${summary}`;
+  const requestedPostTypeIntent = detectRequestedPostTypeIntent(summary);
+  const requestedPostType =
+    requestedPostTypeIntent.kind === "explicit"
+      ? requestedPostTypeIntent.postType
+      : "post";
 
   const draft: ActionPlan = {
     id: planId,
@@ -3368,7 +3468,7 @@ export function buildStubActionPlan(input: {
         input: {
           title: draftTitle,
           content: summary,
-          post_type: "post"
+          post_type: requestedPostType
         },
         targetEntityRefs: [],
         permissionRequirement: "edit_posts",
@@ -3438,6 +3538,7 @@ Do not propose update actions that lack both a concrete post_id and resolvable l
 For update_post_fields, default to preserving unaffected existing post content. If you are only changing one existing block or section, provide only the replacement blocks for that target and let execution merge them into the existing post. Only set input.replace_content to true when the operator explicitly wants to replace, overwrite, clear, or rebuild the whole body.
 When the operator asks to set or change a featured image, use a featured-image action such as {"type":"set_post_featured_image","input":{"post_id":123}}. Do not use SEO/meta actions for featured images. If the request includes an attached image, prefer a single featured-image action and let execution use the attached image; do not emit a separate upload action unless the workflow explicitly requires it.
 Do not invent deliverables, sections, media, layouts, or block types the operator did not ask for.
+When the operator explicitly says page/pages or post/posts, preserve that exact post type in every create or lookup action. If they say something like "page, not post", treat that as an explicit correction and use page. If the wording leaves genuine doubt about page vs post, add an open question instead of defaulting.
 ${exhaustiveBlockInstruction}
 For each proposed action, put tool arguments directly in the action.input object. Do not wrap tool arguments in a nested input object inside action.input.
 For content-writing actions, use structured block data instead of hand-written serialized HTML whenever the request needs nested, layout, media, spacer, columns, gallery, cover, or other non-trivial Gutenberg blocks. Use input.blocks as an array of WordPress parsed block objects that can be passed to WordPress serialize_blocks(): each block has blockName, attrs, innerBlocks, innerHTML, and innerContent. Parsed blockName values for WordPress core blocks must use the "core/name" form such as "core/columns", "core/column", "core/paragraph", "core/image", and "core/spacer"; never use comment prefixes such as "wp:columns" in parsed blockName. Use input.content only for simple text-only block markup when no nested layout, media, or spacer block is needed. If input.blocks is present, it is the authoritative post body and downstream tools will prefer it over input.content.
@@ -3519,8 +3620,12 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     headingLevelNormalizedPlan,
     requestText
   );
-  const plan = normalizePlanPostContent(
+  const postTypeNormalizedPlan = normalizePlanRequestedPostType(
     seoCompletedPlan,
+    requestText
+  );
+  const plan = normalizePlanPostContent(
+    postTypeNormalizedPlan,
     requestText,
     input.requestAttachments
   );
