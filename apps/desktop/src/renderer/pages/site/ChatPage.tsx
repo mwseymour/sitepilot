@@ -60,7 +60,7 @@ const THREAD_TYPE_META: Record<string, ThreadTypeMeta> = {
   conversation: {
     label: "Conversation",
     description:
-      "Read-only MCP chat. Use Requests when you want SitePilot to execute changes."
+      "Research and read-only chat. Use it for site lookups or external source intake before creating a Request."
   },
   general_request: {
     label: "Standard request",
@@ -1122,8 +1122,9 @@ export function ChatPage({
       return {
         title: "Conversation",
         helper:
-          "Read-only MCP chat. Ask questions, look up posts, or inspect site content. Use Requests for changes or execution.",
-        placeholder: "Ask about site content or request a read-only lookup…",
+          "Research and read-only site chat. Ask questions, look up posts, inspect site content, or paste an external link and ask to turn it into a new Request.",
+        placeholder:
+          "Ask about site content, or paste a link and ask to use it in a new Request…",
         actionLabel: "Send"
       };
     }

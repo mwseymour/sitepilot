@@ -10,6 +10,13 @@ import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
+import {
+  buildExternalPageReply,
+  buildExternalPageRequestPrompt,
+  buildExternalPageRequestTitle,
+  fetchExternalPageText,
+  parseExternalResearchIntent
+} from "./external-page-research-service.js";
 import { loadPlannerPreferences } from "./planner-preferences-service.js";
 import { createMcpClientForSite } from "./site-mcp-client.js";
 
@@ -20,6 +27,11 @@ type ChosenProvider =
 
 type ConversationPlan =
   | { mode: "reply"; reply: string }
+  | {
+      mode: "external_page";
+      url: string;
+      createRequest: boolean;
+    }
   | {
       mode: "tool";
       toolName: "sitepilot-find-posts" | "sitepilot-get-post";
@@ -191,6 +203,14 @@ function detectResponseKind(
 function fallbackConversationPlan(text: string): ConversationPlan {
   const normalized = text.trim();
   const lowered = normalized.toLowerCase();
+  const externalResearch = parseExternalResearchIntent(normalized);
+  if (externalResearch) {
+    return {
+      mode: "external_page",
+      url: externalResearch.url,
+      createRequest: externalResearch.shouldCreateRequest
+    };
+  }
 
   if (looksLikeWriteRequest(lowered)) {
     return {
@@ -273,6 +293,15 @@ async function planConversationReply(input: {
   threadId: ChatThreadId;
   text: string;
 }): Promise<ConversationPlan> {
+  const externalResearch = parseExternalResearchIntent(input.text.trim());
+  if (externalResearch) {
+    return {
+      mode: "external_page",
+      url: externalResearch.url,
+      createRequest: externalResearch.shouldCreateRequest
+    };
+  }
+
   if (looksLikeWriteRequest(input.text)) {
     return fallbackConversationPlan(input.text);
   }
@@ -496,22 +525,60 @@ async function countPostTypes(input: {
     .join(" · ");
 }
 
+export type ConversationReply = {
+  text: string;
+  requestPrompt?: string;
+  requestThreadTitle?: string;
+};
+
 export async function buildConversationReply(input: {
   siteId: SiteId;
   threadId: ChatThreadId;
   text: string;
-}): Promise<string> {
+}): Promise<ConversationReply> {
   const plan = await planConversationReply(input);
   if (plan.mode === "reply") {
-    return plan.reply;
+    return { text: plan.reply };
+  }
+  if (plan.mode === "external_page") {
+    try {
+      const page = await fetchExternalPageText(plan.url);
+      if (plan.createRequest) {
+        return {
+          text: buildExternalPageReply({
+            page,
+            createdRequestTitle: buildExternalPageRequestTitle(page)
+          }),
+          requestPrompt: buildExternalPageRequestPrompt({
+            operatorText: input.text,
+            page
+          }),
+          requestThreadTitle: buildExternalPageRequestTitle(page)
+        };
+      }
+      return {
+        text: buildExternalPageReply({ page })
+      };
+    } catch (error) {
+      return {
+        text:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch readable text from that page."
+      };
+    }
   }
   if (plan.mode === "multi_count") {
-    return countPostTypes({ siteId: input.siteId, postTypes: plan.postTypes });
+    return {
+      text: await countPostTypes({ siteId: input.siteId, postTypes: plan.postTypes })
+    };
   }
 
   const mcp = await createMcpClientForSite(input.siteId);
   if (!mcp.ok) {
-    return `Failed to connect to the site MCP server: ${mcp.message}`;
+    return {
+      text: `Failed to connect to the site MCP server: ${mcp.message}`
+    };
   }
 
   try {
@@ -521,7 +588,9 @@ export async function buildConversationReply(input: {
       plan.toolName === "sitepilot-find-posts" &&
       (plan.responseKind === "list" || plan.responseKind === "count")
     ) {
-      return formatFindPostsReply(result, plan.responseKind);
+      return {
+        text: formatFindPostsReply(result, plan.responseKind)
+      };
     }
     if (
       plan.toolName === "sitepilot-get-post" &&
@@ -530,12 +599,17 @@ export async function buildConversationReply(input: {
         plan.responseKind === "created" ||
         plan.responseKind === "modified")
     ) {
-      return formatGetPostReply(result, plan.responseKind);
+      return {
+        text: formatGetPostReply(result, plan.responseKind)
+      };
     }
-    return "That conversation lookup could not be resolved.";
+    return { text: "That conversation lookup could not be resolved." };
   } catch (error) {
-    return error instanceof Error
-      ? error.message
-      : "The read-only MCP call failed.";
+    return {
+      text:
+        error instanceof Error
+          ? error.message
+          : "The read-only MCP call failed."
+    };
   }
 }

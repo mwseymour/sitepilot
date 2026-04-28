@@ -134,6 +134,148 @@ function countRunnableActions(plan: ContractActionPlan | null): number {
   ).length;
 }
 
+async function createRequestRecordForThread(input: {
+  siteId: SiteId;
+  thread: ChatThread;
+  userPrompt: string;
+  attachments?: ImageAttachmentPayload[];
+}): Promise<CreateRequestResult> {
+  const db = getDatabase();
+  const recent = await db.repositories.requests.listBySiteId(input.siteId);
+  const recentPrompts = recent.map((r: Request) => r.userPrompt).slice(0, 50);
+
+  const analysis = analyzeClarification({
+    userPrompt: input.userPrompt,
+    recentPromptsForSite: recentPrompts,
+    ...(input.attachments !== undefined ? { attachments: input.attachments } : {})
+  });
+
+  const ts = nowIso();
+  const status: Request["status"] = analysis.needsClarification
+    ? "clarifying"
+    : "new";
+
+  const request: Request = {
+    id: randomUUID() as RequestId,
+    siteId: input.siteId,
+    threadId: input.thread.id,
+    requestedBy: DEFAULT_OPERATOR,
+    status,
+    userPrompt: input.userPrompt,
+    ...(input.attachments !== undefined && input.attachments.length > 0
+      ? { attachments: input.attachments }
+      : {}),
+    createdAt: ts,
+    updatedAt: ts
+  };
+
+  await db.repositories.requests.save(request);
+
+  await db.repositories.auditEntries.append({
+    id: randomUUID() as AuditEntryId,
+    siteId: input.siteId,
+    requestId: request.id,
+    eventType: "request_created",
+    actor: DEFAULT_OPERATOR,
+    metadata: { promptLength: input.userPrompt.length },
+    createdAt: ts,
+    updatedAt: ts
+  });
+
+  const userMessage: ChatMessage = {
+    id: randomUUID() as ChatMessageId,
+    threadId: input.thread.id,
+    siteId: input.siteId,
+    author: DEFAULT_OPERATOR,
+    body: { format: "plain_text", value: input.userPrompt },
+    ...(input.attachments !== undefined && input.attachments.length > 0
+      ? { attachments: input.attachments }
+      : {}),
+    requestId: request.id,
+    createdAt: ts,
+    updatedAt: ts
+  };
+  await db.repositories.chatMessages.save(userMessage);
+
+  if (!analysis.needsClarification) {
+    await db.repositories.chatMessages.save({
+      id: randomUUID() as ChatMessageId,
+      threadId: input.thread.id,
+      siteId: input.siteId,
+      author: { kind: "assistant" },
+      body: {
+        format: "plain_text",
+        value: "Review in Current Request panel."
+      },
+      requestId: request.id,
+      createdAt: ts,
+      updatedAt: ts
+    });
+  }
+
+  let clarificationRound: ClarificationRound | undefined;
+
+  if (analysis.duplicateWarnings.length > 0) {
+    await db.repositories.chatMessages.save({
+      id: randomUUID() as ChatMessageId,
+      threadId: input.thread.id,
+      siteId: input.siteId,
+      author: { kind: "system" },
+      body: {
+        format: "plain_text",
+        value: analysis.duplicateWarnings.join("\n")
+      },
+      createdAt: ts,
+      updatedAt: ts
+    });
+  }
+
+  if (analysis.needsClarification) {
+    clarificationRound = {
+      id: randomUUID() as ClarificationRoundId,
+      requestId: request.id,
+      siteId: input.siteId,
+      questions: analysis.questions,
+      answers: [],
+      createdAt: ts,
+      updatedAt: ts
+    };
+    await db.repositories.clarificationRounds.save(clarificationRound);
+
+    await db.repositories.auditEntries.append({
+      id: randomUUID() as AuditEntryId,
+      siteId: input.siteId,
+      requestId: request.id,
+      eventType: "clarification_requested",
+      actor: { kind: "assistant" },
+      metadata: { questionCount: analysis.questions.length },
+      createdAt: ts,
+      updatedAt: ts
+    });
+
+    const clarifyBody = `More detail is needed before planning:\n${analysis.questions
+      .map((q: string, i: number) => `${i + 1}. ${q}`)
+      .join("\n")}`;
+
+    await db.repositories.chatMessages.save({
+      id: randomUUID() as ChatMessageId,
+      threadId: input.thread.id,
+      siteId: input.siteId,
+      author: { kind: "assistant" },
+      body: { format: "plain_text", value: clarifyBody },
+      createdAt: ts,
+      updatedAt: ts
+    });
+  }
+
+  await saveThreadUpdatedAt(input.thread, ts);
+
+  if (clarificationRound !== undefined) {
+    return { ok: true, request, clarificationRound };
+  }
+  return { ok: true, request };
+}
+
 async function buildThreadReply(
   siteId: SiteId,
   threadId: ChatThreadId,
@@ -142,8 +284,30 @@ async function buildThreadReply(
   const db = getDatabase();
   const thread = await db.repositories.chatThreads.getById(threadId);
   if (thread?.type === "conversation") {
+    const reply = await buildConversationReply({ siteId, threadId, text });
+    if (reply.requestPrompt && reply.requestThreadTitle) {
+      const requestThreadResult = await createChatThreadForSite(siteId, {
+        title: reply.requestThreadTitle,
+        type: "general_request"
+      });
+      if (!requestThreadResult.ok) {
+        return {
+          text: `${reply.text}\n\nI could not create the new request thread: ${requestThreadResult.message}`
+        };
+      }
+      const createdRequest = await createRequestRecordForThread({
+        siteId,
+        thread: requestThreadResult.thread,
+        userPrompt: reply.requestPrompt
+      });
+      if (!createdRequest.ok) {
+        return {
+          text: `${reply.text}\n\nI could not create the new request: ${createdRequest.message}`
+        };
+      }
+    }
     return {
-      text: await buildConversationReply({ siteId, threadId, text })
+      text: reply.text
     };
   }
   const requests = await db.repositories.requests.listByThreadId(threadId);
@@ -609,141 +773,12 @@ export async function createTypedRequestForThread(
   if (!t.ok) {
     return t;
   }
-
-  const db = getDatabase();
-  const recent = await db.repositories.requests.listBySiteId(siteId);
-  const recentPrompts = recent.map((r: Request) => r.userPrompt).slice(0, 50);
-
-  const analysis = analyzeClarification({
+  return createRequestRecordForThread({
+    siteId,
+    thread: t.thread,
     userPrompt,
-    recentPromptsForSite: recentPrompts,
     ...(attachments !== undefined ? { attachments } : {})
   });
-
-  const ts = nowIso();
-  const status: Request["status"] = analysis.needsClarification
-    ? "clarifying"
-    : "new";
-
-  const request: Request = {
-    id: randomUUID() as RequestId,
-    siteId,
-    threadId,
-    requestedBy: DEFAULT_OPERATOR,
-    status,
-    userPrompt,
-    ...(attachments !== undefined && attachments.length > 0
-      ? { attachments }
-      : {}),
-    createdAt: ts,
-    updatedAt: ts
-  };
-
-  await db.repositories.requests.save(request);
-
-  await db.repositories.auditEntries.append({
-    id: randomUUID() as AuditEntryId,
-    siteId,
-    requestId: request.id,
-    eventType: "request_created",
-    actor: DEFAULT_OPERATOR,
-    metadata: { promptLength: userPrompt.length },
-    createdAt: ts,
-    updatedAt: ts
-  });
-
-  const userMessage: ChatMessage = {
-    id: randomUUID() as ChatMessageId,
-    threadId,
-    siteId,
-    author: DEFAULT_OPERATOR,
-    body: { format: "plain_text", value: userPrompt },
-    ...(attachments !== undefined && attachments.length > 0
-      ? { attachments }
-      : {}),
-    requestId: request.id,
-    createdAt: ts,
-    updatedAt: ts
-  };
-  await db.repositories.chatMessages.save(userMessage);
-
-  if (!analysis.needsClarification) {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      author: { kind: "assistant" },
-      body: {
-        format: "plain_text",
-        value: "Review in Current Request panel."
-      },
-      requestId: request.id,
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
-
-  let clarificationRound: ClarificationRound | undefined;
-
-  if (analysis.duplicateWarnings.length > 0) {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      author: { kind: "system" },
-      body: {
-        format: "plain_text",
-        value: analysis.duplicateWarnings.join("\n")
-      },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
-
-  if (analysis.needsClarification) {
-    clarificationRound = {
-      id: randomUUID() as ClarificationRoundId,
-      requestId: request.id,
-      siteId,
-      questions: analysis.questions,
-      answers: [],
-      createdAt: ts,
-      updatedAt: ts
-    };
-    await db.repositories.clarificationRounds.save(clarificationRound);
-
-    await db.repositories.auditEntries.append({
-      id: randomUUID() as AuditEntryId,
-      siteId,
-      requestId: request.id,
-      eventType: "clarification_requested",
-      actor: { kind: "assistant" },
-      metadata: { questionCount: analysis.questions.length },
-      createdAt: ts,
-      updatedAt: ts
-    });
-
-    const clarifyBody = `More detail is needed before planning:\n${analysis.questions
-      .map((q: string, i: number) => `${i + 1}. ${q}`)
-      .join("\n")}`;
-
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      author: { kind: "assistant" },
-      body: { format: "plain_text", value: clarifyBody },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
-
-  await saveThreadUpdatedAt(t.thread, ts);
-
-  if (clarificationRound !== undefined) {
-    return { ok: true, request, clarificationRound };
-  }
-  return { ok: true, request };
 }
 
 export async function answerClarificationForRequest(

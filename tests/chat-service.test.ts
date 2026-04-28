@@ -39,7 +39,14 @@ const db = {
       save: vi.fn(async () => undefined)
     },
     requests: {
+      listBySiteId: vi.fn(async () => []),
       getById: vi.fn(async () => request),
+      save: vi.fn(async () => undefined)
+    },
+    auditEntries: {
+      append: vi.fn(async () => undefined)
+    },
+    clarificationRounds: {
       save: vi.fn(async () => undefined)
     },
     chatMessages: {
@@ -54,9 +61,11 @@ vi.mock("../apps/desktop/src/main/app-database.js", () => ({
 
 describe("chat service request revision", () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.clearAllMocks();
     db.repositories.sites.getById.mockResolvedValue(site);
     db.repositories.chatThreads.getById.mockResolvedValue(thread);
+    db.repositories.requests.listBySiteId.mockResolvedValue([]);
     db.repositories.requests.getById.mockResolvedValue(request);
   });
 
@@ -108,5 +117,45 @@ describe("chat service request revision", () => {
       message:
         "This request is executing right now. Wait for it to finish before revising the request."
     });
+  });
+
+  it("creates a new request thread when a conversation turn returns research handoff content", async () => {
+    vi.doMock("../apps/desktop/src/main/conversation-service.js", () => ({
+      buildConversationReply: vi.fn(async () => ({
+        text: 'Fetched Example page and created a new request thread: Research: Example page.',
+        requestPrompt: "Use this external page as source material.",
+        requestThreadTitle: "Research: Example page"
+      }))
+    }));
+
+    const conversationThread = {
+      ...thread,
+      type: "conversation"
+    };
+    db.repositories.chatThreads.getById.mockResolvedValue(conversationThread);
+    db.repositories.chatThreads.save.mockImplementation(async (value) => value);
+
+    const { postChatMessage } = await import(
+      "../apps/desktop/src/main/chat-service.js"
+    );
+
+    const result = await postChatMessage(
+      site.id as never,
+      conversationThread.id as never,
+      "Use the text from https://example.com in a new request."
+    );
+
+    expect(result.ok).toBe(true);
+    expect(db.repositories.chatThreads.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Research: Example page",
+        type: "general_request"
+      })
+    );
+    expect(db.repositories.requests.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userPrompt: "Use this external page as source material."
+      })
+    );
   });
 });
