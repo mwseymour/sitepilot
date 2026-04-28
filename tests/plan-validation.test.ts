@@ -71,6 +71,18 @@ describe("validateActionPlan (T25)", () => {
     expect(outcome.kind).toBe("blocked_clarification");
   });
 
+  it("ignores placeholder open questions like 'None.'", () => {
+    const plan = actionPlanSchema.parse({
+      ...basePlan,
+      openQuestions: ["None."]
+    });
+    const outcome = validateActionPlan(plan, {
+      discoveryCapabilities: ["read", "edit_drafts"],
+      siteConfigPublishRequiresApproval: false
+    });
+    expect(outcome.kind).toBe("pass");
+  });
+
   it("returns blocked_approval when plan requires approval", () => {
     const plan = actionPlanSchema.parse({
       ...basePlan,

@@ -1,4 +1,7 @@
-import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
+import {
+  siteConfigSchema,
+  type ActionPlan as ContractActionPlan
+} from "@sitepilot/contracts";
 import type {
   ApprovalRequest,
   ChatThreadId,
@@ -8,8 +11,15 @@ import type {
   SiteId,
   ToolInvocation
 } from "@sitepilot/domain";
+import { validateActionPlan } from "@sitepilot/validation";
 
 import { getDatabase } from "./app-database.js";
+import {
+  applyApprovalBypass,
+  deriveRequestStatusAfterPlanning
+} from "./plan-generation-service.js";
+import { getSecureStorage } from "./app-secure-storage.js";
+import { loadSitePlannerSettings } from "./settings-service.js";
 
 export type RequestBundlePendingApproval = {
   id: ApprovalRequest["id"];
@@ -45,6 +55,75 @@ export type GetRequestBundleResult =
     }
   | { ok: false; code: string; message: string };
 
+async function loadSiteConfigPublishRequiresApproval(
+  siteId: SiteId
+): Promise<boolean> {
+  const db = getDatabase();
+  const versions = await db.repositories.siteConfigs.listVersions(siteId);
+  const latestConfig = [...versions].sort((a, b) => b.version - a.version)[0];
+  if (!latestConfig) {
+    return false;
+  }
+  try {
+    const cfg = siteConfigSchema.parse(latestConfig.document);
+    return cfg.sections.approvalPolicy.publishRequiresApproval;
+  } catch {
+    return false;
+  }
+}
+
+function shouldRecomputeRequestStatus(status: Request["status"]): boolean {
+  return (
+    status === "new" ||
+    status === "drafted" ||
+    status === "awaiting_approval" ||
+    status === "approved"
+  );
+}
+
+async function reconcileRequestStatusFromPlan(input: {
+  request: Request;
+  plan: ContractActionPlan | null;
+}): Promise<Request> {
+  if (!input.plan || !shouldRecomputeRequestStatus(input.request.status)) {
+    return input.request;
+  }
+
+  const db = getDatabase();
+  const [discovery, publishRequiresApproval, sitePlannerSettings] =
+    await Promise.all([
+      db.repositories.discoverySnapshots.getLatest(input.request.siteId),
+      loadSiteConfigPublishRequiresApproval(input.request.siteId),
+      loadSitePlannerSettings(getSecureStorage(), input.request.siteId)
+    ]);
+
+  const rawValidation = validateActionPlan(input.plan, {
+    discoveryCapabilities: discovery?.capabilities ?? [],
+    siteConfigPublishRequiresApproval: publishRequiresApproval
+  });
+  const validation = applyApprovalBypass(
+    rawValidation,
+    sitePlannerSettings.bypassApprovalRequests
+  );
+  const nextStatus = deriveRequestStatusAfterPlanning({
+    currentStatus: input.request.status,
+    rawValidation,
+    validation
+  });
+
+  if (nextStatus === input.request.status) {
+    return input.request;
+  }
+
+  const updatedRequest: Request = {
+    ...input.request,
+    status: nextStatus,
+    updatedAt: new Date().toISOString()
+  };
+  await db.repositories.requests.save(updatedRequest);
+  return updatedRequest;
+}
+
 export async function getRequestBundleForThread(input: {
   siteId: SiteId;
   threadId: ChatThreadId;
@@ -75,6 +154,11 @@ export async function getRequestBundleForThread(input: {
       plan = null;
     }
   }
+
+  const effectiveRequest = await reconcileRequestStatusFromPlan({
+    request,
+    plan
+  });
 
   const approvals = await db.repositories.approvals.listByRequestId(
     input.requestId
@@ -131,7 +215,7 @@ export async function getRequestBundleForThread(input: {
 
   return {
     ok: true,
-    request,
+    request: effectiveRequest,
     plan,
     pendingApproval,
     lastExecution

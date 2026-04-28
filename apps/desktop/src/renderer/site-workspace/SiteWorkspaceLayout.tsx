@@ -36,10 +36,12 @@ function renderNavIcon(kind: string): ReactElement {
     case "checklist":
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true" className="workspace-link-icon">
-          <path d="M9.5 7h8M9.5 12h8M9.5 17h8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="m5.5 6 1.2 1.2L8.8 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="m5.5 11 1.2 1.2L8.8 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="m5.5 16 1.2 1.2L8.8 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="5" y="4.5" width="14" height="16" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M9 3.5h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M8.5 9h7M8.5 13h7M8.5 17h7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="m6.8 8.7.8.8 1.4-1.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="m6.8 12.7.8.8 1.4-1.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="m6.8 16.7.8.8 1.4-1.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
     case "approvals":

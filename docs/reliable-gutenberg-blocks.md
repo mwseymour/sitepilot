@@ -168,6 +168,19 @@ The plugin must not silently drop bad block nodes or fall back to `content` when
 
 For external images, the model/planner can use `id: 0` because the file is not in the Media Library.
 
+SitePilot now has a deterministic image sourcing and recovery path. The planner is no longer expected to "just know" a correct public image URL.
+
+Current behavior:
+
+1. If the operator uploads an image, planner and execution prefer that attachment.
+2. If the operator asks SitePilot to find an image online and no upload is present, plan generation can leave a `core/image` block with strong alt text and let desktop resolve the image.
+3. Desktop image sourcing validates any model-provided external URL before trusting it.
+4. If the URL is missing or invalid, desktop searches Wikimedia Commons first and Unsplash second.
+5. Only direct URLs that respond successfully with an `image/*` content type are accepted.
+6. Execution downloads the resolved external image, uploads it to the site media library, and rewrites Gutenberg content to use the local media URL and attachment id.
+
+This means a request like "create a page and find a burger image online" should not block on manual image clarification when SitePilot can resolve a usable image itself.
+
 Example:
 
 ```json
@@ -195,6 +208,53 @@ curl -I -L 'https://upload.wikimedia.org/wikipedia/commons/b/be/Chinon_CP_9_AF_B
 ```
 
 The response should be `2xx` and `content-type` should start with `image/`. A valid Gutenberg image block with a broken external URL will still render as a broken image in the editor.
+
+### Planning-Time Resolution
+
+The desktop planning layer now performs image resolution after the LLM returns a plan:
+
+- validates any `featured_image_url`, `core/image` URL, or `core/media-text` media URL
+- searches for a replacement when the URL is missing or invalid
+- preserves descriptive alt text so search has useful context
+- appends validation warnings if no usable image can be found
+
+Implementation entry point:
+
+```text
+apps/desktop/src/main/image-sourcing-service.ts
+```
+
+This service is called from:
+
+```text
+apps/desktop/src/main/plan-generation-service.ts
+```
+
+### Execution-Time Recovery
+
+Execution also performs a second pass so stale plans or model-authored URLs do not automatically become broken editor images.
+
+Current execution recovery covers:
+
+- `featured_image_url`
+- parsed `core/image` blocks
+- parsed `core/media-text` blocks
+- serialized `wp:image` blocks
+- serialized `wp:media-text` blocks
+
+Execution behavior:
+
+1. Collect candidate external image references from the action spec.
+2. Resolve or re-resolve them through the image sourcing service.
+3. Download the chosen asset.
+4. Upload it with `sitepilot-upload-media-asset`.
+5. Rewrite block attrs and HTML to point at the site-local uploaded media URL.
+
+This is implemented in:
+
+```text
+apps/desktop/src/main/execution-orchestrator-service.ts
+```
 
 ## Failure Modes We Hit
 
@@ -252,6 +312,11 @@ https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Image_created_with_a_s
 ```
 
 It returned `HTTP/2 400`, so WordPress showed a broken image even though the block structure was valid.
+
+That specific class of failure is now mitigated in two ways:
+
+- plan generation validates or replaces the external URL before the plan is approved
+- execution retries resolution and localizes the image into the Media Library before writing content
 
 ## Debugging Latest MCP Payload
 

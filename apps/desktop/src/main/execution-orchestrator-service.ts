@@ -35,6 +35,7 @@ import {
 
 import { getDatabase } from "./app-database.js";
 import { DEFAULT_OPERATOR } from "./chat-service.js";
+import { resolveExternalImageReference } from "./image-sourcing-service.js";
 import { createMcpClientForSite } from "./site-mcp-client.js";
 
 export type ExecutePlanActionInput = {
@@ -150,6 +151,11 @@ type UploadedMediaAsset = {
   mediaType: string;
 };
 
+type ExternalImageReference = {
+  url?: string;
+  altText?: string;
+};
+
 function normalizeBlockName(value: unknown): string {
   if (typeof value !== "string") {
     return "";
@@ -168,6 +174,26 @@ function normalizeBlockName(value: unknown): string {
 function dataUrlToBase64(dataUrl: string): string | null {
   const match = /^data:[^;]+;base64,(.+)$/s.exec(dataUrl);
   return match?.[1] ?? null;
+}
+
+function mediaTypeToExtension(mediaType: string): string {
+  const normalized = mediaType.trim().toLowerCase();
+  if (normalized === "image/jpeg") {
+    return ".jpg";
+  }
+  if (normalized === "image/png") {
+    return ".png";
+  }
+  if (normalized === "image/webp") {
+    return ".webp";
+  }
+  if (normalized === "image/svg+xml") {
+    return ".svg";
+  }
+  if (normalized === "image/gif") {
+    return ".gif";
+  }
+  return "";
 }
 
 function hydrateUploadMediaArgumentsFromAttachment(input: {
@@ -228,6 +254,73 @@ function imageBlockHtml(attrs: Record<string, unknown>): string {
   return `<figure class="${figureClasses.join(" ")}"><img src="${url}" alt="${alt}"${imageClass}/></figure>`;
 }
 
+function mediaTextWrapperOpen(attrs: Record<string, unknown>): string {
+  const classNames = ["wp-block-media-text"];
+  if (attrs.mediaPosition === "right") {
+    classNames.push("has-media-on-the-right");
+  }
+  if (attrs.isStackedOnMobile === true) {
+    classNames.push("is-stacked-on-mobile");
+  }
+  if (
+    typeof attrs.verticalAlignment === "string" &&
+    attrs.verticalAlignment.trim().length > 0
+  ) {
+    classNames.push(`is-vertically-aligned-${attrs.verticalAlignment.trim()}`);
+  }
+  if (attrs.imageFill === true) {
+    classNames.push("is-image-fill-element");
+  }
+  let style = "";
+  if (
+    typeof attrs.mediaWidth === "number" &&
+    Number.isFinite(attrs.mediaWidth) &&
+    attrs.mediaWidth !== 50
+  ) {
+    const width = String(attrs.mediaWidth);
+    style =
+      attrs.mediaPosition === "right"
+        ? ` style="grid-template-columns:auto ${width}%"`
+        : ` style="grid-template-columns:${width}% auto"`;
+  }
+  return `<div class="${classNames.join(" ")}"${style}>`;
+}
+
+function mediaTextMediaFigureHtml(attrs: Record<string, unknown>): string {
+  const mediaUrl =
+    typeof attrs.mediaUrl === "string" ? attrs.mediaUrl.trim() : "";
+  if (mediaUrl.length === 0) {
+    return '<figure class="wp-block-media-text__media"></figure>';
+  }
+
+  const mediaAlt =
+    typeof attrs.mediaAlt === "string"
+      ? attrs.mediaAlt
+      : typeof attrs.alt === "string"
+        ? attrs.alt
+        : "";
+  const mediaId =
+    typeof attrs.mediaId === "number"
+      ? attrs.mediaId
+      : typeof attrs.mediaId === "string"
+        ? Number.parseInt(attrs.mediaId, 10)
+        : 0;
+  const mediaSizeSlug =
+    typeof attrs.mediaSizeSlug === "string" && attrs.mediaSizeSlug.trim().length > 0
+      ? attrs.mediaSizeSlug.trim()
+      : "full";
+  const classes: string[] = [];
+  if (Number.isFinite(mediaId) && mediaId > 0) {
+    classes.push(`wp-image-${mediaId}`);
+    classes.push(`size-${mediaSizeSlug}`);
+  }
+  return `<figure class="wp-block-media-text__media"><img src="${escapeHtml(
+    mediaUrl
+  )}" alt="${escapeHtml(mediaAlt)}"${
+    classes.length > 0 ? ` class="${classes.join(" ")}"` : ""
+  }/></figure>`;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -262,6 +355,19 @@ function urlFileName(url: string): string | null {
     const segments = url.split("/").filter(Boolean);
     return segments.length > 0 ? segments.at(-1) ?? null : null;
   }
+}
+
+function fileNameFromUrlOrContentType(url: string, mediaType: string): string {
+  const fromUrl = urlFileName(url);
+  if (fromUrl && /\.[a-z0-9]+$/i.test(fromUrl)) {
+    return fromUrl;
+  }
+
+  const fallbackBase = fromUrl && fromUrl.trim().length > 0 ? fromUrl : "external-image";
+  const fallbackExt = mediaTypeToExtension(mediaType);
+  return /\.[a-z0-9]+$/i.test(fallbackBase)
+    ? fallbackBase
+    : `${fallbackBase}${fallbackExt}`;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {
@@ -353,6 +459,283 @@ async function uploadAttachmentsToMediaLibrary(input: {
   return { ok: true, uploads };
 }
 
+function extractExternalImageReferencesFromBlocks(
+  blocks: unknown[]
+): ExternalImageReference[] {
+  const references: ExternalImageReference[] = [];
+
+  const visit = (value: unknown): void => {
+    const block = objectRecord(value);
+    if (!block) {
+      return;
+    }
+
+    const blockName = normalizeBlockName(block.blockName);
+    const attrs = objectRecord(block.attrs) ?? {};
+
+    if (blockName === "core/image") {
+      const url =
+        typeof attrs.url === "string"
+          ? attrs.url.trim()
+          : typeof attrs.src === "string"
+            ? attrs.src.trim()
+            : "";
+      const altText = typeof attrs.alt === "string" ? attrs.alt.trim() : "";
+      references.push({
+        ...(url.length > 0 ? { url } : {}),
+        ...(altText.length > 0 ? { altText } : {})
+      });
+    }
+
+    if (blockName === "core/media-text") {
+      const url =
+        typeof attrs.mediaUrl === "string" ? attrs.mediaUrl.trim() : "";
+      const altText =
+        typeof attrs.mediaAlt === "string"
+          ? attrs.mediaAlt.trim()
+          : typeof attrs.alt === "string"
+            ? attrs.alt.trim()
+            : "";
+      references.push({
+        ...(url.length > 0 ? { url } : {}),
+        ...(altText.length > 0 ? { altText } : {})
+      });
+    }
+
+    if (Array.isArray(block.innerBlocks)) {
+      for (const innerBlock of block.innerBlocks) {
+        visit(innerBlock);
+      }
+    }
+  };
+
+  for (const block of blocks) {
+    visit(block);
+  }
+
+  return references;
+}
+
+function extractExternalImageReferencesFromSerializedContent(
+  content: string
+): ExternalImageReference[] {
+  const references: ExternalImageReference[] = [];
+  const imageBlockPattern =
+    /<!--\s*wp:image(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:image\s*-->/gi;
+
+  for (const match of content.matchAll(imageBlockPattern)) {
+    const attrsJson = match[1];
+    const innerHtml = match[2];
+    let url = "";
+
+    if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(attrsJson) as unknown;
+        const record = objectRecord(parsed);
+        if (record) {
+          if (typeof record.url === "string") {
+            url = record.url.trim();
+          } else if (typeof record.src === "string") {
+            url = record.src.trim();
+          }
+        }
+      } catch {
+        url = "";
+      }
+    }
+
+    if (url.length === 0 && typeof innerHtml === "string") {
+      const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(innerHtml);
+      url = (imgSrcMatch?.[2] ?? "").trim();
+    }
+
+    const altMatch =
+      typeof innerHtml === "string"
+        ? /<img\b[^>]*\balt=(["'])(.*?)\1/i.exec(innerHtml)
+        : null;
+    const alt =
+      typeof attrsJson === "string" && attrsJson.trim().length > 0
+        ? (() => {
+            try {
+              const parsed = JSON.parse(attrsJson) as unknown;
+              const record = objectRecord(parsed);
+              return typeof record?.alt === "string" ? record.alt.trim() : "";
+            } catch {
+              return "";
+            }
+          })()
+        : (altMatch?.[2] ?? "").trim();
+
+    references.push({
+      ...(url.length > 0 ? { url } : {}),
+      ...(alt.length > 0 ? { altText: alt } : {})
+    });
+  }
+
+  const mediaTextPattern =
+    /<!--\s*wp:media-text(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:media-text\s*-->/gi;
+
+  for (const match of content.matchAll(mediaTextPattern)) {
+    const attrsJson = match[1];
+    const innerHtml = match[2];
+    let url = "";
+    let alt = "";
+
+    if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(attrsJson) as unknown;
+        const record = objectRecord(parsed);
+        if (record) {
+          if (typeof record.mediaUrl === "string") {
+            url = record.mediaUrl.trim();
+          }
+          if (typeof record.mediaAlt === "string") {
+            alt = record.mediaAlt.trim();
+          }
+        }
+      } catch {
+        url = "";
+      }
+    }
+
+    if (url.length === 0 && typeof innerHtml === "string") {
+      const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(innerHtml);
+      url = (imgSrcMatch?.[2] ?? "").trim();
+    }
+    if (alt.length === 0 && typeof innerHtml === "string") {
+      const imgAltMatch = /<img\b[^>]*\balt=(["'])(.*?)\1/i.exec(innerHtml);
+      alt = (imgAltMatch?.[2] ?? "").trim();
+    }
+
+    references.push({
+      ...(url.length > 0 ? { url } : {}),
+      ...(alt.length > 0 ? { altText: alt } : {})
+    });
+  }
+
+  return references;
+}
+
+async function downloadExternalImageAsAttachment(url: string): Promise<
+  | { ok: true; attachment: ImageAttachmentPayload }
+  | { ok: false; code: string; message: string }
+> {
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    return {
+      ok: false,
+      code: "external_image_fetch_failed",
+      message:
+        error instanceof Error
+          ? error.message
+          : `Failed to fetch external image ${url}.`
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code: "external_image_fetch_failed",
+      message: `External image fetch failed for ${url} with status ${response.status}.`
+    };
+  }
+
+  const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+  if (!mediaType.startsWith("image/")) {
+    return {
+      ok: false,
+      code: "external_image_invalid_type",
+      message: `External image ${url} returned unsupported content-type "${mediaType || "unknown"}".`
+    };
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length === 0) {
+    return {
+      ok: false,
+      code: "external_image_fetch_failed",
+      message: `External image ${url} returned an empty body.`
+    };
+  }
+
+  const fileName = fileNameFromUrlOrContentType(url, mediaType);
+  return {
+    ok: true,
+    attachment: {
+      fileName,
+      mediaType,
+      sizeBytes: bytes.length,
+      dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`
+    }
+  };
+}
+
+async function collectMediaAttachmentsForSpec(input: {
+  requestAttachments: ImageAttachmentPayload[] | undefined;
+  spec: { toolName: string; arguments: Record<string, unknown> };
+  siteBaseUrl: string;
+  requestText: string;
+}): Promise<
+  | { ok: true; attachments: ImageAttachmentPayload[] }
+  | { ok: false; code: string; message: string }
+> {
+  const attachments = [...(input.requestAttachments ?? [])];
+  const candidates: ExternalImageReference[] = [];
+
+  if (Array.isArray(input.spec.arguments.blocks)) {
+    candidates.push(
+      ...extractExternalImageReferencesFromBlocks(input.spec.arguments.blocks)
+    );
+  } else if (typeof input.spec.arguments.content === "string") {
+    candidates.push(
+      ...extractExternalImageReferencesFromSerializedContent(
+        input.spec.arguments.content
+      )
+    );
+  }
+
+  for (const candidate of candidates) {
+    if (
+      typeof candidate.url === "string" &&
+      isSiteLocalUploadUrl(candidate.url, input.siteBaseUrl)
+    ) {
+      continue;
+    }
+    const resolved = await resolveExternalImageReference({
+      currentUrl: candidate.url ?? null,
+      altText: candidate.altText ?? null,
+      requestText: input.requestText
+    });
+    if (!resolved) {
+      return {
+        ok: false,
+        code: "external_image_not_found",
+        message:
+          candidate.altText && candidate.altText.trim().length > 0
+            ? `Could not find a usable image for "${candidate.altText}".`
+            : "Could not find a usable external image for this action."
+      };
+    }
+    const downloaded = await downloadExternalImageAsAttachment(resolved.url);
+    if (!downloaded.ok) {
+      return downloaded;
+    }
+    attachments.push(downloaded.attachment);
+  }
+
+  return { ok: true, attachments };
+}
+
+export const __testables = {
+  extractExternalImageReferencesFromBlocks,
+  extractExternalImageReferencesFromSerializedContent,
+  collectMediaAttachmentsForSpec,
+  downloadExternalImageAsAttachment,
+  fileNameFromUrlOrContentType
+};
+
 function rewriteBlocksWithUploadedMedia(input: {
   blocks: unknown[];
   uploads: UploadedMediaAsset[];
@@ -396,50 +779,124 @@ function rewriteBlocksWithUploadedMedia(input: {
       nextBlock.innerBlocks = block.innerBlocks.map(visitBlock);
     }
 
-    if (normalizeBlockName(block.blockName) !== "core/image") {
-      return nextBlock;
-    }
-
     const attrs = objectRecord(block.attrs) ?? {};
-    const rawId = attrs.id;
-    const imageId =
-      typeof rawId === "number"
-        ? rawId
-        : typeof rawId === "string"
-          ? Number.parseInt(rawId, 10)
-          : 0;
-    const currentUrl =
-      typeof attrs.url === "string"
-        ? attrs.url
-        : typeof attrs.src === "string"
-          ? attrs.src
-          : "";
+    const blockName = normalizeBlockName(block.blockName);
 
-    if (Number.isFinite(imageId) && imageId > 0 && currentUrl.length > 0) {
+    if (blockName === "core/image") {
+      const rawId = attrs.id;
+      const imageId =
+        typeof rawId === "number"
+          ? rawId
+          : typeof rawId === "string"
+            ? Number.parseInt(rawId, 10)
+            : 0;
+      const currentUrl =
+        typeof attrs.url === "string"
+          ? attrs.url
+          : typeof attrs.src === "string"
+            ? attrs.src
+            : "";
+
+      if (Number.isFinite(imageId) && imageId > 0 && currentUrl.length > 0) {
+        return nextBlock;
+      }
+
+      const upload =
+        matchingUploadForUrl(currentUrl) ??
+        (isSiteLocalUploadUrl(currentUrl, input.siteBaseUrl)
+          ? nextUnusedUpload()
+          : undefined);
+
+      if (!upload) {
+        return nextBlock;
+      }
+
+      const nextAttrs: Record<string, unknown> = {
+        ...attrs,
+        id: upload.attachmentId,
+        url: upload.url
+      };
+      if (typeof nextAttrs.src === "string") {
+        nextAttrs.src = upload.url;
+      }
+
+      const innerHtml = imageBlockHtml(nextAttrs);
+      nextBlock.attrs = nextAttrs;
+      nextBlock.innerHTML = innerHtml;
+      nextBlock.innerContent = [innerHtml];
+
       return nextBlock;
     }
 
-    const upload =
-      matchingUploadForUrl(currentUrl) ??
-      (isSiteLocalUploadUrl(currentUrl, input.siteBaseUrl) ? nextUnusedUpload() : undefined);
+    if (blockName === "core/media-text") {
+      const rawMediaId = attrs.mediaId;
+      const mediaId =
+        typeof rawMediaId === "number"
+          ? rawMediaId
+          : typeof rawMediaId === "string"
+            ? Number.parseInt(rawMediaId, 10)
+            : 0;
+      const currentUrl =
+        typeof attrs.mediaUrl === "string" ? attrs.mediaUrl : "";
 
-    if (!upload) {
+      if (Number.isFinite(mediaId) && mediaId > 0 && currentUrl.length > 0) {
+        return nextBlock;
+      }
+
+      const upload =
+        matchingUploadForUrl(currentUrl) ??
+        (isSiteLocalUploadUrl(currentUrl, input.siteBaseUrl)
+          ? nextUnusedUpload()
+          : undefined);
+      if (!upload) {
+        return nextBlock;
+      }
+
+      const nextAttrs: Record<string, unknown> = {
+        ...attrs,
+        mediaId: upload.attachmentId,
+        mediaType: "image",
+        mediaUrl: upload.url
+      };
+      nextBlock.attrs = nextAttrs;
+      const contentParts = Array.isArray(nextBlock.innerBlocks)
+        ? nextBlock.innerBlocks.map((innerBlock) => {
+            const innerRecord = objectRecord(innerBlock);
+            return typeof innerRecord?.innerHTML === "string"
+              ? innerRecord.innerHTML
+              : "";
+          })
+        : [];
+      const contentOpen = '<div class="wp-block-media-text__content">';
+      const mediaFigure = mediaTextMediaFigureHtml(nextAttrs);
+      nextBlock.innerHTML =
+        nextAttrs.mediaPosition === "right"
+          ? `${mediaTextWrapperOpen(nextAttrs)}${contentOpen}${contentParts.join(
+              ""
+            )}</div>${mediaFigure}</div>`
+          : `${mediaTextWrapperOpen(nextAttrs)}${mediaFigure}${contentOpen}${contentParts.join(
+              ""
+            )}</div></div>`;
+      nextBlock.innerContent =
+        nextAttrs.mediaPosition === "right"
+          ? [
+              mediaTextWrapperOpen(nextAttrs),
+              contentOpen,
+              ...contentParts.map(() => null),
+              "</div>",
+              mediaFigure,
+              "</div>"
+            ]
+          : [
+              mediaTextWrapperOpen(nextAttrs),
+              mediaFigure,
+              contentOpen,
+              ...contentParts.map(() => null),
+              "</div>",
+              "</div>"
+            ];
       return nextBlock;
     }
-
-    const nextAttrs: Record<string, unknown> = {
-      ...attrs,
-      id: upload.attachmentId,
-      url: upload.url
-    };
-    if (typeof nextAttrs.src === "string") {
-      nextAttrs.src = upload.url;
-    }
-
-    const innerHtml = imageBlockHtml(nextAttrs);
-    nextBlock.attrs = nextAttrs;
-    nextBlock.innerHTML = innerHtml;
-    nextBlock.innerContent = [innerHtml];
 
     return nextBlock;
   };
@@ -477,8 +934,7 @@ function rewriteSerializedContentWithUploadedMedia(input: {
 
   const imageBlockPattern =
     /<!--\s*wp:image(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:image\s*-->/gi;
-
-  return input.content.replace(imageBlockPattern, (full, attrsJson, innerHtml) => {
+  let rewritten = input.content.replace(imageBlockPattern, (full, attrsJson, innerHtml) => {
     let attrs: Record<string, unknown> = {};
     if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
       try {
@@ -535,6 +991,73 @@ function rewriteSerializedContentWithUploadedMedia(input: {
 
     return `<!-- wp:image ${commentJson} -->${html}<!-- /wp:image -->`;
   });
+
+  const mediaTextPattern =
+    /<!--\s*wp:media-text(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:media-text\s*-->/gi;
+
+  rewritten = rewritten.replace(mediaTextPattern, (full, attrsJson, innerHtml) => {
+    let attrs: Record<string, unknown> = {};
+    if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(attrsJson) as unknown;
+        const record = objectRecord(parsed);
+        if (record) {
+          attrs = record;
+        }
+      } catch {
+        attrs = {};
+      }
+    }
+
+    const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(
+      typeof innerHtml === "string" ? innerHtml : ""
+    );
+    const currentUrl =
+      typeof attrs.mediaUrl === "string" ? attrs.mediaUrl : imgSrcMatch?.[2] ?? "";
+    const rawMediaId = attrs.mediaId;
+    const mediaId =
+      typeof rawMediaId === "number"
+        ? rawMediaId
+        : typeof rawMediaId === "string"
+          ? Number.parseInt(rawMediaId, 10)
+          : 0;
+
+    if (Number.isFinite(mediaId) && mediaId > 0 && currentUrl.length > 0) {
+      return full;
+    }
+
+    const upload = takeUploadForUrl(currentUrl);
+    if (!upload) {
+      return full;
+    }
+
+    const nextAttrs: Record<string, unknown> = {
+      ...attrs,
+      mediaId: upload.attachmentId,
+      mediaType: "image",
+      mediaUrl: upload.url
+    };
+    const contentMatch =
+      /<div class="wp-block-media-text__content">([\s\S]*?)<\/div>\s*<\/div>\s*$/i.exec(
+        typeof innerHtml === "string" ? innerHtml : ""
+      ) ??
+      /<div class="wp-block-media-text__content">([\s\S]*?)<\/div>/i.exec(
+        typeof innerHtml === "string" ? innerHtml : ""
+      );
+    const contentHtml = contentMatch?.[1] ?? "";
+    const html =
+      nextAttrs.mediaPosition === "right"
+        ? `${mediaTextWrapperOpen(nextAttrs)}<div class="wp-block-media-text__content">${contentHtml}</div>${mediaTextMediaFigureHtml(
+            nextAttrs
+          )}</div>`
+        : `${mediaTextWrapperOpen(nextAttrs)}${mediaTextMediaFigureHtml(
+            nextAttrs
+          )}<div class="wp-block-media-text__content">${contentHtml}</div></div>`;
+
+    return `<!-- wp:media-text ${JSON.stringify(nextAttrs)} -->${html}<!-- /wp:media-text -->`;
+  });
+
+  return rewritten;
 }
 
 async function hydrateSpecMediaInputs(input: {
@@ -542,17 +1065,11 @@ async function hydrateSpecMediaInputs(input: {
   spec: { toolName: string; arguments: Record<string, unknown> };
   mcpClient: McpHttpClient;
   siteBaseUrl: string;
+  requestText: string;
 }): Promise<
   | { ok: true; spec: { toolName: string; arguments: Record<string, unknown> } }
   | { ok: false; code: string; message: string }
 > {
-  if (
-    input.requestAttachments === undefined ||
-    input.requestAttachments.length === 0
-  ) {
-    return { ok: true, spec: input.spec };
-  }
-
   if (
     input.spec.toolName !== "sitepilot-create-draft-post" &&
     input.spec.toolName !== "sitepilot-update-post-fields" &&
@@ -569,6 +1086,16 @@ async function hydrateSpecMediaInputs(input: {
     if (hasDataBase64) {
       return { ok: true, spec: input.spec };
     }
+    if (
+      input.requestAttachments === undefined ||
+      input.requestAttachments.length === 0
+    ) {
+      return {
+        ok: false,
+        code: "missing_attachment",
+        message: "Upload media action requires an image attachment."
+      };
+    }
     return hydrateUploadMediaArgumentsFromAttachment({
       attachment: input.requestAttachments[0]!,
       spec: input.spec
@@ -583,6 +1110,69 @@ async function hydrateSpecMediaInputs(input: {
       existingAttachmentId > 0
     ) {
       return { ok: true, spec: input.spec };
+    }
+    const featuredImageUrl =
+      typeof input.spec.arguments.featured_image_url === "string"
+        ? input.spec.arguments.featured_image_url
+        : undefined;
+    if (featuredImageUrl) {
+      const resolved = await resolveExternalImageReference({
+        currentUrl: featuredImageUrl,
+        requestText: input.requestText
+      });
+      if (!resolved) {
+        return {
+          ok: false,
+          code: "external_image_not_found",
+          message: "Could not find a usable featured image."
+        };
+      }
+
+      const downloaded = await downloadExternalImageAsAttachment(resolved.url);
+      if (!downloaded.ok) {
+        return downloaded;
+      }
+
+      const uploadResult = await uploadAttachmentsToMediaLibrary({
+        attachments: [downloaded.attachment],
+        mcpClient: input.mcpClient
+      });
+      if (!uploadResult.ok) {
+        return uploadResult;
+      }
+
+      const attachment = uploadResult.uploads[0];
+      if (!attachment) {
+        return {
+          ok: false,
+          code: "media_upload_invalid_result",
+          message:
+            "Featured image upload did not return a usable attachment id."
+        };
+      }
+
+      return {
+        ok: true,
+        spec: {
+          ...input.spec,
+          arguments: {
+            ...input.spec.arguments,
+            attachment_id: attachment.attachmentId
+          }
+        }
+      };
+    }
+
+    if (
+      input.requestAttachments === undefined ||
+      input.requestAttachments.length === 0
+    ) {
+      return {
+        ok: false,
+        code: "missing_attachment",
+        message:
+          "Featured image action requires an attachment, featured_image_url, or an existing attachment_id."
+      };
     }
 
     const uploadResult = await uploadAttachmentsToMediaLibrary({
@@ -615,13 +1205,27 @@ async function hydrateSpecMediaInputs(input: {
     };
   }
 
+  const mediaAttachmentsResult = await collectMediaAttachmentsForSpec({
+    requestAttachments: input.requestAttachments,
+    spec: input.spec,
+    siteBaseUrl: input.siteBaseUrl,
+    requestText: input.requestText
+  });
+  if (!mediaAttachmentsResult.ok) {
+    return mediaAttachmentsResult;
+  }
+
+  if (mediaAttachmentsResult.attachments.length === 0) {
+    return { ok: true, spec: input.spec };
+  }
+
   if (!Array.isArray(input.spec.arguments.blocks)) {
     if (typeof input.spec.arguments.content !== "string") {
       return { ok: true, spec: input.spec };
     }
 
     const uploadResult = await uploadAttachmentsToMediaLibrary({
-      attachments: input.requestAttachments,
+      attachments: mediaAttachmentsResult.attachments,
       mcpClient: input.mcpClient
     });
     if (!uploadResult.ok) {
@@ -645,7 +1249,7 @@ async function hydrateSpecMediaInputs(input: {
   }
 
   const uploadResult = await uploadAttachmentsToMediaLibrary({
-    attachments: input.requestAttachments,
+    attachments: mediaAttachmentsResult.attachments,
     mcpClient: input.mcpClient
   });
   if (!uploadResult.ok) {
@@ -1127,7 +1731,8 @@ export async function executePlanAction(
       requestAttachments: request.attachments,
       spec,
       mcpClient,
-      siteBaseUrl: site.baseUrl
+      siteBaseUrl: site.baseUrl,
+      requestText: request.userPrompt
     });
     if (!hydratedSpec.ok) {
       await appendExecutionMessage({

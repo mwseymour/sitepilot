@@ -104,6 +104,51 @@ function collectBlockNames(blocks: unknown[]): string[] {
 }
 
 describe("buildLlmActionPlan", () => {
+  it("normalizes placeholder open questions to an empty list", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft page",
+        assumptions: [],
+        openQuestions: ["None."],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Big Beefy Boys",
+              post_type: "page",
+              post_status: "draft",
+              content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a draft page."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.openQuestions).toEqual([]);
+  });
+
   it("normalizes plain text post content into paragraph blocks", async () => {
     const client = makeClient(
       JSON.stringify({
@@ -1933,6 +1978,146 @@ describe("buildLlmActionPlan", () => {
     ]);
   });
 
+  it("rewrites guessed Wikimedia Commons shards in parsed image blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a burger page with an inline image",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["page:Big Beefy Boys"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              post_type: "page",
+              title: "Big Beefy Boys",
+              blocks: [
+                {
+                  blockName: "core/image",
+                  attrs: {
+                    id: 0,
+                    url: "https://upload.wikimedia.org/wikipedia/commons/4/4f/Hamburger_%28black_bg%29.jpg",
+                    alt: "A burger on a dark background"
+                  },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: ["page:Big Beefy Boys"],
+            permissionRequirement: "edit_pages",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a new page called Big Beefy Boys and add an image inline of a burger"
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const actionInput = result.plan.proposedActions[0]?.input as Record<
+      string,
+      unknown
+    >;
+    const blocks = actionInput.blocks as Array<Record<string, unknown>>;
+    const attrs = blocks[0]?.attrs as Record<string, unknown>;
+    expect(attrs.url).toBe(
+      "https://upload.wikimedia.org/wikipedia/commons/4/47/Hamburger_(black_bg).jpg"
+    );
+    expect(result.plan.validationWarnings).toContain(
+      "Rewrote a guessed Wikimedia Commons URL at blocks[0].url to the correct hashed asset path."
+    );
+  });
+
+  it("rewrites paragraph-wrapped inline image html to a core/image block", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a burger page with an inline burger image",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["page:Big Beefy Boys"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              post_type: "page",
+              post_status: "draft",
+              post_title: "Big Beefy Boys",
+              blocks: [
+                {
+                  blockName: "core/paragraph",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML:
+                    '<p><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Cheeseburger.jpg/640px-Cheeseburger.jpg" alt="A burger" /></p>',
+                  innerContent: [
+                    '<p><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Cheeseburger.jpg/640px-Cheeseburger.jpg" alt="A burger" /></p>'
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["page:Big Beefy Boys"],
+            permissionRequirement: "create page",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a new page called Big Beefy Boys and add an image inline of a burger"
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      blocks: [
+        {
+          blockName: "core/image",
+          attrs: expect.objectContaining({
+            url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Cheeseburger.jpg/640px-Cheeseburger.jpg",
+            alt: "A burger"
+          })
+        }
+      ]
+    });
+    expect(result.plan.validationWarnings).toContain(
+      "Rewrote paragraph-wrapped image HTML at blocks[0] to a core/image block."
+    );
+  });
+
   it("normalizes before-heading placement requests to block-relative insertion edits", async () => {
     const client = makeClient(
       JSON.stringify({
@@ -2327,6 +2512,66 @@ describe("buildLlmActionPlan", () => {
         warning.includes("Collapsed a full-content heading-level update")
       )
     ).toBe(true);
+  });
+
+  it("rewrites guessed Wikimedia Commons shards in serialized image block content", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a burger page with serialized block content",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["page:Big Beefy Boys"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              post_type: "page",
+              title: "Big Beefy Boys",
+              content:
+                '<!-- wp:image {"id":0,"url":"https://upload.wikimedia.org/wikipedia/commons/4/4f/Hamburger_%28black_bg%29.jpg","alt":"A burger on a dark background"} --><figure class="wp-block-image"><img src="https://upload.wikimedia.org/wikipedia/commons/4/4f/Hamburger_%28black_bg%29.jpg" alt="A burger on a dark background"/></figure><!-- /wp:image -->'
+            },
+            targetEntityRefs: ["page:Big Beefy Boys"],
+            permissionRequirement: "edit_pages",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a new page called Big Beefy Boys and add an image inline of a burger"
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const actionInput = result.plan.proposedActions[0]?.input as Record<
+      string,
+      unknown
+    >;
+    const content = actionInput.content as string;
+    expect(content).toContain(
+      "https://upload.wikimedia.org/wikipedia/commons/4/47/Hamburger_(black_bg).jpg"
+    );
+    expect(content).not.toContain(
+      "https://upload.wikimedia.org/wikipedia/commons/4/4f/Hamburger_%28black_bg%29.jpg"
+    );
+    expect(result.plan.validationWarnings).toContain(
+      "Rewrote a guessed Wikimedia Commons URL in serialized block content to the correct hashed asset path."
+    );
   });
 
   it("normalizes end-of-content link requests to insertion blocks", async () => {

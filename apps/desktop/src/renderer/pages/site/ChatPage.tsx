@@ -313,6 +313,10 @@ function requestCanExecute(status: string): boolean {
   );
 }
 
+function requestExecutionControlsLocked(status: string): boolean {
+  return status === "completed";
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1196,6 +1200,8 @@ export function ChatPage({
     selectedThreadId !== null &&
     bundle !== null &&
     (bundle.request.status === "new" || bundle.request.status === "drafted");
+  const executionControlsLocked =
+    bundle !== null && requestExecutionControlsLocked(bundle.request.status);
   const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
   const preserveOriginalImageUploads =
     uiPreferences?.preserveOriginalImageUploads ?? false;
@@ -1781,21 +1787,23 @@ export function ChatPage({
                           <h4>Run plan</h4>
                           <p className="muted small-print">
                             {canRunPlanDirectly
-                              ? requestCanExecute(bundle.request.status)
+                              ? executionControlsLocked
+                                ? "This plan has already been executed. Generate a new action plan to run it again."
+                                : requestCanExecute(bundle.request.status)
                                 ? executableActions.length > 1
                                   ? "The approved plan is ready to run end-to-end."
                                   : "The approved plan is ready to run."
                                 : SHOW_DRY_RUN_UI
                                   ? executableActions.length > 1
-                                    ? "You can dry-run every executable action in this plan now. Execution unlocks after approval."
-                                    : "You can dry-run this plan now. Execution unlocks after approval."
-                                  : "Execution unlocks after approval."
+                                    ? "You can dry-run every executable action in this plan now. Execution unlocks once the request is ready to run."
+                                    : "You can dry-run this plan now. Execution unlocks once the request is ready to run."
+                                  : "Execution unlocks once the request is ready to run."
                               : "Run actions individually below for this plan."}
                           </p>
                         </div>
                         {canRunPlanDirectly ? (
                           <div className="chat-plan-runbar-actions">
-                            {SHOW_DRY_RUN_UI ? (
+                            {SHOW_DRY_RUN_UI && !executionControlsLocked ? (
                               <button
                                 type="button"
                                 className="btn btn-secondary"
@@ -1810,22 +1818,24 @@ export function ChatPage({
                                     : "Dry-run plan"}
                               </button>
                             ) : null}
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              disabled={
-                                execBusy ||
-                                busy ||
-                                !requestCanExecute(bundle.request.status)
-                              }
-                              onClick={() => void onRunPlan(false)}
-                            >
-                              {execBusy && execProgressLabel === "Executing…"
-                                ? "Executing…"
-                                : executableActions.length > 1
-                                  ? "Execute all"
-                                  : "Execute plan"}
-                            </button>
+                            {!executionControlsLocked ? (
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                disabled={
+                                  execBusy ||
+                                  busy ||
+                                  !requestCanExecute(bundle.request.status)
+                                }
+                                onClick={() => void onRunPlan(false)}
+                              >
+                                {execBusy && execProgressLabel === "Executing…"
+                                  ? "Executing…"
+                                  : executableActions.length > 1
+                                    ? "Execute all"
+                                    : "Execute plan"}
+                              </button>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
@@ -1949,7 +1959,8 @@ export function ChatPage({
                                 <div className="chat-action-buttons">
                                   {remote ? (
                                     <>
-                                      {SHOW_DRY_RUN_UI ? (
+                                      {SHOW_DRY_RUN_UI &&
+                                      !executionControlsLocked ? (
                                         <button
                                           type="button"
                                           className="btn btn-secondary btn-small"
@@ -1961,20 +1972,22 @@ export function ChatPage({
                                           Dry-run
                                         </button>
                                       ) : null}
-                                      <button
-                                        type="button"
-                                        className="btn btn-primary btn-small"
-                                        disabled={
-                                          execBusy ||
-                                          busy ||
-                                          !requestCanExecute(bundle.request.status)
-                                        }
-                                        onClick={() =>
-                                          void onExecuteAction(action.id, false)
-                                        }
-                                      >
-                                        Execute
-                                      </button>
+                                      {!executionControlsLocked ? (
+                                        <button
+                                          type="button"
+                                          className="btn btn-primary btn-small"
+                                          disabled={
+                                            execBusy ||
+                                            busy ||
+                                            !requestCanExecute(bundle.request.status)
+                                          }
+                                          onClick={() =>
+                                            void onExecuteAction(action.id, false)
+                                          }
+                                        >
+                                          Execute
+                                        </button>
+                                      ) : null}
                                     </>
                                   ) : null}
                                 </div>
@@ -1982,9 +1995,14 @@ export function ChatPage({
                             );
                           })}
                         </ul>
-                        {!requestCanExecute(bundle.request.status) ? (
+                        {executionControlsLocked ? (
                           <p className="muted small-print">
-                            Execute stays disabled until the request is approved.
+                            This plan has already run. Generate a new action plan
+                            to enable execution again.
+                          </p>
+                        ) : !requestCanExecute(bundle.request.status) ? (
+                          <p className="muted small-print">
+                            Execute stays disabled until the request is ready to run.
                           </p>
                         ) : null}
                       </div>

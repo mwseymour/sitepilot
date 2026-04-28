@@ -31,6 +31,7 @@ import type { PlanValidationOutcome } from "@sitepilot/validation";
 
 import { getDatabase } from "./app-database.js";
 import { buildPlannerContextForThread } from "./planner-context-service.js";
+import { sourceImagesForActionPlan } from "./image-sourcing-service.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import {
   loadPlannerPreferences,
@@ -253,6 +254,12 @@ export async function generateActionPlanForRequest(
   }
 
   plan = enrichActionPlanWithPostLookupFromContext(plan, ctxResult.context);
+  plan = await sourceImagesForActionPlan({
+    plan,
+    requestText: request.userPrompt,
+    hasAttachments:
+      request.attachments !== undefined && request.attachments.length > 0
+  });
 
   const rawValidation = validateActionPlan(plan, {
     discoveryCapabilities: discovery?.capabilities ?? [],

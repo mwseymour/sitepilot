@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   actionPlanSchema,
@@ -88,6 +88,31 @@ function userCorpusForRequest(
     .map((m) => m.text)
     .join("\n")
     .trim();
+}
+
+function isPlaceholderOpenQuestion(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return true;
+  }
+  return (
+    normalized === "none" ||
+    normalized === "none." ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "no open questions" ||
+    normalized === "no open questions." ||
+    normalized === "no questions" ||
+    normalized === "no questions."
+  );
+}
+
+function normalizeOpenQuestions(openQuestions: string[]): string[] {
+  return [...new Set(
+    openQuestions
+      .map((question) => question.trim())
+      .filter((question) => !isPlaceholderOpenQuestion(question))
+  )];
 }
 
 function requestAsksForEveryExecutableBlock(requestText: string): boolean {
@@ -952,6 +977,84 @@ function imageHtml(attrs: Record<string, unknown>): string {
   return `<figure class="${figureClasses.join(" ")}"><img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"${imageClass}/></figure>`;
 }
 
+function rewriteWikimediaCommonsUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  if (parsed.hostname !== "upload.wikimedia.org") {
+    return null;
+  }
+
+  const match = parsed.pathname.match(
+    /^\/wikipedia\/commons\/([^/]+)\/([^/]+)\/([^/]+)$/
+  );
+  if (!match) {
+    return null;
+  }
+
+  const encodedFileName = match[3];
+  if (!encodedFileName) {
+    return null;
+  }
+
+  let decodedFileName: string;
+  try {
+    decodedFileName = decodeURIComponent(encodedFileName);
+  } catch {
+    return null;
+  }
+
+  const normalizedFileName = decodedFileName.replaceAll(" ", "_");
+  const digest = createHash("md5").update(normalizedFileName).digest("hex");
+  const expectedShard = [digest.slice(0, 1), digest.slice(0, 2)] as const;
+  const currentShard = [match[1], match[2]] as const;
+
+  if (
+    currentShard[0] === expectedShard[0] &&
+    currentShard[1] === expectedShard[1]
+  ) {
+    return null;
+  }
+
+  parsed.pathname = `/wikipedia/commons/${expectedShard[0]}/${expectedShard[1]}/${encodeURIComponent(
+    normalizedFileName
+  )}`;
+  return parsed.toString();
+}
+
+function normalizeExternalMediaAttrs(
+  blockName: string,
+  attrs: Record<string, unknown>,
+  warnings: string[],
+  path: string
+): void {
+  const candidates =
+    blockName === "core/media-text"
+      ? (["mediaUrl"] as const)
+      : blockName === "core/image"
+        ? (["url"] as const)
+        : [];
+
+  for (const key of candidates) {
+    const currentValue = attrs[key];
+    if (typeof currentValue !== "string" || currentValue.trim().length === 0) {
+      continue;
+    }
+    const rewritten = rewriteWikimediaCommonsUrl(currentValue.trim());
+    if (rewritten === null) {
+      continue;
+    }
+    attrs[key] = rewritten;
+    warnings.push(
+      `Rewrote a guessed Wikimedia Commons URL at ${path}.${key} to the correct hashed asset path.`
+    );
+  }
+}
+
 function spacerHtml(attrs: Record<string, unknown>): string {
   const rawHeight =
     typeof attrs.height === "number"
@@ -1079,6 +1182,7 @@ function normalizeParsedBlockNode(
   }
 
   const attrs = objectValue(raw.attrs);
+  normalizeExternalMediaAttrs(blockName, attrs, warnings, path);
   const innerBlocks = Array.isArray(raw.innerBlocks)
     ? raw.innerBlocks
         .map((inner, index) =>
@@ -1110,6 +1214,16 @@ function normalizeParsedBlockNode(
   ) {
     innerHTML = normalizeTextChunk(innerHTML, blockName, attrs);
     innerContent = [innerHTML];
+  }
+
+  if (blockName === "core/paragraph" && innerBlocks.length === 0) {
+    const recoveredImageBlock = parseImageBlockFromParagraphLikeHtml(innerHTML);
+    if (recoveredImageBlock !== null) {
+      warnings.push(
+        `Rewrote paragraph-wrapped image HTML at ${path} to a core/image block.`
+      );
+      return recoveredImageBlock;
+    }
   }
 
   if (blockName === "core/button") {
@@ -1338,7 +1452,7 @@ function normalizePostContent(
   rawContent: string,
   requestText: string
 ): ContentNormalizationResult {
-  const content = rawContent.trim();
+  let content = rawContent.trim();
   if (content.length === 0) {
     return { content: rawContent, warnings: [] };
   }
@@ -1357,6 +1471,19 @@ function normalizePostContent(
   }
 
   const warnings: string[] = [];
+  content = content.replaceAll(
+    /https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/[^"'\s<>]+/g,
+    (match) => {
+      const rewritten = rewriteWikimediaCommonsUrl(match);
+      if (rewritten === null) {
+        return match;
+      }
+      warnings.push(
+        "Rewrote a guessed Wikimedia Commons URL in serialized block content to the correct hashed asset path."
+      );
+      return rewritten;
+    }
+  );
   const highRiskBlocks = findHighRiskBlockNames(content);
   if (highRiskBlocks.length > 0) {
     const paragraphs = stripHtmlToPlainText(content);
@@ -1406,7 +1533,7 @@ function normalizePostContent(
     );
   }
 
-  return { content: rawContent, warnings };
+  return { content, warnings };
 }
 
 function normalizePlanPostContent(
@@ -1921,7 +2048,40 @@ function parseImageBlockFromParagraphLikeHtml(
     .replace(/^<p>/i, "")
     .replace(/<\/p>$/i, "")
     .trim();
-  return parseMarkdownImageBlock(normalized);
+  const markdownBlock = parseMarkdownImageBlock(normalized);
+  if (markdownBlock !== null) {
+    return markdownBlock;
+  }
+
+  const imgMatch = normalized.match(
+    /^<img\b[^>]*\bsrc=(["'])([^"']+)\1[^>]*\/?>$/i
+  );
+  if (!imgMatch) {
+    return null;
+  }
+
+  const url = (imgMatch[2] ?? "").trim();
+  if (url.length === 0) {
+    return null;
+  }
+
+  const altMatch = normalized.match(/\balt=(["'])(.*?)\1/i);
+  const alt = (altMatch?.[2] ?? "").trim() || "Image";
+  const html = `<figure class="wp-block-image"><img src="${escapeHtml(
+    url
+  )}" alt="${escapeHtml(alt)}"/></figure>`;
+
+  return {
+    blockName: "core/image",
+    attrs: {
+      id: 0,
+      url,
+      alt
+    },
+    innerBlocks: [],
+    innerHTML: html,
+    innerContent: [html]
+  };
 }
 
 function parseSingleParagraphBlockFromContent(
@@ -3531,6 +3691,7 @@ export async function buildLlmActionPlan(input: {
   "validationWarnings": string[]
 }
 Use the operator request and site context. Keep actions conservative.
+Use an empty array for openQuestions when there are no unresolved questions. Never emit placeholders like "None." inside openQuestions.
 If plannerContext.activeSkills is present, treat each skill's instructions as active additional constraints for this plan only.
 Use targetSummaries and priorChanges. If the thread already created a post or page and a later request is clearly modifying that same content, reuse that known entity and include its identifier such as post_id in the action input.
 If an exact post_id is not known but the target can be uniquely discovered at execution time, include lookup fields such as lookup_status, lookup_slug, lookup_title, lookup_search, and lookup_post_type in the update action input (same object as post_id would use). Example: {"type":"update_post_fields","input":{"lookup_title":"Hello Matt","lookup_status":"draft","content":"..."}}.
@@ -3546,7 +3707,8 @@ Only use parsed Gutenberg blocks that SitePilot explicitly supports for executio
 
 WordPress Gutenberg content rules for create_draft_post and update_post_fields (post_content / content field):
 - Store body content as block serialization: each block uses delimiters <!-- wp:blockname {json attrs} --> ...inner HTML... <!-- /wp:blockname -->. Do not wrap the whole article in a single wp:html block that only describes intent (e.g. never use placeholder text like "Content about X with alternating blocks").
-- Write full copy the user asked for in wp:paragraph blocks (or headings where appropriate). When the user requests photos or headshots, you MUST include wp:image blocks with real, public https:// URLs (for example direct Wikimedia Commons file URLs on upload.wikimedia.org). Use "id":0 in the block JSON when the file is not yet in the Media Library; include the same URL in the block attrs and in the <img src="...">.
+- Write full copy the user asked for in wp:paragraph blocks (or headings where appropriate). When the user requests photos or headshots, you MUST include wp:image blocks. If an uploaded image is available, use that. If no upload is available, you may include a verified public https:// direct image URL when you actually know one; otherwise leave the URL blank and provide strong descriptive alt text so downstream image sourcing can resolve it. Never invent or guess an external image URL.
+- For inline images placed within post/page content, "inline" means placement within the body content, not wrapping an <img> tag inside a paragraph block. Use a dedicated core/image block unless the operator explicitly asked for a featured image/thumbnail instead.
 - For nested/layout/media/spacer/columns blocks, use input.blocks so WordPress can serialize the parsed block tree. Do not improvise saved HTML for these block types.
 - Every opening block delimiter must have the correct matching closing delimiter, in the correct nesting order. Block attrs must be valid JSON. Do not emit malformed or partially-open blocks.
 - Do not output planning notes, placeholder labels, or descriptions of intended blocks inside the post content. Output only the final user-facing content.
@@ -3588,8 +3750,12 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
 
   const obj = parsed as Record<string, unknown>;
   const planId = randomUUID() as ActionPlanId;
+  const rawOpenQuestions = Array.isArray(obj.openQuestions)
+    ? obj.openQuestions.filter((value): value is string => typeof value === "string")
+    : [];
   const merged = {
     ...obj,
+    openQuestions: normalizeOpenQuestions(rawOpenQuestions),
     id: planId,
     requestId: input.requestId,
     siteId: input.siteId,

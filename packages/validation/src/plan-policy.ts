@@ -17,6 +17,23 @@ function hasCap(caps: string[], needle: string): boolean {
   return caps.some((c) => c.toLowerCase().includes(n));
 }
 
+function isPlaceholderOpenQuestion(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return true;
+  }
+  return (
+    normalized === "none" ||
+    normalized === "none." ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "no open questions" ||
+    normalized === "no open questions." ||
+    normalized === "no questions" ||
+    normalized === "no questions."
+  );
+}
+
 function findNumericPostId(input: Record<string, unknown>): number | undefined {
   const candidates = [input["post_id"], input["postId"], input["id"]];
   for (const value of candidates) {
@@ -202,12 +219,16 @@ export function validateActionPlan(
     return { kind: "blocked_clarification", messages: clarification };
   }
 
-  if (plan.openQuestions.length > 0) {
+  const unresolvedOpenQuestions = plan.openQuestions.filter(
+    (question) => !isPlaceholderOpenQuestion(question)
+  );
+
+  if (unresolvedOpenQuestions.length > 0) {
     return {
       kind: "blocked_clarification",
       messages: [
         "Plan still lists open questions — resolve them before execution.",
-        ...plan.openQuestions
+        ...unresolvedOpenQuestions
       ]
     };
   }
