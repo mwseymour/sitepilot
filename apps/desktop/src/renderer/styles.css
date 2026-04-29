@@ -960,6 +960,32 @@ h2 {
   background: var(--surface-3);
 }
 
+.chat-request-panel > .action-row,
+.chat-bundle-panel > .action-row {
+  margin-top: 0.85rem;
+}
+
+.chat-bundle-panel + .action-row,
+.chat-request-meta + .action-row,
+.chat-request-meta + .chat-bundle-panel {
+  margin-top: 0.85rem;
+}
+
+.chat-request-panel > .action-row,
+.chat-bundle-panel > .action-row,
+.chat-plan-runbar-actions,
+.chat-action-buttons {
+  align-items: stretch;
+}
+
+.chat-request-panel > .action-row .btn,
+.chat-bundle-panel > .action-row .btn,
+.chat-request-panel > .action-row > a.btn,
+.chat-bundle-panel > .action-row > a.btn {
+  flex: 1 1 210px;
+  min-width: 0;
+}
+
 .chat-request-panel h3,
 .chat-planner-panel h3,
 .chat-composer-card h3 {

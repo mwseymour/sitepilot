@@ -22,6 +22,10 @@ export {
   enrichActionPlanWithPostLookupFromContext,
   inferPostLookupHintsFromCorpus
 } from "./plan-post-lookup-enrichment.js";
+export {
+  requestNeedsVisualAnalysisReview,
+  requestVisualAnalysisIsCurrent
+} from "./request-visual-analysis.js";
 export type {
   SecretKey,
   SecretNamespace,

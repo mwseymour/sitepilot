@@ -95,6 +95,37 @@ export const uiPreferencesSchema = z.object({
   preserveOriginalImageUploads: z.boolean()
 });
 
+export const requestVisualAnalysisRegionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  kind: z.string().min(1),
+  layout: z.string().min(1),
+  position: z.string().min(1),
+  contentSummary: z.string().min(1),
+  suggestedBlocks: z.array(z.string().min(1)).min(1),
+  emphasis: z.string().min(1),
+  confidence: z.number().min(0).max(1)
+});
+
+export const requestVisualAnalysisSchema = z.object({
+  id: idSchema,
+  requestId: idSchema,
+  siteId: idSchema,
+  provider: z.enum(["openai", "anthropic", "compatible"]),
+  model: z.string().min(1),
+  sourceImageCount: z.number().int().positive(),
+  analyzedRequestUpdatedAt: isoTimestampSchema,
+  summary: z.string().min(1),
+  pageType: z.string().min(1),
+  layoutPattern: z.string().min(1),
+  styleNotes: z.array(z.string().min(1)),
+  responsiveNotes: z.array(z.string().min(1)),
+  regions: z.array(requestVisualAnalysisRegionSchema).min(1),
+  mappingWarnings: z.array(z.string().min(1)),
+  reviewedAt: isoTimestampSchema.optional(),
+  ...timestampsSchema.shape
+});
+
 const plannerContextAttachmentSchema = z.object({
   fileName: z.string().min(1),
   mediaType: z.string().regex(/^image\//),
@@ -336,3 +367,6 @@ export type ClarificationRoundPayload = z.infer<
 export type PlannerContext = z.infer<typeof plannerContextSchema>;
 export type SitePlannerSettings = z.infer<typeof sitePlannerSettingsSchema>;
 export type UiPreferences = z.infer<typeof uiPreferencesSchema>;
+export type RequestVisualAnalysisPayload = z.infer<
+  typeof requestVisualAnalysisSchema
+>;

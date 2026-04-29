@@ -52,6 +52,10 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.answerClarification, request),
   buildPlannerContext: (request) =>
     invokeIpc(ipcChannels.buildPlannerContext, request),
+  analyzeRequestVisualAnalysis: (request) =>
+    invokeIpc(ipcChannels.analyzeRequestVisualAnalysis, request),
+  reviewRequestVisualAnalysis: (request) =>
+    invokeIpc(ipcChannels.reviewRequestVisualAnalysis, request),
   generateActionPlan: (request) =>
     invokeIpc(ipcChannels.generateActionPlan, request),
   listPendingApprovals: (request) =>

@@ -25,6 +25,7 @@ const request = {
   },
   status: "approved",
   userPrompt: "Build a comparison page.",
+  latestPlanId: "plan-1",
   createdAt: "2026-04-24T10:00:00.000Z",
   updatedAt: "2026-04-24T10:00:00.000Z"
 };
@@ -42,6 +43,21 @@ const db = {
       listBySiteId: vi.fn(async () => []),
       getById: vi.fn(async () => request),
       save: vi.fn(async () => undefined)
+    },
+    requestVisualAnalyses: {
+      getByRequestId: vi.fn(async () => null)
+    },
+    actionPlans: {
+      getById: vi.fn(async () => ({
+        id: "plan-1",
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            input: { title: "Build a comparison page." }
+          }
+        ]
+      }))
     },
     auditEntries: {
       append: vi.fn(async () => undefined)
@@ -67,6 +83,17 @@ describe("chat service request revision", () => {
     db.repositories.chatThreads.getById.mockResolvedValue(thread);
     db.repositories.requests.listBySiteId.mockResolvedValue([]);
     db.repositories.requests.getById.mockResolvedValue(request);
+    db.repositories.requestVisualAnalyses.getByRequestId.mockResolvedValue(null);
+    db.repositories.actionPlans.getById.mockResolvedValue({
+      id: "plan-1",
+      proposedActions: [
+        {
+          id: "action-1",
+          type: "create_draft_post",
+          input: { title: "Build a comparison page." }
+        }
+      ]
+    });
   });
 
   it("allows revising an approved request back to a planable state", async () => {
@@ -117,6 +144,39 @@ describe("chat service request revision", () => {
       message:
         "This request is executing right now. Wait for it to finish before revising the request."
     });
+  });
+
+  it("does not invalidate the current workflow state for simple confirmation replies", async () => {
+    const { amendRequestForThread } = await import(
+      "../apps/desktop/src/main/chat-service.js"
+    );
+    db.repositories.requests.getById.mockResolvedValue({
+      ...request,
+      status: "drafted"
+    });
+
+    const result = await amendRequestForThread(
+      site.id as never,
+      thread.id as never,
+      request.id as never,
+      "ok go"
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.request.status).toBe("drafted");
+    expect(result.request.userPrompt).toBe(request.userPrompt);
+    expect(db.repositories.requests.save).not.toHaveBeenCalled();
+    expect(db.repositories.chatMessages.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        author: { kind: "assistant" },
+        body: expect.objectContaining({
+          value: expect.stringContaining("Execute plan button")
+        })
+      })
+    );
   });
 
   it("creates a new request thread when a conversation turn returns research handoff content", async () => {

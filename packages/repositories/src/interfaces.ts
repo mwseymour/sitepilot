@@ -12,6 +12,7 @@ import type {
   ExecutionRun,
   ProviderUsageEvent,
   Request,
+  RequestVisualAnalysis,
   Site,
   SiteConfigVersion,
   SiteConnection,
@@ -68,6 +69,13 @@ export interface RequestRepository {
   listByThreadId(threadId: Request["threadId"]): Promise<Request[]>;
   listBySiteId(siteId: Request["siteId"]): Promise<Request[]>;
   save(request: Request): Promise<void>;
+}
+
+export interface RequestVisualAnalysisRepository {
+  getByRequestId(
+    requestId: RequestVisualAnalysis["requestId"]
+  ): Promise<RequestVisualAnalysis | null>;
+  save(analysis: RequestVisualAnalysis): Promise<void>;
 }
 
 export interface ChatMessageRepository {
@@ -149,6 +157,7 @@ export interface RepositoryRegistry {
   chatThreads: ChatThreadRepository;
   chatMessages: ChatMessageRepository;
   requests: RequestRepository;
+  requestVisualAnalyses: RequestVisualAnalysisRepository;
   clarificationRounds: ClarificationRoundRepository;
   actionPlans: ActionPlanRepository;
   providerUsage: ProviderUsageRepository;

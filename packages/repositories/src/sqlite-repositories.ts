@@ -17,6 +17,7 @@ import type {
   ExecutionRun,
   ProviderUsageEvent,
   Request,
+  RequestVisualAnalysis,
   Site,
   SiteConfigVersion,
   SiteConnection,
@@ -37,6 +38,7 @@ import type {
   ProviderUsageRepository,
   RepositoryRegistry,
   RequestRepository,
+  RequestVisualAnalysisRepository,
   SiteConfigRepository,
   SiteConnectionRepository,
   SiteRepository,
@@ -1132,6 +1134,124 @@ class SqliteRequestRepository implements RequestRepository {
   }
 }
 
+class SqliteRequestVisualAnalysisRepository
+  implements RequestVisualAnalysisRepository
+{
+  public constructor(private readonly connection: Database.Database) {}
+
+  public async getByRequestId(
+    requestId: RequestVisualAnalysis["requestId"]
+  ): Promise<RequestVisualAnalysis | null> {
+    const row = this.connection
+      .prepare<
+        { requestId: string },
+        {
+          id: RequestVisualAnalysis["id"];
+          request_id: RequestVisualAnalysis["requestId"];
+          site_id: RequestVisualAnalysis["siteId"];
+          provider: RequestVisualAnalysis["provider"];
+          model: string;
+          source_image_count: number;
+          analyzed_request_updated_at: string;
+          summary: string;
+          page_type: string;
+          layout_pattern: string;
+          style_notes_json: string;
+          responsive_notes_json: string;
+          regions_json: string;
+          mapping_warnings_json: string;
+          reviewed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      >(
+        `SELECT id, request_id, site_id, provider, model, source_image_count,
+                analyzed_request_updated_at, summary, page_type, layout_pattern,
+                style_notes_json, responsive_notes_json, regions_json,
+                mapping_warnings_json, reviewed_at, created_at, updated_at
+         FROM request_visual_analyses
+         WHERE request_id = @requestId`
+      )
+      .get({ requestId });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      requestId: row.request_id,
+      siteId: row.site_id,
+      provider: row.provider,
+      model: row.model,
+      sourceImageCount: row.source_image_count,
+      analyzedRequestUpdatedAt: row.analyzed_request_updated_at,
+      summary: row.summary,
+      pageType: row.page_type,
+      layoutPattern: row.layout_pattern,
+      styleNotes: parseJson(row.style_notes_json),
+      responsiveNotes: parseJson(row.responsive_notes_json),
+      regions: parseJson(row.regions_json),
+      mappingWarnings: parseJson(row.mapping_warnings_json),
+      ...(row.reviewed_at !== null ? { reviewedAt: row.reviewed_at } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  public async save(analysis: RequestVisualAnalysis): Promise<void> {
+    upsert(
+      this.connection,
+      `INSERT INTO request_visual_analyses (
+         id, request_id, site_id, provider, model, source_image_count,
+         analyzed_request_updated_at, summary, page_type, layout_pattern,
+         style_notes_json, responsive_notes_json, regions_json,
+         mapping_warnings_json, reviewed_at, created_at, updated_at
+       ) VALUES (
+         @id, @requestId, @siteId, @provider, @model, @sourceImageCount,
+         @analyzedRequestUpdatedAt, @summary, @pageType, @layoutPattern,
+         @styleNotesJson, @responsiveNotesJson, @regionsJson,
+         @mappingWarningsJson, @reviewedAt, @createdAt, @updatedAt
+       )
+       ON CONFLICT(request_id) DO UPDATE SET
+         id = excluded.id,
+         site_id = excluded.site_id,
+         provider = excluded.provider,
+         model = excluded.model,
+         source_image_count = excluded.source_image_count,
+         analyzed_request_updated_at = excluded.analyzed_request_updated_at,
+         summary = excluded.summary,
+         page_type = excluded.page_type,
+         layout_pattern = excluded.layout_pattern,
+         style_notes_json = excluded.style_notes_json,
+         responsive_notes_json = excluded.responsive_notes_json,
+         regions_json = excluded.regions_json,
+         mapping_warnings_json = excluded.mapping_warnings_json,
+         reviewed_at = excluded.reviewed_at,
+         updated_at = excluded.updated_at`,
+      {
+        id: analysis.id,
+        requestId: analysis.requestId,
+        siteId: analysis.siteId,
+        provider: analysis.provider,
+        model: analysis.model,
+        sourceImageCount: analysis.sourceImageCount,
+        analyzedRequestUpdatedAt: analysis.analyzedRequestUpdatedAt,
+        summary: analysis.summary,
+        pageType: analysis.pageType,
+        layoutPattern: analysis.layoutPattern,
+        styleNotesJson: serializeJson(analysis.styleNotes),
+        responsiveNotesJson: serializeJson(analysis.responsiveNotes),
+        regionsJson: serializeJson(analysis.regions),
+        mappingWarningsJson: serializeJson(analysis.mappingWarnings),
+        reviewedAt: analysis.reviewedAt ?? null,
+        createdAt: analysis.createdAt,
+        updatedAt: analysis.updatedAt
+      }
+    );
+  }
+}
+
 class SqliteActionPlanRepository implements ActionPlanRepository {
   public constructor(private readonly connection: Database.Database) {}
 
@@ -1967,6 +2087,7 @@ export function createSqliteRepositoryRegistry(
     chatThreads: new SqliteChatThreadRepository(connection),
     chatMessages: new SqliteChatMessageRepository(connection),
     requests: new SqliteRequestRepository(connection),
+    requestVisualAnalyses: new SqliteRequestVisualAnalysisRepository(connection),
     clarificationRounds: new SqliteClarificationRoundRepository(connection),
     actionPlans: new SqliteActionPlanRepository(connection),
     providerUsage: new SqliteProviderUsageRepository(connection),

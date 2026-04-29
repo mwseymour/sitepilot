@@ -739,6 +739,9 @@ final class Write_Abilities {
 			? trim( $attrs['tagName'] )
 			: 'hr';
 		$classes  = array( 'wp-block-separator' );
+		if ( isset( $attrs['className'] ) && is_string( $attrs['className'] ) && '' !== trim( $attrs['className'] ) ) {
+			$classes = array_merge( $classes, preg_split( '/\s+/', trim( $attrs['className'] ) ) ?: array() );
+		}
 		$opacity  = isset( $attrs['opacity'] ) && is_string( $attrs['opacity'] ) ? trim( $attrs['opacity'] ) : 'alpha-channel';
 		if ( 'css' === $opacity ) {
 			$classes[] = 'has-css-opacity';
@@ -772,8 +775,12 @@ final class Write_Abilities {
 		$type = 'button' === $tag_name && isset( $attrs['type'] ) && is_string( $attrs['type'] ) && '' !== trim( $attrs['type'] )
 			? ' type="' . htmlspecialchars( $attrs['type'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"'
 			: ( 'button' === $tag_name ? ' type="button"' : '' );
+		$wrapper_classes = array( 'wp-block-button' );
+		if ( isset( $attrs['className'] ) && is_string( $attrs['className'] ) && '' !== trim( $attrs['className'] ) ) {
+			$wrapper_classes = array_merge( $wrapper_classes, preg_split( '/\s+/', trim( $attrs['className'] ) ) ?: array() );
+		}
 
-		return '<div class="wp-block-button"><' . $tag_name . ' class="wp-block-button__link wp-element-button"' . $href . $title . $target . $rel . $type . '>' . $text . '</' . $tag_name . '></div>';
+		return '<div class="' . implode( ' ', $wrapper_classes ) . '"><' . $tag_name . ' class="wp-block-button__link wp-element-button"' . $href . $title . $target . $rel . $type . '>' . $text . '</' . $tag_name . '></div>';
 	}
 
 	/**
@@ -1403,10 +1410,31 @@ final class Write_Abilities {
 	/**
 	 * @param array<string, mixed> $attrs Block attrs.
 	 */
+	private static function columns_wrapper_open( array $attrs ): string {
+		$classes = array( 'wp-block-columns' );
+		if ( isset( $attrs['verticalAlignment'] ) && is_string( $attrs['verticalAlignment'] ) && '' !== trim( $attrs['verticalAlignment'] ) ) {
+			$classes[] = 'are-vertically-aligned-' . htmlspecialchars( trim( $attrs['verticalAlignment'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		if ( isset( $attrs['className'] ) && is_string( $attrs['className'] ) && '' !== trim( $attrs['className'] ) ) {
+			$classes = array_merge( $classes, preg_split( '/\s+/', trim( $attrs['className'] ) ) ?: array() );
+		}
+		return '<div class="' . implode( ' ', $classes ) . '">';
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 */
 	private static function column_wrapper_open( array $attrs ): string {
+		$classes = array( 'wp-block-column' );
+		if ( isset( $attrs['verticalAlignment'] ) && is_string( $attrs['verticalAlignment'] ) && '' !== trim( $attrs['verticalAlignment'] ) ) {
+			$classes[] = 'is-vertically-aligned-' . htmlspecialchars( trim( $attrs['verticalAlignment'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		if ( isset( $attrs['className'] ) && is_string( $attrs['className'] ) && '' !== trim( $attrs['className'] ) ) {
+			$classes = array_merge( $classes, preg_split( '/\s+/', trim( $attrs['className'] ) ) ?: array() );
+		}
 		$width = isset( $attrs['width'] ) && is_string( $attrs['width'] ) ? trim( $attrs['width'] ) : '';
 		$style = '' !== $width ? ' style="flex-basis:' . htmlspecialchars( $width, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' : '';
-		return '<div class="wp-block-column"' . $style . '>';
+		return '<div class="' . implode( ' ', $classes ) . '"' . $style . '>';
 	}
 
 	/**
@@ -1414,7 +1442,14 @@ final class Write_Abilities {
 	 */
 	private static function group_wrapper_open( array $attrs ): string {
 		$tag_name = self::valid_group_tag_name( $attrs );
-		return '<' . $tag_name . ' class="wp-block-group">';
+		$classes = array( 'wp-block-group' );
+		if ( isset( $attrs['align'] ) && is_string( $attrs['align'] ) && '' !== trim( $attrs['align'] ) ) {
+			$classes[] = 'align' . htmlspecialchars( trim( $attrs['align'] ), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		}
+		if ( isset( $attrs['className'] ) && is_string( $attrs['className'] ) && '' !== trim( $attrs['className'] ) ) {
+			$classes = array_merge( $classes, preg_split( '/\s+/', trim( $attrs['className'] ) ) ?: array() );
+		}
+		return '<' . $tag_name . ' class="' . implode( ' ', $classes ) . '">';
 	}
 
 	/**
@@ -1473,7 +1508,7 @@ final class Write_Abilities {
 	 */
 	private static function canonical_container_inner_content( string $block_name, array $attrs, array $inner_blocks ): ?array {
 		if ( 'core/columns' === $block_name ) {
-			$inner_content = array( '<div class="wp-block-columns">' );
+			$inner_content = array( self::columns_wrapper_open( $attrs ) );
 			foreach ( $inner_blocks as $index => $_block ) {
 				if ( $index > 0 ) {
 					$inner_content[] = "\n\n";

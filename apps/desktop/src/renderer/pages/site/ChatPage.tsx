@@ -20,6 +20,10 @@ import {
   canResolveActionViaPostLookup,
   findNumericPostId
 } from "@sitepilot/services/post-target-resolution";
+import {
+  requestNeedsVisualAnalysisReview,
+  requestVisualAnalysisIsCurrent
+} from "@sitepilot/services/request-visual-analysis";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 
@@ -1005,6 +1009,45 @@ export function ChatPage({
     await loadMessages(selectedThreadId);
   }
 
+  async function onAnalyzeRequestVisualAnalysis(): Promise<void> {
+    if (!selectedThreadId || bundle === null) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.analyzeRequestVisualAnalysis({
+      siteId,
+      threadId: selectedThreadId,
+      requestId: bundle.request.id
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setPlanValidationJson(null);
+    await loadBundle();
+  }
+
+  async function onReviewRequestVisualAnalysis(): Promise<void> {
+    if (!selectedThreadId || bundle === null) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.reviewRequestVisualAnalysis({
+      siteId,
+      threadId: selectedThreadId,
+      requestId: bundle.request.id
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    await loadBundle();
+  }
+
   async function onBuildPlannerContext(): Promise<void> {
     if (!selectedThreadId) {
       return;
@@ -1200,7 +1243,28 @@ export function ChatPage({
     !isConversationMode &&
     selectedThreadId !== null &&
     bundle !== null &&
-    (bundle.request.status === "new" || bundle.request.status === "drafted");
+    (bundle.request.status === "new" ||
+      bundle.request.status === "drafted" ||
+      bundle.request.status === "approved" ||
+      bundle.request.status === "awaiting_approval");
+  const visualAnalysisRequired =
+    bundle !== null &&
+    requestNeedsVisualAnalysisReview({
+      userPrompt: bundle.request.userPrompt,
+      attachments: bundle.request.attachments
+    });
+  const visualAnalysisReadyForPlanning =
+    bundle !== null &&
+    (!visualAnalysisRequired ||
+      requestVisualAnalysisIsCurrent(
+        bundle.request.updatedAt,
+        bundle.visualAnalysis
+      ));
+  const visualAnalysisStale =
+    bundle !== null &&
+    bundle.visualAnalysis !== null &&
+    bundle.visualAnalysis.analyzedRequestUpdatedAt < bundle.request.updatedAt;
+  const canGeneratePlanNow = canGeneratePlan && visualAnalysisReadyForPlanning;
   const executionControlsLocked =
     bundle !== null && requestExecutionControlsLocked(bundle.request.status);
   const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
@@ -1221,7 +1285,14 @@ export function ChatPage({
     ...(err ? [`Error: ${err}`] : []),
     ...(activityLabel ? [`Activity: ${activityLabel}`] : []),
     ...(execProgressLabel ? [`Execution: ${execProgressLabel}`] : []),
-    ...(lastExecHint ? [`Hint: ${lastExecHint}`] : [])
+    ...(lastExecHint ? [`Hint: ${lastExecHint}`] : []),
+    ...(visualAnalysisRequired && !visualAnalysisReadyForPlanning
+      ? [
+          visualAnalysisStale
+            ? "Visual analysis: stale review artifact; re-run analysis before planning."
+            : "Visual analysis: required before planning."
+        ]
+      : [])
   ];
   const pendingAttachmentBytes = pendingAttachments.reduce(
     (total, attachment) => total + attachment.sizeBytes,
@@ -1267,6 +1338,7 @@ export function ChatPage({
       debugPanels: {
         feedbackLog: developerMessages,
         currentRequestPrompt: bundle?.request.userPrompt ?? null,
+        visualAnalysis: bundle?.visualAnalysis ?? null,
         planValidation: parseJsonDebugValue(planValidationJson),
         plannedActions: bundle?.plan?.proposedActions ?? null,
         lastMcpRequest: bundle?.lastExecution?.toolInvocation
@@ -1772,16 +1844,124 @@ export function ChatPage({
                         ) : null}
                       </p>
                     </div>
+                    {visualAnalysisRequired ? (
+                      <div className="chat-bundle-panel">
+                        <h4>Reference analysis</h4>
+                        <p className="muted small-print">
+                          {bundle.visualAnalysis === null
+                            ? "This request looks like a screenshot/mockup build. Analyze the uploaded reference before planning."
+                            : visualAnalysisStale
+                              ? "The request changed after the last screenshot analysis. Re-run analysis, review it, then generate the plan."
+                              : bundle.visualAnalysis.reviewedAt === undefined
+                                ? "Review the generated screenshot manifest, then approve it for planning."
+                                : "Reviewed screenshot manifest is ready for planning."}
+                        </p>
+                        <p className="small-print">
+                          <span className="badge">
+                            {bundle.visualAnalysis === null
+                              ? "missing"
+                              : visualAnalysisStale
+                                ? "stale"
+                                : bundle.visualAnalysis.reviewedAt === undefined
+                                  ? "generated"
+                                  : "reviewed"}
+                          </span>
+                        </p>
+                        {bundle.visualAnalysis ? (
+                          <>
+                            <p className="small-print">
+                              <strong>{bundle.visualAnalysis.pageType}</strong>{" "}
+                              · {bundle.visualAnalysis.layoutPattern}
+                            </p>
+                            <p className="small-print">
+                              {bundle.visualAnalysis.summary}
+                            </p>
+                            <div className="chat-planner-panel">
+                              <h5>Regions</h5>
+                              <ul className="chat-action-list">
+                                {bundle.visualAnalysis.regions.map((region) => (
+                                  <li
+                                    key={region.id}
+                                    className="chat-action-row"
+                                  >
+                                    <div>
+                                      <strong>{region.label}</strong>
+                                      <div className="muted small-print">
+                                        {region.kind} · {region.layout} ·{" "}
+                                        {region.position} · confidence{" "}
+                                        {Math.round(region.confidence * 100)}%
+                                      </div>
+                                      <div className="small-print">
+                                        {region.contentSummary}
+                                      </div>
+                                      <div className="muted small-print">
+                                        Blocks: {region.suggestedBlocks.join(", ")}
+                                      </div>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            {bundle.visualAnalysis.mappingWarnings.length > 0 ? (
+                              <div className="chat-planner-panel">
+                                <h5>Mapping warnings</h5>
+                                <ul className="small-print">
+                                  {bundle.visualAnalysis.mappingWarnings.map(
+                                    (warning) => (
+                                      <li key={warning}>{warning}</li>
+                                    )
+                                  )}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                        <div className="action-row">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={busy}
+                            onClick={() =>
+                              void onAnalyzeRequestVisualAnalysis()
+                            }
+                          >
+                            {bundle.visualAnalysis === null || visualAnalysisStale
+                              ? "Analyze reference"
+                              : "Re-analyze reference"}
+                          </button>
+                          {bundle.visualAnalysis !== null && !visualAnalysisStale ? (
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              disabled={busy}
+                              onClick={() =>
+                                void onReviewRequestVisualAnalysis()
+                              }
+                            >
+                              {bundle.visualAnalysis.reviewedAt === undefined
+                                ? "Approve analysis"
+                                : "Re-approve analysis"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="action-row">
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        disabled={busy || !canGeneratePlan}
+                        disabled={busy || !canGeneratePlanNow}
                         onClick={() => void onGeneratePlan()}
                       >
                         Generate action plan
                       </button>
                     </div>
+                    {canGeneratePlan && !canGeneratePlanNow ? (
+                      <p className="muted small-print">
+                        Generate action plan stays locked until the reference
+                        analysis is current and approved.
+                      </p>
+                    ) : null}
                     {bundle.plan && executableActions.length > 0 ? (
                       <div className="chat-plan-runbar">
                         <div>

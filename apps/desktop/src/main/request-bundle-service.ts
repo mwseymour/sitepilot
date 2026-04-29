@@ -1,4 +1,5 @@
 import {
+  requestVisualAnalysisSchema,
   siteConfigSchema,
   type ActionPlan as ContractActionPlan
 } from "@sitepilot/contracts";
@@ -8,6 +9,7 @@ import type {
   ExecutionRun,
   Request,
   RequestId,
+  RequestVisualAnalysis,
   SiteId,
   ToolInvocation
 } from "@sitepilot/domain";
@@ -50,10 +52,41 @@ export type GetRequestBundleResult =
       ok: true;
       request: Request;
       plan: ContractActionPlan | null;
+      visualAnalysis: RequestVisualAnalysisPayload | null;
       pendingApproval: RequestBundlePendingApproval | null;
       lastExecution: RequestBundleLastExecution | null;
     }
   | { ok: false; code: string; message: string };
+
+type RequestVisualAnalysisPayload = ReturnType<
+  typeof requestVisualAnalysisSchema.parse
+>;
+
+function contractRequestVisualAnalysisPayload(
+  analysis: RequestVisualAnalysis
+): RequestVisualAnalysisPayload {
+  return requestVisualAnalysisSchema.parse({
+    id: analysis.id,
+    requestId: analysis.requestId,
+    siteId: analysis.siteId,
+    provider: analysis.provider,
+    model: analysis.model,
+    sourceImageCount: analysis.sourceImageCount,
+    analyzedRequestUpdatedAt: analysis.analyzedRequestUpdatedAt,
+    summary: analysis.summary,
+    pageType: analysis.pageType,
+    layoutPattern: analysis.layoutPattern,
+    styleNotes: analysis.styleNotes,
+    responsiveNotes: analysis.responsiveNotes,
+    regions: analysis.regions,
+    mappingWarnings: analysis.mappingWarnings,
+    ...(analysis.reviewedAt !== undefined
+      ? { reviewedAt: analysis.reviewedAt }
+      : {}),
+    createdAt: analysis.createdAt,
+    updatedAt: analysis.updatedAt
+  });
+}
 
 async function loadSiteConfigPublishRequiresApproval(
   siteId: SiteId
@@ -118,7 +151,7 @@ async function reconcileRequestStatusFromPlan(input: {
   const updatedRequest: Request = {
     ...input.request,
     status: nextStatus,
-    updatedAt: new Date().toISOString()
+    updatedAt: input.request.updatedAt
   };
   await db.repositories.requests.save(updatedRequest);
   return updatedRequest;
@@ -159,6 +192,12 @@ export async function getRequestBundleForThread(input: {
     request,
     plan
   });
+  const visualAnalysisRow =
+    await db.repositories.requestVisualAnalyses.getByRequestId(input.requestId);
+  const visualAnalysis =
+    visualAnalysisRow === null
+      ? null
+      : contractRequestVisualAnalysisPayload(visualAnalysisRow);
 
   const approvals = await db.repositories.approvals.listByRequestId(
     input.requestId
@@ -217,6 +256,7 @@ export async function getRequestBundleForThread(input: {
     ok: true,
     request: effectiveRequest,
     plan,
+    visualAnalysis,
     pendingApproval,
     lastExecution
   };

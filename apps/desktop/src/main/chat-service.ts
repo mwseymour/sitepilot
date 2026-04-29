@@ -20,7 +20,8 @@ import type {
 } from "@sitepilot/domain";
 import {
   analyzeClarification,
-  canResolveActionViaPostLookup
+  canResolveActionViaPostLookup,
+  requestVisualAnalysisIsCurrent
 } from "@sitepilot/services";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
 
@@ -101,6 +102,36 @@ function mergeAttachments(
 ): ImageAttachmentPayload[] | undefined {
   const merged = [...normalizeAttachments(existing), ...normalizeAttachments(incoming)];
   return merged.length > 0 ? merged : undefined;
+}
+
+function isSimpleRequestConfirmation(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.,]+/g, "")
+    .replace(/\s+/g, " ");
+
+  return [
+    "ok",
+    "okay",
+    "ok go",
+    "go",
+    "go ahead",
+    "yes",
+    "yes go",
+    "yep",
+    "sure",
+    "do it",
+    "run it",
+    "execute",
+    "proceed",
+    "please proceed",
+    "start",
+    "ship it",
+    "publish",
+    "dry run",
+    "dry-run"
+  ].includes(normalized);
 }
 
 async function saveAssistantThreadMessage(input: {
@@ -1041,6 +1072,48 @@ export async function amendRequestForThread(
     request.attachments,
     attachments
   );
+  const existingPlan =
+    request.latestPlanId !== undefined
+      ? await db.repositories.actionPlans.getById(request.latestPlanId)
+      : null;
+  const runnableCount = countRunnableActions(existingPlan);
+  const existingVisualAnalysis =
+    await db.repositories.requestVisualAnalyses.getByRequestId(request.id);
+  const keepsExistingWorkflowState =
+    (attachments === undefined || attachments.length === 0) &&
+    isSimpleRequestConfirmation(trimmed) &&
+    (request.latestPlanId !== undefined ||
+      requestVisualAnalysisIsCurrent(
+        request.updatedAt,
+        existingVisualAnalysis
+      ));
+
+  if (keepsExistingWorkflowState) {
+    await db.repositories.chatMessages.save({
+      id: randomUUID() as ChatMessageId,
+      threadId,
+      siteId,
+      requestId,
+      author: { kind: "assistant" },
+      body: {
+        format: "plain_text",
+        value:
+          request.latestPlanId !== undefined
+            ? runnableCount === 1
+              ? "Confirmation noted. The current request is unchanged, and the existing plan is still ready in the Current Request panel. Use the Execute plan button there."
+              : runnableCount > 1
+                ? "Confirmation noted. The current request is unchanged, and the existing plan is still ready in the Current Request panel. Use the action buttons in the Planned actions list there."
+                : "Confirmation noted. The current request is unchanged, so the existing analysis and plan state stay available in the Current Request panel."
+            : "Confirmation noted. The current request is unchanged, so the existing analysis and plan state stay available in the Current Request panel."
+      },
+      createdAt: ts,
+      updatedAt: ts
+    });
+
+    await saveThreadUpdatedAt(t.thread, ts);
+    return { ok: true, request };
+  }
+
   const updatedRequest: Request = {
     id: request.id,
     siteId: request.siteId,

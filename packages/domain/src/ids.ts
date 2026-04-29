@@ -14,6 +14,7 @@ export type DiscoverySnapshotId = Brand<string, "DiscoverySnapshotId">;
 export type ChatThreadId = Brand<string, "ChatThreadId">;
 export type ChatMessageId = Brand<string, "ChatMessageId">;
 export type RequestId = Brand<string, "RequestId">;
+export type RequestVisualAnalysisId = Brand<string, "RequestVisualAnalysisId">;
 export type ClarificationRoundId = Brand<string, "ClarificationRoundId">;
 export type ActionPlanId = Brand<string, "ActionPlanId">;
 export type ActionId = Brand<string, "ActionId">;

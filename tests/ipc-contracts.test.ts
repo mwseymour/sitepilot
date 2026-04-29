@@ -165,6 +165,16 @@ describe("ipc contracts", () => {
         code: "stub",
         message: "Not used in this contract shape test."
       }),
+      analyzeRequestVisualAnalysis: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      reviewRequestVisualAnalysis: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
       generateActionPlan: async () => ({
         ok: false,
         code: "stub",

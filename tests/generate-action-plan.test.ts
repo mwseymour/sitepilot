@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES,
+  type RequestVisualAnalysisPayload,
   type PlannerContext
 } from "@sitepilot/contracts";
 import type {
@@ -78,6 +79,40 @@ function makeClient(
   };
 }
 
+function makeVisualAnalysis(): RequestVisualAnalysisPayload {
+  return {
+    id: "analysis-1",
+    requestId: "req-1",
+    siteId: "site-1",
+    provider: "openai",
+    model: "gpt-test",
+    sourceImageCount: 1,
+    analyzedRequestUpdatedAt: "2026-04-20T12:00:00.000Z",
+    summary: "Bold hero followed by alternating media sections.",
+    pageType: "marketing landing page",
+    layoutPattern: "hero then alternating two-column sections",
+    styleNotes: ["Large headline", "Warm product imagery"],
+    responsiveNotes: ["Collapse side-by-side sections into a single column"],
+    regions: [
+      {
+        id: "hero",
+        label: "Hero",
+        kind: "hero",
+        layout: "single_column",
+        position: "top",
+        contentSummary: "Large heading, short paragraph, and a prominent image.",
+        suggestedBlocks: ["core/group", "core/heading", "core/paragraph", "core/image"],
+        emphasis: "primary conversion area",
+        confidence: 0.93
+      }
+    ],
+    mappingWarnings: [],
+    reviewedAt: "2026-04-20T12:05:00.000Z",
+    createdAt: "2026-04-20T12:00:00.000Z",
+    updatedAt: "2026-04-20T12:05:00.000Z"
+  };
+}
+
 function collectBlockNames(blocks: unknown[]): string[] {
   const names = new Set<string>();
 
@@ -147,6 +182,160 @@ describe("buildLlmActionPlan", () => {
     });
 
     expect(result.plan.openQuestions).toEqual([]);
+  });
+
+  it("backfills legacy action metadata before schema validation", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft post about hot dogs",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Hot Dog Origins",
+              post_type: "post",
+              post_status: "draft",
+              content: "<!-- wp:paragraph --><p>Hot dogs have roots in European sausage-making traditions.</p><!-- /wp:paragraph -->"
+            }
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a draft post about hot dogs."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]).toMatchObject({
+      id: "action-1",
+      type: "create_draft_post",
+      version: 1,
+      targetEntityRefs: ["post:Hot Dog Origins"],
+      permissionRequirement: "edit_posts",
+      riskLevel: "low",
+      dryRunCapable: true,
+      rollbackSupported: false
+    });
+  });
+
+  it("defaults missing top-level plan metadata before schema validation", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft page from the screenshot",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["page:Screenshot test 6"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Screenshot test 6",
+              post_type: "page",
+              post_status: "draft",
+              content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_pages",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        riskLevel: "low"
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a draft page from the screenshot."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.dependencies).toEqual([]);
+    expect(result.plan.approvalRequired).toBe(false);
+    expect(result.plan.rollbackNotes).toEqual([]);
+    expect(result.plan.validationWarnings).toEqual([]);
+  });
+
+  it("passes reviewed screenshot analysis into the planner payload", async () => {
+    let capturedMessages: ChatMessage[] = [];
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft page",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Reference page",
+              post_type: "page",
+              post_status: "draft",
+              content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      }),
+      (messages) => {
+        capturedMessages = messages;
+      }
+    );
+
+    await buildLlmActionPlan({
+      context: makePlannerContext("Build a page as close to this screenshot as you can."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      requestVisualAnalysis: makeVisualAnalysis(),
+      client,
+      model: "gpt-test"
+    });
+
+    const userMessage = capturedMessages.find((message) => message.role === "user");
+    expect(userMessage).toBeDefined();
+    expect(typeof userMessage?.content).not.toBe("string");
+    const textPart = Array.isArray(userMessage?.content)
+      ? userMessage.content.find((part) => part.type === "text")
+      : null;
+    expect(textPart?.type).toBe("text");
+    if (textPart?.type !== "text") {
+      return;
+    }
+    expect(textPart.text).toContain("\"requestVisualAnalysis\"");
+    expect(textPart.text).toContain("\"layoutPattern\": \"hero then alternating two-column sections\"");
   });
 
   it("normalizes plain text post content into paragraph blocks", async () => {
@@ -628,6 +817,72 @@ describe("buildLlmActionPlan", () => {
     expect(blocks[0]?.innerBlocks?.[1]?.innerHTML).toBe("<li>Second item</li>");
   });
 
+  it("hydrates empty list blocks from serialized content fallback", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft with a recovered list",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Recovered List Blocks",
+              post_type: "page",
+              blocks: [
+                {
+                  blockName: "core/list",
+                  attrs: {},
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ],
+              content:
+                '<!-- wp:list --><ul><li>Audits</li><li>Consulting &amp; Mentoring</li></ul><!-- /wp:list -->'
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext("Create a page with a short services list."),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = result.plan.proposedActions[0]!.input.blocks as Array<{
+      blockName: string;
+      innerBlocks?: Array<{ innerHTML: string }>;
+    }>;
+    expect(blocks[0]?.blockName).toBe("core/list");
+    expect(blocks[0]?.innerBlocks).toHaveLength(2);
+    expect(blocks[0]?.innerBlocks?.[0]?.innerHTML).toBe("<li>Audits</li>");
+    expect(blocks[0]?.innerBlocks?.[1]?.innerHTML).toBe(
+      "<li>Consulting &amp; Mentoring</li>"
+    );
+    expect(result.plan.validationWarnings).toContain(
+      "Recovered 1 empty list block from the serialized content fallback."
+    );
+  });
+
   it("canonicalizes buttons, group, and details containers", async () => {
     const client = makeClient(
       JSON.stringify({
@@ -652,7 +907,8 @@ describe("buildLlmActionPlan", () => {
                       blockName: "core/button",
                       attrs: {
                         url: "https://example.com",
-                        text: "Read More"
+                        text: "Read More",
+                        className: "is-style-outline"
                       },
                       innerBlocks: [],
                       innerHTML: "",
@@ -665,7 +921,8 @@ describe("buildLlmActionPlan", () => {
                 {
                   blockName: "core/group",
                   attrs: {
-                    tagName: "section"
+                    tagName: "section",
+                    align: "wide"
                   },
                   innerBlocks: [
                     {
@@ -738,10 +995,10 @@ describe("buildLlmActionPlan", () => {
       "</div>"
     ]);
     expect(blocks[0]?.innerBlocks?.[0]?.innerHTML).toBe(
-      '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://example.com">Read More</a></div>'
+      '<div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="https://example.com">Read More</a></div>'
     );
     expect(blocks[1]?.innerContent).toEqual([
-      '<section class="wp-block-group">',
+      '<section class="wp-block-group alignwide">',
       null,
       "</section>"
     ]);
@@ -2115,6 +2372,89 @@ describe("buildLlmActionPlan", () => {
     });
     expect(result.plan.validationWarnings).toContain(
       "Rewrote paragraph-wrapped image HTML at blocks[0] to a core/image block."
+    );
+  });
+
+  it("replaces source-less layout-reference image blocks with html placeholders", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a page that matches the screenshot layout.",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["page:Screenshot test 8"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Screenshot test 8",
+              post_type: "page",
+              post_status: "draft",
+              blocks: [
+                {
+                  blockName: "core/group",
+                  attrs: {},
+                  innerBlocks: [
+                    {
+                      blockName: "core/image",
+                      attrs: {
+                        alt: "Minimal outlined brand mark for the page header"
+                      },
+                      innerBlocks: [],
+                      innerHTML: "",
+                      innerContent: [""]
+                    },
+                    {
+                      blockName: "core/image",
+                      attrs: {
+                        alt: "Tall featured project image showing the University of Greenwich building"
+                      },
+                      innerBlocks: [],
+                      innerHTML: "",
+                      innerContent: [""]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: []
+                }
+              ]
+            },
+            targetEntityRefs: ["page:Screenshot test 8"],
+            permissionRequirement: "edit_pages",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContext(
+        "Create a page called Screenshot test 8 and try match this screenshot layout."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const blocks = (
+      result.plan.proposedActions[0]?.input as Record<string, unknown>
+    ).blocks as unknown[];
+    const names = collectBlockNames(blocks);
+
+    expect(names).not.toContain("core/image");
+    expect(names).toContain("core/html");
+    expect(result.plan.validationWarnings).toContain(
+      "Replaced 2 source-less core/image blocks with core/html placeholders because this request appears to be matching a visual layout reference rather than supplying concrete image assets."
     );
   });
 

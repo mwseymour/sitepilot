@@ -50,6 +50,10 @@ import {
 import { buildPlannerContextForThread } from "./planner-context-service.js";
 import { generateActionPlanForRequest } from "./plan-generation-service.js";
 import { readProviderStatus } from "./provider-status-service.js";
+import {
+  analyzeRequestVisualAnalysis,
+  reviewRequestVisualAnalysis
+} from "./request-visual-analysis-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 import { getRequestBundleForThread } from "./request-bundle-service.js";
 import { getCompatibilityPayload } from "./compatibility-info.js";
@@ -323,6 +327,38 @@ export function registerIpcHandlers(): void {
     return parseResponse(ipcChannels.buildPlannerContext, result);
   });
 
+  ipcMain.handle(
+    ipcChannels.analyzeRequestVisualAnalysis,
+    async (_event, payload) => {
+      const request = parseRequest(
+        ipcChannels.analyzeRequestVisualAnalysis,
+        payload
+      );
+      const result = await analyzeRequestVisualAnalysis({
+        siteId: request.siteId as SiteId,
+        threadId: request.threadId as ChatThreadId,
+        requestId: request.requestId as RequestId
+      });
+      return parseResponse(ipcChannels.analyzeRequestVisualAnalysis, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.reviewRequestVisualAnalysis,
+    async (_event, payload) => {
+      const request = parseRequest(
+        ipcChannels.reviewRequestVisualAnalysis,
+        payload
+      );
+      const result = await reviewRequestVisualAnalysis({
+        siteId: request.siteId as SiteId,
+        threadId: request.threadId as ChatThreadId,
+        requestId: request.requestId as RequestId
+      });
+      return parseResponse(ipcChannels.reviewRequestVisualAnalysis, result);
+    }
+  );
+
   ipcMain.handle(ipcChannels.generateActionPlan, async (_event, payload) => {
     const request = parseRequest(ipcChannels.generateActionPlan, payload);
     const result = await generateActionPlanForRequest(
@@ -449,6 +485,7 @@ export function registerIpcHandlers(): void {
       ok: true,
       request: contractRequestPayload(bundle.request),
       plan: bundle.plan === null ? null : actionPlanSchema.parse(bundle.plan),
+      visualAnalysis: bundle.visualAnalysis,
       pendingApproval:
         bundle.pendingApproval === null
           ? null

@@ -21,6 +21,10 @@
     "./post-target-resolution": {
       "types": "./dist/post-target-resolution.d.ts",
       "default": "./dist/post-target-resolution.js"
+    },
+    "./request-visual-analysis": {
+      "types": "./dist/request-visual-analysis.d.ts",
+      "default": "./dist/request-visual-analysis.js"
     }
   },
   "scripts": {

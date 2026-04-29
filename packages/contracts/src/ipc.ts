@@ -20,6 +20,7 @@ import {
   chatThreadSchema,
   clarificationRoundSchema,
   plannerContextSchema,
+  requestVisualAnalysisSchema,
   requestSchema,
   siteConfigSchema,
   sitePlannerSettingsSchema,
@@ -84,6 +85,8 @@ export const ipcChannels = {
   amendRequest: "chat.amendRequest",
   answerClarification: "chat.answerClarification",
   buildPlannerContext: "planner.buildContext",
+  analyzeRequestVisualAnalysis: "planner.analyzeRequestVisualAnalysis",
+  reviewRequestVisualAnalysis: "planner.reviewRequestVisualAnalysis",
   generateActionPlan: "planner.generateActionPlan",
   listPendingApprovals: "approvals.listPending",
   decideApproval: "approvals.decide",
@@ -515,6 +518,34 @@ export const generateActionPlanResponseSchema = z.discriminatedUnion("ok", [
   })
 ]);
 
+export const analyzeRequestVisualAnalysisRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  requestId: idSchema
+});
+
+export const analyzeRequestVisualAnalysisResponseSchema =
+  z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      analysis: requestVisualAnalysisSchema
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]);
+
+export const reviewRequestVisualAnalysisRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  requestId: idSchema
+});
+
+export const reviewRequestVisualAnalysisResponseSchema =
+  analyzeRequestVisualAnalysisResponseSchema;
+
 export const approvalSummarySchema = z.object({
   id: idSchema,
   requestId: idSchema,
@@ -780,6 +811,7 @@ export const getRequestBundleResponseSchema = z.discriminatedUnion("ok", [
     ok: z.literal(true),
     request: requestSchema,
     plan: actionPlanSchema.nullable(),
+    visualAnalysis: requestVisualAnalysisSchema.nullable(),
     pendingApproval: approvalSummarySchema.nullable(),
     lastExecution: requestBundleLastExecutionSchema.nullable()
   }),
@@ -901,6 +933,14 @@ export const ipcContracts = {
   [ipcChannels.buildPlannerContext]: {
     request: buildPlannerContextRequestSchema,
     response: buildPlannerContextResponseSchema
+  },
+  [ipcChannels.analyzeRequestVisualAnalysis]: {
+    request: analyzeRequestVisualAnalysisRequestSchema,
+    response: analyzeRequestVisualAnalysisResponseSchema
+  },
+  [ipcChannels.reviewRequestVisualAnalysis]: {
+    request: reviewRequestVisualAnalysisRequestSchema,
+    response: reviewRequestVisualAnalysisResponseSchema
   },
   [ipcChannels.generateActionPlan]: {
     request: generateActionPlanRequestSchema,
@@ -1055,6 +1095,12 @@ export interface SitePilotDesktopApi {
   buildPlannerContext: (
     request: IpcRequest<typeof ipcChannels.buildPlannerContext>
   ) => Promise<IpcResponse<typeof ipcChannels.buildPlannerContext>>;
+  analyzeRequestVisualAnalysis: (
+    request: IpcRequest<typeof ipcChannels.analyzeRequestVisualAnalysis>
+  ) => Promise<IpcResponse<typeof ipcChannels.analyzeRequestVisualAnalysis>>;
+  reviewRequestVisualAnalysis: (
+    request: IpcRequest<typeof ipcChannels.reviewRequestVisualAnalysis>
+  ) => Promise<IpcResponse<typeof ipcChannels.reviewRequestVisualAnalysis>>;
   generateActionPlan: (
     request: IpcRequest<typeof ipcChannels.generateActionPlan>
   ) => Promise<IpcResponse<typeof ipcChannels.generateActionPlan>>;

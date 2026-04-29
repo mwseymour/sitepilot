@@ -9,6 +9,7 @@ The current best general overview of the whole system is [docs/system-overview.m
 Other high-value documents:
 
 - [docs/architecture.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/architecture.md) for the locked architectural shape and boundaries
+- [docs/screenshot-analysis-workflow.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/screenshot-analysis-workflow.md) for the screenshot-to-layout review workflow and OpenAI Structured Outputs usage
 - [SPEC.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/SPEC.md) for the full product specification
 - [docs/task-graph.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/task-graph.md) for the implementation sequence through T35
 - [plugins/wordpress-sitepilot/README.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/plugins/wordpress-sitepilot/README.md) for the WordPress plugin

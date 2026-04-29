@@ -6,6 +6,7 @@ import {
   findUnsupportedSerializedBlockNames,
   isKnownWordPressCoreBlockName,
   type ImageAttachmentPayload,
+  type RequestVisualAnalysisPayload,
   type Action,
   type ActionPlan,
   type PlannerContext,
@@ -139,6 +140,302 @@ function normalizeActionType(type: string): string {
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/[\s/_-]+/g, "_")
     .toLowerCase();
+}
+
+function pickNonEmptyString(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function isActionRiskLevel(value: unknown): value is Action["riskLevel"] {
+  return (
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "critical"
+  );
+}
+
+function actionTypeIsFeaturedImage(type: string): boolean {
+  const normalizedType = normalizeActionType(type);
+  return (
+    normalizedType === "set_post_featured_image" ||
+    normalizedType === "update_post_featured_image" ||
+    normalizedType === "set_featured_image" ||
+    normalizedType === "sitepilot_set_post_featured_image"
+  );
+}
+
+function actionTypeIsSeoMeta(type: string): boolean {
+  const normalizedType = normalizeActionType(type);
+  return (
+    normalizedType === "set_post_seo_meta" ||
+    normalizedType === "sitepilot_set_post_seo_meta"
+  );
+}
+
+function actionTypeUpdatesPost(type: string): boolean {
+  const normalizedType = normalizeActionType(type);
+  return (
+    normalizedType === "update_post_fields" ||
+    normalizedType === "update_post" ||
+    normalizedType === "update_post_content" ||
+    normalizedType === "edit_post_fields" ||
+    normalizedType === "sitepilot_update_post_fields"
+  );
+}
+
+function actionTypeCreatesDraftPost(type: string): boolean {
+  const normalizedType = normalizeActionType(type);
+  return (
+    normalizedType === "create_draft_post" ||
+    normalizedType === "create_draft_content" ||
+    normalizedType === "create_post_draft" ||
+    normalizedType === "sitepilot_create_draft_post"
+  );
+}
+
+function actionTypeUploadsMedia(type: string): boolean {
+  const normalizedType = normalizeActionType(type);
+  return (
+    normalizedType === "upload_media_asset" ||
+    normalizedType === "sitepilot_upload_media_asset"
+  );
+}
+
+function deriveActionTargetEntityRefs(input: {
+  type: string;
+  actionInput: Record<string, unknown>;
+  planTargetEntities: string[];
+}): string[] {
+  const postId = pickNumberFrom([input.actionInput], "post_id", "postId", "id");
+  if (postId !== undefined) {
+    return [`post:${postId}`];
+  }
+
+  const postType = pickNonEmptyString(
+    input.actionInput,
+    "lookup_post_type",
+    "lookupPostType",
+    "post_type",
+    "postType"
+  );
+  const title = pickNonEmptyString(
+    input.actionInput,
+    "lookup_title",
+    "lookupTitle",
+    "title"
+  );
+  if (
+    title !== undefined &&
+    (postType === "post" || postType === "page" || postType === "case-study")
+  ) {
+    return [`${postType}:${title}`];
+  }
+
+  if (
+    actionTypeCreatesDraftPost(input.type) &&
+    input.planTargetEntities.length > 0
+  ) {
+    return input.planTargetEntities;
+  }
+
+  return [];
+}
+
+function derivePermissionRequirement(
+  type: string,
+  actionInput: Record<string, unknown>
+): string {
+  const normalizedType = normalizeActionType(type);
+
+  if (normalizedType.includes("interpret") || normalizedType.includes("read")) {
+    return "read_site";
+  }
+  if (normalizedType.includes("publish")) {
+    return "publish_posts";
+  }
+  if (actionTypeUploadsMedia(type)) {
+    return "upload_media";
+  }
+  if (
+    actionTypeUpdatesPost(type) ||
+    actionTypeIsFeaturedImage(type) ||
+    actionTypeIsSeoMeta(type)
+  ) {
+    return "edit_post";
+  }
+  if (actionTypeCreatesDraftPost(type)) {
+    const postType = pickNonEmptyString(actionInput, "post_type", "postType");
+    return postType === "page" ? "edit_pages" : "edit_posts";
+  }
+
+  return "write";
+}
+
+function deriveActionRiskLevel(input: {
+  type: string;
+  planRiskLevel: ActionPlan["riskLevel"] | undefined;
+}): Action["riskLevel"] {
+  if (input.planRiskLevel !== undefined) {
+    return input.planRiskLevel;
+  }
+
+  const normalizedType = normalizeActionType(input.type);
+  if (normalizedType.includes("publish")) {
+    return "high";
+  }
+  if (actionTypeUploadsMedia(input.type)) {
+    return "medium";
+  }
+  return "low";
+}
+
+function deriveDryRunCapable(type: string): boolean {
+  if (actionTypeUploadsMedia(type) || actionTypeIsFeaturedImage(type) || actionTypeIsSeoMeta(type)) {
+    return false;
+  }
+  if (normalizeActionType(type).includes("publish")) {
+    return false;
+  }
+  return true;
+}
+
+function deriveRollbackSupported(type: string): boolean {
+  if (actionTypeCreatesDraftPost(type) || actionTypeUploadsMedia(type)) {
+    return false;
+  }
+  if (normalizeActionType(type).includes("publish")) {
+    return false;
+  }
+  return true;
+}
+
+function stringArrayFrom(
+  value: unknown,
+  options: { trim?: boolean; filterEmpty?: boolean } = {}
+): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => (options.trim === false ? entry : entry.trim()))
+    .filter((entry) => !options.filterEmpty || entry.length > 0);
+}
+
+function planRiskLevelFromActions(
+  actions: Action[]
+): ActionPlan["riskLevel"] {
+  const rank: Record<ActionPlan["riskLevel"], number> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+    critical: 3
+  };
+
+  let highest: ActionPlan["riskLevel"] = "low";
+  for (const action of actions) {
+    if (rank[action.riskLevel] > rank[highest]) {
+      highest = action.riskLevel;
+    }
+  }
+  return highest;
+}
+
+function normalizeLegacyActionPlanDraft(
+  rawPlan: Record<string, unknown>
+): Record<string, unknown> {
+  const planTargetEntities = stringArrayFrom(rawPlan.targetEntities, {
+    filterEmpty: true
+  });
+  const planRiskLevel = isActionRiskLevel(rawPlan.riskLevel)
+    ? rawPlan.riskLevel
+    : undefined;
+  const rawActions = Array.isArray(rawPlan.proposedActions)
+    ? rawPlan.proposedActions
+    : [];
+
+  const proposedActions = rawActions.map((rawAction) => {
+    const actionRecord = objectValue(rawAction);
+    const type =
+      typeof actionRecord.type === "string" && actionRecord.type.trim().length > 0
+        ? actionRecord.type
+        : "unknown_action";
+    const actionInput = objectValue(actionRecord.input);
+    const existingTargetEntityRefs = Array.isArray(actionRecord.targetEntityRefs)
+      ? actionRecord.targetEntityRefs.filter(
+          (value): value is string =>
+            typeof value === "string" && value.trim().length > 0
+        )
+      : undefined;
+
+    return {
+      ...actionRecord,
+      id:
+        typeof actionRecord.id === "string" && actionRecord.id.trim().length > 0
+          ? actionRecord.id
+          : (randomUUID() as ActionId),
+      type,
+      version:
+        typeof actionRecord.version === "number" &&
+        Number.isInteger(actionRecord.version) &&
+        actionRecord.version > 0
+          ? actionRecord.version
+          : 1,
+      input: actionInput,
+      targetEntityRefs:
+        existingTargetEntityRefs ??
+        deriveActionTargetEntityRefs({
+          type,
+          actionInput,
+          planTargetEntities
+        }),
+      permissionRequirement:
+        typeof actionRecord.permissionRequirement === "string" &&
+        actionRecord.permissionRequirement.trim().length > 0
+          ? actionRecord.permissionRequirement
+          : derivePermissionRequirement(type, actionInput),
+      riskLevel: isActionRiskLevel(actionRecord.riskLevel)
+        ? actionRecord.riskLevel
+        : deriveActionRiskLevel({ type, planRiskLevel }),
+      dryRunCapable:
+        typeof actionRecord.dryRunCapable === "boolean"
+          ? actionRecord.dryRunCapable
+          : deriveDryRunCapable(type),
+      rollbackSupported:
+        typeof actionRecord.rollbackSupported === "boolean"
+          ? actionRecord.rollbackSupported
+          : deriveRollbackSupported(type)
+    } satisfies Action;
+  });
+
+  return {
+    ...rawPlan,
+    assumptions: stringArrayFrom(rawPlan.assumptions),
+    openQuestions: stringArrayFrom(rawPlan.openQuestions),
+    targetEntities: planTargetEntities,
+    proposedActions,
+    dependencies: stringArrayFrom(rawPlan.dependencies, {
+      filterEmpty: true
+    }),
+    approvalRequired:
+      typeof rawPlan.approvalRequired === "boolean"
+        ? rawPlan.approvalRequired
+        : false,
+    riskLevel: planRiskLevel ?? planRiskLevelFromActions(proposedActions),
+    rollbackNotes: stringArrayFrom(rawPlan.rollbackNotes),
+    validationWarnings: stringArrayFrom(rawPlan.validationWarnings)
+  };
 }
 
 function actionMayWritePostContent(type: string): boolean {
@@ -655,6 +952,9 @@ function separatorHtml(attrs: Record<string, unknown>): string {
       ? attrs.tagName.trim()
       : "hr";
   const classNames = ["wp-block-separator"];
+  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+    classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
+  }
   const opacity =
     typeof attrs.opacity === "string" ? attrs.opacity.trim() : "alpha-channel";
   if (opacity === "css") {
@@ -702,7 +1002,13 @@ function buttonHtml(attrs: Record<string, unknown>, innerHTML: string): string {
       : tagName === "button"
         ? ' type="button"'
         : "";
-  return `<div class="wp-block-button"><${tagName} class="wp-block-button__link wp-element-button"${href}${title}${target}${rel}${type}>${text}</${tagName}></div>`;
+  const wrapperClassNames = ["wp-block-button"];
+  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+    wrapperClassNames.push(
+      ...attrs.className.trim().split(/\s+/).map(escapeHtml)
+    );
+  }
+  return `<div class="${wrapperClassNames.join(" ")}"><${tagName} class="wp-block-button__link wp-element-button"${href}${title}${target}${rel}${type}>${text}</${tagName}></div>`;
 }
 
 function validGroupTagName(attrs: Record<string, unknown>): string {
@@ -723,7 +1029,14 @@ function validGroupTagName(attrs: Record<string, unknown>): string {
 
 function groupWrapperOpen(attrs: Record<string, unknown>): string {
   const tagName = validGroupTagName(attrs);
-  return `<${tagName} class="wp-block-group">`;
+  const classNames = ["wp-block-group"];
+  if (typeof attrs.align === "string" && attrs.align.trim().length > 0) {
+    classNames.push(`align${escapeHtml(attrs.align.trim())}`);
+  }
+  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+    classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
+  }
+  return `<${tagName} class="${classNames.join(" ")}">`;
 }
 
 function groupWrapperClose(attrs: Record<string, unknown>): string {
@@ -961,6 +1274,22 @@ function listItemHtml(innerHTML: string): string {
   return `<li>${escapeHtml(extractTextContent(innerHTML))}</li>`;
 }
 
+function parseListItemBlocksFromListHtml(
+  innerHTML: string
+): Record<string, unknown>[] {
+  const listItemMatches = innerHTML.match(/<li\b[^>]*>[\s\S]*?<\/li>/gi) ?? [];
+  return listItemMatches.map((itemHtml) => {
+    const normalizedInnerHTML = listItemHtml(itemHtml.trim());
+    return {
+      blockName: "core/list-item",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML: normalizedInnerHTML,
+      innerContent: [normalizedInnerHTML]
+    };
+  });
+}
+
 function imageHtml(attrs: Record<string, unknown>): string {
   const url = typeof attrs.url === "string" ? attrs.url : "";
   const alt = typeof attrs.alt === "string" ? attrs.alt : "";
@@ -1071,10 +1400,38 @@ function spacerHtml(attrs: Record<string, unknown>): string {
   return `<div style="height:${escapeHtml(height)}" aria-hidden="true" class="wp-block-spacer"></div>`;
 }
 
+function columnsWrapperOpen(attrs: Record<string, unknown>): string {
+  const classNames = ["wp-block-columns"];
+  if (
+    typeof attrs.verticalAlignment === "string" &&
+    attrs.verticalAlignment.trim().length > 0
+  ) {
+    classNames.push(
+      `are-vertically-aligned-${escapeHtml(attrs.verticalAlignment.trim())}`
+    );
+  }
+  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+    classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
+  }
+  return `<div class="${classNames.join(" ")}">`;
+}
+
 function columnWrapperOpen(attrs: Record<string, unknown>): string {
+  const classNames = ["wp-block-column"];
+  if (
+    typeof attrs.verticalAlignment === "string" &&
+    attrs.verticalAlignment.trim().length > 0
+  ) {
+    classNames.push(
+      `is-vertically-aligned-${escapeHtml(attrs.verticalAlignment.trim())}`
+    );
+  }
+  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+    classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
+  }
   const width = typeof attrs.width === "string" ? attrs.width.trim() : "";
   const style = width.length > 0 ? ` style="flex-basis:${escapeHtml(width)}"` : "";
-  return `<div class="wp-block-column"${style}>`;
+  return `<div class="${classNames.join(" ")}"${style}>`;
 }
 
 function canonicalContainerInnerContent(
@@ -1084,7 +1441,7 @@ function canonicalContainerInnerContent(
 ): string[] | null[] | Array<string | null> | null {
   if (blockName === "core/columns") {
     return [
-      '<div class="wp-block-columns">',
+      columnsWrapperOpen(attrs),
       ...innerBlocks.flatMap((_, index) =>
         index === 0 ? [null] : ["\n\n", null]
       ),
@@ -1183,7 +1540,7 @@ function normalizeParsedBlockNode(
 
   const attrs = objectValue(raw.attrs);
   normalizeExternalMediaAttrs(blockName, attrs, warnings, path);
-  const innerBlocks = Array.isArray(raw.innerBlocks)
+  let innerBlocks = Array.isArray(raw.innerBlocks)
     ? raw.innerBlocks
         .map((inner, index) =>
           normalizeParsedBlockNode(
@@ -1223,6 +1580,13 @@ function normalizeParsedBlockNode(
         `Rewrote paragraph-wrapped image HTML at ${path} to a core/image block.`
       );
       return recoveredImageBlock;
+    }
+  }
+
+  if (blockName === "core/list" && innerBlocks.length === 0 && innerHTML.includes("<li")) {
+    innerBlocks = parseListItemBlocksFromListHtml(innerHTML);
+    if (innerBlocks.length > 0) {
+      warnings.push(`Recovered list-item children for ${path} from serialized list HTML.`);
     }
   }
 
@@ -1356,6 +1720,167 @@ function normalizeParsedBlocks(rawBlocks: unknown[]): NormalizedBlocksResult {
     .filter((block): block is Record<string, unknown> => block !== null);
 
   return { blocks, warnings };
+}
+
+function requestLooksLikeLayoutReference(requestText: string): boolean {
+  return (
+    /\b(match|copy|recreate|replicate|approximate|mirror|follow|like)\b/i.test(
+      requestText
+    ) &&
+    /\b(layout|design|screenshot|reference|mockup|wireframe)\b/i.test(
+      requestText
+    )
+  );
+}
+
+function parsedImageAttrsHaveConcreteSource(attrs: Record<string, unknown>): boolean {
+  const id =
+    typeof attrs.id === "number"
+      ? attrs.id
+      : typeof attrs.id === "string"
+        ? Number.parseInt(attrs.id, 10)
+        : 0;
+  const url =
+    typeof attrs.url === "string"
+      ? attrs.url.trim()
+      : typeof attrs.src === "string"
+        ? attrs.src.trim()
+        : "";
+  return (Number.isFinite(id) && id > 0) || url.length > 0;
+}
+
+function placeholderHtmlForUnsourcedImageDescription(description: string): string {
+  const label =
+    description.trim().length > 0 ? description.trim() : "Image placeholder";
+  const isCompact =
+    /\b(icon|logo|brand mark|brandmark|symbol|mark|badge)\b/i.test(label);
+  const style = isCompact
+    ? "width:96px;height:96px;border:1px solid currentColor;background:rgba(0,0,0,0.04);"
+    : "width:100%;min-height:320px;border:1px solid currentColor;background:rgba(0,0,0,0.04);";
+  return `<figure class="wp-block-image sitepilot-image-placeholder"><div role="img" aria-label="${escapeHtml(
+    label
+  )}" style="${style}"></div></figure>`;
+}
+
+function replaceUnsourcedLayoutReferenceImages(input: {
+  blocks: Record<string, unknown>[];
+  requestText: string;
+  warnings: string[];
+}): Record<string, unknown>[] {
+  if (!requestLooksLikeLayoutReference(input.requestText)) {
+    return input.blocks;
+  }
+
+  let replacedCount = 0;
+  const visit = (block: Record<string, unknown>): Record<string, unknown> => {
+    const current = objectValue(block);
+    const blockName = normalizeBlockName(current.blockName);
+    const innerBlocks = Array.isArray(current.innerBlocks)
+      ? (current.innerBlocks as Record<string, unknown>[]).map((innerBlock) =>
+          visit(objectValue(innerBlock))
+        )
+      : [];
+
+    if (blockName === "core/image") {
+      const attrs = objectValue(current.attrs);
+      if (!parsedImageAttrsHaveConcreteSource(attrs)) {
+        replacedCount += 1;
+        const alt = typeof attrs.alt === "string" ? attrs.alt : "";
+        const html = placeholderHtmlForUnsourcedImageDescription(alt);
+        return {
+          blockName: "core/html",
+          attrs: {},
+          innerBlocks: [],
+          innerHTML: html,
+          innerContent: [html]
+        };
+      }
+    }
+
+    return {
+      ...current,
+      innerBlocks
+    };
+  };
+
+  const nextBlocks = input.blocks.map((block) => visit(block));
+  if (replacedCount > 0) {
+    input.warnings.push(
+      `Replaced ${replacedCount} source-less core/image block${
+        replacedCount === 1 ? "" : "s"
+      } with core/html placeholders because this request appears to be matching a visual layout reference rather than supplying concrete image assets.`
+    );
+  }
+  return nextBlocks;
+}
+
+function recoverStructuredListBlocksFromContent(content: string): Record<string, unknown>[] {
+  return normalizeParsedBlocks(
+    extractSerializedBlocksByBlockNames(content, ["core/list"])
+  ).blocks as Record<string, unknown>[];
+}
+
+function hydrateEmptyListBlocksFromContent(
+  blocks: Record<string, unknown>[],
+  content: string,
+  warnings: string[]
+): Record<string, unknown>[] {
+  const recoveredLists = recoverStructuredListBlocksFromContent(content).filter(
+    (block) => {
+      const record = objectValue(block);
+      const innerBlocks = Array.isArray(record.innerBlocks)
+        ? record.innerBlocks
+        : [];
+      return (
+        normalizeBlockName(record.blockName) === "core/list" &&
+        innerBlocks.length > 0
+      );
+    }
+  );
+  if (recoveredLists.length === 0) {
+    return blocks;
+  }
+
+  let recoveredIndex = 0;
+  let hydratedCount = 0;
+
+  const visit = (block: Record<string, unknown>): Record<string, unknown> => {
+    const current = objectValue(block);
+    const currentName = normalizeBlockName(current.blockName);
+    const currentInnerBlocks = Array.isArray(current.innerBlocks)
+      ? (current.innerBlocks as Record<string, unknown>[]).map((innerBlock) =>
+          visit(objectValue(innerBlock))
+        )
+      : [];
+
+    if (currentName === "core/list" && currentInnerBlocks.length === 0) {
+      const recovered = recoveredLists[recoveredIndex];
+      if (recovered !== undefined) {
+        recoveredIndex += 1;
+        hydratedCount += 1;
+        return {
+          ...recovered,
+          attrs: {
+            ...objectValue(recovered.attrs),
+            ...objectValue(current.attrs)
+          }
+        };
+      }
+    }
+
+    return {
+      ...current,
+      innerBlocks: currentInnerBlocks
+    };
+  };
+
+  const hydrated = blocks.map((block) => visit(block));
+  if (hydratedCount > 0) {
+    warnings.push(
+      `Recovered ${hydratedCount} empty list block${hydratedCount === 1 ? "" : "s"} from the serialized content fallback.`
+    );
+  }
+  return hydrated;
 }
 
 function requestAllowsAdvancedBlocks(requestText: string): boolean {
@@ -1554,8 +2079,22 @@ function normalizePlanPostContent(
     if (blockKey !== undefined && Array.isArray(blockTarget[blockKey])) {
       const normalizedBlocks = normalizeParsedBlocks(blockTarget[blockKey]);
       validationWarnings.push(...normalizedBlocks.warnings);
+      const contentKey = pickContentKey(blockTarget);
+      const hydratedBlocks =
+        contentKey !== undefined && typeof blockTarget[contentKey] === "string"
+          ? hydrateEmptyListBlocksFromContent(
+              normalizedBlocks.blocks as Record<string, unknown>[],
+              blockTarget[contentKey],
+              validationWarnings
+            )
+          : (normalizedBlocks.blocks as Record<string, unknown>[]);
+      const imageSafeBlocks = replaceUnsourcedLayoutReferenceImages({
+        blocks: hydratedBlocks,
+        requestText,
+        warnings: validationWarnings
+      });
       const nextBlocks = maybeExpandToEverySupportedBlockDemo({
-        blocks: normalizedBlocks.blocks,
+        blocks: imageSafeBlocks,
         requestText,
         requestAttachments,
         validationWarnings
@@ -3655,6 +4194,7 @@ export async function buildLlmActionPlan(input: {
   siteId: SiteId;
   nowIso: string;
   requestAttachments?: ImageAttachmentPayload[];
+  requestVisualAnalysis?: RequestVisualAnalysisPayload;
   client: ChatModelClient;
   model: string;
 }): Promise<{
@@ -3702,6 +4242,8 @@ Do not invent deliverables, sections, media, layouts, or block types the operato
 When the operator explicitly says page/pages or post/posts, preserve that exact post type in every create or lookup action. If they say something like "page, not post", treat that as an explicit correction and use page. If the wording leaves genuine doubt about page vs post, add an open question instead of defaulting.
 ${exhaustiveBlockInstruction}
 For each proposed action, put tool arguments directly in the action.input object. Do not wrap tool arguments in a nested input object inside action.input.
+If requestVisualAnalysis is present, it is an operator-review artifact derived from the uploaded reference image. Use it as the primary structural scaffold for region order, layout intent, and closest Gutenberg block mapping. Prefer its reviewed region breakdown over inventing a new page structure.
+When requestVisualAnalysis describes decorative branding, icon-like marks, screenshot-only ornaments, or image regions without a concrete uploaded/source asset, prefer core/html or simpler structural blocks over core/image. Do not emit a core/image block unless it has a concrete uploaded asset, attachment-backed reference, or a specific verified external image URL you actually know.
 For content-writing actions, use structured block data instead of hand-written serialized HTML whenever the request needs nested, layout, media, spacer, columns, gallery, cover, or other non-trivial Gutenberg blocks. Use input.blocks as an array of WordPress parsed block objects that can be passed to WordPress serialize_blocks(): each block has blockName, attrs, innerBlocks, innerHTML, and innerContent. Parsed blockName values for WordPress core blocks must use the "core/name" form such as "core/columns", "core/column", "core/paragraph", "core/image", and "core/spacer"; never use comment prefixes such as "wp:columns" in parsed blockName. Use input.content only for simple text-only block markup when no nested layout, media, or spacer block is needed. If input.blocks is present, it is the authoritative post body and downstream tools will prefer it over input.content.
 Only use parsed Gutenberg blocks that SitePilot explicitly supports for execution right now: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. If the request would require any other block, do not invent it. Use simpler supported blocks where faithful, otherwise surface the limitation in validationWarnings.
 
@@ -3719,6 +4261,9 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
       plannerContext: input.context,
       requestId: input.requestId,
       siteId: input.siteId,
+      ...(input.requestVisualAnalysis !== undefined
+        ? { requestVisualAnalysis: input.requestVisualAnalysis }
+        : {}),
       promptVersion: PLANNER_PROMPT_VERSION
     },
     null,
@@ -3754,7 +4299,7 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     ? obj.openQuestions.filter((value): value is string => typeof value === "string")
     : [];
   const merged = {
-    ...obj,
+    ...normalizeLegacyActionPlanDraft(obj),
     openQuestions: normalizeOpenQuestions(rawOpenQuestions),
     id: planId,
     requestId: input.requestId,

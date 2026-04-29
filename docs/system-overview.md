@@ -134,6 +134,7 @@ The main-process service layer currently includes:
 - `import-site-service`
 - `provider-status-service`
 - `core-block-index-service`
+- `request-visual-analysis-service`
 
 ## Persistence And Trust Boundaries
 
@@ -153,6 +154,7 @@ The repository has completed the original numbered task graph through T35 in [do
 - secure storage and settings flows
 - registration, diagnostics, discovery, and site-config activation
 - chat/request persistence and planner context assembly
+- screenshot-reference analysis and operator review before planning for screenshot-driven requests
 - clarification and typed plan generation
 - approval workflow and execution orchestration
 - plugin-side MCP bridge with initial read/write capabilities
@@ -174,4 +176,5 @@ These are the main current gaps called out by the latest handoff:
 - Product intent and complete scope: [SPEC.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/SPEC.md)
 - Build sequence and completion history: [docs/task-graph.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/task-graph.md)
 - Gutenberg write contract: [docs/reliable-gutenberg-blocks.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/reliable-gutenberg-blocks.md)
+- Screenshot analysis workflow: [docs/screenshot-analysis-workflow.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/screenshot-analysis-workflow.md)
 - Plugin setup and routes: [plugins/wordpress-sitepilot/README.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/plugins/wordpress-sitepilot/README.md)

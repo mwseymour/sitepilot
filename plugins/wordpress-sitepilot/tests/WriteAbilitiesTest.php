@@ -216,6 +216,61 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( '<!-- wp:spacer {"height":"40px"} -->', $content );
 	}
 
+	public function test_create_draft_preserves_wrapper_classes_required_for_gutenberg_validation(): void {
+		$result = $this->create_draft(
+			array(
+				'title'  => 'Validated layout',
+				'blocks' => array(
+					array(
+						'blockName'   => 'core/columns',
+						'attrs'       => array( 'verticalAlignment' => 'top' ),
+						'innerBlocks' => array(
+							array(
+								'blockName'   => 'core/column',
+								'attrs'       => array(),
+								'innerBlocks' => array(
+									array(
+										'blockName'    => 'core/separator',
+										'attrs'        => array( 'className' => 'is-style-wide' ),
+										'innerBlocks'  => array(),
+										'innerHTML'    => '',
+										'innerContent' => array(),
+									),
+									array(
+										'blockName'   => 'core/group',
+										'attrs'       => array( 'className' => 'related-work-card' ),
+										'innerBlocks' => array(
+											array(
+												'blockName'    => 'core/paragraph',
+												'attrs'        => array(),
+												'innerBlocks'  => array(),
+												'innerHTML'    => '<p>Inside card</p>',
+												'innerContent' => array( '<p>Inside card</p>' ),
+											),
+										),
+										'innerHTML'    => '',
+										'innerContent' => array(),
+									),
+								),
+								'innerHTML'    => '',
+								'innerContent' => array(),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( 'class="wp-block-columns are-vertically-aligned-top"', $content );
+		$this->assertStringContainsString( 'class="wp-block-separator is-style-wide has-alpha-channel-opacity"', $content );
+		$this->assertStringContainsString( 'class="wp-block-group related-work-card"', $content );
+	}
+
 	public function test_wp_prefixed_planner_blocks_are_canonicalized_before_serialization(): void {
 		$result = $this->create_draft(
 			array(

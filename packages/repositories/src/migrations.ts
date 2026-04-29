@@ -327,5 +327,35 @@ export const sqliteMigrations: SqliteMigration[] = [
       `ALTER TABLE requests ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`,
       `ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`
     ]
+  },
+  {
+    id: "005_request_visual_analyses",
+    description:
+      "Persist reviewed screenshot-to-layout analyses for request planning.",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS request_visual_analyses (
+        id TEXT PRIMARY KEY,
+        request_id TEXT NOT NULL UNIQUE,
+        site_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        source_image_count INTEGER NOT NULL,
+        analyzed_request_updated_at TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        page_type TEXT NOT NULL,
+        layout_pattern TEXT NOT NULL,
+        style_notes_json TEXT NOT NULL,
+        responsive_notes_json TEXT NOT NULL,
+        regions_json TEXT NOT NULL,
+        mapping_warnings_json TEXT NOT NULL,
+        reviewed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (request_id) REFERENCES requests(id),
+        FOREIGN KEY (site_id) REFERENCES sites(id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_request_visual_analyses_site_request
+        ON request_visual_analyses(site_id, request_id)`
+    ]
   }
 ];

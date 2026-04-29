@@ -29,6 +29,7 @@ import type {
   ProviderProfileId,
   ProviderUsageEventId,
   RequestId,
+  RequestVisualAnalysisId,
   RollbackRecordId,
   SiteConfigId,
   SiteConnectionId,
@@ -151,6 +152,36 @@ export interface Request extends EntityTimestamps {
   attachments?: ImageAttachment[];
   latestPlanId?: ActionPlanId;
   latestExecutionRunId?: ExecutionRunId;
+}
+
+export interface RequestVisualAnalysisRegion {
+  id: string;
+  label: string;
+  kind: string;
+  layout: string;
+  position: string;
+  contentSummary: string;
+  suggestedBlocks: string[];
+  emphasis: string;
+  confidence: number;
+}
+
+export interface RequestVisualAnalysis extends EntityTimestamps {
+  id: RequestVisualAnalysisId;
+  requestId: RequestId;
+  siteId: SiteId;
+  provider: ProviderKind;
+  model: string;
+  sourceImageCount: number;
+  analyzedRequestUpdatedAt: IsoTimestamp;
+  summary: string;
+  pageType: string;
+  layoutPattern: string;
+  styleNotes: string[];
+  responsiveNotes: string[];
+  regions: RequestVisualAnalysisRegion[];
+  mappingWarnings: string[];
+  reviewedAt?: IsoTimestamp;
 }
 
 export interface ClarificationRound extends EntityTimestamps {

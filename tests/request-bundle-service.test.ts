@@ -57,6 +57,9 @@ const db = {
       getById: vi.fn(async () => request),
       save: vi.fn(async () => undefined)
     },
+    requestVisualAnalyses: {
+      getByRequestId: vi.fn(async () => null)
+    },
     actionPlans: {
       getById: vi.fn(async () => plan)
     },
@@ -134,10 +137,12 @@ describe("request-bundle-service", () => {
     }
 
     expect(result.request.status).toBe("approved");
+    expect(result.visualAnalysis).toBeNull();
     expect(db.repositories.requests.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: request.id,
-        status: "approved"
+        status: "approved",
+        updatedAt: request.updatedAt
       })
     );
   });

@@ -104,10 +104,7 @@ describe("site planner settings", () => {
       )
     ).toEqual({
       kind: "warnings",
-      messages: [
-        "Site settings bypassed the approval gate for this plan.",
-        "This plan must go through an approval gate before execution."
-      ]
+      messages: ["Site settings bypassed the approval gate for this plan."]
     });
     expect(
       applyApprovalBypass(
@@ -137,10 +134,7 @@ describe("site planner settings", () => {
         },
         validation: {
           kind: "warnings",
-          messages: [
-            "Site settings bypassed the approval gate for this plan.",
-            "This plan must go through an approval gate before execution."
-          ]
+          messages: ["Site settings bypassed the approval gate for this plan."]
         }
       })
     ).toBe("approved");

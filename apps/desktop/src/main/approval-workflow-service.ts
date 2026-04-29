@@ -150,7 +150,7 @@ export async function decideApprovalForSite(input: {
     await db.repositories.requests.save({
       ...request,
       status: nextStatus,
-      updatedAt: ts
+      updatedAt: request.updatedAt
     });
 
     const decisionLabel =
