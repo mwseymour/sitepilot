@@ -127,6 +127,90 @@ function roleIcon(m: MessageRow): string {
   return "YOU";
 }
 
+function clarificationLines(message: MessageRow): {
+  intro: string[];
+  questionLabel?: string;
+  questions: string[];
+} | null {
+  if (
+    typeof message.author !== "object" ||
+    message.author === null ||
+    !("kind" in message.author) ||
+    message.author.kind !== "assistant"
+  ) {
+    return null;
+  }
+
+  const lines = message.body.value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const directLead = lines[0] ?? "";
+  if (
+    directLead === "More detail is needed before planning:" ||
+    directLead === "Thanks. I still need a bit more detail:"
+  ) {
+    const questions = lines.filter((line) => /^\d+\.\s/.test(line));
+    return questions.length > 0
+      ? { intro: [directLead], questions }
+      : null;
+  }
+
+  const questionLabelIndex = lines.findIndex(
+    (line) => line === "Questions to answer:"
+  );
+  if (questionLabelIndex === -1) {
+    return null;
+  }
+
+  const postQuestionLines = lines.slice(questionLabelIndex + 1);
+  const nextSectionIndex = postQuestionLines.findIndex((line) =>
+    /^[A-Za-z][A-Za-z\s]+:\s*$/.test(line)
+  );
+  const questionLines =
+    nextSectionIndex === -1
+      ? postQuestionLines
+      : postQuestionLines.slice(0, nextSectionIndex);
+  const questions = questionLines.filter((line) => /^\d+\.\s/.test(line));
+
+  return questions.length > 0
+    ? {
+        intro: lines.slice(0, questionLabelIndex),
+        questionLabel: "Questions to answer:",
+        questions
+      }
+    : null;
+}
+
+function renderMessageBody(message: MessageRow): ReactElement {
+  const clarification = clarificationLines(message);
+  if (!clarification) {
+    return <p className="chat-msg-body">{message.body.value}</p>;
+  }
+
+  return (
+    <div className="chat-msg-body chat-msg-body-clarification">
+      {clarification.intro.map((line) => (
+        <p key={line} className="chat-msg-body-lead">
+          {line}
+        </p>
+      ))}
+      {clarification.questionLabel ? (
+        <p className="chat-msg-question-label">
+          <strong>{clarification.questionLabel}</strong>
+        </p>
+      ) : null}
+      <div className="chat-msg-question-list">
+        {clarification.questions.map((question) => (
+          <p key={question} className="chat-msg-question">
+            <strong>{question}</strong>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function formatAttachmentCount(count: number): string {
   return `${count} image${count === 1 ? "" : "s"}`;
 }
@@ -207,7 +291,10 @@ async function fileToImageAttachment(
 
 function threadTypeMeta(type: string | undefined): ThreadTypeMeta {
   if (type && type in THREAD_TYPE_META) {
-    return THREAD_TYPE_META[type];
+    const meta = THREAD_TYPE_META[type as keyof typeof THREAD_TYPE_META];
+    if (meta) {
+      return meta;
+    }
   }
   return {
     label: "Request",
@@ -658,6 +745,7 @@ export function ChatPage({
       }) ?? [],
     [bundle?.plan]
   );
+  const openQuestions = bundle?.plan?.openQuestions ?? [];
   const canRunPlanDirectly = executableActions.length > 0;
   const selectedThread = threads.find((thread) => thread.id === selectedThreadId);
 
@@ -1667,7 +1755,7 @@ export function ChatPage({
                         </span>
                         <time dateTime={m.createdAt}>{m.createdAt}</time>
                       </header>
-                      <p className="chat-msg-body">{m.body.value}</p>
+                      {renderMessageBody(m)}
                       {m.attachments && m.attachments.length > 0 ? (
                         <div className="chat-image-grid">
                           {m.attachments.map((attachment) => (
@@ -1962,61 +2050,100 @@ export function ChatPage({
                         analysis is current and approved.
                       </p>
                     ) : null}
-                    {bundle.plan && executableActions.length > 0 ? (
-                      <div className="chat-plan-runbar">
-                        <div>
-                          <h4>Run plan</h4>
-                          <p className="muted small-print">
-                            {canRunPlanDirectly
-                              ? executionControlsLocked
-                                ? "This plan has already been executed. Generate a new action plan to run it again."
-                                : requestCanExecute(bundle.request.status)
-                                ? executableActions.length > 1
-                                  ? "The approved plan is ready to run end-to-end."
-                                  : "The approved plan is ready to run."
-                                : SHOW_DRY_RUN_UI
-                                  ? executableActions.length > 1
-                                    ? "You can dry-run every executable action in this plan now. Execution unlocks once the request is ready to run."
-                                    : "You can dry-run this plan now. Execution unlocks once the request is ready to run."
-                                  : "Execution unlocks once the request is ready to run."
-                              : "Run actions individually below for this plan."}
-                          </p>
+                    {bundle.plan ? (
+                      <div className="chat-plan-next-steps">
+                        <div className="chat-plan-next-steps-header">
+                          <div>
+                            <p className="eyebrow">Next steps</p>
+                            <h4>
+                              {openQuestions.length > 0
+                                ? "Resolve the remaining questions before running this plan."
+                                : canRunPlanDirectly
+                                  ? "Review and run the generated action plan."
+                                  : "Review the generated action plan."}
+                            </h4>
+                            <p className="muted small-print">
+                              {openQuestions.length > 0
+                                ? "This plan still has unanswered inputs. Clear those first so execution is unambiguous."
+                                : canRunPlanDirectly
+                                  ? executionControlsLocked
+                                    ? "This plan has already been executed. Generate a new plan if you need another run."
+                                    : requestCanExecute(bundle.request.status)
+                                      ? "The plan is ready for direct execution, and each action can still be reviewed individually below."
+                                      : SHOW_DRY_RUN_UI
+                                        ? "Dry-run is available now. Full execution unlocks when the request reaches a runnable state."
+                                        : "Execution unlocks when the request reaches a runnable state."
+                                  : "This plan needs to be run action-by-action below."}
+                            </p>
+                          </div>
+                          <div className="chat-plan-next-steps-meta" aria-label="Plan summary">
+                            <span className="badge">{bundle.plan.proposedActions.length} actions</span>
+                            {openQuestions.length > 0 ? (
+                              <span className="badge badge-warn">
+                                {openQuestions.length} open question
+                                {openQuestions.length === 1 ? "" : "s"}
+                              </span>
+                            ) : (
+                              <span className="badge">Ready for review</span>
+                            )}
+                          </div>
                         </div>
+                        {openQuestions.length > 0 ? (
+                          <div className="chat-plan-next-steps-section">
+                            <h5>Questions to answer</h5>
+                            <ol className="chat-plan-question-list">
+                              {openQuestions.map((question) => (
+                                <li key={question}>{question}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        ) : null}
                         {canRunPlanDirectly ? (
-                          <div className="chat-plan-runbar-actions">
-                            {SHOW_DRY_RUN_UI && !executionControlsLocked ? (
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                disabled={execBusy || busy}
-                                onClick={() => void onRunPlan(true)}
-                              >
-                                {execBusy &&
-                                execProgressLabel === "Running dry-run…"
-                                  ? "Running dry-run…"
-                                  : executableActions.length > 1
-                                    ? "Dry-run all"
-                                    : "Dry-run plan"}
-                              </button>
-                            ) : null}
-                            {!executionControlsLocked ? (
-                              <button
-                                type="button"
-                                className="btn btn-primary"
-                                disabled={
-                                  execBusy ||
-                                  busy ||
-                                  !requestCanExecute(bundle.request.status)
-                                }
-                                onClick={() => void onRunPlan(false)}
-                              >
-                                {execBusy && execProgressLabel === "Executing…"
-                                  ? "Executing…"
-                                  : executableActions.length > 1
-                                    ? "Execute all"
-                                    : "Execute plan"}
-                              </button>
-                            ) : null}
+                          <div className="chat-plan-runbar chat-plan-runbar-prominent">
+                            <div>
+                              <h5>Run this plan</h5>
+                              <p className="muted small-print">
+                                {requestCanExecute(bundle.request.status)
+                                  ? executableActions.length > 1
+                                    ? "Run every mapped action in sequence or inspect them one by one below."
+                                    : "Run the mapped action now or inspect it below first."
+                                  : "Use a dry-run now, then execute once the request is ready."}
+                              </p>
+                            </div>
+                            <div className="chat-plan-runbar-actions">
+                              {SHOW_DRY_RUN_UI && !executionControlsLocked ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  disabled={execBusy || busy}
+                                  onClick={() => void onRunPlan(true)}
+                                >
+                                  {execBusy && execProgressLabel === "Running dry-run…"
+                                    ? "Running dry-run…"
+                                    : executableActions.length > 1
+                                      ? "Dry-run all"
+                                      : "Dry-run plan"}
+                                </button>
+                              ) : null}
+                              {!executionControlsLocked ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary"
+                                  disabled={
+                                    execBusy ||
+                                    busy ||
+                                    !requestCanExecute(bundle.request.status)
+                                  }
+                                  onClick={() => void onRunPlan(false)}
+                                >
+                                  {execBusy && execProgressLabel === "Executing…"
+                                    ? "Executing…"
+                                    : executableActions.length > 1
+                                      ? "Execute all"
+                                      : "Execute plan"}
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -2081,11 +2208,47 @@ export function ChatPage({
                         })()}
                       </div>
                     ) : null}
-                    {bundle.plan ? (
+                    {!bundle.plan ? (
+                      <p className="muted small-print">
+                        No plan yet. Keep refining the request, then generate a
+                        plan.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {developerToolsEnabled ? (
+                  <details className="chat-debug-panel">
+                    <summary>Developer tools</summary>
+                    <div className="chat-debug-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-small"
+                        disabled={busy || execBusy}
+                        onClick={() => void onCopyDebugLog()}
+                      >
+                        {debugCopyLabel}
+                      </button>
+                      <span className="muted small-print">
+                        Copies chat history, request state, plan data, and last
+                        execution details as JSON.
+                      </span>
+                    </div>
+                    {developerMessages.length > 0 ? (
+                      <div className="chat-planner-panel">
+                        <h3>Feedback log</h3>
+                        <ul className="small-print">
+                          {developerMessages.map((message) => (
+                            <li key={message}>{message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {bundle?.plan ? (
                       <div className="chat-bundle-panel">
                         <h4>Planned actions</h4>
                         <ul className="chat-action-list">
-                          {bundle.plan.proposedActions.map((action) => {
+                          {bundle.plan.proposedActions.map((action, planIndex) => {
                             const planActions = bundle.plan?.proposedActions ?? [];
                             const actionIndex =
                               planActions.findIndex(
@@ -2113,29 +2276,31 @@ export function ChatPage({
                               );
                             return (
                               <li key={action.id} className="chat-action-row">
-                                <div>
-                                  <strong>{action.type}</strong>
-                                  {remote ? (
-                                    <span className="muted small-print">
-                                      {" "}
-                                      →{" "}
-                                      {spec?.toolName ??
-                                        (actionCanResolveViaLookup(
+                                <div className="chat-action-main">
+                                  <div className="chat-action-step">
+                                    Step {planIndex + 1}
+                                  </div>
+                                  <div className="chat-action-copy">
+                                    <strong>{action.type}</strong>
+                                    {remote ? (
+                                      <span className="muted small-print">
+                                        {spec?.toolName ??
+                                          (actionCanResolveViaLookup(
+                                            action.type,
+                                            action.input
+                                          )
+                                            ? "target via lookup"
+                                            : "target via planned create")}
+                                      </span>
+                                    ) : (
+                                      <span className="muted small-print">
+                                        {actionUnavailableReason(
                                           action.type,
                                           action.input
-                                        )
-                                          ? "target via lookup"
-                                          : "target via planned create")}
-                                    </span>
-                                  ) : (
-                                    <span className="muted small-print">
-                                      {" "}
-                                      ({actionUnavailableReason(
-                                        action.type,
-                                        action.input
-                                      )})
-                                    </span>
-                                  )}
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="chat-action-buttons">
                                   {remote ? (
@@ -2186,41 +2351,6 @@ export function ChatPage({
                             Execute stays disabled until the request is ready to run.
                           </p>
                         ) : null}
-                      </div>
-                    ) : (
-                      <p className="muted small-print">
-                        No plan yet. Keep refining the request, then generate a
-                        plan.
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-
-                {developerToolsEnabled ? (
-                  <details className="chat-debug-panel">
-                    <summary>Developer tools</summary>
-                    <div className="chat-debug-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-small"
-                        disabled={busy || execBusy}
-                        onClick={() => void onCopyDebugLog()}
-                      >
-                        {debugCopyLabel}
-                      </button>
-                      <span className="muted small-print">
-                        Copies chat history, request state, plan data, and last
-                        execution details as JSON.
-                      </span>
-                    </div>
-                    {developerMessages.length > 0 ? (
-                      <div className="chat-planner-panel">
-                        <h3>Feedback log</h3>
-                        <ul className="small-print">
-                          {developerMessages.map((message) => (
-                            <li key={message}>{message}</li>
-                          ))}
-                        </ul>
                       </div>
                     ) : null}
                 {bundle ? (

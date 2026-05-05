@@ -633,16 +633,48 @@ export async function generateActionPlanForRequest(
     .join("\n");
   const validationSummary =
     validation.kind === "pass"
-      ? "Plan validation passed."
+      ? "Checks: no blocking issues found."
       : validation.messages.length > 0
-        ? `Validation: ${validation.messages.join(" ")}`
-        : `Validation: ${validation.kind}.`;
+        ? `Check before running: ${validation.messages[0]}`
+        : `Check before running: ${validation.kind}.`;
   const approvalSummary =
     approvalBypassApplied
-      ? "Approval would normally be required, but the site approval bypass is enabled."
+      ? "Approval: normally required, but bypass is enabled for this site."
       : validation.kind === "blocked_approval"
-      ? "Approval is required before execution."
-      : "No approval block detected for planning.";
+      ? "Approval: required before execution."
+      : "Approval: not blocking this plan.";
+  const validationMessages =
+    validation.kind === "pass" ? [] : validation.messages;
+  const validationQuestions =
+    validation.kind === "blocked_clarification"
+      ? validationMessages.slice(1)
+      : [];
+  const additionalValidationCount = Math.max(validationMessages.length - 1, 0);
+  const additionalValidationSummary =
+    validation.kind !== "pass" &&
+    validation.kind !== "blocked_clarification" &&
+    additionalValidationCount > 0
+      ? `Additional checks: ${additionalValidationCount} more note${additionalValidationCount === 1 ? "" : "s"} in the request panel.`
+      : null;
+  const actionCountLabel = `${plan.proposedActions.length} action${plan.proposedActions.length === 1 ? "" : "s"}`;
+  const planReadySummary =
+    plan.proposedActions.length === 1
+      ? `Plan ready: ${actionCountLabel} - ${plan.proposedActions[0]?.type}.`
+      : `Plan ready: ${actionCountLabel}.`;
+  const planMessageLines = [
+    planReadySummary,
+    validationSummary,
+    approvalSummary,
+    additionalValidationSummary,
+    validationQuestions.length > 0
+      ? `Questions to answer:\n${validationQuestions
+          .map((question, index) => `${index + 1}. ${question}`)
+          .join("\n")}`
+      : null,
+    plan.proposedActions.length > 1 && actionSummary.length > 0
+      ? `Planned actions:\n${actionSummary}`
+      : null
+  ].filter((line): line is string => Boolean(line));
 
   await db.repositories.chatMessages.save({
     id: randomUUID() as ChatMessageId,
@@ -652,7 +684,7 @@ export async function generateActionPlanForRequest(
     author: { kind: "assistant" },
     body: {
       format: "plain_text",
-      value: `Action plan generated with ${plan.proposedActions.length} action${plan.proposedActions.length === 1 ? "" : "s"}.\n${validationSummary}\n${approvalSummary}${actionSummary.length > 0 ? `\n\nPlanned actions:\n${actionSummary}` : ""}`
+      value: planMessageLines.join("\n\n")
     },
     createdAt: ts,
     updatedAt: ts

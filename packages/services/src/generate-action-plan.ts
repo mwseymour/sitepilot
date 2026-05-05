@@ -117,6 +117,41 @@ function normalizeOpenQuestions(openQuestions: string[]): string[] {
   )];
 }
 
+function splitClarificationQuestion(question: string): string[] {
+  const trimmed = question.trim();
+  const normalized = trimmed.toLowerCase();
+  if (
+    normalized ===
+    "which page should be updated, and what exact changes are needed?"
+  ) {
+    return [
+      "Which page should be updated (title, slug, or ID)?",
+      "What changes should be made to that page?"
+    ];
+  }
+  return [trimmed];
+}
+
+function fallbackOpenQuestionsForEmptyPlan(requestText: string): string[] {
+  const normalized = requestText.trim().toLowerCase();
+  if (/\bpage\b/.test(normalized)) {
+    return [
+      "Which page should be updated (title, slug, or ID)?",
+      "What changes should be made to that page?"
+    ];
+  }
+  if (/\bpost\b/.test(normalized)) {
+    return [
+      "Which post should be updated (title, slug, or ID)?",
+      "What changes should be made to that post?"
+    ];
+  }
+  return [
+    "Which page, post, or URL should this apply to?",
+    "What outcome do you want when this work is complete?"
+  ];
+}
+
 function requestAsksForEveryExecutableBlock(requestText: string): boolean {
   return /\b(one of every|every|all)\b[\s\S]{0,60}\b(executable|supported|available|core)?\s*blocks?\b/i.test(
     requestText
@@ -4341,7 +4376,7 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
   const rawOpenQuestions = Array.isArray(obj.openQuestions)
     ? obj.openQuestions.filter((value): value is string => typeof value === "string")
     : [];
-  const merged = {
+  const merged: Record<string, unknown> = {
     ...normalizeLegacyActionPlanDraft(obj),
     openQuestions: normalizeOpenQuestions(rawOpenQuestions),
     id: planId,
@@ -4350,6 +4385,62 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     createdAt: input.nowIso,
     updatedAt: input.nowIso
   };
+
+  const mergedActions = Array.isArray(merged.proposedActions)
+    ? merged.proposedActions
+    : [];
+  if (mergedActions.length === 0) {
+    const openQuestions = normalizeOpenQuestions(
+      rawOpenQuestions.flatMap(splitClarificationQuestion)
+    );
+    return {
+      plan: actionPlanSchema.parse({
+        ...merged,
+        requestSummary:
+          typeof merged.requestSummary === "string" &&
+          merged.requestSummary.trim().length > 0
+            ? merged.requestSummary
+            : "Clarify the requested update before execution.",
+        assumptions: Array.isArray(merged.assumptions) ? merged.assumptions : [],
+        openQuestions:
+          openQuestions.length > 0
+            ? openQuestions
+            : fallbackOpenQuestionsForEmptyPlan(requestText),
+        targetEntities: Array.isArray(merged.targetEntities)
+          ? merged.targetEntities
+          : [],
+        proposedActions: [
+          {
+            id: randomUUID() as ActionId,
+            type: "find_posts",
+            version: 1,
+            input: {
+              search: requestText
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "read_site",
+            riskLevel: "low",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: Array.isArray(merged.dependencies) ? merged.dependencies : [],
+        approvalRequired: false,
+        riskLevel: "low",
+        rollbackNotes: Array.isArray(merged.rollbackNotes)
+          ? merged.rollbackNotes
+          : [],
+        validationWarnings: Array.isArray(merged.validationWarnings)
+          ? merged.validationWarnings
+          : []
+      }),
+      usage: {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        provider: input.client.providerId
+      }
+    };
+  }
 
   const parsedPlan = actionPlanSchema.parse(merged);
   const inlineNormalizedPlan = normalizeInlineImagePlacementPlan(
