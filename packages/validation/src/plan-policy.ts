@@ -141,6 +141,71 @@ function canResolveActionViaPostLookup(
   );
 }
 
+function requestSummaryLooksLikeInsertionEdit(summary: string): boolean {
+  return (
+    /\b(add|append|insert|place|put)\b/i.test(summary) &&
+    (
+      /\b(at the end|at the top|at the start|at the beginning)\b/i.test(summary) ||
+      /\b(end|top|start|beginning)\s+of\s+the\s+(content|body|post|article)\b/i.test(
+        summary
+      ) ||
+      /\b(before|after)\b[\s\S]{0,30}\b(?:paragraph|heading|image|photo|picture|button|quote|table|details|separator|spacer|list)\b/i.test(
+        summary
+      )
+    )
+  );
+}
+
+function actionLooksLikeImplicitFullReplacement(
+  actionType: string,
+  input: Record<string, unknown>
+): boolean {
+  const t = actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+  if (
+    t !== "update_post" &&
+    t !== "update_post_fields" &&
+    t !== "update_post_content" &&
+    t !== "edit_post_fields" &&
+    t !== "sitepilot_update_post_fields"
+  ) {
+    return false;
+  }
+
+  const hasInsertionDirective =
+    input["insert_after_paragraph"] !== undefined ||
+    input["insertAfterParagraph"] !== undefined ||
+    input["insert_position"] !== undefined ||
+    input["insertPosition"] !== undefined ||
+    input["insert_after_block"] !== undefined ||
+    input["insertAfterBlock"] !== undefined ||
+    input["insert_before_block"] !== undefined ||
+    input["insertBeforeBlock"] !== undefined;
+  if (hasInsertionDirective) {
+    return false;
+  }
+
+  if (input["replace_content"] === true || input["replaceContent"] === true) {
+    return false;
+  }
+
+  const hasContent =
+    (typeof input["content"] === "string" && input["content"].trim().length > 0) ||
+    (typeof input["postContent"] === "string" &&
+      input["postContent"].trim().length > 0) ||
+    (typeof input["post_content"] === "string" &&
+      input["post_content"].trim().length > 0);
+  const hasBlocks =
+    Array.isArray(input["blocks"]) ||
+    Array.isArray(input["contentBlocks"]) ||
+    Array.isArray(input["content_blocks"]);
+
+  return hasContent || hasBlocks;
+}
+
 function actionCreatesDraftPost(actionType: string): boolean {
   const t = actionType
     .trim()
@@ -253,6 +318,16 @@ export function validateActionPlan(
   }
 
   const messages: string[] = [...plan.validationWarnings];
+
+  if (requestSummaryLooksLikeInsertionEdit(plan.requestSummary)) {
+    for (const action of plan.proposedActions) {
+      if (actionLooksLikeImplicitFullReplacement(action.type, action.input)) {
+        messages.push(
+          `Action "${action.type}" looks like a full content replacement, but the request summary describes an insertion/edit-in-place. Regenerate or rewrite the plan to use insert_position/insert_after_*/insert_before_* unless full replacement was explicitly requested.`
+        );
+      }
+    }
+  }
 
   if (plan.riskLevel === "medium") {
     messages.push("Plan risk is medium — review carefully before execution.");

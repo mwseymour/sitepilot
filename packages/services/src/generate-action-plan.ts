@@ -26,6 +26,7 @@ import type {
 
 import { extractJsonObject } from "./json-extract.js";
 import { detectRequestedPostTypeIntent } from "./post-type-intent.js";
+import { buildPostLookupArguments } from "./post-target-resolution.js";
 
 const PLANNER_PROMPT_VERSION = "sitepilot-plan-v4";
 const ADVANCED_BLOCK_NAMES = new Set([
@@ -153,6 +154,39 @@ function pickNonEmptyString(
     }
   }
   return undefined;
+}
+
+function deriveUpdateActionTargetInput(
+  input: Record<string, unknown>,
+  actionInput: Record<string, unknown>
+): Record<string, unknown> | null {
+  const postId = pickNumberFrom([input, actionInput], "postId", "post_id", "id");
+  if (postId !== undefined) {
+    return { post_id: postId };
+  }
+
+  const lookupArgs = buildPostLookupArguments(actionInput);
+  if (lookupArgs === null) {
+    return null;
+  }
+
+  const nextInput: Record<string, unknown> = {};
+  const lookupKeyMap: Array<[string, string]> = [
+    ["post_type", "lookup_post_type"],
+    ["status", "lookup_status"],
+    ["slug", "lookup_slug"],
+    ["title", "lookup_title"],
+    ["search", "lookup_search"]
+  ];
+
+  for (const [sourceKey, targetKey] of lookupKeyMap) {
+    const value = lookupArgs[sourceKey];
+    if (value !== undefined) {
+      nextInput[targetKey] = value;
+    }
+  }
+
+  return Object.keys(nextInput).length > 0 ? nextInput : null;
 }
 
 function isActionRiskLevel(value: unknown): value is Action["riskLevel"] {
@@ -2470,11 +2504,11 @@ function attachmentFileNameToAltText(fileName: string): string {
 }
 
 function requestAsksForHeading(requestText: string): boolean {
-  return /\bheading\b/i.test(requestText);
+  return /\b(?:heading|h[1-6])\b/i.test(requestText);
 }
 
 function requestAsksToAddHeading(requestText: string): boolean {
-  return /\badd\b[\s\S]{0,20}\bheading\b/i.test(requestText);
+  return /\badd\b[\s\S]{0,20}\b(?:heading|h[1-6])\b/i.test(requestText);
 }
 
 function requestAsksForParagraph(requestText: string): boolean {
@@ -3232,6 +3266,15 @@ function selectInsertedBlocksForPlacementRequest(input: {
   const content =
     typeof input.actionInput.content === "string" ? input.actionInput.content : null;
   if (content !== null) {
+    if (asksToAddHeading || asksForHeading) {
+      const headingBlocks = normalizeParsedBlocks(
+        extractSerializedHeadingBlocks(content)
+      ).blocks as Record<string, unknown>[];
+      if (headingBlocks.length > 0) {
+        return headingBlocks;
+      }
+    }
+
     const paragraphBlock = parseSingleParagraphBlockFromContent(content);
     if (paragraphBlock !== null) {
       if (requestAsksForLink(input.requestText)) {
@@ -3395,8 +3438,8 @@ function normalizeGenericContentInsertionPlan(
     const input = action.input as Record<string, unknown>;
     const nestedInput = pickObject(input, "input");
     const actionInput = nestedInput ?? input;
-    const postId = pickNumberFrom([input, actionInput], "postId", "post_id", "id");
-    if (postId === undefined) {
+    const targetInput = deriveUpdateActionTargetInput(input, actionInput);
+    if (targetInput === null) {
       return action;
     }
 
@@ -3450,7 +3493,7 @@ function normalizeGenericContentInsertionPlan(
       ...action,
       type: "update_post_fields",
       input: {
-        post_id: postId,
+        ...targetInput,
         ...placementInput,
         blocks: selectedBlocks
       }

@@ -2971,6 +2971,75 @@ describe("buildLlmActionPlan", () => {
     ]);
   });
 
+  it("normalizes lookup-based end-of-content heading requests to insertion blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary:
+          'Search for the unique post titled "Hello Ben" and update it by adding an H2 at the end with the text "Hello Beth".',
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["post:title=Hello Ben"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              lookup_title: "Hello Ben",
+              lookup_post_type: "post",
+              lookup_status: "any",
+              content:
+                '<!-- wp:heading {"level":2} --><h2>Hello Beth</h2><!-- /wp:heading -->'
+            },
+            targetEntityRefs: ["post:title=Hello Ben"],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "Edit the post called Hello Ben - to add a H2 at the end with text 'Hello Beth'"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-05-03T07:41:52.040Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      lookup_title: "Hello Ben",
+      lookup_post_type: "post",
+      lookup_status: "any",
+      insert_position: "end"
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/heading",
+        attrs: expect.objectContaining({
+          level: 2
+        }),
+        innerHTML: expect.stringContaining("Hello Beth")
+      })
+    ]);
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).content
+    ).toBeUndefined();
+  });
+
   it("strips prompt prose from mixed-intent end-of-content link insertions", async () => {
     const client = makeClient(
       JSON.stringify({

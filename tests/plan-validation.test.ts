@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { actionPlanSchema } from "@sitepilot/contracts";
-import { validateActionPlan } from "@sitepilot/validation";
+import { validateActionPlan } from "../packages/validation/src/plan-policy.ts";
 
 const basePlan = actionPlanSchema.parse({
   id: "plan-1",
@@ -133,6 +133,33 @@ describe("validateActionPlan (T25)", () => {
       siteConfigPublishRequiresApproval: false
     });
     expect(outcome.kind).toBe("pass");
+  });
+
+  it("returns warnings when an insertion-style request still looks like a full replacement", () => {
+    const plan = actionPlanSchema.parse({
+      ...basePlan,
+      requestSummary: "Edit the post called Hello Ben and add a heading at the end",
+      proposedActions: [
+        {
+          ...basePlan.proposedActions[0]!,
+          type: "sitepilot-update-post-fields",
+          input: {
+            lookup_title: "Hello Ben",
+            lookup_post_type: "post",
+            lookup_status: "any",
+            content: '<!-- wp:heading --><h2>Hello Beth</h2><!-- /wp:heading -->'
+          }
+        }
+      ]
+    });
+    const outcome = validateActionPlan(plan, {
+      discoveryCapabilities: ["read", "edit_drafts"],
+      siteConfigPublishRequiresApproval: false
+    });
+    expect(outcome.kind).toBe("warnings");
+    expect(outcome.messages).toContain(
+      'Action "sitepilot-update-post-fields" looks like a full content replacement, but the request summary describes an insertion/edit-in-place. Regenerate or rewrite the plan to use insert_position/insert_after_*/insert_before_* unless full replacement was explicitly requested.'
+    );
   });
 
   it("passes when SEO metadata targets a post created earlier in the same plan", () => {
