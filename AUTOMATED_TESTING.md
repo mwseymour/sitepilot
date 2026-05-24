@@ -233,6 +233,47 @@ Expected checks:
 - execution does not rewrite the whole post body;
 - audit records the previous and updated state where available.
 
+## Ad Hoc Prompt Replay
+
+The fixed scenarios above are the baseline regression suite. They are the tests
+that should run repeatedly to catch known failure patterns. Local development also
+needs an ad hoc replay path for whatever the developer or coding agent is testing
+right now.
+
+If a local SitePilot chat request fails, the developer should not need to turn it
+into a formal scenario before debugging. They should be able to copy the exact
+chat request text and ask Codex or another agent to replay it through the same
+end-to-end harness.
+
+Suggested command shapes:
+
+```sh
+npm run test:e2e -- --prompt "Create a landing page for X with a hero, two columns and CTA"
+npm run test:e2e:replay -- --request-file ./tmp/my-failed-request.txt
+```
+
+The replay flow should:
+
+1. accept the pasted prompt or request file;
+2. reset or select the configured local WordPress test site;
+3. create a real SitePilot chat request with that text;
+4. run the normal planning, approval, and execution path;
+5. open the resulting post/page with the browser runner;
+6. assert the default structural and rendering checks that apply to the result;
+7. save the same artifacts as named scenarios: plan JSON, normalized plan, MCP
+   input/output, final `post_content`, screenshots, DOM snapshots, and report;
+8. let the AI agent inspect those artifacts, fix the failure, and rerun the same
+   prompt.
+
+The distinction should be:
+
+- formal scenario: a named test worth keeping because it protects a known
+  workflow or regression;
+- ad hoc prompt: a quick reproduction for the request currently being developed
+  or debugged;
+- promotion: when an ad hoc prompt exposes a real bug, convert it into a named
+  scenario after the fix so the regression remains covered.
+
 ## Model-backed vs Fixture-backed Runs
 
 The harness should support two modes.
