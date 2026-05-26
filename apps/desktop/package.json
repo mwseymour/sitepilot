@@ -9,7 +9,7 @@
     "build:main": "tsc -b tsconfig.main.json --force",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --sourcemap --external:electron --outfile=dist/preload/index.js",
     "build:renderer": "vite build",
-    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3 && node ../../scripts/sign-electron-app.mjs",
     "start": "npm run rebuild:native && npm run build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },

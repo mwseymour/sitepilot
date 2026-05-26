@@ -1,0 +1,4 @@
+test.localhost:443 {
+  tls internal
+  reverse_proxy wordpress:80
+}

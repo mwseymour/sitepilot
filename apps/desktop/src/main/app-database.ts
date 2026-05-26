@@ -1,12 +1,24 @@
-import { app } from "electron";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import {
   initializeDatabase,
   type DatabaseContext
 } from "@sitepilot/repositories";
+import {
+  getRuntimeDatabase,
+  resolveRuntimeChildPath
+} from "./runtime-context.js";
 
 let database: DatabaseContext | null = null;
+const require = createRequire(import.meta.url);
+
+function getElectronAppPath(): string {
+  const electron = require("electron") as {
+    app: { getPath(name: string): string };
+  };
+  return electron.app.getPath("userData");
+}
 
 function seedIfNeeded(ctx: DatabaseContext): void {
   const row = ctx.connection
@@ -57,8 +69,16 @@ function seedIfNeeded(ctx: DatabaseContext): void {
 }
 
 export function getDatabase(): DatabaseContext {
+  const runtimeDatabase = getRuntimeDatabase();
+  if (runtimeDatabase) {
+    seedIfNeeded(runtimeDatabase);
+    return runtimeDatabase;
+  }
+
   if (!database) {
-    const filePath = join(app.getPath("userData"), "sitepilot.sqlite");
+    const filePath =
+      resolveRuntimeChildPath("sitepilot.sqlite") ??
+      join(getElectronAppPath(), "sitepilot.sqlite");
     database = initializeDatabase({ filePath });
     seedIfNeeded(database);
   }

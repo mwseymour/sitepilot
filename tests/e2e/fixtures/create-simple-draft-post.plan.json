@@ -1,0 +1,66 @@
+{
+  "id": "fixture-plan-create-simple-draft-post",
+  "requestId": "__REQUEST_ID__",
+  "siteId": "__SITE_ID__",
+  "requestSummary": "Create a draft post called Automated Test Post with three short paragraphs about first-time buyer mortgage advice.",
+  "assumptions": [],
+  "openQuestions": [],
+  "targetEntities": [
+    "post:Automated Test Post"
+  ],
+  "proposedActions": [
+    {
+      "id": "fixture-action-create-simple-draft-post",
+      "type": "create_draft_post",
+      "version": 1,
+      "input": {
+        "title": "__TITLE__",
+        "post_type": "post",
+        "post_status": "draft",
+        "blocks": [
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Buying your first home is easier when you set a firm budget before you start viewing properties.</p>",
+            "innerContent": [
+              "<p>Buying your first home is easier when you set a firm budget before you start viewing properties.</p>"
+            ]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Speak to a broker early so you understand how your deposit, income, and credit history affect the mortgage options available.</p>",
+            "innerContent": [
+              "<p>Speak to a broker early so you understand how your deposit, income, and credit history affect the mortgage options available.</p>"
+            ]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Keep some savings back for surveys, legal fees, and moving costs so the purchase does not stretch your finances too tightly.</p>",
+            "innerContent": [
+              "<p>Keep some savings back for surveys, legal fees, and moving costs so the purchase does not stretch your finances too tightly.</p>"
+            ]
+          }
+        ]
+      },
+      "targetEntityRefs": [
+        "post:Automated Test Post"
+      ],
+      "permissionRequirement": "edit_posts",
+      "riskLevel": "low",
+      "dryRunCapable": true,
+      "rollbackSupported": false
+    }
+  ],
+  "dependencies": [],
+  "approvalRequired": false,
+  "riskLevel": "low",
+  "rollbackNotes": [],
+  "validationWarnings": [],
+  "createdAt": "__NOW__",
+  "updatedAt": "__NOW__"
+}

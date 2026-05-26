@@ -6,4 +6,6 @@ coverage
 *.log
 apps/desktop/dist
 apps/desktop/out
-
+.sitepilot-test-artifacts
+.sitepilot-e2e.local.json
+automated-test

@@ -60,7 +60,15 @@ const BLOCK_REMOVAL_TARGETS = [
     blockNames: ["core/spacer"]
   },
   {
-    labels: ["separator", "separators", "divider", "dividers", "line", "lines", "rule"],
+    labels: [
+      "separator",
+      "separators",
+      "divider",
+      "dividers",
+      "line",
+      "lines",
+      "rule"
+    ],
     blockNames: ["core/separator"]
   },
   {
@@ -80,7 +88,16 @@ const BLOCK_REMOVAL_TARGETS = [
     blockNames: ["core/quote", "core/pullquote"]
   },
   {
-    labels: ["group", "groups", "card", "cards", "section", "sections", "container", "containers"],
+    labels: [
+      "group",
+      "groups",
+      "card",
+      "cards",
+      "section",
+      "sections",
+      "container",
+      "containers"
+    ],
     blockNames: ["core/group"]
   },
   {
@@ -130,8 +147,13 @@ function extractRequestedBlockRemovals(requestText: string): {
     const matchesTarget = target.labels.some((label) => {
       const escaped = escapeRegExp(label);
       return (
-        new RegExp(`\\b(?:remove|delete|drop|omit)\\b[\\s\\S]{0,40}\\b${escaped}\\b`, "i").test(normalized) ||
-        new RegExp(`\\bwithout\\b[\\s\\S]{0,20}\\b${escaped}\\b`, "i").test(normalized) ||
+        new RegExp(
+          `\\b(?:remove|delete|drop|omit)\\b[\\s\\S]{0,40}\\b${escaped}\\b`,
+          "i"
+        ).test(normalized) ||
+        new RegExp(`\\bwithout\\b[\\s\\S]{0,20}\\b${escaped}\\b`, "i").test(
+          normalized
+        ) ||
         new RegExp(`\\buse\\s+no\\s+${escaped}\\b`, "i").test(normalized) ||
         new RegExp(`\\bno\\s+${escaped}\\b`, "i").test(normalized)
       );
@@ -312,6 +334,15 @@ type ChosenProvider =
   | { kind: "anthropic"; key: string; model: string }
   | { kind: "stub" };
 
+type PlannerUsage =
+  | {
+      inputTokens: number;
+      outputTokens: number;
+      provider: "openai" | "anthropic";
+      model: string;
+    }
+  | undefined;
+
 function choosePlannerProvider(
   prefs: PlannerPreferences,
   openaiKey: string | undefined,
@@ -338,6 +369,292 @@ function choosePlannerProvider(
 export type GenerateActionPlanResult =
   | { ok: true; plan: ContractActionPlan; validation: PlanValidationOutcome }
   | { ok: false; code: string; message: string };
+
+async function finalizeActionPlanForRequest(input: {
+  siteId: SiteId;
+  threadId: ChatThreadId;
+  requestId: RequestId;
+  requestStatus: RequestStatus;
+  plan: ContractActionPlan;
+  usage: PlannerUsage;
+}): Promise<GenerateActionPlanResult> {
+  const db = getDatabase();
+  const request = await db.repositories.requests.getById(input.requestId);
+  if (
+    !request ||
+    request.siteId !== input.siteId ||
+    request.threadId !== input.threadId
+  ) {
+    return {
+      ok: false,
+      code: "request_not_found",
+      message: "Request not found for this thread."
+    };
+  }
+
+  const discovery = await db.repositories.discoverySnapshots.getLatest(
+    input.siteId
+  );
+  const versions = await db.repositories.siteConfigs.listVersions(input.siteId);
+  const latestConfig = [...versions].sort((a, b) => b.version - a.version)[0];
+  let publishRequires = false;
+  if (latestConfig) {
+    try {
+      const cfg = siteConfigSchema.parse(latestConfig.document);
+      publishRequires = cfg.sections.approvalPolicy.publishRequiresApproval;
+    } catch {
+      publishRequires = false;
+    }
+  }
+
+  const site = await db.repositories.sites.getById(input.siteId);
+  if (!site) {
+    return { ok: false, code: "site_not_found", message: "Site not found." };
+  }
+
+  const ts = nowIso();
+  const storage = getSecureStorage();
+  const sitePlannerSettings = await loadSitePlannerSettings(
+    storage,
+    input.siteId
+  );
+
+  const rawValidation = validateActionPlan(input.plan, {
+    discoveryCapabilities: discovery?.capabilities ?? [],
+    siteConfigPublishRequiresApproval: publishRequires
+  });
+  const validation = applyApprovalBypass(
+    rawValidation,
+    sitePlannerSettings.bypassApprovalRequests
+  );
+
+  await db.repositories.actionPlans.saveFromContract(input.plan);
+
+  if (input.usage) {
+    const estimatedCostUsd = estimateUsageCostUsd(
+      input.usage.provider,
+      input.usage.model,
+      {
+        inputTokens: input.usage.inputTokens,
+        outputTokens: input.usage.outputTokens
+      }
+    );
+    await db.repositories.providerUsage.append({
+      id: randomUUID() as ProviderUsageEventId,
+      workspaceId: site.workspaceId,
+      siteId: input.siteId,
+      requestId: input.requestId,
+      provider: input.usage.provider,
+      model: input.usage.model,
+      inputTokens: input.usage.inputTokens,
+      outputTokens: input.usage.outputTokens,
+      estimatedCostUsd,
+      createdAt: ts
+    });
+  }
+
+  const approvalBypassApplied =
+    rawValidation.kind === "blocked_approval" &&
+    validation.kind !== "blocked_approval";
+  const nextRequestStatus = deriveRequestStatusAfterPlanning({
+    currentStatus: input.requestStatus,
+    rawValidation,
+    validation
+  });
+
+  await db.repositories.requests.save({
+    ...request,
+    latestPlanId: input.plan.id as ActionPlanId,
+    status: nextRequestStatus,
+    updatedAt: request.updatedAt
+  });
+
+  await db.repositories.auditEntries.append({
+    id: randomUUID() as AuditEntryId,
+    siteId: input.siteId,
+    requestId: input.requestId,
+    eventType: "plan_generated",
+    actor: { kind: "assistant" },
+    metadata: {
+      planId: input.plan.id,
+      plannerMode: input.usage?.provider ?? "fixture",
+      approvalBypassApplied
+    },
+    createdAt: ts,
+    updatedAt: ts
+  });
+
+  const validationMeta =
+    validation.kind === "pass"
+      ? { planId: input.plan.id, validation: validation.kind }
+      : {
+          planId: input.plan.id,
+          validation: validation.kind,
+          messages: validation.messages,
+          ...(approvalBypassApplied
+            ? { originalValidation: rawValidation.kind }
+            : {})
+        };
+
+  await db.repositories.auditEntries.append({
+    id: randomUUID() as AuditEntryId,
+    siteId: input.siteId,
+    requestId: input.requestId,
+    eventType: "plan_validated",
+    actor: { kind: "system" },
+    metadata: validationMeta,
+    createdAt: ts,
+    updatedAt: ts
+  });
+
+  if (validation.kind === "blocked_approval") {
+    const approval: ApprovalRequest = {
+      id: randomUUID() as ApprovalRequestId,
+      requestId: input.requestId,
+      planId: input.plan.id as ActionPlanId,
+      siteId: input.siteId,
+      status: "pending",
+      requestedBy: request.requestedBy,
+      expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      createdAt: ts,
+      updatedAt: ts
+    };
+    await db.repositories.approvals.save(approval);
+    await db.repositories.auditEntries.append({
+      id: randomUUID() as AuditEntryId,
+      siteId: input.siteId,
+      requestId: input.requestId,
+      eventType: "approval_requested",
+      actor: { kind: "system" },
+      metadata: { approvalRequestId: approval.id, planId: input.plan.id },
+      createdAt: ts,
+      updatedAt: ts
+    });
+  }
+
+  const actionSummary = input.plan.proposedActions
+    .slice(0, 5)
+    .map((action, index) => `${index + 1}. ${action.type}`)
+    .join("\n");
+  const validationSummary =
+    validation.kind === "pass"
+      ? "Checks: no blocking issues found."
+      : validation.messages.length > 0
+        ? `Check before running: ${validation.messages[0]}`
+        : `Check before running: ${validation.kind}.`;
+  const approvalSummary = approvalBypassApplied
+    ? "Approval: normally required, but bypass is enabled for this site."
+    : validation.kind === "blocked_approval"
+      ? "Approval: required before execution."
+      : "Approval: not blocking this plan.";
+  const validationMessages =
+    validation.kind === "pass" ? [] : validation.messages;
+  const validationQuestions =
+    validation.kind === "blocked_clarification"
+      ? validationMessages.slice(1)
+      : [];
+  const additionalValidationCount = Math.max(validationMessages.length - 1, 0);
+  const additionalValidationSummary =
+    validation.kind !== "pass" &&
+    validation.kind !== "blocked_clarification" &&
+    additionalValidationCount > 0
+      ? `Additional checks: ${additionalValidationCount} more note${additionalValidationCount === 1 ? "" : "s"} in the request panel.`
+      : null;
+  const actionCountLabel = `${input.plan.proposedActions.length} action${input.plan.proposedActions.length === 1 ? "" : "s"}`;
+  const planReadySummary =
+    input.plan.proposedActions.length === 1
+      ? `Plan ready: ${actionCountLabel} - ${input.plan.proposedActions[0]?.type}.`
+      : `Plan ready: ${actionCountLabel}.`;
+  const planMessageLines = [
+    planReadySummary,
+    validationSummary,
+    approvalSummary,
+    additionalValidationSummary,
+    validationQuestions.length > 0
+      ? `Questions to answer:\n${validationQuestions
+          .map((question, index) => `${index + 1}. ${question}`)
+          .join("\n")}`
+      : null,
+    input.plan.proposedActions.length > 1 && actionSummary.length > 0
+      ? `Planned actions:\n${actionSummary}`
+      : null
+  ].filter((line): line is string => Boolean(line));
+
+  await db.repositories.chatMessages.save({
+    id: randomUUID() as ChatMessageId,
+    threadId: input.threadId,
+    siteId: input.siteId,
+    requestId: input.requestId,
+    author: { kind: "assistant" },
+    body: {
+      format: "plain_text",
+      value: planMessageLines.join("\n\n")
+    },
+    createdAt: ts,
+    updatedAt: ts
+  });
+
+  return { ok: true, plan: input.plan, validation };
+}
+
+export async function generateFixtureBackedActionPlanForRequest(input: {
+  siteId: SiteId;
+  threadId: ChatThreadId;
+  requestId: RequestId;
+  plan: ContractActionPlan;
+  preservePlanExactly?: boolean;
+}): Promise<GenerateActionPlanResult> {
+  const db = getDatabase();
+  const request = await db.repositories.requests.getById(input.requestId);
+  if (
+    !request ||
+    request.siteId !== input.siteId ||
+    request.threadId !== input.threadId
+  ) {
+    return {
+      ok: false,
+      code: "request_not_found",
+      message: "Request not found for this thread."
+    };
+  }
+
+  let plan = input.plan;
+  if (!input.preservePlanExactly) {
+    const previousPlan =
+      request.latestPlanId !== undefined
+        ? await db.repositories.actionPlans.getById(request.latestPlanId)
+        : null;
+    const ctxResult = await buildPlannerContextForThread(
+      input.siteId,
+      input.threadId
+    );
+    if (!ctxResult.ok) {
+      return ctxResult;
+    }
+
+    plan = enrichActionPlanWithPostLookupFromContext(input.plan, ctxResult.context);
+    plan = await sourceImagesForActionPlan({
+      plan,
+      requestText: request.userPrompt,
+      hasAttachments:
+        request.attachments !== undefined && request.attachments.length > 0
+    });
+    plan = preserveStructuredLayoutForNarrowBlockRevision({
+      plan,
+      previousPlan,
+      requestText: request.userPrompt
+    });
+  }
+
+  return finalizeActionPlanForRequest({
+    siteId: input.siteId,
+    threadId: input.threadId,
+    requestId: input.requestId,
+    requestStatus: request.status,
+    plan,
+    usage: undefined
+  });
+}
 
 export async function generateActionPlanForRequest(
   siteId: SiteId,
@@ -377,23 +694,9 @@ export async function generateActionPlanForRequest(
     return { ok: false, code: "site_not_found", message: "Site not found." };
   }
 
-  const discovery = await db.repositories.discoverySnapshots.getLatest(siteId);
-  const versions = await db.repositories.siteConfigs.listVersions(siteId);
-  const latestConfig = [...versions].sort((a, b) => b.version - a.version)[0];
-  let publishRequires = false;
-  if (latestConfig) {
-    try {
-      const cfg = siteConfigSchema.parse(latestConfig.document);
-      publishRequires = cfg.sections.approvalPolicy.publishRequiresApproval;
-    } catch {
-      publishRequires = false;
-    }
-  }
-
   const ts = nowIso();
   const storage = getSecureStorage();
   const prefs = await loadPlannerPreferences(storage, site.workspaceId);
-  const sitePlannerSettings = await loadSitePlannerSettings(storage, siteId);
   const openaiKey = await storage.get({
     namespace: "provider",
     keyId: "openai"
@@ -423,14 +726,7 @@ export async function generateActionPlanForRequest(
   }
 
   let plan: ContractActionPlan;
-  let usage:
-    | {
-        inputTokens: number;
-        outputTokens: number;
-        provider: "openai" | "anthropic";
-        model: string;
-      }
-    | undefined;
+  let usage: PlannerUsage;
 
   if (chosen.kind === "openai") {
     const client = createOpenAiChatClient(chosen.key);
@@ -443,9 +739,7 @@ export async function generateActionPlanForRequest(
         ...(request.attachments !== undefined
           ? { requestAttachments: request.attachments }
           : {}),
-        ...(requestVisualAnalysis !== null
-          ? { requestVisualAnalysis }
-          : {}),
+        ...(requestVisualAnalysis !== null ? { requestVisualAnalysis } : {}),
         client,
         model: chosen.model
       });
@@ -475,9 +769,7 @@ export async function generateActionPlanForRequest(
         ...(request.attachments !== undefined
           ? { requestAttachments: request.attachments }
           : {}),
-        ...(requestVisualAnalysis !== null
-          ? { requestVisualAnalysis }
-          : {}),
+        ...(requestVisualAnalysis !== null ? { requestVisualAnalysis } : {}),
         client,
         model: chosen.model
       });
@@ -518,177 +810,12 @@ export async function generateActionPlanForRequest(
     requestText: request.userPrompt
   });
 
-  const rawValidation = validateActionPlan(plan, {
-    discoveryCapabilities: discovery?.capabilities ?? [],
-    siteConfigPublishRequiresApproval: publishRequires
-  });
-  const validation = applyApprovalBypass(
-    rawValidation,
-    sitePlannerSettings.bypassApprovalRequests
-  );
-
-  await db.repositories.actionPlans.saveFromContract(plan);
-
-  if (usage) {
-    const estimatedCostUsd = estimateUsageCostUsd(usage.provider, usage.model, {
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens
-    });
-    await db.repositories.providerUsage.append({
-      id: randomUUID() as ProviderUsageEventId,
-      workspaceId: site.workspaceId,
-      siteId,
-      requestId,
-      provider: usage.provider,
-      model: usage.model,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      estimatedCostUsd,
-      createdAt: ts
-    });
-  }
-
-  const approvalBypassApplied =
-    rawValidation.kind === "blocked_approval" &&
-    validation.kind !== "blocked_approval";
-  const requestStatus = deriveRequestStatusAfterPlanning({
-    currentStatus: request.status,
-    rawValidation,
-    validation
-  });
-
-  await db.repositories.requests.save({
-    ...request,
-    latestPlanId: plan.id as ActionPlanId,
-    status: requestStatus,
-    updatedAt: request.updatedAt
-  });
-
-  await db.repositories.auditEntries.append({
-    id: randomUUID() as AuditEntryId,
+  return finalizeActionPlanForRequest({
     siteId,
-    requestId,
-    eventType: "plan_generated",
-    actor: { kind: "assistant" },
-    metadata: {
-      planId: plan.id,
-      plannerMode: usage?.provider ?? "stub",
-      approvalBypassApplied
-    },
-    createdAt: ts,
-    updatedAt: ts
-  });
-
-  const validationMeta =
-    validation.kind === "pass"
-      ? { planId: plan.id, validation: validation.kind }
-      : {
-          planId: plan.id,
-          validation: validation.kind,
-          messages: validation.messages,
-          ...(approvalBypassApplied
-            ? { originalValidation: rawValidation.kind }
-            : {})
-        };
-
-  await db.repositories.auditEntries.append({
-    id: randomUUID() as AuditEntryId,
-    siteId,
-    requestId,
-    eventType: "plan_validated",
-    actor: { kind: "system" },
-    metadata: validationMeta,
-    createdAt: ts,
-    updatedAt: ts
-  });
-
-  if (validation.kind === "blocked_approval") {
-    const approval: ApprovalRequest = {
-      id: randomUUID() as ApprovalRequestId,
-      requestId,
-      planId: plan.id as ActionPlanId,
-      siteId,
-      status: "pending",
-      requestedBy: request.requestedBy,
-      expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-      createdAt: ts,
-      updatedAt: ts
-    };
-    await db.repositories.approvals.save(approval);
-    await db.repositories.auditEntries.append({
-      id: randomUUID() as AuditEntryId,
-      siteId,
-      requestId,
-      eventType: "approval_requested",
-      actor: { kind: "system" },
-      metadata: { approvalRequestId: approval.id, planId: plan.id },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
-
-  const actionSummary = plan.proposedActions
-    .slice(0, 5)
-    .map((action, index) => `${index + 1}. ${action.type}`)
-    .join("\n");
-  const validationSummary =
-    validation.kind === "pass"
-      ? "Checks: no blocking issues found."
-      : validation.messages.length > 0
-        ? `Check before running: ${validation.messages[0]}`
-        : `Check before running: ${validation.kind}.`;
-  const approvalSummary =
-    approvalBypassApplied
-      ? "Approval: normally required, but bypass is enabled for this site."
-      : validation.kind === "blocked_approval"
-      ? "Approval: required before execution."
-      : "Approval: not blocking this plan.";
-  const validationMessages =
-    validation.kind === "pass" ? [] : validation.messages;
-  const validationQuestions =
-    validation.kind === "blocked_clarification"
-      ? validationMessages.slice(1)
-      : [];
-  const additionalValidationCount = Math.max(validationMessages.length - 1, 0);
-  const additionalValidationSummary =
-    validation.kind !== "pass" &&
-    validation.kind !== "blocked_clarification" &&
-    additionalValidationCount > 0
-      ? `Additional checks: ${additionalValidationCount} more note${additionalValidationCount === 1 ? "" : "s"} in the request panel.`
-      : null;
-  const actionCountLabel = `${plan.proposedActions.length} action${plan.proposedActions.length === 1 ? "" : "s"}`;
-  const planReadySummary =
-    plan.proposedActions.length === 1
-      ? `Plan ready: ${actionCountLabel} - ${plan.proposedActions[0]?.type}.`
-      : `Plan ready: ${actionCountLabel}.`;
-  const planMessageLines = [
-    planReadySummary,
-    validationSummary,
-    approvalSummary,
-    additionalValidationSummary,
-    validationQuestions.length > 0
-      ? `Questions to answer:\n${validationQuestions
-          .map((question, index) => `${index + 1}. ${question}`)
-          .join("\n")}`
-      : null,
-    plan.proposedActions.length > 1 && actionSummary.length > 0
-      ? `Planned actions:\n${actionSummary}`
-      : null
-  ].filter((line): line is string => Boolean(line));
-
-  await db.repositories.chatMessages.save({
-    id: randomUUID() as ChatMessageId,
     threadId,
-    siteId,
     requestId,
-    author: { kind: "assistant" },
-    body: {
-      format: "plain_text",
-      value: planMessageLines.join("\n\n")
-    },
-    createdAt: ts,
-    updatedAt: ts
+    requestStatus: request.status,
+    plan,
+    usage
   });
-
-  return { ok: true, plan, validation };
 }
