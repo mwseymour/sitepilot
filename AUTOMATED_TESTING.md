@@ -111,6 +111,14 @@ Responsibilities:
 
 The runner should avoid special execution shortcuts. A test-only fixture setup is
 acceptable, but the actual request-to-execution path should match production code.
+For approvals, the suite should cover both paths explicitly:
+
+- one named scenario must exercise the real approval workflow end to end,
+  including creation of a pending approval and an explicit approval decision;
+- all other baseline scenarios should run with a test-site configuration that
+  bypasses approval so the suite stays fast and deterministic;
+- the report must state whether each scenario used the real approval path or the
+  bypassed path.
 
 ### Layer 4: Browser verification
 
@@ -119,9 +127,11 @@ execution.
 
 Minimum browser checks:
 
-- open the front-end permalink for the created draft or preview URL;
-- open the block editor for the created post/page when authentication is
-  available;
+- open the front-end preview URL for draft content;
+- open the public permalink only for published or otherwise publicly reachable
+  fixtures;
+- open the block editor through a dedicated authenticated wp-admin browser
+  session fixture;
 - assert expected text, headings, images, and layout-significant wrappers are
   present;
 - assert broken-image indicators are absent for scenarios involving media;
@@ -150,6 +160,9 @@ Expected checks:
 
 - one draft post is created;
 - title matches the request;
+- title begins with a generated test prefix in the format
+  `AUTOMATED-TEST-HHMM-DDMMYYYY`, where `HHMM` and `DDMMYYYY` are replaced with
+  the actual local test-run time and date;
 - front-end or preview contains all paragraph text;
 - `post_content` contains valid block markup;
 - no Classic block fallback is created;
@@ -167,6 +180,9 @@ columns, a short services section, and a call to action.
 Expected checks:
 
 - one draft page is created;
+- title begins with a generated test prefix in the format
+  `AUTOMATED-TEST-HHMM-DDMMYYYY`, where `HHMM` and `DDMMYYYY` are replaced with
+  the actual local test-run time and date;
 - output contains expected heading hierarchy;
 - columns render as Gutenberg columns, not escaped comments or raw text;
 - CTA text appears once;
@@ -280,7 +296,18 @@ The harness should support two modes.
 
 ### Fixture-backed mode
 
-Use stored model responses or deterministic planner fixtures.
+Use stored raw planner/model outputs as fixtures while still running the normal
+plan normalization, validation, approval, and execution pipeline.
+
+Fixture boundary:
+
+- freeze the raw structured model response that would normally come back from the
+  planner;
+- do not freeze normalized plans, validation results, approval state, MCP tool
+  inputs, or execution outputs;
+- always recompute those downstream steps in the harness so fixture-backed runs
+  still test planner normalization, policy checks, MCP mapping, plugin writes,
+  WordPress persistence, and browser rendering.
 
 Purpose:
 
@@ -316,7 +343,7 @@ expected model variance. The test report should make that distinction visible.
 
 The final developer interface should be simple.
 
-Suggested commands:
+Proposed commands:
 
 ```sh
 npm run test:e2e:setup
@@ -373,7 +400,9 @@ Baseline requirements:
 - admin credentials stored only in local environment variables or a test-only
   secrets file ignored by Git;
 - uploads directory resettable;
-- test data namespace or prefix, such as `Automated Test`.
+- test-created content titles prefixed using the format
+  `AUTOMATED-TEST-HHMM-DDMMYYYY`, with `HHMM` and `DDMMYYYY` replaced by the
+  actual local test-run time and date.
 
 The setup must never target a production site. The runner should refuse to run if
 the configured base URL is not explicitly marked as a local test environment.
@@ -381,7 +410,9 @@ the configured base URL is not explicitly marked as a local test environment.
 ## Safety Rules
 
 - E2E tests must create drafts by default, not publish live content.
-- Test-created content must use a recognizable title prefix.
+- Test-created content must use the title prefix format
+  `AUTOMATED-TEST-HHMM-DDMMYYYY`, with `HHMM` and `DDMMYYYY` replaced by the
+  actual local test-run time and date.
 - Cleanup should delete or trash only content created by the test namespace.
 - The runner must print the target WordPress base URL before execution.
 - The runner must block execution unless the site has an explicit test marker.
@@ -397,7 +428,6 @@ Examples:
 - assert that `.wp-block-columns` exists for a columns scenario;
 - assert that paragraph and heading order matches the prompt;
 - assert that images have loaded dimensions and no failed network response;
-- assert that CTA text is visible above the fold for landing-page scenarios;
 - assert that the editor does not show invalid block warnings.
 
 Screenshot diffing can be introduced later for fixed fixtures. When introduced,
