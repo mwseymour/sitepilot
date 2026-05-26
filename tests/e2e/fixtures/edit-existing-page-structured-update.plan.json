@@ -1,0 +1,175 @@
+{
+  "id": "fixture-plan-edit-existing-page-structured-update",
+  "requestId": "__REQUEST_ID__",
+  "siteId": "__SITE_ID__",
+  "requestSummary": "Create a draft page and then update one section while preserving the overall landing-page structure.",
+  "assumptions": [],
+  "openQuestions": [],
+  "targetEntities": [
+    "page:structured-update-page"
+  ],
+  "proposedActions": [
+    {
+      "id": "fixture-action-create-page-before-update",
+      "type": "create_draft_post",
+      "version": 1,
+      "input": {
+        "title": "__TITLE__",
+        "post_type": "page",
+        "post_status": "draft",
+        "blocks": [
+          {
+            "blockName": "core/group",
+            "attrs": { "className": "hero-shell" },
+            "innerBlocks": [
+              {
+                "blockName": "core/heading",
+                "attrs": { "level": 1 },
+                "innerBlocks": [],
+                "innerHTML": "<h1>Trusted support for growing teams</h1>",
+                "innerContent": ["<h1>Trusted support for growing teams</h1>"]
+              },
+              {
+                "blockName": "core/paragraph",
+                "attrs": {},
+                "innerBlocks": [],
+                "innerHTML": "<p>Expert launch operations for teams that need clearer planning and calmer delivery.</p>",
+                "innerContent": [
+                  "<p>Expert launch operations for teams that need clearer planning and calmer delivery.</p>"
+                ]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-group hero-shell\"></div>",
+            "innerContent": ["<div class=\"wp-block-group hero-shell\">", null, null, "</div>"]
+          },
+          {
+            "blockName": "core/heading",
+            "attrs": { "level": 2 },
+            "innerBlocks": [],
+            "innerHTML": "<h2>Services</h2>",
+            "innerContent": ["<h2>Services</h2>"]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Legacy services copy that should be replaced during the update step.</p>",
+            "innerContent": [
+              "<p>Legacy services copy that should be replaced during the update step.</p>"
+            ]
+          },
+          {
+            "blockName": "core/buttons",
+            "attrs": {},
+            "innerBlocks": [
+              {
+                "blockName": "core/button",
+                "attrs": {},
+                "innerBlocks": [],
+                "innerHTML": "<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\">Request a callback</a></div>",
+                "innerContent": [
+                  "<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\">Request a callback</a></div>"
+                ]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-buttons\"></div>",
+            "innerContent": ["<div class=\"wp-block-buttons\">", null, "</div>"]
+          }
+        ]
+      },
+      "targetEntityRefs": [
+        "page:structured-update-page"
+      ],
+      "permissionRequirement": "edit_pages",
+      "riskLevel": "low",
+      "dryRunCapable": true,
+      "rollbackSupported": false
+    },
+    {
+      "id": "fixture-action-update-page-after-create",
+      "type": "update_post_fields",
+      "version": 1,
+      "input": {
+        "lookup_title": "__TITLE__",
+        "lookup_post_type": "page",
+        "lookup_status": "draft",
+        "replace_content": true,
+        "blocks": [
+          {
+            "blockName": "core/group",
+            "attrs": { "className": "hero-shell" },
+            "innerBlocks": [
+              {
+                "blockName": "core/heading",
+                "attrs": { "level": 1 },
+                "innerBlocks": [],
+                "innerHTML": "<h1>Trusted support for growing teams</h1>",
+                "innerContent": ["<h1>Trusted support for growing teams</h1>"]
+              },
+              {
+                "blockName": "core/paragraph",
+                "attrs": {},
+                "innerBlocks": [],
+                "innerHTML": "<p>Expert launch operations for teams that need clearer planning and calmer delivery.</p>",
+                "innerContent": [
+                  "<p>Expert launch operations for teams that need clearer planning and calmer delivery.</p>"
+                ]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-group hero-shell\"></div>",
+            "innerContent": ["<div class=\"wp-block-group hero-shell\">", null, null, "</div>"]
+          },
+          {
+            "blockName": "core/heading",
+            "attrs": { "level": 2 },
+            "innerBlocks": [],
+            "innerHTML": "<h2>Services</h2>",
+            "innerContent": ["<h2>Services</h2>"]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Operational reviews that remove delivery bottlenecks before they slow down launches.</p>",
+            "innerContent": [
+              "<p>Operational reviews that remove delivery bottlenecks before they slow down launches.</p>"
+            ]
+          },
+          {
+            "blockName": "core/buttons",
+            "attrs": {},
+            "innerBlocks": [
+              {
+                "blockName": "core/button",
+                "attrs": {},
+                "innerBlocks": [],
+                "innerHTML": "<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\">Book a planning session</a></div>",
+                "innerContent": [
+                  "<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\">Book a planning session</a></div>"
+                ]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-buttons\"></div>",
+            "innerContent": ["<div class=\"wp-block-buttons\">", null, "</div>"]
+          }
+        ]
+      },
+      "targetEntityRefs": [
+        "page:structured-update-page"
+      ],
+      "permissionRequirement": "edit_pages",
+      "riskLevel": "low",
+      "dryRunCapable": true,
+      "rollbackSupported": false
+    }
+  ],
+  "dependencies": [
+    "Create the draft page before applying the structured update."
+  ],
+  "approvalRequired": false,
+  "riskLevel": "low",
+  "rollbackNotes": [],
+  "validationWarnings": [],
+  "createdAt": "__NOW__",
+  "updatedAt": "__NOW__"
+}

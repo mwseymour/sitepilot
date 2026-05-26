@@ -37,8 +37,19 @@ npm install
 npm run typecheck
 npm run lint
 npm run test
+npm run test:e2e:setup
+npm run test:e2e:smoke
+npm run test:e2e:content
+npm run test:e2e:all
 npm run start
 ```
+
+E2E notes:
+
+- The E2E harness requires Node `22.12+`.
+- `test:e2e:smoke` runs the fastest baseline scenarios.
+- `test:e2e:content` adds structured update and attached-image coverage.
+- `test:e2e:all` runs the full fixture-backed E2E suite.
 
 Plugin setup:
 

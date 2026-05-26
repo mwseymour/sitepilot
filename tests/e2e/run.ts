@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, extname, join } from "node:path";
 
 import { chromium, type BrowserContext } from "playwright";
 
-import type { ActionPlan } from "@sitepilot/contracts";
+import type { ActionPlan, ImageAttachmentPayload } from "@sitepilot/contracts";
 import { initializeDatabase } from "@sitepilot/repositories";
 
 import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
@@ -42,6 +42,12 @@ type ScenarioDefinition = {
   prompt: string;
   fixturePath: string;
   expectedTexts: string[];
+  previewMustContain?: string[];
+  previewMustNotContain?: string[];
+  editorMustContain?: string[];
+  attachmentPaths?: string[];
+  requireLocalUploadedImage?: boolean;
+  requiredImageAltText?: string;
 };
 
 type ParsedArgs =
@@ -113,8 +119,119 @@ const SCENARIOS: Record<string, ScenarioDefinition> = {
       "Speak to a broker early so you understand how your deposit, income, and credit history affect the mortgage options available.",
       "Keep some savings back for surveys, legal fees, and moving costs so the purchase does not stretch your finances too tightly."
     ]
+  },
+  "edit-existing-page-structured-update": {
+    slug: "edit-existing-page-structured-update",
+    prompt:
+      "Create a draft page, then update the services section and call to action while keeping the hero structure intact.",
+    fixturePath: join(
+      process.cwd(),
+      "tests/e2e/fixtures/edit-existing-page-structured-update.plan.json"
+    ),
+    expectedTexts: [
+      "Trusted support for growing teams",
+      "Operational reviews that remove delivery bottlenecks before they slow down launches.",
+      "Book a planning session"
+    ],
+    previewMustNotContain: [
+      "Legacy services copy that should be replaced during the update step."
+    ]
+  },
+  "create-designed-post-mixed-core-blocks": {
+    slug: "create-designed-post-mixed-core-blocks",
+    prompt:
+      "Create a draft post with a heading, intro paragraph, two columns, an image, a quote, and a CTA button.",
+    fixturePath: join(
+      process.cwd(),
+      "tests/e2e/fixtures/create-designed-post-mixed-core-blocks.plan.json"
+    ),
+    expectedTexts: [
+      "Home Buying Roadmap",
+      "Know your numbers",
+      "A steady plan beats rushed decisions every time.",
+      "Talk to an adviser"
+    ],
+    previewMustContain: [
+      "wp-block-image",
+      "wp-block-columns",
+      "wp-block-quote",
+      "wp-block-buttons"
+    ]
+  },
+  "add-image-to-new-post": {
+    slug: "add-image-to-new-post",
+    prompt:
+      "Create a new draft post with the attached image directly under the main heading.",
+    fixturePath: join(
+      process.cwd(),
+      "tests/e2e/fixtures/add-image-to-new-post.plan.json"
+    ),
+    expectedTexts: [
+      "Mortgage Checklist",
+      "Start with a realistic monthly budget before comparing properties.",
+      "Keep part of your savings available for surveys, legal fees, and moving costs."
+    ],
+    previewMustContain: ["wp-block-image"],
+    attachmentPaths: [join(process.cwd(), "tests/e2e/fixtures/test.jpeg")],
+    requireLocalUploadedImage: true,
+    requiredImageAltText: "Open notebook and mortgage planning notes on a desk"
+  },
+  "create-page-from-screenshot-reference": {
+    slug: "create-page-from-screenshot-reference",
+    prompt:
+      "Create a draft page using the attached screenshot as a layout reference. Match the section order with a hero, metrics row, feature cards, and a final CTA.",
+    fixturePath: join(
+      process.cwd(),
+      "tests/e2e/fixtures/create-page-from-screenshot-reference.plan.json"
+    ),
+    expectedTexts: [
+      "Launch planning for busy product teams",
+      "Delivery health in one weekly review",
+      "See the planning system"
+    ],
+    previewMustContain: ["wp-block-group", "wp-block-columns", "wp-block-buttons"],
+    attachmentPaths: [
+      join(
+        process.cwd(),
+        "tests/e2e/fixtures/layout-reference-screenshot.jpg"
+      )
+    ]
   }
 };
+
+function mediaTypeFromPath(filePath: string): string {
+  const extension = extname(filePath).toLowerCase();
+  if (extension === ".png") {
+    return "image/png";
+  }
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+  if (extension === ".webp") {
+    return "image/webp";
+  }
+  if (extension === ".svg") {
+    return "image/svg+xml";
+  }
+  throw new Error(`Unsupported fixture attachment type for ${filePath}.`);
+}
+
+function loadScenarioAttachments(paths: string[] | undefined): ImageAttachmentPayload[] | undefined {
+  if (!paths || paths.length === 0) {
+    return undefined;
+  }
+
+  return paths.map((filePath) => {
+    const bytes = readFileSync(filePath);
+    const mediaType = mediaTypeFromPath(filePath);
+    return {
+      fileName: basename(filePath),
+      mediaType,
+      sizeBytes: bytes.length,
+      dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`
+    };
+  });
+}
 
 function getArgValue(flag: string): string | undefined {
   const index = process.argv.findIndex((arg) => arg === flag);
@@ -501,9 +618,18 @@ async function verifyResult(input: {
   artifactDir: string;
   expectedTexts: string[];
   postId: number;
+  postType: string;
   titlePrefix?: string;
+  previewMustContain?: string[];
+  previewMustNotContain?: string[];
+  editorMustContain?: string[];
+  requireLocalUploadedImage?: boolean;
+  requiredImageAltText?: string;
 }): Promise<Record<string, unknown>> {
-  const previewUrl = `${E2E_BASE_URL}?p=${input.postId}&preview=true`;
+  const previewUrl =
+    input.postType === "page"
+      ? `${E2E_BASE_URL}?page_id=${input.postId}&preview=true`
+      : `${E2E_BASE_URL}?p=${input.postId}&preview=true`;
   const editorUrl = `${E2E_BASE_URL}wp-admin/post.php?post=${input.postId}&action=edit`;
   const context = await loginToWordPress(E2E_BASE_URL);
 
@@ -524,6 +650,38 @@ async function verifyResult(input: {
       "utf8"
     );
     const previewText = (await previewPage.locator("body").textContent()) ?? "";
+    const previewHtml = await previewPage.content();
+    for (const snippet of input.previewMustContain ?? []) {
+      if (!previewHtml.includes(snippet) && !previewText.includes(snippet)) {
+        throw new Error(`Preview did not contain expected snippet: ${snippet}`);
+      }
+    }
+    for (const snippet of input.previewMustNotContain ?? []) {
+      if (previewHtml.includes(snippet) || previewText.includes(snippet)) {
+        throw new Error(`Preview still contained forbidden snippet: ${snippet}`);
+      }
+    }
+    let uploadedImageCount = 0;
+    if (input.requireLocalUploadedImage) {
+      const imageLocator = input.requiredImageAltText
+        ? previewPage.locator(
+            `img[alt="${input.requiredImageAltText}"][src*="/wp-content/uploads/"]`
+          )
+        : previewPage.locator(`img[src*="/wp-content/uploads/"]`);
+      uploadedImageCount = await imageLocator.count();
+      if (uploadedImageCount === 0) {
+        throw new Error(
+          "Preview did not contain a locally uploaded image in /wp-content/uploads/."
+        );
+      }
+      const firstImageLoaded = await imageLocator.first().evaluate((image) => {
+        const element = image as HTMLImageElement;
+        return element.complete && element.naturalWidth > 0;
+      });
+      if (!firstImageLoaded) {
+        throw new Error("Preview image did not finish loading successfully.");
+      }
+    }
     await previewPage.close();
 
     const editorPage = await context.newPage();
@@ -545,6 +703,11 @@ async function verifyResult(input: {
       await editorPage.content(),
       "utf8"
     );
+    for (const snippet of input.editorMustContain ?? []) {
+      if (!editorText.includes(snippet)) {
+        throw new Error(`Editor did not contain expected snippet: ${snippet}`);
+      }
+    }
     await editorPage.close();
 
     const postRecord = await fetchPostViaRest(context, input.postId);
@@ -585,7 +748,8 @@ async function verifyResult(input: {
         title,
         status,
         contentLength: content.length,
-        verificationMode: "rest+browser"
+        verificationMode: "rest+browser",
+        ...(input.requireLocalUploadedImage ? { uploadedImageCount } : {})
       };
     }
 
@@ -608,11 +772,17 @@ async function verifyResult(input: {
 
 function findCreatedPostId(
   executionResults: Array<{ mcpResult: Record<string, unknown> }>
-): number {
+): { postId: number; postType: string } {
   for (const result of executionResults) {
     const postId = result.mcpResult.post_id;
     if (typeof postId === "number" && Number.isFinite(postId) && postId > 0) {
-      return postId;
+      return {
+        postId,
+        postType:
+          typeof result.mcpResult.post_type === "string"
+            ? result.mcpResult.post_type
+            : "post"
+      };
     }
   }
   throw new Error("Execution did not return a post_id.");
@@ -696,6 +866,10 @@ async function main(): Promise<void> {
 
   const db = getDatabase();
   const titlePrefix = testTitlePrefix(now);
+  const scenarioAttachments =
+    args.mode === "scenario"
+      ? loadScenarioAttachments(args.scenario.attachmentPaths)
+      : undefined;
   const requestPrompt =
     args.mode === "scenario"
       ? args.scenario.prompt
@@ -753,7 +927,8 @@ async function main(): Promise<void> {
   const request = await createTypedRequestForThread(
     siteId,
     thread.thread.id,
-    requestPrompt
+    requestPrompt,
+    scenarioAttachments
   );
   if (!request.ok) {
     throw new Error(request.message);
@@ -829,12 +1004,22 @@ async function main(): Promise<void> {
   }
   writeJson(join(artifactDir, "execution-results.json"), executionResults);
 
-  const postId = findCreatedPostId(executionResults);
+  const createdEntity = findCreatedPostId(executionResults);
   const verification = await verifyResult({
     artifactDir,
     expectedTexts: args.mode === "scenario" ? args.scenario.expectedTexts : [],
-    postId,
-    ...(args.mode === "scenario" ? { titlePrefix } : {})
+    postId: createdEntity.postId,
+    postType: createdEntity.postType,
+    ...(args.mode === "scenario" ? { titlePrefix } : {}),
+    ...(args.mode === "scenario"
+      ? {
+          previewMustContain: args.scenario.previewMustContain,
+          previewMustNotContain: args.scenario.previewMustNotContain,
+          editorMustContain: args.scenario.editorMustContain,
+          requireLocalUploadedImage: args.scenario.requireLocalUploadedImage,
+          requiredImageAltText: args.scenario.requiredImageAltText
+        }
+      : {})
   });
 
   const auditEntries = await db.repositories.auditEntries.listByRequestId(
@@ -863,8 +1048,12 @@ async function main(): Promise<void> {
     threadId: thread.thread.id,
     requestId: request.request.id,
     planId: planResult.plan.id,
-    postId,
-    postPreviewUrl: `${E2E_BASE_URL}?p=${postId}&preview=true`,
+    postId: createdEntity.postId,
+    postType: createdEntity.postType,
+    postPreviewUrl:
+      createdEntity.postType === "page"
+        ? `${E2E_BASE_URL}?page_id=${createdEntity.postId}&preview=true`
+        : `${E2E_BASE_URL}?p=${createdEntity.postId}&preview=true`,
     verification,
     auditEventTypes: auditEntries.map((entry) => entry.eventType),
     executionRunIds: executionResults.map((result) => result.executionRunId),

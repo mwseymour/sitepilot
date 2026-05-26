@@ -714,7 +714,8 @@ async function collectMediaAttachmentsForSpec(input: {
   | { ok: true; attachments: ImageAttachmentPayload[] }
   | { ok: false; code: string; message: string }
 > {
-  const attachments = [...(input.requestAttachments ?? [])];
+  const requestAttachments = input.requestAttachments ?? [];
+  const attachments: ImageAttachmentPayload[] = [];
   const candidates: ExternalImageReference[] = [];
 
   if (Array.isArray(input.spec.arguments.blocks)) {
@@ -736,6 +737,14 @@ async function collectMediaAttachmentsForSpec(input: {
     ) {
       continue;
     }
+
+    // If the request already included uploaded images, consume those first for
+    // unbound or externally-referenced media blocks instead of forcing a search.
+    if (attachments.length < requestAttachments.length) {
+      attachments.push(requestAttachments[attachments.length]!);
+      continue;
+    }
+
     const resolved = await resolveExternalImageReference({
       currentUrl: candidate.url ?? null,
       altText: candidate.altText ?? null,

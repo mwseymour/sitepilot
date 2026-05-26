@@ -134,4 +134,47 @@ describe("execution-orchestrator-service external media localization", () => {
       }
     ]);
   });
+
+  it("prefers uploaded request attachments over external search for unbound image blocks", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await __testables.collectMediaAttachmentsForSpec({
+      requestAttachments: [
+        {
+          fileName: "random-rubbish.jpg",
+          mediaType: "image/jpeg",
+          sizeBytes: 12,
+          dataUrl: "data:image/jpeg;base64,ZmFrZS1pbWFnZQ=="
+        }
+      ],
+      spec: {
+        toolName: "sitepilot-create-draft-post",
+        arguments: {
+          blocks: [
+            {
+              blockName: "core/image",
+              attrs: {
+                alt: "Pink character mascot standing in a field wearing a Barbarians Rugby shirt"
+              },
+              innerBlocks: [],
+              innerHTML: "",
+              innerContent: [""]
+            }
+          ]
+        }
+      },
+      siteBaseUrl: "https://test.localhost:8890",
+      requestText: "Create a gallery with these attached images."
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.attachments).toHaveLength(1);
+    expect(result.attachments[0]?.fileName).toBe("random-rubbish.jpg");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

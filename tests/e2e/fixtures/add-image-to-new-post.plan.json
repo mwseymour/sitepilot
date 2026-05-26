@@ -1,0 +1,79 @@
+{
+  "id": "fixture-plan-add-image-to-new-post",
+  "requestId": "__REQUEST_ID__",
+  "siteId": "__SITE_ID__",
+  "requestSummary": "Create a new draft post that includes the attached image directly under the main heading.",
+  "assumptions": [],
+  "openQuestions": [],
+  "targetEntities": [
+    "post:new-post-with-attached-image"
+  ],
+  "proposedActions": [
+    {
+      "id": "fixture-action-create-post-with-attached-image",
+      "type": "create_draft_post",
+      "version": 1,
+      "input": {
+        "title": "__TITLE__",
+        "post_type": "post",
+        "post_status": "draft",
+        "blocks": [
+          {
+            "blockName": "core/heading",
+            "attrs": {
+              "level": 1
+            },
+            "innerBlocks": [],
+            "innerHTML": "<h1>Mortgage Checklist</h1>",
+            "innerContent": [
+              "<h1>Mortgage Checklist</h1>"
+            ]
+          },
+          {
+            "blockName": "core/image",
+            "attrs": {
+              "alt": "Open notebook and mortgage planning notes on a desk"
+            },
+            "innerBlocks": [],
+            "innerHTML": "",
+            "innerContent": [
+              ""
+            ]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Start with a realistic monthly budget before comparing properties.</p>",
+            "innerContent": [
+              "<p>Start with a realistic monthly budget before comparing properties.</p>"
+            ]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>Keep part of your savings available for surveys, legal fees, and moving costs.</p>",
+            "innerContent": [
+              "<p>Keep part of your savings available for surveys, legal fees, and moving costs.</p>"
+            ]
+          }
+        ]
+      },
+      "targetEntityRefs": [
+        "post:new-post-with-attached-image"
+      ],
+      "permissionRequirement": "edit_posts",
+      "riskLevel": "low",
+      "dryRunCapable": true,
+      "rollbackSupported": false
+    }
+  ],
+  "dependencies": [],
+  "approvalRequired": false,
+  "riskLevel": "low",
+  "rollbackNotes": [],
+  "validationWarnings": [],
+  "createdAt": "__NOW__",
+  "updatedAt": "__NOW__"
+}

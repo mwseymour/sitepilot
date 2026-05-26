@@ -21,6 +21,9 @@
     "test": "vitest run",
     "test:e2e:setup": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/setup.ts",
     "test:e2e": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run.ts",
+    "test:e2e:smoke": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run-suite.ts smoke",
+    "test:e2e:content": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run-suite.ts content",
+    "test:e2e:all": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run-suite.ts all",
     "test:e2e:open-report": "tsx tests/e2e/open-report.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -1,0 +1,142 @@
+{
+  "id": "fixture-plan-create-designed-post-mixed-core-blocks",
+  "requestId": "__REQUEST_ID__",
+  "siteId": "__SITE_ID__",
+  "requestSummary": "Create a draft post with a structured Gutenberg layout that mixes text, media, quote, and CTA blocks.",
+  "assumptions": [],
+  "openQuestions": [],
+  "targetEntities": [
+    "post:structured-designed-post"
+  ],
+  "proposedActions": [
+    {
+      "id": "fixture-action-create-designed-post-mixed-core-blocks",
+      "type": "create_draft_post",
+      "version": 1,
+      "input": {
+        "title": "__TITLE__",
+        "post_type": "post",
+        "post_status": "draft",
+        "blocks": [
+          {
+            "blockName": "core/heading",
+            "attrs": { "level": 1 },
+            "innerBlocks": [],
+            "innerHTML": "<h1>Home Buying Roadmap</h1>",
+            "innerContent": ["<h1>Home Buying Roadmap</h1>"]
+          },
+          {
+            "blockName": "core/paragraph",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<p>A practical starting point for buyers who want confident decisions, cleaner finances, and less stressful viewings.</p>",
+            "innerContent": [
+              "<p>A practical starting point for buyers who want confident decisions, cleaner finances, and less stressful viewings.</p>"
+            ]
+          },
+          {
+            "blockName": "core/columns",
+            "attrs": {},
+            "innerBlocks": [
+              {
+                "blockName": "core/column",
+                "attrs": { "width": "42%" },
+                "innerBlocks": [
+                  {
+                    "blockName": "core/image",
+                    "attrs": {
+                      "id": 0,
+                      "sizeSlug": "large",
+                      "url": "https://upload.wikimedia.org/wikipedia/commons/0/05/Anatomy_of_a_household_budget.jpg",
+                      "alt": "Budget planner and mortgage notes on a desk"
+                    },
+                    "innerBlocks": [],
+                    "innerHTML": "<figure class=\"wp-block-image size-large\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/0/05/Anatomy_of_a_household_budget.jpg\" alt=\"Budget planner and mortgage notes on a desk\"/></figure>",
+                    "innerContent": [
+                      "<figure class=\"wp-block-image size-large\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/0/05/Anatomy_of_a_household_budget.jpg\" alt=\"Budget planner and mortgage notes on a desk\"/></figure>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, "</div>"]
+              },
+              {
+                "blockName": "core/column",
+                "attrs": { "width": "58%" },
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 2 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h2>Know your numbers</h2>",
+                    "innerContent": ["<h2>Know your numbers</h2>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Review deposit size, monthly affordability, and fees before you decide which homes are realistic.</p>",
+                    "innerContent": [
+                      "<p>Review deposit size, monthly affordability, and fees before you decide which homes are realistic.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, "</div>"]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-columns\"></div>",
+            "innerContent": ["<div class=\"wp-block-columns\">", null, null, "</div>"]
+          },
+          {
+            "blockName": "core/separator",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<hr class=\"wp-block-separator has-alpha-channel-opacity\"/>",
+            "innerContent": ["<hr class=\"wp-block-separator has-alpha-channel-opacity\"/>"]
+          },
+          {
+            "blockName": "core/quote",
+            "attrs": {},
+            "innerBlocks": [],
+            "innerHTML": "<blockquote class=\"wp-block-quote\"><p>A steady plan beats rushed decisions every time.</p></blockquote>",
+            "innerContent": [
+              "<blockquote class=\"wp-block-quote\"><p>A steady plan beats rushed decisions every time.</p></blockquote>"
+            ]
+          },
+          {
+            "blockName": "core/buttons",
+            "attrs": {},
+            "innerBlocks": [
+              {
+                "blockName": "core/button",
+                "attrs": { "className": "is-style-fill" },
+                "innerBlocks": [],
+                "innerHTML": "<div class=\"wp-block-button is-style-fill\"><a class=\"wp-block-button__link wp-element-button\">Talk to an adviser</a></div>",
+                "innerContent": [
+                  "<div class=\"wp-block-button is-style-fill\"><a class=\"wp-block-button__link wp-element-button\">Talk to an adviser</a></div>"
+                ]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-buttons\"></div>",
+            "innerContent": ["<div class=\"wp-block-buttons\">", null, "</div>"]
+          }
+        ]
+      },
+      "targetEntityRefs": [
+        "post:structured-designed-post"
+      ],
+      "permissionRequirement": "edit_posts",
+      "riskLevel": "low",
+      "dryRunCapable": true,
+      "rollbackSupported": false
+    }
+  ],
+  "dependencies": [],
+  "approvalRequired": false,
+  "riskLevel": "low",
+  "rollbackNotes": [],
+  "validationWarnings": [],
+  "createdAt": "__NOW__",
+  "updatedAt": "__NOW__"
+}

@@ -1,0 +1,29 @@
+---
+description: Run the right SitePilot E2E suite after code changes
+globs:
+alwaysApply: true
+---
+
+After making code changes in this repository, run the smallest SitePilot E2E suite that matches the risk.
+
+- Default to `npm run test:e2e:smoke`.
+- Run `npm run test:e2e:content` when changes touch content planning, execution, post updates, image handling, WordPress write behavior, or `tests/e2e/`.
+- Run `npm run test:e2e:all` for broad or cross-layer changes, E2E harness changes, fixture changes, or when the safest choice is to run everything.
+
+Treat these paths as content-risky by default:
+
+- `apps/desktop/src/main/`
+- `packages/services/`
+- `packages/contracts/`
+- `packages/domain/`
+- `packages/provider-adapters/`
+- `plugins/wordpress-sitepilot/includes/Mcp/`
+- `tests/e2e/`
+
+The current suites mean:
+
+- `test:e2e:smoke`: basic draft creation plus mixed core blocks with an image block
+- `test:e2e:content`: smoke plus structured updates and creating a new draft with an attached image
+- `test:e2e:all`: content plus screenshot-reference coverage
+
+If the required suite cannot be run because the E2E WordPress environment or credentials are unavailable, state that clearly in the completion message.

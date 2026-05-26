@@ -1,0 +1,247 @@
+{
+  "id": "fixture-plan-create-page-from-screenshot-reference",
+  "requestId": "__REQUEST_ID__",
+  "siteId": "__SITE_ID__",
+  "requestSummary": "Create a draft page from a screenshot-like layout reference using supported Gutenberg structure.",
+  "assumptions": [],
+  "openQuestions": [],
+  "targetEntities": [
+    "page:screenshot-reference-page"
+  ],
+  "proposedActions": [
+    {
+      "id": "fixture-action-create-page-from-screenshot-reference",
+      "type": "create_draft_post",
+      "version": 1,
+      "input": {
+        "title": "__TITLE__",
+        "post_type": "page",
+        "post_status": "draft",
+        "blocks": [
+          {
+            "blockName": "core/group",
+            "attrs": { "className": "screenshot-hero-shell" },
+            "innerBlocks": [
+              {
+                "blockName": "core/paragraph",
+                "attrs": {},
+                "innerBlocks": [],
+                "innerHTML": "<p>Product operations studio</p>",
+                "innerContent": ["<p>Product operations studio</p>"]
+              },
+              {
+                "blockName": "core/heading",
+                "attrs": { "level": 1 },
+                "innerBlocks": [],
+                "innerHTML": "<h1>Launch planning for busy product teams</h1>",
+                "innerContent": ["<h1>Launch planning for busy product teams</h1>"]
+              },
+              {
+                "blockName": "core/paragraph",
+                "attrs": {},
+                "innerBlocks": [],
+                "innerHTML": "<p>One operating rhythm for roadmap review, weekly risk tracking, and cross-team launch readiness.</p>",
+                "innerContent": [
+                  "<p>One operating rhythm for roadmap review, weekly risk tracking, and cross-team launch readiness.</p>"
+                ]
+              },
+              {
+                "blockName": "core/buttons",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/button",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\">See the planning system</a></div>",
+                    "innerContent": [
+                      "<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\">See the planning system</a></div>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-buttons\"></div>",
+                "innerContent": ["<div class=\"wp-block-buttons\">", null, "</div>"]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-group screenshot-hero-shell\"></div>",
+            "innerContent": ["<div class=\"wp-block-group screenshot-hero-shell\">", null, null, null, null, "</div>"]
+          },
+          {
+            "blockName": "core/columns",
+            "attrs": {},
+            "innerBlocks": [
+              {
+                "blockName": "core/column",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 3 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h3>12 active launches</h3>",
+                    "innerContent": ["<h3>12 active launches</h3>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Current delivery programmes tracked in one shared cadence.</p>",
+                    "innerContent": [
+                      "<p>Current delivery programmes tracked in one shared cadence.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, null, "</div>"]
+              },
+              {
+                "blockName": "core/column",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 3 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h3>94% review attendance</h3>",
+                    "innerContent": ["<h3>94% review attendance</h3>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Delivery health in one weekly review with clear owners and next actions.</p>",
+                    "innerContent": [
+                      "<p>Delivery health in one weekly review with clear owners and next actions.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, null, "</div>"]
+              },
+              {
+                "blockName": "core/column",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 3 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h3>48-hour risk response</h3>",
+                    "innerContent": ["<h3>48-hour risk response</h3>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Escalations are reviewed quickly before blockers drift into launch windows.</p>",
+                    "innerContent": [
+                      "<p>Escalations are reviewed quickly before blockers drift into launch windows.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, null, "</div>"]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-columns\"></div>",
+            "innerContent": ["<div class=\"wp-block-columns\">", null, null, null, "</div>"]
+          },
+          {
+            "blockName": "core/columns",
+            "attrs": {},
+            "innerBlocks": [
+              {
+                "blockName": "core/column",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 3 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h3>Planning</h3>",
+                    "innerContent": ["<h3>Planning</h3>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Turn roadmap intentions into weekly operational checkpoints that teams can actually follow.</p>",
+                    "innerContent": [
+                      "<p>Turn roadmap intentions into weekly operational checkpoints that teams can actually follow.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, null, "</div>"]
+              },
+              {
+                "blockName": "core/column",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 3 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h3>Coordination</h3>",
+                    "innerContent": ["<h3>Coordination</h3>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Keep product, delivery, and go-to-market teams aligned around one live launch picture.</p>",
+                    "innerContent": [
+                      "<p>Keep product, delivery, and go-to-market teams aligned around one live launch picture.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, null, "</div>"]
+              },
+              {
+                "blockName": "core/column",
+                "attrs": {},
+                "innerBlocks": [
+                  {
+                    "blockName": "core/heading",
+                    "attrs": { "level": 3 },
+                    "innerBlocks": [],
+                    "innerHTML": "<h3>Follow-through</h3>",
+                    "innerContent": ["<h3>Follow-through</h3>"]
+                  },
+                  {
+                    "blockName": "core/paragraph",
+                    "attrs": {},
+                    "innerBlocks": [],
+                    "innerHTML": "<p>Capture decisions, owners, and timing so launch reviews produce action instead of theatre.</p>",
+                    "innerContent": [
+                      "<p>Capture decisions, owners, and timing so launch reviews produce action instead of theatre.</p>"
+                    ]
+                  }
+                ],
+                "innerHTML": "<div class=\"wp-block-column\"></div>",
+                "innerContent": ["<div class=\"wp-block-column\">", null, null, "</div>"]
+              }
+            ],
+            "innerHTML": "<div class=\"wp-block-columns\"></div>",
+            "innerContent": ["<div class=\"wp-block-columns\">", null, null, null, "</div>"]
+          }
+        ]
+      },
+      "targetEntityRefs": [
+        "page:screenshot-reference-page"
+      ],
+      "permissionRequirement": "edit_pages",
+      "riskLevel": "low",
+      "dryRunCapable": true,
+      "rollbackSupported": false
+    }
+  ],
+  "dependencies": [],
+  "approvalRequired": false,
+  "riskLevel": "low",
+  "rollbackNotes": [],
+  "validationWarnings": [],
+  "createdAt": "__NOW__",
+  "updatedAt": "__NOW__"
+}
