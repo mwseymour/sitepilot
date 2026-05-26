@@ -78,6 +78,7 @@ Add a disposable local WordPress environment for end-to-end tests.
 Recommended shape:
 
 - Docker Compose or `wp-env` based WordPress instance;
+- fixed local base URL `https://test.localhost:8890/`;
 - known WordPress version compatible with the plugin;
 - known PHP version compatible with the plugin;
 - bundled SitePilot companion plugin mounted from this repository;
@@ -391,6 +392,7 @@ The test site should be intentionally boring.
 Baseline requirements:
 
 - clean WordPress install;
+- fixed local test site URL `https://test.localhost:8890/`;
 - SitePilot companion plugin active;
 - REST API reachable;
 - MCP endpoint reachable;
@@ -405,7 +407,8 @@ Baseline requirements:
   actual local test-run time and date.
 
 The setup must never target a production site. The runner should refuse to run if
-the configured base URL is not explicitly marked as a local test environment.
+the configured base URL is anything other than
+`https://test.localhost:8890/`.
 
 ## Safety Rules
 
@@ -415,7 +418,8 @@ the configured base URL is not explicitly marked as a local test environment.
   actual local test-run time and date.
 - Cleanup should delete or trash only content created by the test namespace.
 - The runner must print the target WordPress base URL before execution.
-- The runner must block execution unless the site has an explicit test marker.
+- The runner must block execution unless the site URL is exactly
+  `https://test.localhost:8890/`.
 - Application passwords, provider keys, and signing secrets must not be written
   to artifacts.
 
