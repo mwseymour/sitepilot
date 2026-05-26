@@ -736,6 +736,40 @@ export type PostMessageResult =
   | { ok: true; message: ChatMessage }
   | { ok: false; code: string; message: string };
 
+export async function appendSystemChatMessage(
+  siteId: SiteId,
+  threadId: ChatThreadId,
+  text: string,
+  requestId?: RequestId
+): Promise<PostMessageResult> {
+  const gate = await requireActiveSite(siteId);
+  if (!gate.ok) {
+    return gate;
+  }
+  const t = await loadThreadForSite(threadId, siteId);
+  if (!t.ok) {
+    return t;
+  }
+  const db = getDatabase();
+  const ts = nowIso();
+  const message: ChatMessage = {
+    id: randomUUID() as ChatMessageId,
+    threadId,
+    siteId,
+    ...(requestId !== undefined ? { requestId } : {}),
+    author: { kind: "system" },
+    body: { format: "plain_text", value: text },
+    createdAt: ts,
+    updatedAt: ts
+  };
+  await db.repositories.chatMessages.save(message);
+  await db.repositories.chatThreads.save({
+    ...t.thread,
+    updatedAt: ts
+  });
+  return { ok: true, message };
+}
+
 export async function postChatMessage(
   siteId: SiteId,
   threadId: ChatThreadId,

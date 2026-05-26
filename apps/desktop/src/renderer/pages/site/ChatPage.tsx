@@ -578,6 +578,7 @@ export function ChatPage({
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const debugCopyResetTimerRef = useRef<number | null>(null);
+  const mirroredFeedbackRef = useRef<Set<string>>(new Set());
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -1382,6 +1383,38 @@ export function ChatPage({
         ]
       : [])
   ];
+
+  useEffect(() => {
+    if (selectedThreadId === null || developerMessages.length === 0) {
+      return;
+    }
+
+    const systemMessages = new Set(
+      messages
+        .filter((message) => message.author.kind === "system")
+        .map((message) => message.body.value)
+    );
+
+    void (async () => {
+      for (const text of developerMessages) {
+        const mirrorKey = `${selectedThreadId}:${lastRequestId ?? "none"}:${text}`;
+        if (systemMessages.has(text) || mirroredFeedbackRef.current.has(mirrorKey)) {
+          continue;
+        }
+        mirroredFeedbackRef.current.add(mirrorKey);
+        const res = await window.sitePilotDesktop.appendSystemChatMessage({
+          siteId,
+          threadId: selectedThreadId,
+          text,
+          ...(lastRequestId !== null ? { requestId: lastRequestId } : {})
+        });
+        if (!res.ok) {
+          mirroredFeedbackRef.current.delete(mirrorKey);
+        }
+      }
+    })();
+  }, [developerMessages, lastRequestId, messages, selectedThreadId, siteId]);
+
   const pendingAttachmentBytes = pendingAttachments.reduce(
     (total, attachment) => total + attachment.sizeBytes,
     0

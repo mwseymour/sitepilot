@@ -88,6 +88,41 @@ describe("execution-orchestrator-service external media localization", () => {
     );
   });
 
+  it("retries Wikimedia image downloads without tracking query params after a 429", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("utm_source=")) {
+        return new Response(null, {
+          status: 429,
+          headers: {
+            "content-type": "text/plain"
+          }
+        });
+      }
+
+      return new Response(Buffer.from("fake-image"), {
+        status: 200,
+        headers: {
+          "content-type": "image/jpeg"
+        }
+      });
+    }));
+
+    const result = await __testables.downloadExternalImageAsAttachment(
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Santiagobernabeupanoramav45.JPG/1920px-Santiagobernabeupanoramav45.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.attachment.fileName).toBe(
+      "1920px-Santiagobernabeupanoramav45.JPG"
+    );
+    expect(result.attachment.mediaType).toBe("image/jpeg");
+  });
+
   it("collects missing media-text image references from serialized content", () => {
     const refs = __testables.extractExternalImageReferencesFromSerializedContent(
       '<!-- wp:media-text {"mediaType":"image","mediaAlt":"Team collaboration"} --><div class="wp-block-media-text"><figure class="wp-block-media-text__media"></figure><div class="wp-block-media-text__content"><p>Body copy.</p></div></div><!-- /wp:media-text -->'

@@ -2562,6 +2562,29 @@ function requestAsksForImage(requestText: string): boolean {
   return /\b(image|photo|picture)\b/i.test(requestText);
 }
 
+function requestAsksToAddInlineImageWithoutPlacement(
+  requestText: string
+): boolean {
+  if (
+    requestAsksForFeaturedImage(requestText) ||
+    requestMentionsInlineImagePlacement(requestText)
+  ) {
+    return false;
+  }
+
+  if (
+    /\b(replace|swap|change|update|edit|modify|remove|delete)\b[\s\S]{0,20}\b(image|photo|picture)\b/i.test(
+      requestText
+    )
+  ) {
+    return false;
+  }
+
+  return /\b(add|insert|place)\b[\s\S]{0,30}\b(image|photo|picture)\b/i.test(
+    requestText
+  );
+}
+
 function requestAsksForFeaturedImage(requestText: string): boolean {
   return /\b(featured image|thumbnail|post thumbnail|set as featured|set as thumbnail)\b/i.test(
     requestText
@@ -3447,7 +3470,10 @@ function normalizeGenericContentInsertionPlan(
   plan: ActionPlan,
   requestText: string
 ): ActionPlan {
-  if (!requestMentionsContentInsertionPlacement(requestText)) {
+  if (
+    !requestMentionsContentInsertionPlacement(requestText) &&
+    !requestMentionsInlineImagePlacement(requestText)
+  ) {
     return plan;
   }
 
@@ -3545,6 +3571,88 @@ function normalizeGenericContentInsertionPlan(
       : placement.kind === "relative_block"
         ? `Normalized the plan to an insertion edit ${placement.position} ${placement.fromEnd === true ? "the most recent matching " : "the matching "}block because the operator requested placement within the existing body content.`
       : `Normalized the plan to an insertion edit at the ${placement.kind} of the content because the operator requested placement within the existing body content.`
+  );
+
+  return actionPlanSchema.parse({
+    ...plan,
+    proposedActions,
+    validationWarnings: [...new Set(validationWarnings)]
+  });
+}
+
+function normalizeDefaultInlineImageInsertionPlan(
+  plan: ActionPlan,
+  requestText: string
+): ActionPlan {
+  if (!requestAsksToAddInlineImageWithoutPlacement(requestText)) {
+    return plan;
+  }
+
+  const validationWarnings = [...plan.validationWarnings];
+  let rewrotePlacement = false;
+
+  const proposedActions = plan.proposedActions.map((action) => {
+    const normalizedType = normalizeActionType(action.type);
+    const isUpdateAction =
+      normalizedType === "update_post_fields" ||
+      normalizedType === "update_post" ||
+      normalizedType === "update_post_content" ||
+      normalizedType === "edit_post_fields" ||
+      normalizedType === "sitepilot_update_post_fields";
+    if (!isUpdateAction) {
+      return action;
+    }
+
+    const input = action.input as Record<string, unknown>;
+    const nestedInput = pickObject(input, "input");
+    const actionInput = nestedInput ?? input;
+    if (
+      actionInput.replace_content === true ||
+      actionInput.insert_after_paragraph !== undefined ||
+      actionInput.insert_after_block !== undefined ||
+      actionInput.insert_before_block !== undefined ||
+      actionInput.insert_position !== undefined
+    ) {
+      return action;
+    }
+
+    const targetInput = deriveUpdateActionTargetInput(input, actionInput);
+    if (targetInput === null) {
+      return action;
+    }
+
+    const selectedBlocks = selectInsertedBlocksForPlacementRequest({
+      requestText,
+      actionInput
+    });
+    if (
+      selectedBlocks === null ||
+      selectedBlocks.length === 0 ||
+      !selectedBlocks.every(
+        (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
+      )
+    ) {
+      return action;
+    }
+
+    rewrotePlacement = true;
+    return {
+      ...action,
+      type: "update_post_fields",
+      input: {
+        ...targetInput,
+        insert_position: "end",
+        blocks: selectedBlocks
+      }
+    } satisfies Action;
+  });
+
+  if (!rewrotePlacement) {
+    return plan;
+  }
+
+  validationWarnings.push(
+    "Normalized the plan to an end-of-content image insertion because the operator asked to add an inline image without specifying placement within the existing body content."
   );
 
   return actionPlanSchema.parse({
@@ -4457,8 +4565,12 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     featuredImageCompletedPlan,
     requestText
   );
-  const headingLevelNormalizedPlan = normalizeSingleHeadingLevelUpdatePlan(
+  const defaultInlineImageNormalizedPlan = normalizeDefaultInlineImageInsertionPlan(
     placementNormalizedPlan,
+    requestText
+  );
+  const headingLevelNormalizedPlan = normalizeSingleHeadingLevelUpdatePlan(
+    defaultInlineImageNormalizedPlan,
     requestText
   );
   const seoCompletedPlan = ensureExplicitSeoMetaAction(

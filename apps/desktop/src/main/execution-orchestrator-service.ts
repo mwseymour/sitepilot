@@ -620,56 +620,89 @@ async function downloadExternalImageAsAttachment(url: string): Promise<
   | { ok: true; attachment: ImageAttachmentPayload }
   | { ok: false; code: string; message: string }
 > {
-  let response: Response;
+  const candidateUrls = new Set<string>([url]);
   try {
-    response = await fetch(url);
-  } catch (error) {
-    return {
-      ok: false,
-      code: "external_image_fetch_failed",
-      message:
-        error instanceof Error
-          ? error.message
-          : `Failed to fetch external image ${url}.`
-    };
-  }
-
-  if (!response.ok) {
-    return {
-      ok: false,
-      code: "external_image_fetch_failed",
-      message: `External image fetch failed for ${url} with status ${response.status}.`
-    };
-  }
-
-  const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
-  if (!mediaType.startsWith("image/")) {
-    return {
-      ok: false,
-      code: "external_image_invalid_type",
-      message: `External image ${url} returned unsupported content-type "${mediaType || "unknown"}".`
-    };
-  }
-
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0) {
-    return {
-      ok: false,
-      code: "external_image_fetch_failed",
-      message: `External image ${url} returned an empty body.`
-    };
-  }
-
-  const fileName = fileNameFromUrlOrContentType(url, mediaType);
-  return {
-    ok: true,
-    attachment: {
-      fileName,
-      mediaType,
-      sizeBytes: bytes.length,
-      dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`
+    const parsed = new URL(url);
+    if (
+      parsed.hostname === "upload.wikimedia.org" &&
+      parsed.search.length > 0
+    ) {
+      parsed.search = "";
+      candidateUrls.add(parsed.toString());
     }
-  };
+  } catch {
+    // Keep the original URL only.
+  }
+
+  let lastFailure:
+    | { ok: false; code: string; message: string }
+    | undefined;
+
+  for (const candidateUrl of candidateUrls) {
+    let response: Response;
+    try {
+      response = await fetch(candidateUrl);
+    } catch (error) {
+      lastFailure = {
+        ok: false,
+        code: "external_image_fetch_failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : `Failed to fetch external image ${candidateUrl}.`
+      };
+      continue;
+    }
+
+    if (!response.ok) {
+      lastFailure = {
+        ok: false,
+        code: "external_image_fetch_failed",
+        message: `External image fetch failed for ${candidateUrl} with status ${response.status}.`
+      };
+      continue;
+    }
+
+    const mediaType =
+      response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+    if (!mediaType.startsWith("image/")) {
+      lastFailure = {
+        ok: false,
+        code: "external_image_invalid_type",
+        message: `External image ${candidateUrl} returned unsupported content-type "${mediaType || "unknown"}".`
+      };
+      continue;
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0) {
+      lastFailure = {
+        ok: false,
+        code: "external_image_fetch_failed",
+        message: `External image ${candidateUrl} returned an empty body.`
+      };
+      continue;
+    }
+
+    const fileName = fileNameFromUrlOrContentType(candidateUrl, mediaType);
+    return {
+      ok: true,
+      attachment: {
+        fileName,
+        mediaType,
+        sizeBytes: bytes.length,
+        dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`
+      }
+    };
+  }
+
+  return (
+    lastFailure ?? {
+      ok: false,
+      code: "external_image_fetch_failed",
+      message: `Failed to fetch external image ${url}.`
+    }
+  );
 }
 
 async function collectMediaAttachmentsForSpec(input: {

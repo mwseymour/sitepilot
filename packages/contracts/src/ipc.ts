@@ -81,6 +81,7 @@ export const ipcChannels = {
   deleteChatThread: "chat.deleteThread",
   listChatMessages: "chat.listMessages",
   postChatMessage: "chat.postMessage",
+  appendSystemChatMessage: "chat.appendSystemMessage",
   createChatRequest: "chat.createRequest",
   amendRequest: "chat.amendRequest",
   answerClarification: "chat.answerClarification",
@@ -413,6 +414,25 @@ export const postChatMessageRequestSchema = z.object({
 });
 
 export const postChatMessageResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    message: chatMessageSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export const appendSystemChatMessageRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  text: z.string().min(1),
+  requestId: idSchema.optional()
+});
+
+export const appendSystemChatMessageResponseSchema = z.discriminatedUnion("ok", [
   z.object({
     ok: z.literal(true),
     message: chatMessageSchema
@@ -918,6 +938,10 @@ export const ipcContracts = {
     request: postChatMessageRequestSchema,
     response: postChatMessageResponseSchema
   },
+  [ipcChannels.appendSystemChatMessage]: {
+    request: appendSystemChatMessageRequestSchema,
+    response: appendSystemChatMessageResponseSchema
+  },
   [ipcChannels.createChatRequest]: {
     request: createChatRequestRequestSchema,
     response: createChatRequestResponseSchema
@@ -1083,6 +1107,9 @@ export interface SitePilotDesktopApi {
   postChatMessage: (
     request: IpcRequest<typeof ipcChannels.postChatMessage>
   ) => Promise<IpcResponse<typeof ipcChannels.postChatMessage>>;
+  appendSystemChatMessage: (
+    request: IpcRequest<typeof ipcChannels.appendSystemChatMessage>
+  ) => Promise<IpcResponse<typeof ipcChannels.appendSystemChatMessage>>;
   createChatRequest: (
     request: IpcRequest<typeof ipcChannels.createChatRequest>
   ) => Promise<IpcResponse<typeof ipcChannels.createChatRequest>>;

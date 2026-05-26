@@ -3040,6 +3040,77 @@ describe("buildLlmActionPlan", () => {
     ).toBeUndefined();
   });
 
+  it("defaults additive inline image updates without explicit placement to end-of-content insertion", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Update page 171 by adding a football image found online.",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: ["page:171"],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "update_post_fields",
+            version: 1,
+            input: {
+              post_id: 171,
+              blocks: [
+                {
+                  blockName: "core/image",
+                  attrs: {
+                    alt: "Football (soccer) ball",
+                    sizeSlug: "large",
+                    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Jakarta_old_football.jpg/1920px-Jakarta_old_football.jpg"
+                  },
+                  innerBlocks: [],
+                  innerHTML:
+                    '<figure class="wp-block-image size-large"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Jakarta_old_football.jpg/1920px-Jakarta_old_football.jpg" alt="Football (soccer) ball"/></figure>',
+                  innerContent: [
+                    '<figure class="wp-block-image size-large"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Jakarta_old_football.jpg/1920px-Jakarta_old_football.jpg" alt="Football (soccer) ball"/></figure>'
+                  ]
+                }
+              ]
+            },
+            targetEntityRefs: ["page:171"],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: true
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithHistory({
+        requestText:
+          "Update the page\n\nAdditional context:\nid 171 - add an image in the post of a football\n\nAdditional context:\nfind the image online"
+      }),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-05-05T11:28:15.060Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      post_id: 171,
+      insert_position: "end"
+    });
+    expect(
+      (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+    ).toEqual([
+      expect.objectContaining({
+        blockName: "core/image"
+      })
+    ]);
+  });
+
   it("strips prompt prose from mixed-intent end-of-content link insertions", async () => {
     const client = makeClient(
       JSON.stringify({

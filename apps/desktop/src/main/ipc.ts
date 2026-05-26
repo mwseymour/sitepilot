@@ -29,6 +29,7 @@ import {
 import { listAuditEntriesForSite } from "./audit-query-service.js";
 import {
   amendRequestForThread,
+  appendSystemChatMessage,
   answerClarificationForRequest,
   createChatThreadForSite,
   createTypedRequestForThread,
@@ -254,6 +255,17 @@ export function registerIpcHandlers(): void {
       request.attachments
     );
     return parseResponse(ipcChannels.postChatMessage, result);
+  });
+
+  ipcMain.handle(ipcChannels.appendSystemChatMessage, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.appendSystemChatMessage, payload);
+    const result = await appendSystemChatMessage(
+      request.siteId as SiteId,
+      request.threadId as ChatThreadId,
+      request.text,
+      request.requestId as RequestId | undefined
+    );
+    return parseResponse(ipcChannels.appendSystemChatMessage, result);
   });
 
   ipcMain.handle(ipcChannels.createChatRequest, async (_event, payload) => {
