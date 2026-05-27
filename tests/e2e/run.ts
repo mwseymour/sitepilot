@@ -462,6 +462,21 @@ function testTitlePrefix(now: Date): string {
   return `AUTOMATED-TEST-${hhmm}-${ddmmyyyy}`;
 }
 
+function toTitleWords(value: string): string {
+  return value
+    .replace(/^replay-/, "")
+    .split(/[^a-z0-9]+/i)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildTestTitle(input: { now: Date; runSlugBase: string }): string {
+  const prefix = testTitlePrefix(input.now);
+  const suffix = toTitleWords(input.runSlugBase);
+  return suffix.length > 0 ? `${prefix}-${suffix}` : prefix;
+}
+
 function buildFixturePlan(input: {
   fixturePath: string;
   requestId: string;
@@ -866,6 +881,7 @@ async function main(): Promise<void> {
 
   const db = getDatabase();
   const titlePrefix = testTitlePrefix(now);
+  const testTitle = buildTestTitle({ now, runSlugBase });
   const scenarioAttachments =
     args.mode === "scenario"
       ? loadScenarioAttachments(args.scenario.attachmentPaths)
@@ -873,7 +889,7 @@ async function main(): Promise<void> {
   const requestPrompt =
     args.mode === "scenario"
       ? args.scenario.prompt
-      : `${args.prompt}\n\nTest constraint: If you create a new post or page, prefix its title with ${titlePrefix} and keep it as a draft unless the original request explicitly asked otherwise.${
+      : `${args.prompt}\n\nTest constraint: If you create a new post or page, title it ${testTitle} and keep it as a draft unless the original request explicitly asked otherwise.${
           args.replayContext
             ? `\n\nReplay context from the original SitePilot export:\n${JSON.stringify(args.replayContext, null, 2)}`
             : ""
@@ -943,7 +959,7 @@ async function main(): Promise<void> {
       fixturePath: args.scenario.fixturePath,
       requestId: request.request.id,
       siteId,
-      title: `${titlePrefix} Automated Test Post`,
+      title: testTitle,
       nowIso: now.toISOString()
     });
     writeJson(join(artifactDir, "fixture-plan.json"), fixturePlan);
