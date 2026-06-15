@@ -51,34 +51,81 @@ export function DiagnosticsPage(): ReactElement {
   }
 
   return (
-    <article className="panel-card">
-      <h1>Diagnostics</h1>
-      <p className="lede">
-        Check reachability, protocol compatibility, MCP tools, and plugin
-        metadata for this site.
-      </p>
-      <div className="action-row">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={busy}
-          onClick={() => void runDiagnostics()}
-        >
-          Run connectivity diagnostics
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={busy}
-          onClick={() => void runDiscovery()}
-        >
-          Refresh discovery
-        </button>
-      </div>
+    <article className="panel-card diagnostics-page">
+      <header className="diagnostics-header">
+        <div>
+          <p className="eyebrow">Site health</p>
+          <h1>Diagnostics</h1>
+          <p className="lede">
+            Check reachability, protocol compatibility, MCP tools, and plugin
+            metadata for this site.
+          </p>
+        </div>
+        <div className="diagnostics-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M4 17.5h16M6 14l3.3-4 3.2 2.4L18 6.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </header>
       {err ? <p className="workspace-error">{err}</p> : null}
       {discoveryMsg ? <p className="success-note">{discoveryMsg}</p> : null}
       {diag ? (
         <pre className="diag-json">{JSON.stringify(diag, null, 2)}</pre>
+      ) : (
+        <section className="diagnostics-empty">
+          <div>
+            <h2>No diagnostic run yet</h2>
+            <p className="muted">
+              Start with a connectivity check, or refresh discovery when the
+              WordPress site structure has changed.
+            </p>
+          </div>
+          <div className="action-row">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void runDiagnostics()}
+            >
+              Run connectivity diagnostics
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => void runDiscovery()}
+            >
+              Refresh discovery
+            </button>
+          </div>
+        </section>
+      )}
+      {diag ? (
+        <div className="action-row diagnostics-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void runDiagnostics()}
+          >
+            Run again
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void runDiscovery()}
+          >
+            Refresh discovery
+          </button>
+        </div>
       ) : null}
     </article>
   );

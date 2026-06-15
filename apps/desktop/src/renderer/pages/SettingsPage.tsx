@@ -16,7 +16,9 @@ export function SettingsPage(): ReactElement {
   const [planner, setPlanner] = useState<PlannerPreferencesPayload | null>(
     null
   );
-  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(null);
+  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(
+    null
+  );
   const [openaiSecret, setOpenaiSecret] = useState("");
   const [anthropicSecret, setAnthropicSecret] = useState("");
 
@@ -127,7 +129,7 @@ export function SettingsPage(): ReactElement {
   }
 
   return (
-    <main className="app-shell home-shell">
+    <main className="app-shell home-shell settings-shell">
       <section className="hero-card">
         <p className="eyebrow">SitePilot</p>
         <h1>Settings</h1>
@@ -143,15 +145,15 @@ export function SettingsPage(): ReactElement {
       {compat ? <p className="muted small-print">{compat}</p> : null}
 
       {uiPreferences ? (
-        <section className="panel-card">
+        <section className="panel-card settings-card">
           <h2>UI preferences</h2>
           <p className="muted small-print">
             Show the diagnostics panel on the Requests page, including planner
             validation, MCP payloads, and surfaced error messages.
           </p>
-          <label className="settings-field">
-            <span>Enable developer tools</span>
+          <label className="settings-field settings-checkbox">
             <input
+              className="settings-checkbox-input"
               type="checkbox"
               checked={uiPreferences.developerToolsEnabled}
               disabled={busy}
@@ -162,10 +164,11 @@ export function SettingsPage(): ReactElement {
                 });
               }}
             />
+            <span>Enable developer tools</span>
           </label>
-          <label className="settings-field">
-            <span>Preserve original image uploads</span>
+          <label className="settings-field settings-checkbox">
             <input
+              className="settings-checkbox-input"
               type="checkbox"
               checked={uiPreferences.preserveOriginalImageUploads}
               disabled={busy}
@@ -176,6 +179,7 @@ export function SettingsPage(): ReactElement {
                 });
               }}
             />
+            <span>Preserve original image uploads</span>
           </label>
           <p className="muted small-print">
             When enabled, attached images keep their original bytes and MIME
@@ -193,7 +197,7 @@ export function SettingsPage(): ReactElement {
         </section>
       ) : null}
 
-      <section className="panel-card">
+      <section className="panel-card settings-card">
         <h2>Configured providers</h2>
         {providers.length === 0 ? (
           <p className="muted">No API keys stored yet.</p>
@@ -208,7 +212,7 @@ export function SettingsPage(): ReactElement {
         )}
       </section>
 
-      <section className="panel-card">
+      <section className="panel-card settings-card">
         <h2>OpenAI API key</h2>
         <input
           type="password"
@@ -240,7 +244,7 @@ export function SettingsPage(): ReactElement {
         </div>
       </section>
 
-      <section className="panel-card">
+      <section className="panel-card settings-card">
         <h2>Anthropic API key</h2>
         <input
           type="password"
@@ -273,7 +277,7 @@ export function SettingsPage(): ReactElement {
       </section>
 
       {planner ? (
-        <section className="panel-card">
+        <section className="panel-card settings-card settings-card-wide">
           <h2>Planner defaults</h2>
           <p className="muted small-print">
             Used when generating action plans. Workspace-specific overrides can

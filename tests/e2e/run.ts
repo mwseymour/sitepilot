@@ -7,6 +7,10 @@ import { chromium, type BrowserContext } from "playwright";
 import type { ActionPlan, ImageAttachmentPayload } from "@sitepilot/contracts";
 import { initializeDatabase } from "@sitepilot/repositories";
 
+import {
+  decideApprovalForSite,
+  listPendingApprovalsForSite
+} from "../../apps/desktop/src/main/approval-workflow-service.js";
 import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
 import {
   createChatThreadForSite,
@@ -42,6 +46,12 @@ type ScenarioDefinition = {
   prompt: string;
   fixturePath: string;
   expectedTexts: string[];
+  sitePlannerSettings?: {
+    bypassApprovalRequests: boolean;
+  };
+  approvalFlow?: {
+    decision: "approved";
+  };
   previewMustContain?: string[];
   previewMustNotContain?: string[];
   editorMustContain?: string[];
@@ -196,6 +206,26 @@ const SCENARIOS: Record<string, ScenarioDefinition> = {
         "tests/e2e/fixtures/layout-reference-screenshot.jpg"
       )
     ]
+  },
+  "approval-required-draft-post": {
+    slug: "approval-required-draft-post",
+    prompt:
+      "Create a draft post called Automated Approval Test Post with three short paragraphs about first-time buyer mortgage advice.",
+    fixturePath: join(
+      process.cwd(),
+      "tests/e2e/fixtures/approval-required-draft-post.plan.json"
+    ),
+    expectedTexts: [
+      "Buying your first home is easier when you set a firm budget before you start viewing properties.",
+      "Speak to a broker early so you understand how your deposit, income, and credit history affect the mortgage options available.",
+      "Keep some savings back for surveys, legal fees, and moving costs so the purchase does not stretch your finances too tightly."
+    ],
+    sitePlannerSettings: {
+      bypassApprovalRequests: false
+    },
+    approvalFlow: {
+      decision: "approved"
+    }
   }
 };
 
@@ -910,9 +940,13 @@ async function main(): Promise<void> {
   await saveSitePlannerSettings(
     createFileSecureStorage(secureStorageRoot),
     siteId,
-    {
-      bypassApprovalRequests: true
-    }
+    args.mode === "scenario"
+      ? (args.scenario.sitePlannerSettings ?? {
+          bypassApprovalRequests: true
+        })
+      : {
+          bypassApprovalRequests: true
+        }
   );
 
   const discovery = await refreshDiscoveryForSite(siteId);
@@ -1004,6 +1038,104 @@ async function main(): Promise<void> {
   }
   writeJson(join(artifactDir, "final-plan.json"), planResult.plan);
 
+  let usedRealApprovalPath = false;
+  let approvalSummary:
+    | {
+        initialRequestStatus: string;
+        blockedExecutionCode: string;
+        pendingApprovalId: string;
+        decision: "approved";
+        finalRequestStatus: string;
+        pendingApprovalCountAfterDecision: number;
+      }
+    | null = null;
+
+  if (args.mode === "scenario" && args.scenario.approvalFlow) {
+    usedRealApprovalPath = true;
+
+    const requestAfterPlanning = await db.repositories.requests.getById(
+      request.request.id
+    );
+    if (requestAfterPlanning?.status !== "awaiting_approval") {
+      throw new Error(
+        `Expected request to be awaiting approval after planning, received "${requestAfterPlanning?.status ?? "missing"}".`
+      );
+    }
+
+    const firstAction = planResult.plan.proposedActions[0];
+    if (!firstAction) {
+      throw new Error("Expected approval scenario plan to include an action.");
+    }
+
+    const blockedExecution = await executePlanAction({
+      siteId,
+      requestId: request.request.id,
+      planId: planResult.plan.id,
+      actionId: firstAction.id,
+      dryRun: false
+    });
+    if (blockedExecution.ok || blockedExecution.code !== "not_approved") {
+      throw new Error(
+        `Expected execution to be blocked before approval, received ${JSON.stringify(blockedExecution)}.`
+      );
+    }
+
+    const pendingApprovals = await listPendingApprovalsForSite(siteId);
+    if (!pendingApprovals.ok) {
+      throw new Error(pendingApprovals.message);
+    }
+    const pendingApproval = pendingApprovals.approvals.find(
+      (approval) =>
+        approval.requestId === request.request.id &&
+        approval.planId === planResult.plan.id
+    );
+    if (!pendingApproval) {
+      throw new Error("Expected a pending approval for the generated plan.");
+    }
+
+    const approvalDecision = await decideApprovalForSite({
+      siteId,
+      approvalRequestId: pendingApproval.id,
+      decision: args.scenario.approvalFlow.decision
+    });
+    if (!approvalDecision.ok) {
+      throw new Error(approvalDecision.message);
+    }
+    if (approvalDecision.approval.status !== "approved") {
+      throw new Error(
+        `Expected approval decision to mark the request approved, received "${approvalDecision.approval.status}".`
+      );
+    }
+
+    const requestAfterDecision = await db.repositories.requests.getById(
+      request.request.id
+    );
+    if (requestAfterDecision?.status !== "approved") {
+      throw new Error(
+        `Expected request to be approved after decision, received "${requestAfterDecision?.status ?? "missing"}".`
+      );
+    }
+
+    const pendingApprovalsAfterDecision = await listPendingApprovalsForSite(
+      siteId
+    );
+    if (!pendingApprovalsAfterDecision.ok) {
+      throw new Error(pendingApprovalsAfterDecision.message);
+    }
+
+    approvalSummary = {
+      initialRequestStatus: requestAfterPlanning.status,
+      blockedExecutionCode: blockedExecution.code,
+      pendingApprovalId: pendingApproval.id,
+      decision: args.scenario.approvalFlow.decision,
+      finalRequestStatus: requestAfterDecision.status,
+      pendingApprovalCountAfterDecision:
+        pendingApprovalsAfterDecision.approvals.filter(
+          (approval) => approval.requestId === request.request.id
+        ).length
+    };
+  }
+
   const executionResults = [];
   for (const action of planResult.plan.proposedActions) {
     const result = await executePlanAction({
@@ -1056,7 +1188,7 @@ async function main(): Promise<void> {
   const summary = {
     mode: args.mode === "scenario" ? "fixture-backed" : "prompt-replay",
     scenario: args.mode === "scenario" ? args.scenario.slug : null,
-    usedRealApprovalPath: false,
+    usedRealApprovalPath,
     prompt: args.mode === "scenario" ? requestPrompt : args.prompt,
     executedPrompt: requestPrompt,
     replayContext: args.mode === "prompt" ? (args.replayContext ?? null) : null,
@@ -1071,6 +1203,7 @@ async function main(): Promise<void> {
         ? `${E2E_BASE_URL}?page_id=${createdEntity.postId}&preview=true`
         : `${E2E_BASE_URL}?p=${createdEntity.postId}&preview=true`,
     verification,
+    approvalSummary,
     auditEventTypes: auditEntries.map((entry) => entry.eventType),
     executionRunIds: executionResults.map((result) => result.executionRunId),
     toolInvocations: toolInvocations.map((invocation) => ({

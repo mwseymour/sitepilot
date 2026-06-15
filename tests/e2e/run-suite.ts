@@ -10,13 +10,15 @@ const SUITES: Record<string, string[]> = {
     "create-simple-draft-post",
     "create-designed-post-mixed-core-blocks",
     "edit-existing-page-structured-update",
-    "add-image-to-new-post"
+    "add-image-to-new-post",
+    "approval-required-draft-post"
   ],
   all: [
     "create-simple-draft-post",
     "create-designed-post-mixed-core-blocks",
     "edit-existing-page-structured-update",
     "add-image-to-new-post",
+    "approval-required-draft-post",
     "create-page-from-screenshot-reference"
   ]
 };
