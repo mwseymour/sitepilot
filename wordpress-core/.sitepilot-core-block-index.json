@@ -1,19 +1,16 @@
 {
   "sourceRoot": "/Users/mattseymour/Desktop/ai-dev/sitepilot/wordpress-core",
   "cachePath": "/Users/mattseymour/Desktop/ai-dev/sitepilot/wordpress-core/.sitepilot-core-block-index.json",
-  "generatedAt": "2026-04-27T15:52:14.003Z",
-  "wordpressVersion": "6.9.4",
-  "indexedBlockCount": 106,
+  "generatedAt": "2026-06-14T18:56:47.299Z",
+  "wordpressVersion": "7.0",
+  "indexedBlockCount": 109,
   "executableBlockCount": 25,
   "missingReferenceBlocks": [
-    "core/breadcrumbs",
     "core/comment-author-avatar",
     "core/form",
     "core/form-input",
     "core/form-submission-notification",
     "core/form-submit-button",
-    "core/icon",
-    "core/navigation-overlay-close",
     "core/playlist",
     "core/playlist-track",
     "core/post-comment",
@@ -67,6 +64,7 @@
         "html",
         "interactivity",
         "layout",
+        "listView",
         "shadow",
         "spacing",
         "typography"
@@ -187,8 +185,6 @@
       "ancestor": [],
       "allowedBlocks": [],
       "attributes": [
-        "isSelected",
-        "openByDefault",
         "templateLock"
       ],
       "supports": [
@@ -239,6 +235,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -246,10 +243,6 @@
         "typography"
       ],
       "styleFiles": [
-        "wp-includes/blocks/archives/editor-rtl.css",
-        "wp-includes/blocks/archives/editor-rtl.min.css",
-        "wp-includes/blocks/archives/editor.css",
-        "wp-includes/blocks/archives/editor.min.css",
         "wp-includes/blocks/archives/style-rtl.css",
         "wp-includes/blocks/archives/style-rtl.min.css",
         "wp-includes/blocks/archives/style.css",
@@ -331,6 +324,7 @@
         "__experimentalBorder",
         "align",
         "alignWide",
+        "anchor",
         "color",
         "filter",
         "html",
@@ -372,12 +366,55 @@
       ],
       "supports": [
         "customClassName",
+        "customCSS",
         "html",
         "inserter",
         "interactivity",
         "renaming"
       ],
       "styleFiles": []
+    },
+    {
+      "name": "core/breadcrumbs",
+      "label": "Breadcrumbs",
+      "title": "Breadcrumbs",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/breadcrumbs/block.json",
+      "canContainInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": false,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/breadcrumbs.php",
+      "apiVersion": 3,
+      "category": "theme",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "prefersTaxonomy",
+        "separator",
+        "showCurrentItem",
+        "showHomeItem",
+        "showOnHomePage"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/breadcrumbs/style-rtl.css",
+        "wp-includes/blocks/breadcrumbs/style-rtl.min.css",
+        "wp-includes/blocks/breadcrumbs/style.css",
+        "wp-includes/blocks/breadcrumbs/style.min.css"
+      ]
     },
     {
       "name": "core/button",
@@ -407,7 +444,6 @@
         "rel",
         "tagName",
         "text",
-        "textAlign",
         "textColor",
         "title",
         "type",
@@ -468,6 +504,7 @@
         "html",
         "interactivity",
         "layout",
+        "listView",
         "spacing",
         "typography"
       ],
@@ -506,6 +543,7 @@
       ],
       "supports": [
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -549,6 +587,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -719,11 +758,11 @@
       "allowedBlocks": [],
       "attributes": [
         "isLink",
-        "linkTarget",
-        "textAlign"
+        "linkTarget"
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -757,11 +796,10 @@
         "core/comment-template"
       ],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "spacing",
@@ -800,6 +838,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -834,11 +873,11 @@
       ],
       "allowedBlocks": [],
       "attributes": [
-        "linkTarget",
-        "textAlign"
+        "linkTarget"
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -872,11 +911,10 @@
         "core/comment-template"
       ],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "spacing",
@@ -913,6 +951,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "html",
         "interactivity",
         "reusable",
@@ -951,6 +990,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "spacing",
@@ -996,6 +1036,7 @@
       ],
       "supports": [
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -1038,6 +1079,7 @@
         "label"
       ],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -1068,10 +1110,12 @@
       "allowedBlocks": [],
       "attributes": [],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
         "reusable",
+        "spacing",
         "typography"
       ],
       "styleFiles": [
@@ -1105,6 +1149,7 @@
         "label"
       ],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -1137,8 +1182,7 @@
         "level",
         "levelOptions",
         "showCommentsCount",
-        "showPostTitle",
-        "textAlign"
+        "showPostTitle"
       ],
       "supports": [
         "__experimentalBorder",
@@ -1234,9 +1278,10 @@
       "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
       "metadataPath": "wp-includes/blocks/details/block.json",
       "canContainInnerBlocks": false,
-      "likelyUsesInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
       "hasParentRestriction": false,
       "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/details.php",
       "apiVersion": 3,
       "category": "text",
       "parent": [],
@@ -1300,6 +1345,7 @@
       ],
       "supports": [
         "align",
+        "anchor",
         "interactivity",
         "spacing"
       ],
@@ -1365,11 +1411,7 @@
         "wp-includes/blocks/file/style-rtl.css",
         "wp-includes/blocks/file/style-rtl.min.css",
         "wp-includes/blocks/file/style.css",
-        "wp-includes/blocks/file/style.min.css",
-        "wp-includes/blocks/file/view.asset.php",
-        "wp-includes/blocks/file/view.js",
-        "wp-includes/blocks/file/view.min.asset.php",
-        "wp-includes/blocks/file/view.min.js"
+        "wp-includes/blocks/file/style.min.css"
       ]
     },
     {
@@ -1393,6 +1435,7 @@
       "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "inserter",
@@ -1432,6 +1475,7 @@
       "supports": [
         "className",
         "customClassName",
+        "customCSS",
         "lock",
         "renaming",
         "reusable",
@@ -1475,6 +1519,7 @@
         "images",
         "linkTarget",
         "linkTo",
+        "navigationButtonType",
         "randomOrder",
         "shortCodeTransforms",
         "sizeSlug"
@@ -1487,6 +1532,7 @@
         "html",
         "interactivity",
         "layout",
+        "listView",
         "spacing",
         "units"
       ],
@@ -1583,8 +1629,7 @@
         "content",
         "level",
         "levelOptions",
-        "placeholder",
-        "textAlign"
+        "placeholder"
       ],
       "supports": [
         "__experimentalBorder",
@@ -1630,6 +1675,7 @@
         "label"
       ],
       "supports": [
+        "anchor",
         "html",
         "interactivity",
         "reusable",
@@ -1660,14 +1706,59 @@
       "supports": [
         "className",
         "customClassName",
+        "customCSS",
         "html",
-        "interactivity"
+        "interactivity",
+        "visibility"
       ],
       "styleFiles": [
         "wp-includes/blocks/html/editor-rtl.css",
         "wp-includes/blocks/html/editor-rtl.min.css",
         "wp-includes/blocks/html/editor.css",
         "wp-includes/blocks/html/editor.min.css"
+      ]
+    },
+    {
+      "name": "core/icon",
+      "label": "Icon",
+      "title": "Icon",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/icon/block.json",
+      "canContainInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": false,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/icon.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "icon"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "align",
+        "anchor",
+        "ariaLabel",
+        "color",
+        "dimensions",
+        "html",
+        "interactivity",
+        "spacing"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/icon/editor-rtl.css",
+        "wp-includes/blocks/icon/editor-rtl.min.css",
+        "wp-includes/blocks/icon/editor.css",
+        "wp-includes/blocks/icon/editor.min.css",
+        "wp-includes/blocks/icon/style-rtl.css",
+        "wp-includes/blocks/icon/style-rtl.min.css",
+        "wp-includes/blocks/icon/style.css",
+        "wp-includes/blocks/icon/style.min.css"
       ]
     },
     {
@@ -1693,6 +1784,7 @@
         "aspectRatio",
         "blob",
         "caption",
+        "focalPoint",
         "height",
         "href",
         "id",
@@ -1729,11 +1821,7 @@
         "wp-includes/blocks/image/theme-rtl.css",
         "wp-includes/blocks/image/theme-rtl.min.css",
         "wp-includes/blocks/image/theme.css",
-        "wp-includes/blocks/image/theme.min.css",
-        "wp-includes/blocks/image/view.asset.php",
-        "wp-includes/blocks/image/view.js",
-        "wp-includes/blocks/image/view.min.asset.php",
-        "wp-includes/blocks/image/view.min.js"
+        "wp-includes/blocks/image/theme.min.css"
       ]
     },
     {
@@ -1757,11 +1845,12 @@
       "attributes": [
         "commentsToShow",
         "displayAvatar",
-        "displayDate",
-        "displayExcerpt"
+        "displayContent",
+        "displayDate"
       ],
       "supports": [
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -1816,6 +1905,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -1900,6 +1990,7 @@
         "color",
         "html",
         "interactivity",
+        "listView",
         "spacing",
         "typography"
       ],
@@ -1971,6 +2062,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "className",
         "color",
         "interactivity",
@@ -2006,7 +2098,12 @@
         "mathML"
       ],
       "supports": [
-        "html"
+        "__experimentalBorder",
+        "anchor",
+        "color",
+        "html",
+        "spacing",
+        "typography"
       ],
       "styleFiles": [
         "wp-includes/blocks/math/editor-rtl.css",
@@ -2105,6 +2202,7 @@
       "supports": [
         "className",
         "customClassName",
+        "customCSS",
         "html",
         "inserter",
         "interactivity",
@@ -2139,9 +2237,11 @@
       "supports": [
         "className",
         "customClassName",
+        "customCSS",
         "html",
         "interactivity",
-        "multiple"
+        "multiple",
+        "visibility"
       ],
       "styleFiles": [
         "wp-includes/blocks/more/editor-rtl.css",
@@ -2170,6 +2270,7 @@
       "allowedBlocks": [
         "core/buttons",
         "core/home-link",
+        "core/icon",
         "core/loginout",
         "core/navigation-link",
         "core/navigation-submenu",
@@ -2190,7 +2291,7 @@
         "hasIcon",
         "icon",
         "maxNestingLevel",
-        "openSubmenusOnClick",
+        "overlay",
         "overlayBackgroundColor",
         "overlayMenu",
         "overlayTextColor",
@@ -2198,11 +2299,13 @@
         "rgbBackgroundColor",
         "rgbTextColor",
         "showSubmenuIcon",
+        "submenuVisibility",
         "templateLock",
         "textColor"
       ],
       "supports": [
         "align",
+        "anchor",
         "ariaLabel",
         "contentRole",
         "html",
@@ -2221,13 +2324,7 @@
         "wp-includes/blocks/navigation/style-rtl.css",
         "wp-includes/blocks/navigation/style-rtl.min.css",
         "wp-includes/blocks/navigation/style.css",
-        "wp-includes/blocks/navigation/style.min.css",
-        "wp-includes/blocks/navigation/view-modal.asset.php",
-        "wp-includes/blocks/navigation/view-modal.min.asset.php",
-        "wp-includes/blocks/navigation/view.asset.php",
-        "wp-includes/blocks/navigation/view.js",
-        "wp-includes/blocks/navigation/view.min.asset.php",
-        "wp-includes/blocks/navigation/view.min.js"
+        "wp-includes/blocks/navigation/style.min.css"
       ]
     },
     {
@@ -2268,6 +2365,7 @@
       ],
       "supports": [
         "__experimentalSlashInserter",
+        "anchor",
         "html",
         "interactivity",
         "renaming",
@@ -2283,6 +2381,40 @@
         "wp-includes/blocks/navigation-link/style-rtl.min.css",
         "wp-includes/blocks/navigation-link/style.css",
         "wp-includes/blocks/navigation-link/style.min.css"
+      ]
+    },
+    {
+      "name": "core/navigation-overlay-close",
+      "label": "Navigation Overlay Close",
+      "title": "Navigation Overlay Close",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/navigation-overlay-close/block.json",
+      "canContainInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": false,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/navigation-overlay-close.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "displayMode",
+        "text"
+      ],
+      "supports": [
+        "color",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/navigation-overlay-close/style-rtl.css",
+        "wp-includes/blocks/navigation-overlay-close/style-rtl.min.css",
+        "wp-includes/blocks/navigation-overlay-close/style.css",
+        "wp-includes/blocks/navigation-overlay-close/style.min.css"
       ]
     },
     {
@@ -2318,6 +2450,7 @@
         "url"
       ],
       "supports": [
+        "anchor",
         "html",
         "interactivity",
         "reusable",
@@ -2353,8 +2486,10 @@
       "supports": [
         "className",
         "customClassName",
+        "customCSS",
         "html",
-        "interactivity"
+        "interactivity",
+        "visibility"
       ],
       "styleFiles": [
         "wp-includes/blocks/nextpage/editor-rtl.css",
@@ -2389,6 +2524,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "contentRole",
         "html",
@@ -2437,6 +2573,7 @@
       ],
       "supports": [
         "__experimentalToolbar",
+        "anchor",
         "html",
         "inserter",
         "interactivity",
@@ -2454,16 +2591,16 @@
       "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
       "metadataPath": "wp-includes/blocks/paragraph/block.json",
       "canContainInnerBlocks": false,
-      "likelyUsesInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
       "hasParentRestriction": false,
       "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/paragraph.php",
       "apiVersion": 3,
       "category": "text",
       "parent": [],
       "ancestor": [],
       "allowedBlocks": [],
       "attributes": [
-        "align",
         "content",
         "direction",
         "dropCap",
@@ -2473,6 +2610,7 @@
         "__experimentalBorder",
         "__experimentalSelector",
         "__unstablePasteTextInline",
+        "align",
         "anchor",
         "className",
         "color",
@@ -2525,7 +2663,7 @@
     {
       "name": "core/post-author",
       "label": "Post Author",
-      "title": "Author",
+      "title": "Author (deprecated)",
       "executable": false,
       "status": "indexed",
       "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
@@ -2551,14 +2689,20 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "filter",
         "html",
+        "inserter",
         "interactivity",
         "spacing",
         "typography"
       ],
       "styleFiles": [
+        "wp-includes/blocks/post-author/editor-rtl.css",
+        "wp-includes/blocks/post-author/editor-rtl.min.css",
+        "wp-includes/blocks/post-author/editor.css",
+        "wp-includes/blocks/post-author/editor.min.css",
         "wp-includes/blocks/post-author/style-rtl.css",
         "wp-includes/blocks/post-author/style-rtl.min.css",
         "wp-includes/blocks/post-author/style.css",
@@ -2583,11 +2727,10 @@
       "parent": [],
       "ancestor": [],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "interactivity",
         "spacing",
@@ -2620,11 +2763,11 @@
       "allowedBlocks": [],
       "attributes": [
         "isLink",
-        "linkTarget",
-        "textAlign"
+        "linkTarget"
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -2656,11 +2799,10 @@
       "parent": [],
       "ancestor": [],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -2692,11 +2834,10 @@
       "parent": [],
       "ancestor": [],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "spacing",
@@ -2731,11 +2872,10 @@
       "parent": [],
       "ancestor": [],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -2773,6 +2913,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "background",
         "color",
         "dimensions",
@@ -2815,6 +2956,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -2854,6 +2996,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -2908,6 +3051,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "filter",
         "html",
@@ -2954,6 +3098,7 @@
         "type"
       ],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -2991,6 +3136,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3028,11 +3174,11 @@
         "prefix",
         "separator",
         "suffix",
-        "term",
-        "textAlign"
+        "term"
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3067,11 +3213,11 @@
       "attributes": [
         "averageReadingSpeed",
         "displayAsRange",
-        "displayMode",
-        "textAlign"
+        "displayMode"
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3114,6 +3260,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3238,7 +3385,7 @@
       ],
       "supports": [
         "align",
-        "contentRole",
+        "anchor",
         "html",
         "interactivity",
         "layout"
@@ -3247,11 +3394,7 @@
         "wp-includes/blocks/query/editor-rtl.css",
         "wp-includes/blocks/query/editor-rtl.min.css",
         "wp-includes/blocks/query/editor.css",
-        "wp-includes/blocks/query/editor.min.css",
-        "wp-includes/blocks/query/view.asset.php",
-        "wp-includes/blocks/query/view.js",
-        "wp-includes/blocks/query/view.min.asset.php",
-        "wp-includes/blocks/query/view.min.js"
+        "wp-includes/blocks/query/editor.min.css"
       ]
     },
     {
@@ -3277,6 +3420,7 @@
       "attributes": [],
       "supports": [
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3315,6 +3459,7 @@
       ],
       "supports": [
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3357,6 +3502,7 @@
         "label"
       ],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3389,6 +3535,7 @@
         "midSize"
       ],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3426,6 +3573,7 @@
         "label"
       ],
       "supports": [
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3463,6 +3611,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3502,6 +3651,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3588,6 +3738,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3634,6 +3785,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3683,6 +3835,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3701,11 +3854,7 @@
         "wp-includes/blocks/search/theme-rtl.css",
         "wp-includes/blocks/search/theme-rtl.min.css",
         "wp-includes/blocks/search/theme.css",
-        "wp-includes/blocks/search/theme.min.css",
-        "wp-includes/blocks/search/view.asset.php",
-        "wp-includes/blocks/search/view.js",
-        "wp-includes/blocks/search/view.min.asset.php",
-        "wp-includes/blocks/search/view.min.js"
+        "wp-includes/blocks/search/theme.min.css"
       ]
     },
     {
@@ -3775,7 +3924,9 @@
       "supports": [
         "className",
         "customClassName",
-        "html"
+        "customCSS",
+        "html",
+        "visibility"
       ],
       "styleFiles": [
         "wp-includes/blocks/shortcode/editor-rtl.css",
@@ -3811,6 +3962,7 @@
       "supports": [
         "align",
         "alignWide",
+        "anchor",
         "color",
         "filter",
         "html",
@@ -3854,6 +4006,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "contentRole",
         "html",
@@ -3900,6 +4053,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -3944,6 +4098,7 @@
         "url"
       ],
       "supports": [
+        "anchor",
         "html",
         "interactivity",
         "reusable"
@@ -3995,6 +4150,7 @@
         "html",
         "interactivity",
         "layout",
+        "listView",
         "spacing"
       ],
       "styleFiles": [
@@ -4121,16 +4277,13 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "html",
         "interactivity",
         "spacing",
         "typography"
       ],
       "styleFiles": [
-        "wp-includes/blocks/tag-cloud/editor-rtl.css",
-        "wp-includes/blocks/tag-cloud/editor-rtl.min.css",
-        "wp-includes/blocks/tag-cloud/editor.css",
-        "wp-includes/blocks/tag-cloud/editor.min.css",
         "wp-includes/blocks/tag-cloud/style-rtl.css",
         "wp-includes/blocks/tag-cloud/style-rtl.min.css",
         "wp-includes/blocks/tag-cloud/style.css",
@@ -4202,6 +4355,7 @@
       ],
       "supports": [
         "__experimentalBorder",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -4233,12 +4387,11 @@
       "parent": [],
       "ancestor": [],
       "allowedBlocks": [],
-      "attributes": [
-        "textAlign"
-      ],
+      "attributes": [],
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -4273,11 +4426,13 @@
       "attributes": [
         "isLink",
         "level",
+        "levelOptions",
         "textAlign"
       ],
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -4315,6 +4470,7 @@
       "supports": [
         "__experimentalBorder",
         "align",
+        "anchor",
         "color",
         "html",
         "interactivity",
@@ -4357,6 +4513,7 @@
       ],
       "supports": [
         "align",
+        "anchor",
         "html",
         "interactivity",
         "layout"
@@ -4403,7 +4560,7 @@
     {
       "name": "core/verse",
       "label": "Verse",
-      "title": "Verse",
+      "title": "Poetry",
       "executable": true,
       "status": "executable",
       "reason": "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it.",
@@ -4418,8 +4575,7 @@
       "ancestor": [],
       "allowedBlocks": [],
       "attributes": [
-        "content",
-        "textAlign"
+        "content"
       ],
       "supports": [
         "__experimentalBorder",

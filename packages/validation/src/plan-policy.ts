@@ -10,6 +10,7 @@ export type PlanValidationOutcome =
 export type PlanValidationContext = {
   discoveryCapabilities: string[];
   siteConfigPublishRequiresApproval: boolean;
+  siteConfigAutoApproveCategories: string[];
 };
 
 function hasCap(caps: string[], needle: string): boolean {
@@ -221,6 +222,97 @@ function actionCreatesDraftPost(actionType: string): boolean {
   );
 }
 
+function normalizeActionType(actionType: string): string {
+  return actionType
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s/_-]+/g, "_")
+    .toLowerCase();
+}
+
+function actionTargetsDraftContent(
+  actionType: string,
+  input: Record<string, unknown>
+): boolean {
+  const t = normalizeActionType(actionType);
+
+  if (
+    t === "create_draft_post" ||
+    t === "create_draft_content" ||
+    t === "create_post_draft" ||
+    t === "sitepilot_create_draft_post"
+  ) {
+    const status = pickString(input, "status", "post_status", "postStatus");
+    return status === undefined || status.toLowerCase() === "draft";
+  }
+
+  if (
+    t === "update_post" ||
+    t === "update_post_fields" ||
+    t === "update_post_content" ||
+    t === "edit_post_fields" ||
+    t === "edit_post_draft" ||
+    t === "sitepilot_update_post_fields" ||
+    t === "sitepilot_set_post_seo_meta" ||
+    t === "set_post_seo_meta" ||
+    t === "set_featured_image" ||
+    t === "set_post_featured_image" ||
+    t === "update_post_featured_image" ||
+    t === "sitepilot_set_post_featured_image"
+  ) {
+    const status = pickString(
+      input,
+      "lookup_status",
+      "lookupStatus",
+      "target_status",
+      "targetStatus",
+      "post_status",
+      "postStatus",
+      "status"
+    );
+    return status === undefined || status.toLowerCase() === "draft";
+  }
+
+  return false;
+}
+
+function planMatchesAutoApproveCategory(
+  plan: ActionPlan,
+  category: string
+): boolean {
+  const normalizedCategory = category.trim().toLowerCase();
+  if (normalizedCategory !== "draft_content_update") {
+    return false;
+  }
+
+  return (
+    plan.proposedActions.length > 0 &&
+    plan.proposedActions.every((action) =>
+      actionTargetsDraftContent(action.type, action.input)
+    )
+  );
+}
+
+function planQualifiesForAutoApproval(
+  plan: ActionPlan,
+  autoApproveCategories: string[]
+): boolean {
+  if (plan.riskLevel !== "low") {
+    return false;
+  }
+  if (
+    plan.proposedActions.some(
+      (action) => action.riskLevel !== "low"
+    )
+  ) {
+    return false;
+  }
+
+  return autoApproveCategories.some((category) =>
+    planMatchesAutoApproveCategory(plan, category)
+  );
+}
+
 function canResolveActionViaEarlierCreate(
   plan: ActionPlan,
   actionIndex: number
@@ -305,6 +397,7 @@ export function validateActionPlan(
     plan.proposedActions.some(
       (a) => a.riskLevel === "high" || a.riskLevel === "critical"
     ) ||
+    !planQualifiesForAutoApproval(plan, ctx.siteConfigAutoApproveCategories) ||
     (ctx.siteConfigPublishRequiresApproval &&
       plan.proposedActions.some((a) =>
         a.type.toLowerCase().includes("publish")

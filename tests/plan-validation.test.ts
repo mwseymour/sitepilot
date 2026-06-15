@@ -37,9 +37,19 @@ describe("validateActionPlan (T25)", () => {
   it("passes for a low-risk draft edit when capabilities allow", () => {
     const outcome = validateActionPlan(basePlan, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("pass");
+  });
+
+  it("returns blocked_approval for low-risk draft edits when auto-approval is not allowed", () => {
+    const outcome = validateActionPlan(basePlan, {
+      discoveryCapabilities: ["read", "edit_drafts"],
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: []
+    });
+    expect(outcome.kind).toBe("blocked_approval");
   });
 
   it("blocks when a publish action lacks publish capability", () => {
@@ -54,7 +64,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: []
     });
     expect(outcome.kind).toBe("blocked");
   });
@@ -66,7 +77,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: []
     });
     expect(outcome.kind).toBe("blocked_clarification");
   });
@@ -78,7 +90,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("pass");
   });
@@ -90,7 +103,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read", "publish"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("blocked_approval");
   });
@@ -108,7 +122,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("blocked_clarification");
   });
@@ -130,7 +145,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("pass");
   });
@@ -146,7 +162,7 @@ describe("validateActionPlan (T25)", () => {
           input: {
             lookup_title: "Hello Ben",
             lookup_post_type: "post",
-            lookup_status: "any",
+            lookup_status: "draft",
             content: '<!-- wp:heading --><h2>Hello Beth</h2><!-- /wp:heading -->'
           }
         }
@@ -154,7 +170,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("warnings");
     expect(outcome.messages).toContain(
@@ -192,7 +209,8 @@ describe("validateActionPlan (T25)", () => {
     });
     const outcome = validateActionPlan(plan, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("pass");
   });

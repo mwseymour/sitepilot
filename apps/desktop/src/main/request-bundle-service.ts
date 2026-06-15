@@ -88,20 +88,32 @@ function contractRequestVisualAnalysisPayload(
   });
 }
 
-async function loadSiteConfigPublishRequiresApproval(
-  siteId: SiteId
-): Promise<boolean> {
+async function loadSiteConfigApprovalPolicy(input: {
+  siteId: SiteId;
+}): Promise<{
+  publishRequiresApproval: boolean;
+  autoApproveCategories: string[];
+}> {
   const db = getDatabase();
-  const versions = await db.repositories.siteConfigs.listVersions(siteId);
+  const versions = await db.repositories.siteConfigs.listVersions(input.siteId);
   const latestConfig = [...versions].sort((a, b) => b.version - a.version)[0];
   if (!latestConfig) {
-    return false;
+    return {
+      publishRequiresApproval: false,
+      autoApproveCategories: ["draft_content_update"]
+    };
   }
   try {
     const cfg = siteConfigSchema.parse(latestConfig.document);
-    return cfg.sections.approvalPolicy.publishRequiresApproval;
+    return {
+      publishRequiresApproval: cfg.sections.approvalPolicy.publishRequiresApproval,
+      autoApproveCategories: cfg.sections.approvalPolicy.autoApproveCategories
+    };
   } catch {
-    return false;
+    return {
+      publishRequiresApproval: false,
+      autoApproveCategories: ["draft_content_update"]
+    };
   }
 }
 
@@ -114,6 +126,27 @@ function shouldRecomputeRequestStatus(status: Request["status"]): boolean {
   );
 }
 
+function deriveRequestStatusFromApproval(
+  approval: ApprovalRequest | undefined
+): Request["status"] | null {
+  if (!approval) {
+    return null;
+  }
+  if (approval.status === "pending") {
+    return "awaiting_approval";
+  }
+  if (approval.status === "approved") {
+    return "approved";
+  }
+  if (
+    approval.status === "rejected" ||
+    approval.status === "revision_requested"
+  ) {
+    return "drafted";
+  }
+  return null;
+}
+
 async function reconcileRequestStatusFromPlan(input: {
   request: Request;
   plan: ContractActionPlan | null;
@@ -123,16 +156,36 @@ async function reconcileRequestStatusFromPlan(input: {
   }
 
   const db = getDatabase();
-  const [discovery, publishRequiresApproval, sitePlannerSettings] =
+  const [approvals, discovery, approvalPolicy, sitePlannerSettings] =
     await Promise.all([
+      db.repositories.approvals.listByRequestId(input.request.id),
       db.repositories.discoverySnapshots.getLatest(input.request.siteId),
-      loadSiteConfigPublishRequiresApproval(input.request.siteId),
+      loadSiteConfigApprovalPolicy({ siteId: input.request.siteId }),
       loadSitePlannerSettings(getSecureStorage(), input.request.siteId)
     ]);
 
+  const latestApprovalForPlan = approvals
+    .filter((approval) => approval.planId === input.plan?.id)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1);
+  const approvalStatus = deriveRequestStatusFromApproval(latestApprovalForPlan);
+  if (approvalStatus !== null) {
+    if (approvalStatus === input.request.status) {
+      return input.request;
+    }
+    const updatedRequest: Request = {
+      ...input.request,
+      status: approvalStatus,
+      updatedAt: input.request.updatedAt
+    };
+    await db.repositories.requests.save(updatedRequest);
+    return updatedRequest;
+  }
+
   const rawValidation = validateActionPlan(input.plan, {
     discoveryCapabilities: discovery?.capabilities ?? [],
-    siteConfigPublishRequiresApproval: publishRequiresApproval
+    siteConfigPublishRequiresApproval: approvalPolicy.publishRequiresApproval,
+    siteConfigAutoApproveCategories: approvalPolicy.autoApproveCategories
   });
   const validation = applyApprovalBypass(
     rawValidation,

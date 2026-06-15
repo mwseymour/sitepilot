@@ -398,12 +398,15 @@ async function finalizeActionPlanForRequest(input: {
   const versions = await db.repositories.siteConfigs.listVersions(input.siteId);
   const latestConfig = [...versions].sort((a, b) => b.version - a.version)[0];
   let publishRequires = false;
+  let autoApproveCategories: string[] = ["draft_content_update"];
   if (latestConfig) {
     try {
       const cfg = siteConfigSchema.parse(latestConfig.document);
       publishRequires = cfg.sections.approvalPolicy.publishRequiresApproval;
+      autoApproveCategories = cfg.sections.approvalPolicy.autoApproveCategories;
     } catch {
       publishRequires = false;
+      autoApproveCategories = ["draft_content_update"];
     }
   }
 
@@ -421,7 +424,8 @@ async function finalizeActionPlanForRequest(input: {
 
   const rawValidation = validateActionPlan(input.plan, {
     discoveryCapabilities: discovery?.capabilities ?? [],
-    siteConfigPublishRequiresApproval: publishRequires
+    siteConfigPublishRequiresApproval: publishRequires,
+    siteConfigAutoApproveCategories: autoApproveCategories
   });
   const validation = applyApprovalBypass(
     rawValidation,

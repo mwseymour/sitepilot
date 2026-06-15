@@ -89,7 +89,7 @@ const db = {
               approvalPolicy: {
                 publishRequiresApproval: true,
                 menuChangesRequireApproval: true,
-                autoApproveCategories: []
+                autoApproveCategories: ["draft_content_update"]
               }
             }
           }
@@ -115,9 +115,27 @@ vi.mock("../apps/desktop/src/main/settings-service.js", () => ({
 
 describe("request-bundle-service", () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.clearAllMocks();
     db.repositories.requests.getById.mockResolvedValue(request);
     db.repositories.actionPlans.getById.mockResolvedValue(plan);
+    db.repositories.approvals.listByRequestId.mockResolvedValue([]);
+    db.repositories.siteConfigs.listVersions.mockResolvedValue([
+      {
+        version: 1,
+        document: {
+          requiredSectionsComplete: true,
+          activationStatus: "active",
+          sections: {
+            approvalPolicy: {
+              publishRequiresApproval: true,
+              menuChangesRequireApproval: true,
+              autoApproveCategories: ["draft_content_update"]
+            }
+          }
+        }
+      }
+    ]);
   });
 
   it("reconciles stale request status from the latest plan validation", async () => {
@@ -142,6 +160,82 @@ describe("request-bundle-service", () => {
       expect.objectContaining({
         id: request.id,
         status: "approved",
+        updatedAt: request.updatedAt
+      })
+    );
+  });
+
+  it("preserves an explicit approval decision for the current plan", async () => {
+    db.repositories.requests.getById.mockResolvedValue({
+      ...request,
+      status: "approved"
+    });
+    db.repositories.approvals.listByRequestId.mockResolvedValue([
+      {
+        id: "approval-1",
+        requestId: request.id,
+        planId: plan.id,
+        siteId: request.siteId,
+        status: "approved",
+        requestedBy: request.requestedBy,
+        createdAt: "2026-04-28T10:01:00.000Z",
+        updatedAt: "2026-04-28T10:02:00.000Z"
+      }
+    ]);
+
+    const { getRequestBundleForThread } = await import(
+      "../apps/desktop/src/main/request-bundle-service.js"
+    );
+
+    const result = await getRequestBundleForThread({
+      siteId: request.siteId as never,
+      threadId: request.threadId as never,
+      requestId: request.id as never
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.request.status).toBe("approved");
+    expect(db.repositories.requests.save).not.toHaveBeenCalled();
+  });
+
+  it("preserves a rejection or revision request for the current plan", async () => {
+    db.repositories.approvals.listByRequestId.mockResolvedValue([
+      {
+        id: "approval-1",
+        requestId: request.id,
+        planId: plan.id,
+        siteId: request.siteId,
+        status: "rejected",
+        requestedBy: request.requestedBy,
+        createdAt: "2026-04-28T10:01:00.000Z",
+        updatedAt: "2026-04-28T10:02:00.000Z"
+      }
+    ]);
+
+    const { getRequestBundleForThread } = await import(
+      "../apps/desktop/src/main/request-bundle-service.js"
+    );
+
+    const result = await getRequestBundleForThread({
+      siteId: request.siteId as never,
+      threadId: request.threadId as never,
+      requestId: request.id as never
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.request.status).toBe("drafted");
+    expect(db.repositories.requests.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: request.id,
+        status: "drafted",
         updatedAt: request.updatedAt
       })
     );

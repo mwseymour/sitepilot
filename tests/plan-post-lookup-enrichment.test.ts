@@ -112,7 +112,8 @@ describe("enrichActionPlanWithPostLookupFromContext", () => {
     );
     const outcome = validateActionPlan(enriched, {
       discoveryCapabilities: ["read", "edit_drafts"],
-      siteConfigPublishRequiresApproval: false
+      siteConfigPublishRequiresApproval: false,
+      siteConfigAutoApproveCategories: ["draft_content_update"]
     });
     expect(outcome.kind).toBe("pass");
   });

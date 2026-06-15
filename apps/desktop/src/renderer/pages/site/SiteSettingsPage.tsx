@@ -478,9 +478,9 @@ export function SiteSettingsPage(): ReactElement {
             Lets this site skip approval queues when plan validation would
             otherwise require operator approval.
           </p>
-          <label className="settings-field">
-            <span>Approval bypass</span>
+          <label className="settings-field settings-checkbox">
             <input
+              className="settings-checkbox-input"
               type="checkbox"
               checked={sitePlannerSettings.bypassApprovalRequests}
               disabled={busy}
@@ -490,6 +490,7 @@ export function SiteSettingsPage(): ReactElement {
                 });
               }}
             />
+            <span>Approval bypass</span>
           </label>
           <button
             type="button"
@@ -510,9 +511,9 @@ export function SiteSettingsPage(): ReactElement {
             surfaced error messages, plan validation, and MCP request/response
             payloads.
           </p>
-          <label className="settings-field">
-            <span>Enable developer panel</span>
+          <label className="settings-field settings-checkbox">
             <input
+              className="settings-checkbox-input"
               type="checkbox"
               checked={uiPreferences.developerToolsEnabled}
               disabled={busy}
@@ -523,10 +524,11 @@ export function SiteSettingsPage(): ReactElement {
                 });
               }}
             />
+            <span>Enable developer panel</span>
           </label>
-          <label className="settings-field">
-            <span>Preserve original image uploads</span>
+          <label className="settings-field settings-checkbox">
             <input
+              className="settings-checkbox-input"
               type="checkbox"
               checked={uiPreferences.preserveOriginalImageUploads}
               disabled={busy}
@@ -537,6 +539,7 @@ export function SiteSettingsPage(): ReactElement {
                 });
               }}
             />
+            <span>Preserve original image uploads</span>
           </label>
           <p className="muted small-print">
             When enabled, images stay at original quality instead of being
