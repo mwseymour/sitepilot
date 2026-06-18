@@ -944,6 +944,103 @@ describe("buildLlmActionPlan", () => {
     });
   });
 
+  it("preserves ACF container colour labels when discovered options are not indexed yet", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a grey ACF container draft",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Grey container",
+              blocks: [
+                {
+                  blockName: "acf/container",
+                  attrs: {
+                    color: "grey",
+                    name: "acf/container",
+                    data: {
+                      field_container_colour: "bg-white",
+                      colour: "bg-white"
+                    },
+                    align: "",
+                    mode: "preview"
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "<p>First paragraph.</p>",
+                      innerContent: ["<p>First paragraph.</p>"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: [null]
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const context = makePlannerContextWithLoadedCustomBlock(
+      "Create a post wrapped in the custom container block and set the colour to grey."
+    );
+    const config = siteConfigSchema.parse({
+      ...context.siteConfig!,
+      sections: {
+        ...context.siteConfig!.sections,
+        contentModel: {
+          ...context.siteConfig!.sections.contentModel,
+          customBlockSupport: []
+        }
+      }
+    });
+
+    const result = await buildLlmActionPlan({
+      context: {
+        ...context,
+        siteConfig: config
+      },
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      blocks: [
+        {
+          blockName: "acf/container",
+          attrs: {
+            data: {
+              field_container_colour: "grey",
+              colour: "grey"
+            }
+          }
+        }
+      ]
+    });
+  });
+
   it("canonicalizes standalone block batch 1 shapes", async () => {
     const client = makeClient(
       JSON.stringify({

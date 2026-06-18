@@ -60,6 +60,8 @@ type ThreadTypeMeta = {
   description: string;
 };
 
+type MessageFilter = "all" | "non_system" | "system_only";
+
 type ExpandableTextProps = {
   text: string;
   className: string;
@@ -120,6 +122,15 @@ function roleLabel(m: MessageRow): string {
     return m.author.kind === "assistant" ? "Assistant" : "System";
   }
   return "You";
+}
+
+function isSystemMessage(message: MessageRow): boolean {
+  return (
+    typeof message.author === "object" &&
+    message.author !== null &&
+    "kind" in message.author &&
+    message.author.kind === "system"
+  );
 }
 
 function ExpandableText({
@@ -605,6 +616,7 @@ export function ChatPage({
   const [editingThreadTitle, setEditingThreadTitle] = useState("");
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
   const [requestPrompt, setRequestPrompt] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<
     ImageAttachmentPayload[]
@@ -740,6 +752,10 @@ export function ChatPage({
     setPendingAttachments([]);
   }, [selectedThreadId]);
 
+  useEffect(() => {
+    setMessageFilter("all");
+  }, [selectedThreadId]);
+
   const loadBundle = useCallback(async () => {
     if (isConversationMode) {
       setBundle(null);
@@ -803,6 +819,21 @@ export function ChatPage({
   const openQuestions = bundle?.plan?.openQuestions ?? [];
   const canRunPlanDirectly = executableActions.length > 0;
   const selectedThread = threads.find((thread) => thread.id === selectedThreadId);
+  const systemMessageCount = useMemo(
+    () => messages.filter(isSystemMessage).length,
+    [messages]
+  );
+  const filteredMessages = useMemo(() => {
+    switch (messageFilter) {
+      case "non_system":
+        return messages.filter((message) => !isSystemMessage(message));
+      case "system_only":
+        return messages.filter(isSystemMessage);
+      default:
+        return messages;
+    }
+  }, [messageFilter, messages]);
+  const hasVisibleMessages = filteredMessages.length > 0;
 
   const cancelThreadRename = useCallback(() => {
     setEditingThreadId(null);
@@ -1854,7 +1885,7 @@ export function ChatPage({
         ) : (
           <>
             <header className="chat-main-header">
-              <div>
+              <div className="chat-main-header-copy">
                 <h2>
                   {selectedThread?.title ??
                     (isConversationMode ? "Conversation" : "Request")}
@@ -1862,46 +1893,97 @@ export function ChatPage({
                 <p className="muted small-print">
                   {threadTypeMeta(selectedThread?.type).label}
                 </p>
-                <p className="muted small-print">
-                  {threadTypeMeta(selectedThread?.type).description}
-                </p>
+                <div className="chat-message-filters" aria-label="Message filters">
+                  <div className="chat-message-filter-group" role="group">
+                    <button
+                      type="button"
+                      className={
+                        messageFilter === "all"
+                          ? "chat-message-filter is-active"
+                          : "chat-message-filter"
+                      }
+                      aria-pressed={messageFilter === "all"}
+                      onClick={() => {
+                        setMessageFilter("all");
+                      }}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        messageFilter === "non_system"
+                          ? "chat-message-filter is-active"
+                          : "chat-message-filter"
+                      }
+                      aria-pressed={messageFilter === "non_system"}
+                      onClick={() => {
+                        setMessageFilter("non_system");
+                      }}
+                    >
+                      Hide system
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        messageFilter === "system_only"
+                          ? "chat-message-filter is-active"
+                          : "chat-message-filter"
+                      }
+                      aria-pressed={messageFilter === "system_only"}
+                      onClick={() => {
+                        setMessageFilter("system_only");
+                      }}
+                    >
+                      System only
+                    </button>
+                  </div>
+                  {systemMessageCount > 0 ? (
+                    <p className="chat-message-filter-summary muted small-print">
+                      {systemMessageCount} system{" "}
+                      {systemMessageCount === 1 ? "message" : "messages"}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </header>
             <div className="chat-content-grid">
               <div className="chat-primary-column">
-                <div ref={messagesRef} className="chat-messages">
-                  {messages.map((m) => (
-                    <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>
-                      <header className="chat-msg-meta">
-                        <span className="chat-msg-author">
-                          <span className="chat-msg-icon">{roleIcon(m)}</span>
-                          <span>{roleLabel(m)}</span>
-                        </span>
-                        <time dateTime={m.createdAt}>{m.createdAt}</time>
-                      </header>
-                      {renderMessageBody(m)}
-                      {m.attachments && m.attachments.length > 0 ? (
-                        <div className="chat-image-grid">
-                          {m.attachments.map((attachment) => (
-                            <figure
-                              key={`${m.id}-${attachment.fileName}`}
-                              className="chat-image-card"
-                            >
-                              <img
-                                src={attachment.dataUrl}
-                                alt={attachment.fileName}
-                                className="chat-image-preview"
-                              />
-                              <figcaption className="small-print">
-                                {attachment.fileName}
-                              </figcaption>
-                            </figure>
-                          ))}
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
+                {hasVisibleMessages ? (
+                  <div ref={messagesRef} className="chat-messages">
+                    {filteredMessages.map((m) => (
+                      <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>
+                        <header className="chat-msg-meta">
+                          <span className="chat-msg-author">
+                            <span className="chat-msg-icon">{roleIcon(m)}</span>
+                            <span>{roleLabel(m)}</span>
+                          </span>
+                          <time dateTime={m.createdAt}>{m.createdAt}</time>
+                        </header>
+                        {renderMessageBody(m)}
+                        {m.attachments && m.attachments.length > 0 ? (
+                          <div className="chat-image-grid">
+                            {m.attachments.map((attachment) => (
+                              <figure
+                                key={`${m.id}-${attachment.fileName}`}
+                                className="chat-image-card"
+                              >
+                                <img
+                                  src={attachment.dataUrl}
+                                  alt={attachment.fileName}
+                                  className="chat-image-preview"
+                                />
+                                <figcaption className="small-print">
+                                  {attachment.fileName}
+                                </figcaption>
+                              </figure>
+                            ))}
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
 
                 <div className="chat-composer-card">
                   <h3>{composerState.title}</h3>

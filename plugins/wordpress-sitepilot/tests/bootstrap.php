@@ -102,6 +102,39 @@ namespace {
 		return preg_replace( '#<script\b[^>]*>.*?</script>#is', '', $value ) ?? '';
 	}
 
+	function acf_get_field_groups(): array {
+		return array(
+			array(
+				'key'      => 'group_container',
+				'location' => array(
+					array(
+						array(
+							'param'    => 'block',
+							'operator' => '==',
+							'value'    => 'acf/container',
+						),
+					),
+				),
+			),
+		);
+	}
+
+	function acf_get_fields( array $group ): array {
+		unset( $group );
+		return array(
+			array(
+				'key'     => 'field_container_colour',
+				'name'    => 'colour',
+				'label'   => 'Colour',
+				'type'    => 'select',
+				'choices' => array(
+					'bg-white'    => 'white',
+					'bg-gray-300' => 'grey',
+				),
+			),
+		);
+	}
+
 	function wp_parse_url( string $url, int $component = -1 ): mixed {
 		return parse_url( $url, $component );
 	}

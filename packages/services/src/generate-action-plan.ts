@@ -879,11 +879,20 @@ function acfContainerAttrs(
       : typeof rawData.colour === "string"
         ? rawData.colour
         : undefined);
+  const explicitLabel =
+    typeof attrs.colour === "string" && attrs.colour.trim().length > 0
+      ? attrs.colour.trim()
+      : typeof attrs.color === "string" && attrs.color.trim().length > 0
+        ? attrs.color.trim()
+        : undefined;
   const colour =
     requestedColour !== null &&
     (explicitColour === undefined || explicitColour === "bg-white")
       ? requestedColour
-      : (explicitColour ?? "bg-white");
+      : explicitLabel !== undefined &&
+          (explicitColour === undefined || explicitColour === "bg-white")
+        ? explicitLabel
+        : (explicitColour ?? "bg-white");
   const data = {
     field_container_colour: colour,
     colour,

@@ -420,6 +420,42 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringNotContainsString( 'acf-container', $content );
 	}
 
+	public function test_create_draft_resolves_acf_container_colour_label_from_live_choices(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Grey ACF Container',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'acf/container',
+						'attrs'        => array(
+							'color' => 'grey',
+							'data'  => array(
+								'colour' => 'bg-white',
+							),
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/paragraph',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => '<p>Inside the container.</p>',
+								'innerContent' => array( '<p>Inside the container.</p>' ),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array( null ),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '"field_container_colour":"bg-gray-300"', $content );
+		$this->assertStringContainsString( '"colour":"bg-gray-300"', $content );
+	}
+
 	public function test_create_draft_rejects_unloaded_acf_blocks(): void {
 		$result = $this->create_draft(
 			array(

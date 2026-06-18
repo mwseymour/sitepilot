@@ -643,13 +643,14 @@ final class Write_Abilities {
 	 */
 	private static function acf_container_attrs( array $attrs ): array {
 		$data = isset( $attrs['data'] ) && is_array( $attrs['data'] ) ? $attrs['data'] : array();
-		$colour = self::first_non_empty_string(
+		$raw_colour = self::acf_container_requested_value(
 			$data['field_container_colour'] ?? null,
 			$data['colour'] ?? null,
 			$attrs['colour'] ?? null,
-			$attrs['color'] ?? null,
-			'bg-white'
+			$attrs['color'] ?? null
 		);
+		$colour     = self::acf_block_choice_value( 'acf/container', array( 'colour', 'color', 'field_container_colour' ), $raw_colour )
+			?? self::first_non_empty_string( $raw_colour, 'bg-white' );
 
 		$attrs['name']  = 'acf/container';
 		$attrs['data']  = array_merge(
@@ -672,6 +673,141 @@ final class Write_Abilities {
 		$attrs['mode']  = isset( $attrs['mode'] ) && is_string( $attrs['mode'] ) ? $attrs['mode'] : 'preview';
 
 		return $attrs;
+	}
+
+	private static function acf_container_requested_value( mixed ...$values ): string {
+		$data_value = self::first_non_empty_string( $values[0] ?? null, $values[1] ?? null );
+		$attr_value = self::first_non_empty_string( $values[2] ?? null, $values[3] ?? null );
+		if ( '' !== $attr_value && ( '' === $data_value || 'bg-white' === $data_value ) ) {
+			return $attr_value;
+		}
+		return self::first_non_empty_string( $data_value, $attr_value );
+	}
+
+	/**
+	 * @param array<int, string> $field_names Field names, keys, or labels.
+	 */
+	private static function acf_block_choice_value( string $block_name, array $field_names, string $requested ): ?string {
+		if ( '' === $requested || ! function_exists( 'acf_get_field_groups' ) || ! function_exists( 'acf_get_fields' ) ) {
+			return null;
+		}
+
+		$groups = acf_get_field_groups();
+		if ( ! is_array( $groups ) ) {
+			return null;
+		}
+
+		foreach ( $groups as $group ) {
+			if ( ! is_array( $group ) || ! self::acf_field_group_targets_block( $group, $block_name ) ) {
+				continue;
+			}
+
+			$fields = acf_get_fields( $group );
+			if ( ! is_array( $fields ) ) {
+				continue;
+			}
+
+			foreach ( self::flatten_acf_fields( $fields ) as $field ) {
+				$value = self::acf_field_choice_value( $field, $field_names, $requested );
+				if ( null !== $value ) {
+					return $value;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param array<string, mixed> $group ACF field group.
+	 */
+	private static function acf_field_group_targets_block( array $group, string $block_name ): bool {
+		$locations = isset( $group['location'] ) && is_array( $group['location'] ) ? $group['location'] : array();
+		foreach ( $locations as $rules ) {
+			if ( ! is_array( $rules ) ) {
+				continue;
+			}
+			foreach ( $rules as $rule ) {
+				if ( ! is_array( $rule ) || ( $rule['param'] ?? null ) !== 'block' ) {
+					continue;
+				}
+				$value = isset( $rule['value'] ) && is_string( $rule['value'] ) ? $rule['value'] : '';
+				if ( $value === $block_name || $value === 'core/' . $block_name ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @param array<int, mixed> $fields ACF fields.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function flatten_acf_fields( array $fields ): array {
+		$flat = array();
+		foreach ( $fields as $field ) {
+			if ( ! is_array( $field ) ) {
+				continue;
+			}
+			$flat[] = $field;
+			foreach ( array( 'sub_fields', 'layouts' ) as $child_key ) {
+				if ( ! isset( $field[ $child_key ] ) || ! is_array( $field[ $child_key ] ) ) {
+					continue;
+				}
+				foreach ( $field[ $child_key ] as $child ) {
+					if ( isset( $child['sub_fields'] ) && is_array( $child['sub_fields'] ) ) {
+						$flat = array_merge( $flat, self::flatten_acf_fields( $child['sub_fields'] ) );
+					}
+				}
+			}
+		}
+		return $flat;
+	}
+
+	/**
+	 * @param array<string, mixed> $field ACF field.
+	 * @param array<int, string>  $field_names Field names, keys, or labels.
+	 */
+	private static function acf_field_choice_value( array $field, array $field_names, string $requested ): ?string {
+		$field_identifiers = array_filter(
+			array(
+				$field['name'] ?? null,
+				$field['key'] ?? null,
+				$field['label'] ?? null,
+			),
+			'is_string'
+		);
+		$normalized_names = array_map( array( self::class, 'normalize_choice_token' ), $field_identifiers );
+		$requested_names  = array_map( array( self::class, 'normalize_choice_token' ), $field_names );
+		if ( empty( array_intersect( $normalized_names, $requested_names ) ) ) {
+			return null;
+		}
+		if ( ! isset( $field['choices'] ) || ! is_array( $field['choices'] ) ) {
+			return null;
+		}
+
+		$normalized_requested = self::normalize_choice_token( $requested );
+		foreach ( $field['choices'] as $value => $label ) {
+			if ( ! is_scalar( $value ) || ! is_scalar( $label ) ) {
+				continue;
+			}
+			if (
+				self::normalize_choice_token( (string) $value ) === $normalized_requested ||
+				self::normalize_choice_token( (string) $label ) === $normalized_requested
+			) {
+				return (string) $value;
+			}
+		}
+
+		return null;
+	}
+
+	private static function normalize_choice_token( string $value ): string {
+		$normalized = strtolower( trim( $value ) );
+		$normalized = preg_replace( '/[\s_-]+/', ' ', $normalized );
+		return is_string( $normalized ) ? $normalized : strtolower( trim( $value ) );
 	}
 
 	private static function first_non_empty_string( mixed ...$values ): string {
