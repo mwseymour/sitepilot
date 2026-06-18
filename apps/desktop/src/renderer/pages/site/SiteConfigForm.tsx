@@ -286,6 +286,18 @@ export function SiteConfigForm({
             value={listToLines(s.contentModel.thirdPartyBlocks)}
           />
         </label>
+        <label className="field">
+          <span>Custom block support (read-only)</span>
+          <textarea
+            rows={4}
+            readOnly
+            value={listToLines(
+              s.contentModel.customBlockSupport.map(
+                (block) => `${block.name} (${block.support})`
+              )
+            )}
+          />
+        </label>
       </fieldset>
 
       <fieldset className="config-fieldset">

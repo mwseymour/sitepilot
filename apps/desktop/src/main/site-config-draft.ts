@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { siteConfigSchema, type SiteConfig } from "@sitepilot/contracts";
+import {
+  classifyDiscoveredCustomBlock,
+  siteConfigSchema,
+  type CustomBlockAttributeDefinition,
+  type SiteConfig,
+  type SiteCustomBlockSupportEntry
+} from "@sitepilot/contracts";
 import type {
   DiscoverySnapshot,
   JsonObject,
@@ -152,6 +158,106 @@ function parseThirdPartyBlocks(d: Record<string, unknown>): string[] {
   return Array.from(names).sort((a, b) => a.localeCompare(b));
 }
 
+function parseCustomBlockAttributes(
+  value: unknown
+): CustomBlockAttributeDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const attributes: CustomBlockAttributeDefinition[] = [];
+  for (const item of value) {
+    const obj = asRecord(item);
+    if (!obj) {
+      continue;
+    }
+
+    const path = stringField(obj, "path");
+    if (path === undefined) {
+      continue;
+    }
+
+    const attribute: CustomBlockAttributeDefinition = { path };
+    const fieldName = stringField(obj, "fieldName");
+    const fieldKey = stringField(obj, "fieldKey");
+    const label = stringField(obj, "label");
+    const control = stringField(obj, "control");
+    if (fieldName !== undefined) {
+      attribute.fieldName = fieldName;
+    }
+    if (fieldKey !== undefined) {
+      attribute.fieldKey = fieldKey;
+    }
+    if (label !== undefined) {
+      attribute.label = label;
+    }
+    if (control !== undefined) {
+      attribute.control = control;
+    }
+
+    const optionsRaw = obj["options"];
+    const options: Array<{ label: string; value: string }> = [];
+    if (Array.isArray(optionsRaw)) {
+      for (const option of optionsRaw) {
+        const optionObj = asRecord(option);
+        if (!optionObj) {
+          continue;
+        }
+        const optionLabel = stringField(optionObj, "label");
+        const optionValue = stringField(optionObj, "value");
+        if (optionLabel !== undefined && optionValue !== undefined) {
+          options.push({ label: optionLabel, value: optionValue });
+        }
+      }
+    }
+    if (options.length > 0) {
+      attribute.options = options;
+    }
+
+    attributes.push(attribute);
+  }
+
+  return attributes;
+}
+
+function parseCustomBlockSupport(
+  d: Record<string, unknown>
+): SiteCustomBlockSupportEntry[] {
+  const rawBlocks = Array.isArray(d["third_party_blocks"])
+    ? d["third_party_blocks"]
+    : [];
+  const names = parseThirdPartyBlocks(d);
+  const attributesByName = new Map<string, CustomBlockAttributeDefinition[]>();
+  for (const item of rawBlocks) {
+    const obj = asRecord(item);
+    if (!obj) {
+      continue;
+    }
+    const name = stringField(obj, "name");
+    if (name === undefined) {
+      continue;
+    }
+    const attributes = parseCustomBlockAttributes(obj["attributes"]);
+    if (attributes.length > 0) {
+      attributesByName.set(name, attributes);
+    }
+  }
+  const entries = new Map<string, SiteCustomBlockSupportEntry>();
+
+  for (const name of names) {
+    const entry = classifyDiscoveredCustomBlock(name);
+    if (entry) {
+      const attributes = attributesByName.get(entry.name);
+      if (attributes !== undefined) {
+        entry.attributes = attributes;
+      }
+      entries.set(entry.name, entry);
+    }
+  }
+
+  return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const READ_ONLY_POST_TYPES = new Set([
   "attachment",
   "revision",
@@ -201,6 +307,7 @@ export function buildSiteConfigDraftFromDiscovery(
   const navMenus = parseNavMenus(d);
   const seo = parseSeoHints(d);
   const thirdPartyBlocks = parseThirdPartyBlocks(d);
+  const customBlockSupport = parseCustomBlockSupport(d);
 
   const editablePostTypes = Object.keys(postTypes).filter(
     (slug) => !READ_ONLY_POST_TYPES.has(slug)
@@ -286,7 +393,8 @@ export function buildSiteConfigDraftFromDiscovery(
           taxonomyDefinitions.length > 0
             ? taxonomyDefinitions
             : ["category (Category)", "post_tag (Tag)"],
-        thirdPartyBlocks
+        thirdPartyBlocks,
+        customBlockSupport
       },
       seoPolicy: {
         titlePatterns,

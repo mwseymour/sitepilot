@@ -48,6 +48,23 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
         { id: 2, name: "Footer", slug: "footer" }
       ],
       third_party_blocks: [
+        {
+          name: "acf/container",
+          title: "Container",
+          attributes: [
+            {
+              path: "data.colour",
+              fieldName: "colour",
+              fieldKey: "field_container_colour",
+              label: "Colour",
+              control: "select",
+              options: [
+                { label: "white", value: "bg-white" },
+                { label: "grey", value: "bg-gray-300" }
+              ]
+            }
+          ]
+        },
         { name: "acf/testimonial", title: "Testimonial" },
         { name: "gravityforms/form", title: "Form" }
       ],
@@ -88,8 +105,28 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
       "attachment"
     );
     expect(draft.sections.contentModel.thirdPartyBlocks).toEqual([
+      "acf/container",
       "acf/testimonial",
       "gravityforms/form"
+    ]);
+    expect(draft.sections.contentModel.customBlockSupport).toEqual([
+      expect.objectContaining({
+        name: "acf/container",
+        support: "passthrough",
+        attributes: [
+          expect.objectContaining({
+            path: "data.colour",
+            options: [
+              { label: "white", value: "bg-white" },
+              { label: "grey", value: "bg-gray-300" }
+            ]
+          })
+        ]
+      }),
+      expect.objectContaining({
+        name: "acf/testimonial",
+        support: "manual_review_required"
+      })
     ]);
     expect(draft.sections.seoPolicy.metaProvider).toBe("yoast");
     expect(draft.sections.seoPolicy.titlePatterns[0]).toContain("%%");
@@ -120,5 +157,6 @@ describe("buildSiteConfigDraftFromDiscovery", () => {
     expect(draft.sections.structure.publicSections.length).toBeGreaterThan(0);
     expect(draft.sections.seoPolicy.metaProvider).toBe("sitepilot");
     expect(draft.sections.contentModel.thirdPartyBlocks).toEqual([]);
+    expect(draft.sections.contentModel.customBlockSupport).toEqual([]);
   });
 });

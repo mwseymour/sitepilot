@@ -6,6 +6,8 @@ SitePilot must not rely on model-authored Gutenberg serialized HTML for complex 
 
 For layout, nested, media, and spacer content, the planner should emit structured parsed block arrays. The WordPress plugin validates, sanitizes, canonicalizes, and serializes those arrays inside the target WordPress install.
 
+For third-party blocks such as ACF blocks, see [Custom Block Support](./custom-block-support.md). Discovery may record these blocks, but SitePilot only writes them after a reviewed custom-block support entry exists.
+
 ## Flow
 
 1. The planner creates an action with `input.blocks` for complex Gutenberg content.
@@ -100,7 +102,13 @@ Correct two-column shape:
     }
   ],
   "innerHTML": "<div class=\"wp-block-columns\">\n\n</div>",
-  "innerContent": ["<div class=\"wp-block-columns\">", null, "\n\n", null, "</div>"]
+  "innerContent": [
+    "<div class=\"wp-block-columns\">",
+    null,
+    "\n\n",
+    null,
+    "</div>"
+  ]
 }
 ```
 
@@ -277,7 +285,13 @@ Correct parent block:
 ```json
 {
   "blockName": "core/columns",
-  "innerContent": ["<div class=\"wp-block-columns\">", null, "\n\n", null, "</div>"]
+  "innerContent": [
+    "<div class=\"wp-block-columns\">",
+    null,
+    "\n\n",
+    null,
+    "</div>"
+  ]
 }
 ```
 

@@ -1,18 +1,18 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  classifyDiscoveredCustomBlock,
   explainUnsupportedBlockName,
   findUnsupportedParsedBlockNames,
   findUnsupportedSerializedBlockNames,
+  normalizeParsedBlockName,
   siteConfigSchema,
   type ImageAttachmentPayload,
   type SiteConfig,
+  type SiteCustomBlockSupportEntry,
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
 } from "@sitepilot/contracts";
-import {
-  McpHttpClient,
-  normalizeMcpToolResult
-} from "@sitepilot/mcp-client";
+import { McpHttpClient, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import type {
   ActionId,
   ActionPlanId,
@@ -95,7 +95,9 @@ function actionCreatesDraftPost(actionType: string): boolean {
   );
 }
 
-function extractPostIdFromToolOutput(output: Record<string, unknown> | undefined): number | undefined {
+function extractPostIdFromToolOutput(
+  output: Record<string, unknown> | undefined
+): number | undefined {
   const postId = output?.["post_id"];
   if (typeof postId === "number" && Number.isFinite(postId) && postId > 0) {
     return postId;
@@ -103,11 +105,15 @@ function extractPostIdFromToolOutput(output: Record<string, unknown> | undefined
   return undefined;
 }
 
-function actionIsExecutable(actionType: string, input: Record<string, unknown>): boolean {
+function actionIsExecutable(
+  actionType: string,
+  input: Record<string, unknown>
+): boolean {
   return (
     actionToMcpToolCall(actionType, input, true) !== null ||
     canResolveActionViaPostLookup(actionType, input) ||
-    (actionSupportsPostLookup(actionType) && findNumericPostId(input) === undefined)
+    (actionSupportsPostLookup(actionType) &&
+      findNumericPostId(input) === undefined)
   );
 }
 
@@ -250,7 +256,8 @@ function imageBlockHtml(attrs: Record<string, unknown>): string {
   if (sizeSlug.length > 0) {
     figureClasses.push(`size-${sizeSlug}`);
   }
-  const imageClass = Number.isFinite(id) && id > 0 ? ` class="wp-image-${id}"` : "";
+  const imageClass =
+    Number.isFinite(id) && id > 0 ? ` class="wp-image-${id}"` : "";
   return `<figure class="${figureClasses.join(" ")}"><img src="${url}" alt="${alt}"${imageClass}/></figure>`;
 }
 
@@ -306,7 +313,8 @@ function mediaTextMediaFigureHtml(attrs: Record<string, unknown>): string {
         ? Number.parseInt(attrs.mediaId, 10)
         : 0;
   const mediaSizeSlug =
-    typeof attrs.mediaSizeSlug === "string" && attrs.mediaSizeSlug.trim().length > 0
+    typeof attrs.mediaSizeSlug === "string" &&
+    attrs.mediaSizeSlug.trim().length > 0
       ? attrs.mediaSizeSlug.trim()
       : "full";
   const classes: string[] = [];
@@ -350,10 +358,12 @@ function urlFileName(url: string): string | null {
   try {
     const parsed = new URL(url);
     const segments = parsed.pathname.split("/").filter(Boolean);
-    return segments.length > 0 ? decodeURIComponent(segments.at(-1) ?? "") : null;
+    return segments.length > 0
+      ? decodeURIComponent(segments.at(-1) ?? "")
+      : null;
   } catch {
     const segments = url.split("/").filter(Boolean);
-    return segments.length > 0 ? segments.at(-1) ?? null : null;
+    return segments.length > 0 ? (segments.at(-1) ?? null) : null;
   }
 }
 
@@ -363,7 +373,8 @@ function fileNameFromUrlOrContentType(url: string, mediaType: string): string {
     return fromUrl;
   }
 
-  const fallbackBase = fromUrl && fromUrl.trim().length > 0 ? fromUrl : "external-image";
+  const fallbackBase =
+    fromUrl && fromUrl.trim().length > 0 ? fromUrl : "external-image";
   const fallbackExt = mediaTypeToExtension(mediaType);
   return /\.[a-z0-9]+$/i.test(fallbackBase)
     ? fallbackBase
@@ -376,10 +387,40 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function blockExecutionErrorMessage(blockNames: string[]): string {
+function isPassthroughCustomBlockEntry(
+  entry: SiteCustomBlockSupportEntry | null
+): entry is SiteCustomBlockSupportEntry & { support: "passthrough" } {
+  return entry !== null && entry.support === "passthrough";
+}
+
+function blockExecutionErrorMessage(
+  blockNames: string[],
+  customBlockNames: readonly string[] = []
+): string {
   const uniqueNames = [...new Set(blockNames)];
   const reasons = uniqueNames.map((name) => explainUnsupportedBlockName(name));
-  return `Execution blocked because the action uses unsupported Gutenberg block types: ${uniqueNames.join(", ")}. ${reasons.join(" ")} Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}.`;
+  const supportedBlocks = [
+    ...SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES,
+    ...customBlockNames
+  ].join(", ");
+  return `Execution blocked because the action uses unsupported Gutenberg block types: ${uniqueNames.join(", ")}. ${reasons.join(" ")} Supported blocks today: ${supportedBlocks}.`;
+}
+
+function supportedCustomBlockNames(siteConfig: SiteConfig | null): string[] {
+  const contentModel = siteConfig?.sections.contentModel;
+  const configuredEntries = contentModel?.customBlockSupport ?? [];
+  const inferredEntries =
+    configuredEntries.length > 0
+      ? []
+      : (contentModel?.thirdPartyBlocks ?? [])
+          .map(classifyDiscoveredCustomBlock)
+          .filter(isPassthroughCustomBlockEntry);
+
+  return [...configuredEntries, ...inferredEntries]
+    .filter((entry) => entry.support === "passthrough")
+    .map((entry) => normalizeParsedBlockName(entry.name))
+    .filter((name) => name.length > 0)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 async function uploadAttachmentsToMediaLibrary(input: {
@@ -616,7 +657,9 @@ function extractExternalImageReferencesFromSerializedContent(
   return references;
 }
 
-async function downloadExternalImageAsAttachment(url: string): Promise<
+async function downloadExternalImageAsAttachment(
+  url: string
+): Promise<
   | { ok: true; attachment: ImageAttachmentPayload }
   | { ok: false; code: string; message: string }
 > {
@@ -634,9 +677,7 @@ async function downloadExternalImageAsAttachment(url: string): Promise<
     // Keep the original URL only.
   }
 
-  let lastFailure:
-    | { ok: false; code: string; message: string }
-    | undefined;
+  let lastFailure: { ok: false; code: string; message: string } | undefined;
 
   for (const candidateUrl of candidateUrls) {
     let response: Response;
@@ -786,7 +827,9 @@ function rewriteBlocksWithUploadedMedia(input: {
   const usedUploadIndexes = new Set<number>();
 
   const nextUnusedUpload = (): UploadedMediaAsset | undefined => {
-    const index = input.uploads.findIndex((_, uploadIndex) => !usedUploadIndexes.has(uploadIndex));
+    const index = input.uploads.findIndex(
+      (_, uploadIndex) => !usedUploadIndexes.has(uploadIndex)
+    );
     if (index < 0) {
       return undefined;
     }
@@ -794,7 +837,9 @@ function rewriteBlocksWithUploadedMedia(input: {
     return input.uploads[index];
   };
 
-  const matchingUploadForUrl = (url: string): UploadedMediaAsset | undefined => {
+  const matchingUploadForUrl = (
+    url: string
+  ): UploadedMediaAsset | undefined => {
     const fileName = urlFileName(url);
     if (!fileName) {
       return undefined;
@@ -957,7 +1002,8 @@ function rewriteSerializedContentWithUploadedMedia(input: {
     const fileName = urlFileName(url);
     if (fileName) {
       const matchIndex = input.uploads.findIndex(
-        (upload, index) => index >= nextUploadIndex && upload.fileName === fileName
+        (upload, index) =>
+          index >= nextUploadIndex && upload.fileName === fileName
       );
       if (matchIndex >= 0) {
         nextUploadIndex = matchIndex + 1;
@@ -965,7 +1011,10 @@ function rewriteSerializedContentWithUploadedMedia(input: {
       }
     }
 
-    if (isSiteLocalUploadUrl(url, input.siteBaseUrl) && nextUploadIndex < input.uploads.length) {
+    if (
+      isSiteLocalUploadUrl(url, input.siteBaseUrl) &&
+      nextUploadIndex < input.uploads.length
+    ) {
       const upload = input.uploads[nextUploadIndex];
       nextUploadIndex += 1;
       return upload;
@@ -976,128 +1025,136 @@ function rewriteSerializedContentWithUploadedMedia(input: {
 
   const imageBlockPattern =
     /<!--\s*wp:image(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:image\s*-->/gi;
-  let rewritten = input.content.replace(imageBlockPattern, (full, attrsJson, innerHtml) => {
-    let attrs: Record<string, unknown> = {};
-    if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(attrsJson) as unknown;
-        const record = objectRecord(parsed);
-        if (record) {
-          attrs = record;
+  let rewritten = input.content.replace(
+    imageBlockPattern,
+    (full, attrsJson, innerHtml) => {
+      let attrs: Record<string, unknown> = {};
+      if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
+        try {
+          const parsed = JSON.parse(attrsJson) as unknown;
+          const record = objectRecord(parsed);
+          if (record) {
+            attrs = record;
+          }
+        } catch {
+          attrs = {};
         }
-      } catch {
-        attrs = {};
       }
+
+      const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(
+        typeof innerHtml === "string" ? innerHtml : ""
+      );
+      const currentUrl =
+        typeof attrs.url === "string"
+          ? attrs.url
+          : typeof attrs.src === "string"
+            ? attrs.src
+            : (imgSrcMatch?.[2] ?? "");
+      const rawId = attrs.id;
+      const imageId =
+        typeof rawId === "number"
+          ? rawId
+          : typeof rawId === "string"
+            ? Number.parseInt(rawId, 10)
+            : 0;
+
+      if (Number.isFinite(imageId) && imageId > 0 && currentUrl.length > 0) {
+        return full;
+      }
+
+      const upload = takeUploadForUrl(currentUrl);
+      if (!upload) {
+        return full;
+      }
+
+      const nextAttrs: Record<string, unknown> = {
+        ...attrs,
+        id: upload.attachmentId,
+        url: upload.url,
+        src: upload.url
+      };
+      const alt =
+        typeof nextAttrs.alt === "string" ? nextAttrs.alt : upload.fileName;
+      nextAttrs.alt = alt;
+
+      const commentJson = JSON.stringify(nextAttrs);
+      const html = `<figure class="wp-block-image"><img src="${escapeHtml(
+        upload.url
+      )}" alt="${escapeHtml(alt)}" class="wp-image-${upload.attachmentId}"/></figure>`;
+
+      return `<!-- wp:image ${commentJson} -->${html}<!-- /wp:image -->`;
     }
-
-    const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(
-      typeof innerHtml === "string" ? innerHtml : ""
-    );
-    const currentUrl =
-      typeof attrs.url === "string"
-        ? attrs.url
-        : typeof attrs.src === "string"
-          ? attrs.src
-          : imgSrcMatch?.[2] ?? "";
-    const rawId = attrs.id;
-    const imageId =
-      typeof rawId === "number"
-        ? rawId
-        : typeof rawId === "string"
-          ? Number.parseInt(rawId, 10)
-          : 0;
-
-    if (Number.isFinite(imageId) && imageId > 0 && currentUrl.length > 0) {
-      return full;
-    }
-
-    const upload = takeUploadForUrl(currentUrl);
-    if (!upload) {
-      return full;
-    }
-
-    const nextAttrs: Record<string, unknown> = {
-      ...attrs,
-      id: upload.attachmentId,
-      url: upload.url,
-      src: upload.url
-    };
-    const alt =
-      typeof nextAttrs.alt === "string" ? nextAttrs.alt : upload.fileName;
-    nextAttrs.alt = alt;
-
-    const commentJson = JSON.stringify(nextAttrs);
-    const html = `<figure class="wp-block-image"><img src="${escapeHtml(
-      upload.url
-    )}" alt="${escapeHtml(alt)}" class="wp-image-${upload.attachmentId}"/></figure>`;
-
-    return `<!-- wp:image ${commentJson} -->${html}<!-- /wp:image -->`;
-  });
+  );
 
   const mediaTextPattern =
     /<!--\s*wp:media-text(?:\s+({[\s\S]*?}))?\s*-->([\s\S]*?)<!--\s*\/wp:media-text\s*-->/gi;
 
-  rewritten = rewritten.replace(mediaTextPattern, (full, attrsJson, innerHtml) => {
-    let attrs: Record<string, unknown> = {};
-    if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(attrsJson) as unknown;
-        const record = objectRecord(parsed);
-        if (record) {
-          attrs = record;
+  rewritten = rewritten.replace(
+    mediaTextPattern,
+    (full, attrsJson, innerHtml) => {
+      let attrs: Record<string, unknown> = {};
+      if (typeof attrsJson === "string" && attrsJson.trim().length > 0) {
+        try {
+          const parsed = JSON.parse(attrsJson) as unknown;
+          const record = objectRecord(parsed);
+          if (record) {
+            attrs = record;
+          }
+        } catch {
+          attrs = {};
         }
-      } catch {
-        attrs = {};
       }
-    }
 
-    const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(
-      typeof innerHtml === "string" ? innerHtml : ""
-    );
-    const currentUrl =
-      typeof attrs.mediaUrl === "string" ? attrs.mediaUrl : imgSrcMatch?.[2] ?? "";
-    const rawMediaId = attrs.mediaId;
-    const mediaId =
-      typeof rawMediaId === "number"
-        ? rawMediaId
-        : typeof rawMediaId === "string"
-          ? Number.parseInt(rawMediaId, 10)
-          : 0;
-
-    if (Number.isFinite(mediaId) && mediaId > 0 && currentUrl.length > 0) {
-      return full;
-    }
-
-    const upload = takeUploadForUrl(currentUrl);
-    if (!upload) {
-      return full;
-    }
-
-    const nextAttrs: Record<string, unknown> = {
-      ...attrs,
-      mediaId: upload.attachmentId,
-      mediaType: "image",
-      mediaUrl: upload.url
-    };
-    const contentMatch =
-      /<div class="wp-block-media-text__content">([\s\S]*?)<\/div>\s*<\/div>\s*$/i.exec(
-        typeof innerHtml === "string" ? innerHtml : ""
-      ) ??
-      /<div class="wp-block-media-text__content">([\s\S]*?)<\/div>/i.exec(
+      const imgSrcMatch = /<img\b[^>]*\bsrc=(["'])(.*?)\1/i.exec(
         typeof innerHtml === "string" ? innerHtml : ""
       );
-    const contentHtml = contentMatch?.[1] ?? "";
-    const html =
-      nextAttrs.mediaPosition === "right"
-        ? `${mediaTextWrapperOpen(nextAttrs)}<div class="wp-block-media-text__content">${contentHtml}</div>${mediaTextMediaFigureHtml(
-            nextAttrs
-          )}</div>`
-        : `${mediaTextWrapperOpen(nextAttrs)}${mediaTextMediaFigureHtml(
-            nextAttrs
-          )}<div class="wp-block-media-text__content">${contentHtml}</div></div>`;
+      const currentUrl =
+        typeof attrs.mediaUrl === "string"
+          ? attrs.mediaUrl
+          : (imgSrcMatch?.[2] ?? "");
+      const rawMediaId = attrs.mediaId;
+      const mediaId =
+        typeof rawMediaId === "number"
+          ? rawMediaId
+          : typeof rawMediaId === "string"
+            ? Number.parseInt(rawMediaId, 10)
+            : 0;
 
-    return `<!-- wp:media-text ${JSON.stringify(nextAttrs)} -->${html}<!-- /wp:media-text -->`;
-  });
+      if (Number.isFinite(mediaId) && mediaId > 0 && currentUrl.length > 0) {
+        return full;
+      }
+
+      const upload = takeUploadForUrl(currentUrl);
+      if (!upload) {
+        return full;
+      }
+
+      const nextAttrs: Record<string, unknown> = {
+        ...attrs,
+        mediaId: upload.attachmentId,
+        mediaType: "image",
+        mediaUrl: upload.url
+      };
+      const contentMatch =
+        /<div class="wp-block-media-text__content">([\s\S]*?)<\/div>\s*<\/div>\s*$/i.exec(
+          typeof innerHtml === "string" ? innerHtml : ""
+        ) ??
+        /<div class="wp-block-media-text__content">([\s\S]*?)<\/div>/i.exec(
+          typeof innerHtml === "string" ? innerHtml : ""
+        );
+      const contentHtml = contentMatch?.[1] ?? "";
+      const html =
+        nextAttrs.mediaPosition === "right"
+          ? `${mediaTextWrapperOpen(nextAttrs)}<div class="wp-block-media-text__content">${contentHtml}</div>${mediaTextMediaFigureHtml(
+              nextAttrs
+            )}</div>`
+          : `${mediaTextWrapperOpen(nextAttrs)}${mediaTextMediaFigureHtml(
+              nextAttrs
+            )}<div class="wp-block-media-text__content">${contentHtml}</div></div>`;
+
+      return `<!-- wp:media-text ${JSON.stringify(nextAttrs)} -->${html}<!-- /wp:media-text -->`;
+    }
+  );
 
   return rewritten;
 }
@@ -1230,8 +1287,7 @@ async function hydrateSpecMediaInputs(input: {
       return {
         ok: false,
         code: "media_upload_invalid_result",
-        message:
-          "Featured image upload did not return a usable attachment id."
+        message: "Featured image upload did not return a usable attachment id."
       };
     }
 
@@ -1440,7 +1496,8 @@ async function loadCompletedPostIdForAction(input: {
     return undefined;
   }
 
-  const invocations = await db.repositories.toolInvocations.listByExecutionRunId(run.id);
+  const invocations =
+    await db.repositories.toolInvocations.listByExecutionRunId(run.id);
   for (const invocation of invocations) {
     if (invocation.status !== "succeeded") {
       continue;
@@ -1472,12 +1529,17 @@ async function resolvePostIdFromEarlierCreateAction(input: {
   siteId: SiteId;
   requestId: RequestId;
   planId: ActionPlanId;
-  plan: { proposedActions: Array<{ id: string; type: string; input: Record<string, unknown> }> };
+  plan: {
+    proposedActions: Array<{
+      id: string;
+      type: string;
+      input: Record<string, unknown>;
+    }>;
+  };
   actionId: ActionId;
   dryRun: boolean;
 }): Promise<
-  | { ok: true; postId: number }
-  | { ok: false; code: string; message: string }
+  { ok: true; postId: number } | { ok: false; code: string; message: string }
 > {
   const actionIndex = input.plan.proposedActions.findIndex(
     (action) => action.id === input.actionId
@@ -1498,7 +1560,8 @@ async function resolvePostIdFromEarlierCreateAction(input: {
     return {
       ok: false,
       code: "post_dependency_missing",
-      message: "No earlier create post action exists in this plan to supply a post id."
+      message:
+        "No earlier create post action exists in this plan to supply a post id."
     };
   }
 
@@ -1559,7 +1622,13 @@ async function deriveRequestStatusAfterSuccessfulAction(input: {
   siteId: SiteId;
   requestId: RequestId;
   planId: ActionPlanId;
-  plan: { proposedActions: Array<{ id: string; type: string; input: Record<string, unknown> }> };
+  plan: {
+    proposedActions: Array<{
+      id: string;
+      type: string;
+      input: Record<string, unknown>;
+    }>;
+  };
   completedActionId: ActionId;
 }): Promise<"completed" | "partially_completed"> {
   const executableActions = input.plan.proposedActions.filter((action) =>
@@ -1666,6 +1735,7 @@ export async function executePlanAction(
   }
 
   const activeSiteConfig = await loadActiveSiteConfig(input.siteId);
+  const customBlockNames = supportedCustomBlockNames(activeSiteConfig);
   let spec = actionToMcpToolCall(action.type, resolvedInput, input.dryRun);
   if (spec) {
     spec = applySeoMetaProviderToSpec(spec, activeSiteConfig);
@@ -1721,10 +1791,15 @@ export async function executePlanAction(
   }
 
   const unsupportedParsedBlocks = Array.isArray(spec.arguments.blocks)
-    ? findUnsupportedParsedBlockNames(spec.arguments.blocks)
+    ? findUnsupportedParsedBlockNames(spec.arguments.blocks, {
+        supportedCustomBlockNames: customBlockNames
+      })
     : [];
   if (unsupportedParsedBlocks.length > 0) {
-    const message = blockExecutionErrorMessage(unsupportedParsedBlocks);
+    const message = blockExecutionErrorMessage(
+      unsupportedParsedBlocks,
+      customBlockNames
+    );
     await appendExecutionMessage({
       siteId: input.siteId,
       requestId: input.requestId,
@@ -1740,11 +1815,16 @@ export async function executePlanAction(
 
   const contentValue = spec.arguments.content;
   if (typeof contentValue === "string") {
-    const unsupportedSerializedBlocks =
-      findUnsupportedSerializedBlockNames(contentValue);
+    const unsupportedSerializedBlocks = findUnsupportedSerializedBlockNames(
+      contentValue,
+      {
+        supportedCustomBlockNames: customBlockNames
+      }
+    );
     if (unsupportedSerializedBlocks.length > 0) {
       const message = blockExecutionErrorMessage(
-        unsupportedSerializedBlocks
+        unsupportedSerializedBlocks,
+        customBlockNames
       );
       await appendExecutionMessage({
         siteId: input.siteId,

@@ -365,6 +365,83 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( 'unsupported block "core/gallery"', $result['error'] );
 	}
 
+	public function test_create_draft_accepts_loaded_acf_container_block(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'ACF Container',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'core/acf/container',
+						'attrs'        => array(
+							'name' => 'acf/container',
+							'data' => array(),
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/paragraph',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => '<p>Inside the container.</p>',
+								'innerContent' => array( '<p>Inside the container.</p>' ),
+							),
+						),
+						'innerHTML'    => '',
+						'innerContent' => array( '', '' ),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<!-- wp:acf/container', $content );
+		$this->assertStringContainsString( '<!-- wp:paragraph -->', $content );
+		$this->assertStringContainsString( '<p>Inside the container.</p>', $content );
+	}
+
+	public function test_create_draft_canonicalizes_serialized_acf_container_content(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Serialized ACF Container',
+				'content' => '<!-- wp:acf/container {} --><div class="acf-container"><!-- wp:paragraph --><p>First paragraph.</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Second paragraph.</p><!-- /wp:paragraph --></div><!-- /wp:acf/container -->',
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertTrue( $result['ok'] );
+		$content = $result['preview']['post_content'];
+		$this->assertStringContainsString( '<!-- wp:acf/container', $content );
+		$this->assertStringContainsString( '"field_container_colour":"bg-white"', $content );
+		$this->assertStringContainsString( '"colour":"bg-white"', $content );
+		$this->assertStringContainsString( '<!-- wp:paragraph -->', $content );
+		$this->assertStringContainsString( '<p>First paragraph.</p>', $content );
+		$this->assertStringContainsString( '<p>Second paragraph.</p>', $content );
+		$this->assertStringNotContainsString( 'acf-container', $content );
+	}
+
+	public function test_create_draft_rejects_unloaded_acf_blocks(): void {
+		$result = $this->create_draft(
+			array(
+				'title'   => 'Unloaded ACF',
+				'blocks'  => array(
+					array(
+						'blockName'    => 'acf/button-brand',
+						'attrs'        => array(),
+						'innerBlocks'  => array(),
+						'innerHTML'    => '',
+						'innerContent' => array(),
+					),
+				),
+				'dry_run' => true,
+			)
+		);
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertStringContainsString( 'unsupported block "acf/button-brand"', $result['error'] );
+		$this->assertStringContainsString( 'reviewed schema/serialization contract', $result['error'] );
+	}
+
 	public function test_update_post_rejects_escaped_serialized_gutenberg_markup_inside_paragraph_blocks(): void {
 		$result = $this->update_post(
 			array(

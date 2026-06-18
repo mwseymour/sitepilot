@@ -1,21 +1,30 @@
 export {
   ALL_WORDPRESS_CORE_BLOCK_NAMES,
+  SUPPORTED_WORDPRESS_CUSTOM_BLOCKS,
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES,
   WORDPRESS_CORE_BLOCK_REFERENCE_URL,
   WORDPRESS_CORE_BLOCK_SUPPORT,
+  classifyDiscoveredCustomBlock,
   coreBlockLabel,
   explainUnsupportedBlockName,
   findUnsupportedParsedBlockNames,
   findUnsupportedSerializedBlockNames,
   getWordPressCoreBlockSupport,
+  getWordPressCustomBlockSupport,
   isKnownWordPressCoreBlockName,
+  isSupportedWordPressCustomBlockName,
   isSupportedWordPressCoreBlockName,
   normalizeParsedBlockName
 } from "./core-block-support.js";
 export type {
   CoreBlockSupportEntry,
   CoreBlockSupportStatus,
+  CustomBlockAttributeDefinition,
+  CustomBlockAttributeOption,
+  CustomBlockSupportEntry,
+  CustomBlockSupportMode,
   IndexedCoreBlockEntry,
+  SiteCustomBlockSupportEntry,
   WordPressCoreBlockIndex
 } from "./core-block-support.js";
 export {

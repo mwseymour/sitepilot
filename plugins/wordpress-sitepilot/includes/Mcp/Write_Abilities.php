@@ -429,6 +429,9 @@ final class Write_Abilities {
 		if ( ! is_array( $attrs ) ) {
 			$attrs = array();
 		}
+		if ( 'acf/container' === $block_name ) {
+			$attrs = self::acf_container_attrs( $attrs );
+		}
 
 		$url_error = self::validate_media_urls( $block_name, $attrs, $path . '.attrs' );
 		if ( null !== $url_error ) {
@@ -572,6 +575,11 @@ final class Write_Abilities {
 			);
 		}
 
+		if ( self::is_supported_custom_passthrough_block( $block_name ) && ! empty( $inner_blocks ) && ! in_array( null, $inner_content, true ) ) {
+			$inner_content = array_fill( 0, count( $inner_blocks ), null );
+			$inner_html    = '';
+		}
+
 		return array(
 			'ok'    => true,
 			'block' => array(
@@ -614,6 +622,9 @@ final class Write_Abilities {
 		} elseif ( str_starts_with( $name, 'core:' ) ) {
 			$name = 'core/' . substr( $name, 5 );
 		}
+		if ( str_starts_with( $name, 'core/acf/' ) ) {
+			$name = substr( $name, 5 );
+		}
 
 		$core_block_names = array_map(
 			static fn ( string $block_name ): string => str_replace( 'core/', '', $block_name ),
@@ -624,6 +635,52 @@ final class Write_Abilities {
 		}
 
 		return sanitize_text_field( $name );
+	}
+
+	/**
+	 * @param array<string, mixed> $attrs Block attrs.
+	 * @return array<string, mixed>
+	 */
+	private static function acf_container_attrs( array $attrs ): array {
+		$data = isset( $attrs['data'] ) && is_array( $attrs['data'] ) ? $attrs['data'] : array();
+		$colour = self::first_non_empty_string(
+			$data['field_container_colour'] ?? null,
+			$data['colour'] ?? null,
+			$attrs['colour'] ?? null,
+			$attrs['color'] ?? null,
+			'bg-white'
+		);
+
+		$attrs['name']  = 'acf/container';
+		$attrs['data']  = array_merge(
+			array(
+				'field_container_colour'          => $colour,
+				'colour'                          => $colour,
+				'_colour'                         => 'field_container_colour',
+				'field_container_padding_amount' => 'py-[80px] md:py-[100px]',
+				'padding_amount'                  => 'py-[80px] md:py-[100px]',
+				'_padding_amount'                 => 'field_container_padding_amount',
+				'field_container_bottom_border'  => '1',
+				'bottom_border'                   => '1',
+				'_bottom_border'                  => 'field_container_bottom_border',
+			),
+			$data
+		);
+		$attrs['data']['field_container_colour'] = $colour;
+		$attrs['data']['colour']                 = $colour;
+		$attrs['align'] = isset( $attrs['align'] ) && is_string( $attrs['align'] ) ? $attrs['align'] : '';
+		$attrs['mode']  = isset( $attrs['mode'] ) && is_string( $attrs['mode'] ) ? $attrs['mode'] : 'preview';
+
+		return $attrs;
+	}
+
+	private static function first_non_empty_string( mixed ...$values ): string {
+		foreach ( $values as $value ) {
+			if ( is_string( $value ) && '' !== trim( $value ) ) {
+				return trim( $value );
+			}
+		}
+		return '';
 	}
 
 	private static function normalize_text_chunk( string $chunk, string $block_name, array $attrs = array() ): string {
@@ -1228,6 +1285,15 @@ final class Write_Abilities {
 	/**
 	 * @return array<int, string>
 	 */
+	private static function supported_custom_passthrough_blocks(): array {
+		return array(
+			'acf/container',
+		);
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
 	private static function wordpress_core_block_names(): array {
 		return array(
 			'core/accordion',
@@ -1355,12 +1421,20 @@ final class Write_Abilities {
 	}
 
 	private static function is_supported_executable_block( string $block_name ): bool {
-		return in_array( $block_name, self::supported_executable_blocks(), true );
+		return in_array( $block_name, self::supported_executable_blocks(), true )
+			|| self::is_supported_custom_passthrough_block( $block_name );
+	}
+
+	private static function is_supported_custom_passthrough_block( string $block_name ): bool {
+		return in_array( $block_name, self::supported_custom_passthrough_blocks(), true );
 	}
 
 	private static function unsupported_block_reason( string $block_name ): string {
 		if ( in_array( $block_name, self::wordpress_core_block_names(), true ) ) {
 			return 'SitePilot does not yet have explicit canonical serialization for that WordPress core block, so execution is blocked instead of inventing Gutenberg save HTML. Add it manually in the WordPress post editor for now.';
+		}
+		if ( str_starts_with( $block_name, 'acf/' ) || str_contains( $block_name, 'acf-' ) ) {
+			return 'SitePilot discovered this ACF block family, but this block has not been loaded with a reviewed schema/serialization contract yet.';
 		}
 		return 'SitePilot only executes an explicit allowlist of canonicalized Gutenberg blocks.';
 	}
@@ -1624,10 +1698,60 @@ final class Write_Abilities {
 			);
 		}
 
+		$content = isset( $input['content'] ) ? (string) $input['content'] : '';
+		if ( '' !== $content && self::content_contains_supported_custom_block( $content ) && function_exists( 'parse_blocks' ) ) {
+			$parsed_blocks = parse_blocks( $content );
+			if ( is_array( $parsed_blocks ) && ! empty( $parsed_blocks ) ) {
+				$blocks = array();
+				foreach ( $parsed_blocks as $index => $block ) {
+					if ( self::is_empty_freeform_parsed_block( $block ) ) {
+						continue;
+					}
+					$sanitized = self::sanitize_parsed_block( $block, 'content.blocks[' . $index . ']' );
+					if ( ! $sanitized['ok'] ) {
+						return $sanitized;
+					}
+					$blocks[] = $sanitized['block'];
+				}
+				if ( ! empty( $blocks ) ) {
+					return array(
+						'ok'      => true,
+						'content' => serialize_blocks( $blocks ),
+						'blocks'  => $blocks,
+					);
+				}
+			}
+		}
+
 		return array(
 			'ok'      => true,
-			'content' => isset( $input['content'] ) ? wp_kses_post( (string) $input['content'] ) : '',
+			'content' => wp_kses_post( $content ),
 		);
+	}
+
+	private static function content_contains_supported_custom_block( string $content ): bool {
+		foreach ( self::supported_custom_passthrough_blocks() as $block_name ) {
+			$pattern = '/<!--\s*wp:' . preg_quote( $block_name, '/' ) . '(?:\s|-->|\/-->)/i';
+			if ( 1 === preg_match( $pattern, $content ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @param mixed $block Parsed block.
+	 */
+	private static function is_empty_freeform_parsed_block( $block ): bool {
+		if ( ! is_array( $block ) ) {
+			return false;
+		}
+
+		$block_name = $block['blockName'] ?? null;
+		$content    = isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? trim( $block['innerHTML'] ) : '';
+
+		return ( null === $block_name || '' === $block_name ) && '' === $content;
 	}
 
 	/**

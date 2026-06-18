@@ -9,11 +9,16 @@ import { Link } from "react-router-dom";
 
 import type {
   PlannerPreferencesPayload,
+  SiteCustomBlockSupportEntry,
   SitePlannerSettings,
   UiPreferences,
   WordPressCoreBlockIndex
 } from "@sitepilot/contracts";
-import { WORDPRESS_CORE_BLOCK_REFERENCE_URL } from "@sitepilot/contracts";
+import {
+  WORDPRESS_CORE_BLOCK_REFERENCE_URL,
+  classifyDiscoveredCustomBlock,
+  normalizeParsedBlockName
+} from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 
@@ -23,6 +28,17 @@ type StructuralRole =
   | "container"
   | "child-only"
   | "placement-restricted";
+type ExecutableBlockDisplayEntry = {
+  name: string;
+  reason: string;
+  source: "core" | "custom";
+};
+
+function isPassthroughCustomBlockEntry(
+  entry: SiteCustomBlockSupportEntry | null
+): entry is SiteCustomBlockSupportEntry & { support: "passthrough" } {
+  return entry !== null && entry.support === "passthrough";
+}
 
 function blockHasRelationshipRules(
   block: WordPressCoreBlockIndex["blocks"][number]
@@ -139,10 +155,38 @@ export function SiteSettingsPage(): ReactElement {
     string | null
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const executableBlocks =
+  const executableCoreBlocks =
     coreBlockIndex?.blocks.filter((entry) => entry.executable) ?? [];
   const indexedOnlyBlocks =
     coreBlockIndex?.blocks.filter((entry) => !entry.executable) ?? [];
+  const contentModel = data?.siteConfig?.sections.contentModel;
+  const configuredCustomBlockEntries = contentModel?.customBlockSupport ?? [];
+  const inferredCustomBlockEntries =
+    configuredCustomBlockEntries.length > 0
+      ? []
+      : (contentModel?.thirdPartyBlocks ?? [])
+          .map(classifyDiscoveredCustomBlock)
+          .filter(isPassthroughCustomBlockEntry);
+  const executableCustomBlocks = [
+    ...configuredCustomBlockEntries,
+    ...inferredCustomBlockEntries
+  ]
+    .filter((entry) => entry.support === "passthrough")
+    .map((entry) => ({
+      name: normalizeParsedBlockName(entry.name),
+      reason: entry.reason,
+      source: "custom" as const
+    }))
+    .filter((entry) => entry.name.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const executableBlocks: ExecutableBlockDisplayEntry[] = [
+    ...executableCoreBlocks.map((entry) => ({
+      name: entry.name,
+      reason: entry.reason,
+      source: "core" as const
+    })),
+    ...executableCustomBlocks
+  ];
   const simpleGaps = indexedOnlyBlocks.filter(
     (entry) => classifyGapComplexity(entry) === "simple"
   );
@@ -639,7 +683,9 @@ export function SiteSettingsPage(): ReactElement {
                 <ul className="small-print">
                   {executableBlocks.map((entry) => (
                     <li key={entry.name}>
-                      <strong>{entry.name}</strong>: {entry.reason}
+                      <strong>{entry.name}</strong>{" "}
+                      <span className="muted">[{entry.source}]</span>:{" "}
+                      {entry.reason}
                     </li>
                   ))}
                 </ul>

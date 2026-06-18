@@ -60,6 +60,17 @@ type ThreadTypeMeta = {
   description: string;
 };
 
+type ExpandableTextProps = {
+  text: string;
+  className: string;
+  collapsedClassName: string;
+  expandedClassName?: string;
+  previewThreshold: number;
+};
+
+const THREAD_TITLE_PREVIEW_THRESHOLD = 72;
+const REQUEST_PROMPT_PREVIEW_THRESHOLD = 280;
+
 const THREAD_TYPE_META: Record<string, ThreadTypeMeta> = {
   conversation: {
     label: "Conversation",
@@ -109,6 +120,46 @@ function roleLabel(m: MessageRow): string {
     return m.author.kind === "assistant" ? "Assistant" : "System";
   }
   return "You";
+}
+
+function ExpandableText({
+  text,
+  className,
+  collapsedClassName,
+  expandedClassName,
+  previewThreshold
+}: ExpandableTextProps): ReactElement {
+  const [expanded, setExpanded] = useState(false);
+  const trimmedText = text.trim();
+  const isLong = trimmedText.length > previewThreshold;
+
+  return (
+    <div className="chat-expandable-text">
+      <span
+        className={[
+          className,
+          isLong && !expanded ? collapsedClassName : "",
+          expanded && expandedClassName ? expandedClassName : ""
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {text}
+      </span>
+      {isLong ? (
+        <button
+          type="button"
+          className="chat-inline-toggle"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+        >
+          View {expanded ? "less" : "more"}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function roleClassName(m: MessageRow): string {
@@ -574,6 +625,9 @@ export function ChatPage({
   );
   const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(null);
   const [debugCopyLabel, setDebugCopyLabel] = useState("Copy debug log");
+  const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -1609,119 +1663,156 @@ export function ChatPage({
                   </div>
                 </form>
               ) : (
-                <div className="chat-thread-row-main">
-                  <button
-                    type="button"
-                    className={
-                      selectedThreadId === t.id
-                        ? "chat-thread-pill is-active"
-                        : "chat-thread-pill"
-                    }
-                    onClick={() => {
-                      setPendingDeleteThreadId(null);
-                      if (editingThreadId !== null) {
-                        cancelThreadRename();
-                      }
-                      setSelectedThreadId(t.id);
-                    }}
-                  >
-                    <span className="chat-thread-pill-label">{t.title}</span>
-                  </button>
-                  <div className="chat-thread-row-actions">
+                <>
+                  <div className="chat-thread-row-main">
                     <button
                       type="button"
-                      className="chat-thread-rename"
-                      aria-label={`Rename ${t.title}`}
-                      disabled={
-                        busy || deletingThreadId !== null || renamingThreadId !== null
+                      className={
+                        selectedThreadId === t.id
+                          ? "chat-thread-pill is-active"
+                          : "chat-thread-pill"
                       }
                       onClick={() => {
-                        startThreadRename(t);
-                      }}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        className="chat-thread-action-icon"
-                      >
-                        <path
-                          d="M4 20h4l10-10a2.12 2.12 0 1 0-4-4L4 16v4Z"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="1.8"
-                        />
-                        <path
-                          d="m13.5 6.5 4 4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="1.8"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-thread-delete"
-                      aria-label={`Delete ${t.title}`}
-                      disabled={busy || deletingThreadId !== null}
-                      onClick={() => {
+                        setPendingDeleteThreadId(null);
                         if (editingThreadId !== null) {
                           cancelThreadRename();
                         }
-                        setPendingDeleteThreadId((current) =>
-                          current === t.id ? null : t.id
-                        );
+                        setSelectedThreadId(t.id);
                       }}
                     >
-                      <svg
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        className="chat-thread-action-icon"
+                      <span
+                        className={[
+                          "chat-thread-pill-label",
+                          t.title.trim().length > THREAD_TITLE_PREVIEW_THRESHOLD &&
+                          !expandedThreadIds.has(t.id)
+                            ? "chat-thread-pill-label-collapsed"
+                            : "",
+                          expandedThreadIds.has(t.id)
+                            ? "chat-thread-pill-label-expanded"
+                            : ""
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                       >
-                        <path
-                          d="M4 7h16"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeWidth="1.8"
-                        />
-                        <path
-                          d="M10 11v6"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeWidth="1.8"
-                        />
-                        <path
-                          d="M14 11v6"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeWidth="1.8"
-                        />
-                        <path
-                          d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="1.8"
-                        />
-                        <path
-                          d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="1.8"
-                        />
-                      </svg>
+                        {t.title}
+                      </span>
                     </button>
+                    <div className="chat-thread-row-actions">
+                      <button
+                        type="button"
+                        className="chat-thread-rename"
+                        aria-label={`Rename ${t.title}`}
+                        disabled={
+                          busy || deletingThreadId !== null || renamingThreadId !== null
+                        }
+                        onClick={() => {
+                          startThreadRename(t);
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          className="chat-thread-action-icon"
+                        >
+                          <path
+                            d="M4 20h4l10-10a2.12 2.12 0 1 0-4-4L4 16v4Z"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.8"
+                          />
+                          <path
+                            d="m13.5 6.5 4 4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-thread-delete"
+                        aria-label={`Delete ${t.title}`}
+                        disabled={busy || deletingThreadId !== null}
+                        onClick={() => {
+                          if (editingThreadId !== null) {
+                            cancelThreadRename();
+                          }
+                          setPendingDeleteThreadId((current) =>
+                            current === t.id ? null : t.id
+                          );
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          className="chat-thread-action-icon"
+                        >
+                          <path
+                            d="M4 7h16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeWidth="1.8"
+                          />
+                          <path
+                            d="M10 11v6"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeWidth="1.8"
+                          />
+                          <path
+                            d="M14 11v6"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeWidth="1.8"
+                          />
+                          <path
+                            d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.8"
+                          />
+                          <path
+                            d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                  {t.title.trim().length > THREAD_TITLE_PREVIEW_THRESHOLD ? (
+                    <button
+                      type="button"
+                      className="chat-inline-toggle chat-thread-toggle"
+                      aria-expanded={expandedThreadIds.has(t.id)}
+                      onClick={() => {
+                        setExpandedThreadIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(t.id)) {
+                            next.delete(t.id);
+                          } else {
+                            next.add(t.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      View {expandedThreadIds.has(t.id) ? "less" : "more"}
+                    </button>
+                  ) : null}
+                </>
               )}
               {pendingDeleteThreadId === t.id ? (
                 <div className="chat-thread-confirm">
@@ -1918,7 +2009,12 @@ export function ChatPage({
                 {bundle ? (
                   <div className="chat-request-panel">
                     <h3>Current request</h3>
-                    <p className="chat-request-current">{bundle.request.userPrompt}</p>
+                    <ExpandableText
+                      text={bundle.request.userPrompt}
+                      className="chat-request-current"
+                      collapsedClassName="chat-request-current-collapsed"
+                      previewThreshold={REQUEST_PROMPT_PREVIEW_THRESHOLD}
+                    />
                     {bundle.request.attachments &&
                     bundle.request.attachments.length > 0 ? (
                       <div className="chat-request-attachments">

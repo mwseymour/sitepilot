@@ -103,6 +103,11 @@ final class Site_Discovery {
 				$entry['category'] = $block_type->category;
 			}
 
+			$attributes = self::collect_acf_block_attribute_options( $name );
+			if ( ! empty( $attributes ) ) {
+				$entry['attributes'] = $attributes;
+			}
+
 			$blocks[] = $entry;
 		}
 
@@ -114,6 +119,137 @@ final class Site_Discovery {
 		);
 
 		return $blocks;
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function collect_acf_block_attribute_options( string $block_name ): array {
+		if ( ! str_starts_with( $block_name, 'acf/' ) || ! function_exists( 'acf_get_field_groups' ) || ! function_exists( 'acf_get_fields' ) ) {
+			return array();
+		}
+
+		$attributes = array();
+		$groups     = acf_get_field_groups();
+		if ( ! is_array( $groups ) ) {
+			return array();
+		}
+
+		foreach ( $groups as $group ) {
+			if ( ! is_array( $group ) || ! self::acf_field_group_targets_block( $group, $block_name ) ) {
+				continue;
+			}
+
+			$fields = acf_get_fields( $group );
+			if ( ! is_array( $fields ) ) {
+				continue;
+			}
+
+			foreach ( self::flatten_acf_fields( $fields ) as $field ) {
+				$attribute = self::acf_field_attribute_definition( $field );
+				if ( null !== $attribute ) {
+					$attributes[] = $attribute;
+				}
+			}
+		}
+
+		return $attributes;
+	}
+
+	/**
+	 * @param array<string, mixed> $group ACF field group.
+	 */
+	private static function acf_field_group_targets_block( array $group, string $block_name ): bool {
+		$locations = isset( $group['location'] ) && is_array( $group['location'] ) ? $group['location'] : array();
+		foreach ( $locations as $rules ) {
+			if ( ! is_array( $rules ) ) {
+				continue;
+			}
+			foreach ( $rules as $rule ) {
+				if ( ! is_array( $rule ) ) {
+					continue;
+				}
+				if ( ( $rule['param'] ?? null ) !== 'block' ) {
+					continue;
+				}
+				$value = isset( $rule['value'] ) && is_string( $rule['value'] ) ? $rule['value'] : '';
+				if ( $value === $block_name || $value === 'acf/' . $block_name || $value === 'core/' . $block_name ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @param array<int, mixed> $fields ACF fields.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function flatten_acf_fields( array $fields ): array {
+		$flat = array();
+		foreach ( $fields as $field ) {
+			if ( ! is_array( $field ) ) {
+				continue;
+			}
+			$flat[] = $field;
+			foreach ( array( 'sub_fields', 'layouts' ) as $child_key ) {
+				if ( ! isset( $field[ $child_key ] ) || ! is_array( $field[ $child_key ] ) ) {
+					continue;
+				}
+				foreach ( $field[ $child_key ] as $child ) {
+					if ( isset( $child['sub_fields'] ) && is_array( $child['sub_fields'] ) ) {
+						$flat = array_merge( $flat, self::flatten_acf_fields( $child['sub_fields'] ) );
+					}
+				}
+			}
+		}
+		return $flat;
+	}
+
+	/**
+	 * @param array<string, mixed> $field ACF field.
+	 * @return array<string, mixed>|null
+	 */
+	private static function acf_field_attribute_definition( array $field ): ?array {
+		$name = isset( $field['name'] ) && is_string( $field['name'] ) ? $field['name'] : '';
+		if ( '' === $name ) {
+			return null;
+		}
+
+		$type = isset( $field['type'] ) && is_string( $field['type'] ) ? $field['type'] : '';
+		if ( ! in_array( $type, array( 'select', 'radio', 'button_group', 'checkbox', 'true_false' ), true ) ) {
+			return null;
+		}
+
+		$definition = array(
+			'path'      => 'data.' . $name,
+			'fieldName' => $name,
+			'control'   => $type,
+		);
+
+		if ( isset( $field['key'] ) && is_string( $field['key'] ) && '' !== $field['key'] ) {
+			$definition['fieldKey'] = $field['key'];
+		}
+		if ( isset( $field['label'] ) && is_string( $field['label'] ) && '' !== $field['label'] ) {
+			$definition['label'] = $field['label'];
+		}
+		if ( isset( $field['choices'] ) && is_array( $field['choices'] ) ) {
+			$options = array();
+			foreach ( $field['choices'] as $value => $label ) {
+				if ( is_scalar( $value ) && is_scalar( $label ) ) {
+					$options[] = array(
+						'value' => (string) $value,
+						'label' => (string) $label,
+					);
+				}
+			}
+			if ( ! empty( $options ) ) {
+				$definition['options'] = $options;
+			}
+		}
+
+		return $definition;
 	}
 
 	/**

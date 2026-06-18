@@ -36,7 +36,36 @@ const siteConfigSectionsSchema = z.object({
     editablePostTypes: z.array(z.string().min(1)),
     readOnlyPostTypes: z.array(z.string().min(1)),
     taxonomyDefinitions: z.array(z.string().min(1)),
-    thirdPartyBlocks: z.array(z.string().min(1)).default([])
+    thirdPartyBlocks: z.array(z.string().min(1)).default([]),
+    customBlockSupport: z
+      .array(
+        z.object({
+          name: z.string().min(1),
+          support: z.enum(["passthrough", "manual_review_required"]),
+          reason: z.string().min(1),
+          schemaNotes: z.string().min(1).optional(),
+          attributes: z
+            .array(
+              z.object({
+                path: z.string().min(1),
+                fieldName: z.string().min(1).optional(),
+                fieldKey: z.string().min(1).optional(),
+                label: z.string().min(1).optional(),
+                control: z.string().min(1).optional(),
+                options: z
+                  .array(
+                    z.object({
+                      label: z.string().min(1),
+                      value: z.string().min(1)
+                    })
+                  )
+                  .optional()
+              })
+            )
+            .optional()
+        })
+      )
+      .default([])
   }),
   seoPolicy: z.object({
     titlePatterns: z.array(z.string().min(1)),

@@ -153,7 +153,20 @@ export const SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES = [
   "core/verse"
 ] as const;
 
+export const SUPPORTED_WORDPRESS_CUSTOM_BLOCKS = [
+  {
+    name: "acf/container",
+    label: "ACF Container",
+    support: "passthrough",
+    reason:
+      "Execution is allowed when the block is discovered on the site because SitePilot can preserve the ACF attrs/inner blocks and let WordPress serialize the registered block.",
+    schemaNotes:
+      "Use parsed block form with blockName acf/container, attrs.name acf/container, ACF data defaults, empty innerHTML, innerBlocks for child blocks, and one innerContent null placeholder per child. Do not invent wrapper HTML."
+  }
+] as const;
+
 export type CoreBlockSupportStatus = "supported" | "unsupported";
+export type CustomBlockSupportMode = "passthrough";
 
 export type CoreBlockSupportEntry = {
   name: string;
@@ -161,6 +174,36 @@ export type CoreBlockSupportEntry = {
   status: CoreBlockSupportStatus;
   reason: string;
   sourceUrl: string;
+};
+
+export type CustomBlockAttributeOption = {
+  label: string;
+  value: string;
+};
+
+export type CustomBlockAttributeDefinition = {
+  path: string;
+  fieldName?: string | undefined;
+  fieldKey?: string | undefined;
+  label?: string | undefined;
+  control?: string | undefined;
+  options?: CustomBlockAttributeOption[] | undefined;
+};
+
+export type CustomBlockSupportEntry = {
+  name: string;
+  label: string;
+  support: CustomBlockSupportMode;
+  reason: string;
+  schemaNotes: string;
+};
+
+export type SiteCustomBlockSupportEntry = {
+  name: string;
+  support: CustomBlockSupportMode | "manual_review_required";
+  reason: string;
+  schemaNotes?: string | undefined;
+  attributes?: CustomBlockAttributeDefinition[] | undefined;
 };
 
 export type IndexedCoreBlockEntry = {
@@ -205,6 +248,9 @@ const WORDPRESS_CORE_BLOCK_NAME_SET = new Set<string>(
 const SUPPORTED_WORDPRESS_CORE_BLOCK_NAME_SET = new Set<string>(
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
 );
+const SUPPORTED_WORDPRESS_CUSTOM_BLOCK_NAME_SET = new Set<string>(
+  SUPPORTED_WORDPRESS_CUSTOM_BLOCKS.map((entry) => entry.name)
+);
 
 function blockLabel(name: string): string {
   const slug = name.startsWith("core/") ? name.slice("core/".length) : name;
@@ -247,7 +293,13 @@ export function normalizeParsedBlockName(raw: unknown): string {
   if (trimmed.startsWith("core:")) {
     return `core/${trimmed.slice("core:".length)}`;
   }
-  if (!trimmed.includes("/") && WORDPRESS_CORE_BLOCK_NAME_SET.has(`core/${trimmed}`)) {
+  if (trimmed.startsWith("core/acf/")) {
+    return trimmed.slice("core/".length);
+  }
+  if (
+    !trimmed.includes("/") &&
+    WORDPRESS_CORE_BLOCK_NAME_SET.has(`core/${trimmed}`)
+  ) {
     return `core/${trimmed}`;
   }
   return trimmed;
@@ -259,6 +311,50 @@ export function isKnownWordPressCoreBlockName(name: string): boolean {
 
 export function isSupportedWordPressCoreBlockName(name: string): boolean {
   return SUPPORTED_WORDPRESS_CORE_BLOCK_NAME_SET.has(name);
+}
+
+export function isSupportedWordPressCustomBlockName(name: string): boolean {
+  return SUPPORTED_WORDPRESS_CUSTOM_BLOCK_NAME_SET.has(name);
+}
+
+export function getWordPressCustomBlockSupport(
+  rawName: unknown
+): CustomBlockSupportEntry | null {
+  const name = normalizeParsedBlockName(rawName);
+  return (
+    SUPPORTED_WORDPRESS_CUSTOM_BLOCKS.find((entry) => entry.name === name) ??
+    null
+  );
+}
+
+export function classifyDiscoveredCustomBlock(
+  rawName: unknown
+): SiteCustomBlockSupportEntry | null {
+  const name = normalizeParsedBlockName(rawName);
+  if (name.length === 0 || name.startsWith("core/")) {
+    return null;
+  }
+
+  const supported = getWordPressCustomBlockSupport(name);
+  if (supported) {
+    return {
+      name: supported.name,
+      support: supported.support,
+      reason: supported.reason,
+      schemaNotes: supported.schemaNotes
+    };
+  }
+
+  if (name.startsWith("acf/") || name.includes("acf-")) {
+    return {
+      name,
+      support: "manual_review_required",
+      reason:
+        "ACF block discovered on this site but SitePilot does not yet have a reviewed schema/serialization contract for it."
+    };
+  }
+
+  return null;
 }
 
 export function getWordPressCoreBlockSupport(
@@ -281,11 +377,20 @@ export function explainUnsupportedBlockName(rawName: unknown): string {
   if (WORDPRESS_CORE_BLOCK_NAME_SET.has(name)) {
     return `WordPress core block "${name}" is not supported for execution yet because SitePilot does not have explicit canonical serialization for it.`;
   }
+  if (name.startsWith("acf/") || name.includes("acf-")) {
+    return `Custom ACF block "${name}" is not loaded for execution on this site. Add a reviewed custom block support entry before SitePilot can write it.`;
+  }
   return `Block "${name}" is not supported for execution because it is outside SitePilot's supported WordPress core block registry.`;
 }
 
-export function findUnsupportedParsedBlockNames(blocks: unknown[]): string[] {
+export function findUnsupportedParsedBlockNames(
+  blocks: unknown[],
+  options: { supportedCustomBlockNames?: readonly string[] } = {}
+): string[] {
   const found = new Set<string>();
+  const supportedCustomNames = new Set(
+    options.supportedCustomBlockNames?.map(normalizeParsedBlockName) ?? []
+  );
 
   const visit = (value: unknown): void => {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -294,7 +399,10 @@ export function findUnsupportedParsedBlockNames(blocks: unknown[]): string[] {
     const block = value as Record<string, unknown>;
     const name = normalizeParsedBlockName(block.blockName);
     if (name.length > 0) {
-      if (!SUPPORTED_WORDPRESS_CORE_BLOCK_NAME_SET.has(name)) {
+      if (
+        !SUPPORTED_WORDPRESS_CORE_BLOCK_NAME_SET.has(name) &&
+        !supportedCustomNames.has(name)
+      ) {
         found.add(name);
       }
     } else {
@@ -315,8 +423,14 @@ export function findUnsupportedParsedBlockNames(blocks: unknown[]): string[] {
   return [...found].sort();
 }
 
-export function findUnsupportedSerializedBlockNames(content: string): string[] {
+export function findUnsupportedSerializedBlockNames(
+  content: string,
+  options: { supportedCustomBlockNames?: readonly string[] } = {}
+): string[] {
   const found = new Set<string>();
+  const supportedCustomNames = new Set(
+    options.supportedCustomBlockNames?.map(normalizeParsedBlockName) ?? []
+  );
   const blockCommentPattern =
     /<!--\s*(\/?)wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)(?:\s+[\s\S]*?)?\s*(\/)?-->/gi;
   let match: RegExpExecArray | null;
@@ -330,8 +444,13 @@ export function findUnsupportedSerializedBlockNames(content: string): string[] {
     if (rawBlockName === undefined) {
       continue;
     }
-    const name = normalizeParsedBlockName(`core/${rawBlockName}`);
-    if (!SUPPORTED_WORDPRESS_CORE_BLOCK_NAME_SET.has(name)) {
+    const name = normalizeParsedBlockName(
+      rawBlockName.includes("/") ? rawBlockName : `core/${rawBlockName}`
+    );
+    if (
+      !SUPPORTED_WORDPRESS_CORE_BLOCK_NAME_SET.has(name) &&
+      !supportedCustomNames.has(name)
+    ) {
       found.add(name);
     }
   }

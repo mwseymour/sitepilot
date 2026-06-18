@@ -625,15 +625,17 @@ h2 {
 }
 
 .chat-thread-row-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.45rem;
-  align-items: center;
+  position: relative;
 }
 
 .chat-thread-row-actions {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  z-index: 2;
   display: inline-flex;
   gap: 0.4rem;
+  transform: translate(0.2rem, -50%);
 }
 
 .chat-thread-pill {
@@ -653,9 +655,19 @@ h2 {
 
 .chat-thread-pill-label {
   display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-thread-pill-label-collapsed {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.chat-thread-pill-label-expanded {
+  white-space: normal;
 }
 
 .workspace-link-label {
@@ -1059,6 +1071,38 @@ h2 {
   line-height: 1.55;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.chat-request-current-collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+}
+
+.chat-expandable-text {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.chat-inline-toggle {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-inline-toggle:hover {
+  text-decoration: underline;
+}
+
+.chat-thread-toggle {
+  margin-left: 0.1rem;
 }
 
 .chat-request-attachments,
@@ -2308,13 +2352,18 @@ h2 {
   grid-template-columns: 260px minmax(0, 1fr);
   gap: 1rem;
   width: min(100%, 1440px);
-  height: calc(100vh - 6rem);
-  min-height: 620px;
+  min-height: calc(100vh - 6rem);
+  align-items: stretch;
 }
 
 .chat-threads {
   display: flex;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: calc(100vh - 6rem);
   min-height: 0;
+  overflow: hidden;
   flex-direction: column;
   padding: 0.9rem;
   border-radius: 12px;
@@ -2329,7 +2378,7 @@ h2 {
 }
 
 .chat-thread-row-main {
-  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 2.35rem;
 }
 
 .chat-thread-pill {
@@ -2351,13 +2400,12 @@ h2 {
 
 .chat-thread-row-actions {
   opacity: 0;
-  transform: translateX(0.2rem);
 }
 
 .chat-thread-row:hover .chat-thread-row-actions,
 .chat-thread-row:focus-within .chat-thread-row-actions {
   opacity: 1;
-  transform: translateX(0);
+  transform: translate(0, -50%);
 }
 
 .chat-thread-rename,
@@ -2455,7 +2503,6 @@ h2 {
 
 @media (max-width: 1100px) {
   .chat-layout {
-    height: auto;
     min-height: 0;
     grid-template-columns: 220px minmax(0, 1fr);
   }
@@ -2466,6 +2513,11 @@ h2 {
 
   .chat-side-column {
     position: static;
+  }
+
+  .chat-threads {
+    position: static;
+    height: auto;
   }
 
   .chat-messages {

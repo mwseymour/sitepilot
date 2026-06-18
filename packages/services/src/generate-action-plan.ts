@@ -2,9 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   actionPlanSchema,
+  classifyDiscoveredCustomBlock,
   findUnsupportedParsedBlockNames,
   findUnsupportedSerializedBlockNames,
   isKnownWordPressCoreBlockName,
+  normalizeParsedBlockName,
   type ImageAttachmentPayload,
   type RequestVisualAnalysisPayload,
   type Action,
@@ -12,6 +14,8 @@ import {
   type PlannerContext,
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
 } from "@sitepilot/contracts";
+import type { SiteCustomBlockSupportEntry } from "@sitepilot/contracts";
+import type { CustomBlockAttributeDefinition } from "@sitepilot/contracts";
 import type {
   ActionId,
   ActionPlanId,
@@ -55,6 +59,12 @@ const MAX_PLANNER_IMAGES = 3;
 const BLOCK_COMMENT_RE =
   /<!--\s*(\/?)wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)(?:\s+([\s\S]*?))?\s*(\/)?-->/gi;
 
+function isPassthroughCustomBlockEntry(
+  entry: SiteCustomBlockSupportEntry | null
+): entry is SiteCustomBlockSupportEntry & { support: "passthrough" } {
+  return entry !== null && entry.support === "passthrough";
+}
+
 type ContentNormalizationResult = {
   content: string;
   warnings: string[];
@@ -68,6 +78,85 @@ type NormalizedBlocksResult = {
 type ExecutableBlockDemoOptions = {
   imageFileName: string | undefined;
 };
+
+function supportedCustomBlockEntries(
+  context: PlannerContext
+): SiteCustomBlockSupportEntry[] {
+  const contentModel = context.siteConfig?.sections.contentModel;
+  const configuredEntries = contentModel?.customBlockSupport ?? [];
+  const inferredEntries =
+    configuredEntries.length > 0
+      ? []
+      : (contentModel?.thirdPartyBlocks ?? [])
+          .map(classifyDiscoveredCustomBlock)
+          .filter(isPassthroughCustomBlockEntry);
+
+  return [...configuredEntries, ...inferredEntries]
+    .filter((entry) => entry.support === "passthrough")
+    .map((entry) => {
+      const normalized: SiteCustomBlockSupportEntry = {
+        name: normalizeParsedBlockName(entry.name),
+        support: entry.support,
+        reason: entry.reason
+      };
+      if (entry.schemaNotes !== undefined) {
+        normalized.schemaNotes = entry.schemaNotes;
+      }
+      if (entry.attributes !== undefined) {
+        normalized.attributes = entry.attributes;
+      }
+      return normalized;
+    })
+    .filter((entry) => entry.name.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function supportedCustomBlockNames(context: PlannerContext): string[] {
+  return supportedCustomBlockEntries(context).map((entry) => entry.name);
+}
+
+function supportedBlockSummary(customBlockNames: readonly string[]): string {
+  return [...SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES, ...customBlockNames].join(
+    ", "
+  );
+}
+
+function customBlockAttributesByName(
+  context: PlannerContext
+): Map<string, CustomBlockAttributeDefinition[]> {
+  const entries = supportedCustomBlockEntries(context);
+  return new Map(
+    entries.map((entry) => [entry.name, entry.attributes ?? []] as const)
+  );
+}
+
+function customBlockInstruction(
+  customBlockNames: readonly string[],
+  customBlockAttributes: ReadonlyMap<string, CustomBlockAttributeDefinition[]>
+): string {
+  if (customBlockNames.length === 0) {
+    return "";
+  }
+
+  const attributeSummary = customBlockNames
+    .flatMap((name) =>
+      (customBlockAttributes.get(name) ?? [])
+        .filter((attribute) => (attribute.options?.length ?? 0) > 0)
+        .map((attribute) => {
+          const options = attribute.options
+            ?.map((option) => `${option.label}=${option.value}`)
+            .join(", ");
+          return `${name} ${attribute.path}: ${options}`;
+        })
+    )
+    .join("; ");
+  const attributeInstruction =
+    attributeSummary.length > 0
+      ? ` Discovered custom block attribute options: ${attributeSummary}. When the operator names an option label, use the matching discovered option value.`
+      : "";
+
+  return `This site has loaded custom Gutenberg blocks that may be used when the operator explicitly asks for them and the block is appropriate: ${customBlockNames.join(", ")}. For custom blocks, preserve the exact namespace such as "acf/container"; never rewrite it as "core/acf/container". Always use input.blocks parsed block form for custom blocks; do not use input.content or invent wrapper HTML for them. Use attrs, innerBlocks, innerHTML, and innerContent. When a custom block contains child blocks, innerContent must contain null placeholders where each child should be serialized, not empty strings.${attributeInstruction}`;
+}
 
 function lastUserPlainText(context: PlannerContext): string {
   const users = context.messages.filter((m) => m.role === "user");
@@ -110,11 +199,13 @@ function isPlaceholderOpenQuestion(value: string): boolean {
 }
 
 function normalizeOpenQuestions(openQuestions: string[]): string[] {
-  return [...new Set(
-    openQuestions
-      .map((question) => question.trim())
-      .filter((question) => !isPlaceholderOpenQuestion(question))
-  )];
+  return [
+    ...new Set(
+      openQuestions
+        .map((question) => question.trim())
+        .filter((question) => !isPlaceholderOpenQuestion(question))
+    )
+  ];
 }
 
 function splitClarificationQuestion(question: string): string[] {
@@ -161,13 +252,11 @@ function requestAsksForEveryExecutableBlock(requestText: string): boolean {
 function imagePartsForRequest(
   attachments: ImageAttachmentPayload[] | undefined
 ): ChatContentPart[] {
-  return (attachments ?? [])
-    .slice(0, MAX_PLANNER_IMAGES)
-    .map((attachment) => ({
-      type: "image" as const,
-      mediaType: attachment.mediaType,
-      dataUrl: attachment.dataUrl
-    }));
+  return (attachments ?? []).slice(0, MAX_PLANNER_IMAGES).map((attachment) => ({
+    type: "image" as const,
+    mediaType: attachment.mediaType,
+    dataUrl: attachment.dataUrl
+  }));
 }
 
 function normalizeActionType(type: string): string {
@@ -195,7 +284,12 @@ function deriveUpdateActionTargetInput(
   input: Record<string, unknown>,
   actionInput: Record<string, unknown>
 ): Record<string, unknown> | null {
-  const postId = pickNumberFrom([input, actionInput], "postId", "post_id", "id");
+  const postId = pickNumberFrom(
+    [input, actionInput],
+    "postId",
+    "post_id",
+    "id"
+  );
   if (postId !== undefined) {
     return { post_id: postId };
   }
@@ -369,7 +463,11 @@ function deriveActionRiskLevel(input: {
 }
 
 function deriveDryRunCapable(type: string): boolean {
-  if (actionTypeUploadsMedia(type) || actionTypeIsFeaturedImage(type) || actionTypeIsSeoMeta(type)) {
+  if (
+    actionTypeUploadsMedia(type) ||
+    actionTypeIsFeaturedImage(type) ||
+    actionTypeIsSeoMeta(type)
+  ) {
     return false;
   }
   if (normalizeActionType(type).includes("publish")) {
@@ -402,9 +500,7 @@ function stringArrayFrom(
     .filter((entry) => !options.filterEmpty || entry.length > 0);
 }
 
-function planRiskLevelFromActions(
-  actions: Action[]
-): ActionPlan["riskLevel"] {
+function planRiskLevelFromActions(actions: Action[]): ActionPlan["riskLevel"] {
   const rank: Record<ActionPlan["riskLevel"], number> = {
     low: 0,
     medium: 1,
@@ -437,11 +533,14 @@ function normalizeLegacyActionPlanDraft(
   const proposedActions = rawActions.map((rawAction) => {
     const actionRecord = objectValue(rawAction);
     const type =
-      typeof actionRecord.type === "string" && actionRecord.type.trim().length > 0
+      typeof actionRecord.type === "string" &&
+      actionRecord.type.trim().length > 0
         ? actionRecord.type
         : "unknown_action";
     const actionInput = objectValue(actionRecord.input);
-    const existingTargetEntityRefs = Array.isArray(actionRecord.targetEntityRefs)
+    const existingTargetEntityRefs = Array.isArray(
+      actionRecord.targetEntityRefs
+    )
       ? actionRecord.targetEntityRefs.filter(
           (value): value is string =>
             typeof value === "string" && value.trim().length > 0
@@ -610,7 +709,10 @@ function normalizeBlockName(raw: unknown): string {
   if (trimmed.startsWith("core:")) {
     return `core/${trimmed.slice("core:".length)}`;
   }
-  if (!trimmed.includes("/") && isKnownWordPressCoreBlockName(`core/${trimmed}`)) {
+  if (
+    !trimmed.includes("/") &&
+    isKnownWordPressCoreBlockName(`core/${trimmed}`)
+  ) {
     return `core/${trimmed}`;
   }
   return trimmed;
@@ -655,6 +757,155 @@ function normalizeTextChunk(
     return normalizeHeadingHtml(chunk, attrs);
   }
   return escapeHtml(chunk);
+}
+
+function parsedJsonObject(value: string | undefined): Record<string, unknown> {
+  if (value === undefined || value.trim().length === 0) {
+    return {};
+  }
+  try {
+    return objectValue(JSON.parse(value) as unknown);
+  } catch {
+    return {};
+  }
+}
+
+function normalizedToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ");
+}
+
+function resolveCustomBlockOptionValue(
+  attributes: readonly CustomBlockAttributeDefinition[],
+  fieldNames: readonly string[],
+  value: unknown
+): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+
+  const normalized = normalizedToken(value);
+  for (const attribute of attributes) {
+    const names = [
+      attribute.fieldName,
+      attribute.fieldKey,
+      attribute.label,
+      attribute.path.split(".").at(-1)
+    ]
+      .filter((name): name is string => typeof name === "string")
+      .map(normalizedToken);
+    if (
+      !fieldNames.map(normalizedToken).some((field) => names.includes(field))
+    ) {
+      continue;
+    }
+    for (const option of attribute.options ?? []) {
+      if (
+        normalizedToken(option.label) === normalized ||
+        normalizedToken(option.value) === normalized
+      ) {
+        return option.value;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveRequestedCustomBlockOptionValue(
+  attributes: readonly CustomBlockAttributeDefinition[],
+  fieldNames: readonly string[],
+  requestText: string | undefined
+): string | null {
+  if (requestText === undefined) {
+    return null;
+  }
+
+  const normalizedRequest = normalizedToken(requestText);
+  for (const attribute of attributes) {
+    const names = [
+      attribute.fieldName,
+      attribute.fieldKey,
+      attribute.label,
+      attribute.path.split(".").at(-1)
+    ]
+      .filter((name): name is string => typeof name === "string")
+      .map(normalizedToken);
+    if (
+      !fieldNames.map(normalizedToken).some((field) => names.includes(field))
+    ) {
+      continue;
+    }
+    for (const option of attribute.options ?? []) {
+      const label = normalizedToken(option.label);
+      const value = normalizedToken(option.value);
+      if (
+        normalizedRequest.includes(label) ||
+        normalizedRequest.includes(value)
+      ) {
+        return option.value;
+      }
+    }
+  }
+
+  return null;
+}
+
+function acfContainerAttrs(
+  attrs: Record<string, unknown>,
+  requestText: string | undefined,
+  attributes: readonly CustomBlockAttributeDefinition[] = []
+): Record<string, unknown> {
+  const rawData = objectValue(attrs.data);
+  const colourFields = ["colour", "color", "field_container_colour"];
+  const requestedColour = resolveRequestedCustomBlockOptionValue(
+    attributes,
+    colourFields,
+    requestText
+  );
+  const explicitColour =
+    resolveCustomBlockOptionValue(attributes, colourFields, attrs.colour) ??
+    resolveCustomBlockOptionValue(attributes, colourFields, attrs.color) ??
+    resolveCustomBlockOptionValue(
+      attributes,
+      colourFields,
+      rawData.field_container_colour
+    ) ??
+    resolveCustomBlockOptionValue(attributes, colourFields, rawData.colour) ??
+    (typeof rawData.field_container_colour === "string"
+      ? rawData.field_container_colour
+      : typeof rawData.colour === "string"
+        ? rawData.colour
+        : undefined);
+  const colour =
+    requestedColour !== null &&
+    (explicitColour === undefined || explicitColour === "bg-white")
+      ? requestedColour
+      : (explicitColour ?? "bg-white");
+  const data = {
+    field_container_colour: colour,
+    colour,
+    _colour: "field_container_colour",
+    field_container_padding_amount: "py-[80px] md:py-[100px]",
+    padding_amount: "py-[80px] md:py-[100px]",
+    _padding_amount: "field_container_padding_amount",
+    field_container_bottom_border: "1",
+    bottom_border: "1",
+    _bottom_border: "field_container_bottom_border",
+    ...rawData
+  };
+  data.field_container_colour = colour;
+  data.colour = colour;
+
+  return {
+    ...attrs,
+    name: "acf/container",
+    data,
+    align: typeof attrs.align === "string" ? attrs.align : "",
+    mode: typeof attrs.mode === "string" ? attrs.mode : "preview"
+  };
 }
 
 function extractTextContent(html: string): string {
@@ -705,21 +956,28 @@ function pullquoteHtml(
       : extractTextContent(innerHTML);
   const citation =
     typeof attrs.citation === "string" ? attrs.citation.trim() : "";
-  const cite = citation.length > 0 ? `<cite>${escapeHtml(citation)}</cite>` : "";
+  const cite =
+    citation.length > 0 ? `<cite>${escapeHtml(citation)}</cite>` : "";
   return `<figure class="${classNames.join(
     " "
   )}"><blockquote><p>${escapeHtml(value)}</p>${cite}</blockquote></figure>`;
 }
 
-function rawBlockHtml(attrs: Record<string, unknown>, attrName: string, fallback: string): string {
-  const value = typeof attrs[attrName] === "string" ? attrs[attrName] : fallback;
+function rawBlockHtml(
+  attrs: Record<string, unknown>,
+  attrName: string,
+  fallback: string
+): string {
+  const value =
+    typeof attrs[attrName] === "string" ? attrs[attrName] : fallback;
   return value;
 }
 
 function moreHtml(attrs: Record<string, unknown>): string {
   const customText =
     typeof attrs.customText === "string" ? attrs.customText.trim() : "";
-  const moreTag = customText.length > 0 ? `<!--more ${customText}-->` : "<!--more-->";
+  const moreTag =
+    customText.length > 0 ? `<!--more ${customText}-->` : "<!--more-->";
   const noTeaser = attrs.noTeaser === true ? "<!--noteaser-->" : "";
   return [moreTag, noTeaser].filter((part) => part.length > 0).join("\n");
 }
@@ -734,11 +992,13 @@ function fileHtml(attrs: Record<string, unknown>): string {
       ? attrs.fileName
       : "";
   const textLinkHref =
-    typeof attrs.textLinkHref === "string" && attrs.textLinkHref.trim().length > 0
+    typeof attrs.textLinkHref === "string" &&
+    attrs.textLinkHref.trim().length > 0
       ? attrs.textLinkHref.trim()
       : href;
   const textLinkTarget =
-    typeof attrs.textLinkTarget === "string" && attrs.textLinkTarget.trim().length > 0
+    typeof attrs.textLinkTarget === "string" &&
+    attrs.textLinkTarget.trim().length > 0
       ? ` target="${escapeHtml(attrs.textLinkTarget.trim())}"`
       : "";
   const linkRel = textLinkTarget.length > 0 ? ' rel="noreferrer noopener"' : "";
@@ -786,7 +1046,14 @@ function videoTracksHtml(attrs: Record<string, unknown>): string {
   return tracks
     .map((track) => {
       const record = objectValue(track);
-      const attrNames = ["kind", "label", "src", "srcLang", "srclang", "default"];
+      const attrNames = [
+        "kind",
+        "label",
+        "src",
+        "srcLang",
+        "srclang",
+        "default"
+      ];
       const attrPairs: string[] = [];
       for (const name of attrNames) {
         if (name === "default") {
@@ -795,7 +1062,10 @@ function videoTracksHtml(attrs: Record<string, unknown>): string {
           }
           continue;
         }
-        if (typeof record[name] === "string" && record[name].trim().length > 0) {
+        if (
+          typeof record[name] === "string" &&
+          record[name].trim().length > 0
+        ) {
           const htmlName = name === "srcLang" ? "srclang" : name;
           attrPairs.push(`${htmlName}="${escapeHtml(record[name].trim())}"`);
         }
@@ -831,7 +1101,9 @@ function videoHtml(attrs: Record<string, unknown>): string {
     attrsOut.push(`src="${escapeHtml(src)}"`);
   }
   return `<figure class="wp-block-video">${
-    src.length > 0 ? `<video ${attrsOut.join(" ")}>${videoTracksHtml(attrs)}</video>` : ""
+    src.length > 0
+      ? `<video ${attrsOut.join(" ")}>${videoTracksHtml(attrs)}</video>`
+      : ""
   }${caption}</figure>`;
 }
 
@@ -851,7 +1123,9 @@ function contentPositionClassName(position: string): string {
   return map[position] ?? "";
 }
 
-function mediaPositionString(focalPoint: Record<string, unknown> | null): string {
+function mediaPositionString(
+  focalPoint: Record<string, unknown> | null
+): string {
   const x = focalPoint && typeof focalPoint.x === "number" ? focalPoint.x : 0.5;
   const y = focalPoint && typeof focalPoint.y === "number" ? focalPoint.y : 0.5;
   return `${Math.round(x * 100)}% ${Math.round(y * 100)}%`;
@@ -868,7 +1142,9 @@ function coverWrapperOpen(attrs: Record<string, unknown>): string {
   if (attrs.hasParallax === true) classes.push("has-parallax");
   if (attrs.isRepeated === true) classes.push("is-repeated");
   const contentPosition =
-    typeof attrs.contentPosition === "string" ? attrs.contentPosition.trim() : "";
+    typeof attrs.contentPosition === "string"
+      ? attrs.contentPosition.trim()
+      : "";
   if (
     contentPosition.length > 0 &&
     contentPosition !== "center center" &&
@@ -910,9 +1186,7 @@ function coverBackgroundHtml(attrs: Record<string, unknown>): string {
   }
   if (backgroundType === "image" && url.length > 0) {
     if (attrs.hasParallax === true || attrs.isRepeated === true) {
-      return `<div${
-        alt.length > 0 ? ' role="img"' : ""
-      }${
+      return `<div${alt.length > 0 ? ' role="img"' : ""}${
         alt.length > 0 ? ` aria-label="${escapeHtml(alt)}"` : ""
       } class="wp-block-cover__image-background${idClass}${sizeSlug}${
         attrs.hasParallax === true ? " has-parallax" : ""
@@ -922,9 +1196,7 @@ function coverBackgroundHtml(attrs: Record<string, unknown>): string {
     }
     return `<img class="wp-block-cover__image-background${idClass}${sizeSlug}" alt="${escapeHtml(
       alt
-    )}" src="${escapeHtml(
-      url
-    )}" style="object-position:${escapeHtml(
+    )}" src="${escapeHtml(url)}" style="object-position:${escapeHtml(
       objectPosition
     )}" data-object-fit="cover" data-object-position="${escapeHtml(
       objectPosition
@@ -961,7 +1233,8 @@ function dimRatioClass(ratio: unknown): string {
 function coverOverlayHtml(attrs: Record<string, unknown>): string {
   const classes = ["wp-block-cover__background"];
   const overlayColor =
-    typeof attrs.overlayColor === "string" && attrs.overlayColor.trim().length > 0
+    typeof attrs.overlayColor === "string" &&
+    attrs.overlayColor.trim().length > 0
       ? `has-${escapeHtml(attrs.overlayColor.trim())}-background-color`
       : "";
   if (overlayColor) classes.push(overlayColor);
@@ -973,12 +1246,14 @@ function coverOverlayHtml(attrs: Record<string, unknown>): string {
       ? attrs.gradient.trim()
       : "";
   const customGradient =
-    typeof attrs.customGradient === "string" && attrs.customGradient.trim().length > 0
+    typeof attrs.customGradient === "string" &&
+    attrs.customGradient.trim().length > 0
       ? attrs.customGradient.trim()
       : "";
   if (gradient || customGradient) {
     classes.push("has-background-gradient");
-    if (gradient) classes.push(`has-${escapeHtml(gradient)}-gradient-background`);
+    if (gradient)
+      classes.push(`has-${escapeHtml(gradient)}-gradient-background`);
     if (
       typeof attrs.url === "string" &&
       attrs.url.trim().length > 0 &&
@@ -1021,7 +1296,10 @@ function separatorHtml(attrs: Record<string, unknown>): string {
       ? attrs.tagName.trim()
       : "hr";
   const classNames = ["wp-block-separator"];
-  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+  if (
+    typeof attrs.className === "string" &&
+    attrs.className.trim().length > 0
+  ) {
     classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
   }
   const opacity =
@@ -1072,7 +1350,10 @@ function buttonHtml(attrs: Record<string, unknown>, innerHTML: string): string {
         ? ' type="button"'
         : "";
   const wrapperClassNames = ["wp-block-button"];
-  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+  if (
+    typeof attrs.className === "string" &&
+    attrs.className.trim().length > 0
+  ) {
     wrapperClassNames.push(
       ...attrs.className.trim().split(/\s+/).map(escapeHtml)
     );
@@ -1102,7 +1383,10 @@ function groupWrapperOpen(attrs: Record<string, unknown>): string {
   if (typeof attrs.align === "string" && attrs.align.trim().length > 0) {
     classNames.push(`align${escapeHtml(attrs.align.trim())}`);
   }
-  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+  if (
+    typeof attrs.className === "string" &&
+    attrs.className.trim().length > 0
+  ) {
     classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
   }
   return `<${tagName} class="${classNames.join(" ")}">`;
@@ -1134,8 +1418,7 @@ function tableCellHtml(
   cellIndex: number
 ): string {
   const tag =
-    typeof cell.tag === "string" &&
-    (cell.tag === "td" || cell.tag === "th")
+    typeof cell.tag === "string" && (cell.tag === "td" || cell.tag === "th")
       ? cell.tag
       : "td";
   const classNames: string[] = [];
@@ -1219,7 +1502,10 @@ function mediaTextMediaFigureHtml(attrs: Record<string, unknown>): string {
   const mediaType = typeof attrs.mediaType === "string" ? attrs.mediaType : "";
   const mediaUrl =
     typeof attrs.mediaUrl === "string" ? attrs.mediaUrl.trim() : "";
-  if (mediaUrl.length === 0 || (mediaType !== "image" && mediaType !== "video")) {
+  if (
+    mediaUrl.length === 0 ||
+    (mediaType !== "image" && mediaType !== "video")
+  ) {
     return '<figure class="wp-block-media-text__media"></figure>';
   }
 
@@ -1258,10 +1544,7 @@ function mediaTextMediaFigureHtml(attrs: Record<string, unknown>): string {
           )}"${
             classes.length > 0 ? ` class="${classes.join(" ")}"` : ""
           }${style}/>`;
-          if (
-            typeof attrs.href === "string" &&
-            attrs.href.trim().length > 0
-          ) {
+          if (typeof attrs.href === "string" && attrs.href.trim().length > 0) {
             const target =
               typeof attrs.linkTarget === "string" &&
               attrs.linkTarget.trim().length > 0
@@ -1326,7 +1609,11 @@ function listWrapperOpen(attrs: Record<string, unknown>): string {
   if (ordered && attrs.reversed === true) {
     extras.push("reversed");
   }
-  if (ordered && typeof attrs.start === "number" && Number.isFinite(attrs.start)) {
+  if (
+    ordered &&
+    typeof attrs.start === "number" &&
+    Number.isFinite(attrs.start)
+  ) {
     extras.push(`start="${String(attrs.start)}"`);
   }
   return `<${tagName} class="wp-block-list"${extras.length > 0 ? ` ${extras.join(" ")}` : ""}>`;
@@ -1371,7 +1658,8 @@ function imageHtml(attrs: Record<string, unknown>): string {
   if (sizeSlug.length > 0) {
     figureClasses.push(`size-${escapeHtml(sizeSlug)}`);
   }
-  const imageClass = id !== undefined && id > 0 ? ` class="wp-image-${id}"` : "";
+  const imageClass =
+    id !== undefined && id > 0 ? ` class="wp-image-${id}"` : "";
   return `<figure class="${figureClasses.join(" ")}"><img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"${imageClass}/></figure>`;
 }
 
@@ -1479,7 +1767,10 @@ function columnsWrapperOpen(attrs: Record<string, unknown>): string {
       `are-vertically-aligned-${escapeHtml(attrs.verticalAlignment.trim())}`
     );
   }
-  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+  if (
+    typeof attrs.className === "string" &&
+    attrs.className.trim().length > 0
+  ) {
     classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
   }
   return `<div class="${classNames.join(" ")}">`;
@@ -1495,11 +1786,15 @@ function columnWrapperOpen(attrs: Record<string, unknown>): string {
       `is-vertically-aligned-${escapeHtml(attrs.verticalAlignment.trim())}`
     );
   }
-  if (typeof attrs.className === "string" && attrs.className.trim().length > 0) {
+  if (
+    typeof attrs.className === "string" &&
+    attrs.className.trim().length > 0
+  ) {
     classNames.push(...attrs.className.trim().split(/\s+/).map(escapeHtml));
   }
   const width = typeof attrs.width === "string" ? attrs.width.trim() : "";
-  const style = width.length > 0 ? ` style="flex-basis:${escapeHtml(width)}"` : "";
+  const style =
+    width.length > 0 ? ` style="flex-basis:${escapeHtml(width)}"` : "";
   return `<div class="${classNames.join(" ")}"${style}>`;
 }
 
@@ -1584,7 +1879,11 @@ function canonicalContainerInnerContent(
   }
 
   if (blockName === "core/list") {
-    return [listWrapperOpen(attrs), ...innerBlocks.map(() => null), listWrapperClose(attrs)];
+    return [
+      listWrapperOpen(attrs),
+      ...innerBlocks.map(() => null),
+      listWrapperClose(attrs)
+    ];
   }
 
   return null;
@@ -1593,7 +1892,12 @@ function canonicalContainerInnerContent(
 function normalizeParsedBlockNode(
   value: unknown,
   path: string,
-  warnings: string[]
+  warnings: string[],
+  requestText?: string,
+  customBlockAttributes: ReadonlyMap<
+    string,
+    CustomBlockAttributeDefinition[]
+  > = new Map()
 ): Record<string, unknown> | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     warnings.push(`Dropped malformed block at ${path}.`);
@@ -1607,7 +1911,14 @@ function normalizeParsedBlockNode(
     return null;
   }
 
-  const attrs = objectValue(raw.attrs);
+  const attrs =
+    blockName === "acf/container"
+      ? acfContainerAttrs(
+          objectValue(raw.attrs),
+          requestText,
+          customBlockAttributes.get(blockName) ?? []
+        )
+      : objectValue(raw.attrs);
   normalizeExternalMediaAttrs(blockName, attrs, warnings, path);
   let innerBlocks = Array.isArray(raw.innerBlocks)
     ? raw.innerBlocks
@@ -1615,7 +1926,9 @@ function normalizeParsedBlockNode(
           normalizeParsedBlockNode(
             inner,
             `${path}.innerBlocks[${index}]`,
-            warnings
+            warnings,
+            requestText,
+            customBlockAttributes
           )
         )
         .filter((block): block is Record<string, unknown> => block !== null)
@@ -1652,10 +1965,16 @@ function normalizeParsedBlockNode(
     }
   }
 
-  if (blockName === "core/list" && innerBlocks.length === 0 && innerHTML.includes("<li")) {
+  if (
+    blockName === "core/list" &&
+    innerBlocks.length === 0 &&
+    innerHTML.includes("<li")
+  ) {
     innerBlocks = parseListItemBlocksFromListHtml(innerHTML);
     if (innerBlocks.length > 0) {
-      warnings.push(`Recovered list-item children for ${path} from serialized list HTML.`);
+      warnings.push(
+        `Recovered list-item children for ${path} from serialized list HTML.`
+      );
     }
   }
 
@@ -1759,12 +2078,26 @@ function normalizeParsedBlockNode(
     innerHTML = innerContent.filter((chunk) => chunk !== null).join("");
   }
 
+  if (
+    !blockName.startsWith("core/") &&
+    innerBlocks.length > 0 &&
+    !innerContent.some((chunk) => chunk === null)
+  ) {
+    innerContent = innerBlocks.map(() => null);
+    innerHTML = "";
+    warnings.push(
+      `Repaired child placeholders for custom block ${blockName} at ${path}.`
+    );
+  }
+
   if (innerBlocks.length > 0 && innerContent.length === 0) {
     innerContent = innerBlocks.map(() => null);
   }
 
   if (raw.blockName !== blockName) {
-    warnings.push(`Normalized blockName at ${path} from "${String(raw.blockName)}" to "${blockName}".`);
+    warnings.push(
+      `Normalized blockName at ${path} from "${String(raw.blockName)}" to "${blockName}".`
+    );
   }
 
   if (typeof raw.innerHTML !== "string") {
@@ -1780,11 +2113,24 @@ function normalizeParsedBlockNode(
   };
 }
 
-function normalizeParsedBlocks(rawBlocks: unknown[]): NormalizedBlocksResult {
+function normalizeParsedBlocks(
+  rawBlocks: unknown[],
+  requestText?: string,
+  customBlockAttributes: ReadonlyMap<
+    string,
+    CustomBlockAttributeDefinition[]
+  > = new Map()
+): NormalizedBlocksResult {
   const warnings: string[] = [];
   const blocks = rawBlocks
     .map((block, index) =>
-      normalizeParsedBlockNode(block, `blocks[${index}]`, warnings)
+      normalizeParsedBlockNode(
+        block,
+        `blocks[${index}]`,
+        warnings,
+        requestText,
+        customBlockAttributes
+      )
     )
     .filter((block): block is Record<string, unknown> => block !== null);
 
@@ -1802,7 +2148,9 @@ function requestLooksLikeLayoutReference(requestText: string): boolean {
   );
 }
 
-function parsedImageAttrsHaveConcreteSource(attrs: Record<string, unknown>): boolean {
+function parsedImageAttrsHaveConcreteSource(
+  attrs: Record<string, unknown>
+): boolean {
   const id =
     typeof attrs.id === "number"
       ? attrs.id
@@ -1818,7 +2166,9 @@ function parsedImageAttrsHaveConcreteSource(attrs: Record<string, unknown>): boo
   return (Number.isFinite(id) && id > 0) || url.length > 0;
 }
 
-function placeholderHtmlForUnsourcedImageDescription(description: string): string {
+function placeholderHtmlForUnsourcedImageDescription(
+  description: string
+): string {
   const label =
     description.trim().length > 0 ? description.trim() : "Image placeholder";
   const isCompact =
@@ -1883,7 +2233,9 @@ function replaceUnsourcedLayoutReferenceImages(input: {
   return nextBlocks;
 }
 
-function recoverStructuredListBlocksFromContent(content: string): Record<string, unknown>[] {
+function recoverStructuredListBlocksFromContent(
+  content: string
+): Record<string, unknown>[] {
   return normalizeParsedBlocks(
     extractSerializedBlocksByBlockNames(content, ["core/list"])
   ).blocks as Record<string, unknown>[];
@@ -2133,9 +2485,12 @@ function normalizePostContent(
 function normalizePlanPostContent(
   plan: ActionPlan,
   requestText: string,
-  requestAttachments?: ImageAttachmentPayload[]
+  requestAttachments: ImageAttachmentPayload[] | undefined,
+  customBlockNames: readonly string[],
+  customBlockAttributes: ReadonlyMap<string, CustomBlockAttributeDefinition[]>
 ): ActionPlan {
   const validationWarnings = [...plan.validationWarnings];
+  const executableBlockSummary = supportedBlockSummary(customBlockNames);
   const proposedActions = plan.proposedActions.map((action) => {
     if (!actionMayWritePostContent(action.type)) {
       return action;
@@ -2146,7 +2501,11 @@ function normalizePlanPostContent(
     const blockTarget = nestedInput ?? input;
     const blockKey = pickBlockKey(blockTarget);
     if (blockKey !== undefined && Array.isArray(blockTarget[blockKey])) {
-      const normalizedBlocks = normalizeParsedBlocks(blockTarget[blockKey]);
+      const normalizedBlocks = normalizeParsedBlocks(
+        blockTarget[blockKey],
+        requestText,
+        customBlockAttributes
+      );
       validationWarnings.push(...normalizedBlocks.warnings);
       const contentKey = pickContentKey(blockTarget);
       const hydratedBlocks =
@@ -2168,10 +2527,12 @@ function normalizePlanPostContent(
         requestAttachments,
         validationWarnings
       });
-      const unsupportedBlocks = findUnsupportedParsedBlockNames(nextBlocks);
+      const unsupportedBlocks = findUnsupportedParsedBlockNames(nextBlocks, {
+        supportedCustomBlockNames: customBlockNames
+      });
       if (unsupportedBlocks.length > 0) {
         validationWarnings.push(
-          `Structured parsed blocks include unsupported block types that execution will reject: ${unsupportedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. Add blocked blocks manually in the WordPress post editor for now.`
+          `Structured parsed blocks include unsupported block types that execution will reject: ${unsupportedBlocks.join(", ")}. Supported blocks today: ${executableBlockSummary}. Add blocked blocks manually in the WordPress post editor for now.`
         );
       }
       const nextBlockTarget = {
@@ -2221,12 +2582,31 @@ function normalizePlanPostContent(
         }
       } satisfies Action;
     }
+    const parsedCustomBlocks = parsedSupportedCustomBlocksFromSerializedContent(
+      normalized.content,
+      customBlockNames,
+      validationWarnings,
+      requestText,
+      customBlockAttributes
+    );
+    if (parsedCustomBlocks !== null) {
+      const inputWithoutSerializedCustomBlock = { ...input };
+      delete inputWithoutSerializedCustomBlock[contentKey];
+      return {
+        ...action,
+        input: {
+          ...inputWithoutSerializedCustomBlock,
+          blocks: parsedCustomBlocks
+        }
+      } satisfies Action;
+    }
     const unsupportedSerializedBlocks = findUnsupportedSerializedBlockNames(
-      normalized.content
+      normalized.content,
+      { supportedCustomBlockNames: customBlockNames }
     );
     if (unsupportedSerializedBlocks.length > 0) {
       validationWarnings.push(
-        `Serialized Gutenberg content includes unsupported block types that execution will reject: ${unsupportedSerializedBlocks.join(", ")}. Supported blocks today: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. Add blocked blocks manually in the WordPress post editor for now.`
+        `Serialized Gutenberg content includes unsupported block types that execution will reject: ${unsupportedSerializedBlocks.join(", ")}. Supported blocks today: ${executableBlockSummary}. Add blocked blocks manually in the WordPress post editor for now.`
       );
     }
     if (normalized.content === currentContent) {
@@ -2263,12 +2643,12 @@ function normalizePlanRequestedPostType(
     const normalizedType = normalizeActionType(action.type);
     const input = action.input as Record<string, unknown>;
     const nestedInput = pickObject(input, "input");
-    const scopes =
-      nestedInput !== undefined ? [input, nestedInput] : [input];
+    const scopes = nestedInput !== undefined ? [input, nestedInput] : [input];
     let changed = false;
 
     const nextInput = { ...input };
-    let nextNestedInput = nestedInput !== undefined ? { ...nestedInput } : undefined;
+    let nextNestedInput =
+      nestedInput !== undefined ? { ...nestedInput } : undefined;
 
     if (
       normalizedType === "create_draft_post" ||
@@ -2352,7 +2732,9 @@ function collectParsedBlockNames(blocks: unknown[]): string[] {
     if (blockName.length > 0) {
       names.add(blockName);
     }
-    const innerBlocks = Array.isArray(record.innerBlocks) ? record.innerBlocks : [];
+    const innerBlocks = Array.isArray(record.innerBlocks)
+      ? record.innerBlocks
+      : [];
     for (const innerBlock of innerBlocks) {
       visit(innerBlock);
     }
@@ -2379,7 +2761,9 @@ function requestMentionsInlineImagePlacement(requestText: string): boolean {
   }
 
   return (
-    /\b(between|after|before)\b[\s\S]{0,40}\b(?:paragraph|para|paras|paragraphs)\b/i.test(requestText) ||
+    /\b(between|after|before)\b[\s\S]{0,40}\b(?:paragraph|para|paras|paragraphs)\b/i.test(
+      requestText
+    ) ||
     /\b(before|after)\b[\s\S]{0,30}\b(?:the\s+)?(?:heading|image|photo|picture|button|quote|table|details|separator|spacer|list)\b/i.test(
       requestText
     ) ||
@@ -2406,7 +2790,9 @@ type InlineImagePlacement =
   | { kind: "start" }
   | { kind: "end" };
 
-function requestMentionsContentInsertionPlacement(requestText: string): boolean {
+function requestMentionsContentInsertionPlacement(
+  requestText: string
+): boolean {
   return (
     /\b(between|after|before)\b[\s\S]{0,40}\b(?:paragraph|para|paras|paragraphs)\b/i.test(
       requestText
@@ -2491,7 +2877,9 @@ function extractInlineImagePlacement(
   if (relativeBlockMatch) {
     const position = (relativeBlockMatch[1] ?? "").toLowerCase();
     const ordinalHint = (
-      relativeBlockMatch[2] ?? relativeBlockMatch[4] ?? ""
+      relativeBlockMatch[2] ??
+      relativeBlockMatch[4] ??
+      ""
     ).toLowerCase();
     const noun = (relativeBlockMatch[3] ?? "").toLowerCase();
     const blockNameMap: Record<string, string> = {
@@ -2625,13 +3013,13 @@ function insertionTargetPhrase(requestText: string): string {
   }
 
   const tail = match[1] ?? "";
-  const locatorIndex = tail.search(
-    /\b(?:after|before|between|at|into|in)\b/i
-  );
+  const locatorIndex = tail.search(/\b(?:after|before|between|at|into|in)\b/i);
   return (locatorIndex >= 0 ? tail.slice(0, locatorIndex) : tail).trim();
 }
 
-function requestedInsertedBlockNamesForPlacement(requestText: string): string[] {
+function requestedInsertedBlockNamesForPlacement(
+  requestText: string
+): string[] {
   const names = new Set<string>();
   const targetPhrase = insertionTargetPhrase(requestText);
   const source = targetPhrase.length > 0 ? targetPhrase : requestText;
@@ -2643,8 +3031,12 @@ function requestedInsertedBlockNamesForPlacement(requestText: string): string[] 
   return [...names];
 }
 
-function parseMarkdownImageBlock(markdown: string): Record<string, unknown> | null {
-  const match = markdown.match(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"([^\"]*)\")?\)/i);
+function parseMarkdownImageBlock(
+  markdown: string
+): Record<string, unknown> | null {
+  const match = markdown.match(
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"([^\"]*)\")?\)/i
+  );
   if (!match) {
     return null;
   }
@@ -2756,6 +3148,96 @@ function parseSingleParagraphBlockFromContent(
   return null;
 }
 
+function parseSerializedCustomBlockChildren(
+  content: string
+): Record<string, unknown>[] {
+  const children: Record<string, unknown>[] = [];
+  const childRe =
+    /<!--\s*wp:(paragraph|heading)(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:\1\s*-->/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = childRe.exec(content)) !== null) {
+    const rawName = match[1];
+    const attrs = parsedJsonObject(match[2]);
+    const innerHTML = (match[3] ?? "").trim();
+    if (rawName === "heading") {
+      children.push({
+        blockName: "core/heading",
+        attrs,
+        innerBlocks: [],
+        innerHTML,
+        innerContent: innerHTML.length > 0 ? [innerHTML] : []
+      });
+      continue;
+    }
+
+    children.push({
+      blockName: "core/paragraph",
+      attrs,
+      innerBlocks: [],
+      innerHTML,
+      innerContent: innerHTML.length > 0 ? [innerHTML] : []
+    });
+  }
+
+  if (children.length > 0) {
+    return children;
+  }
+
+  return stripHtmlToPlainText(content).map((paragraph) => {
+    const innerHTML = `<p>${escapeHtml(paragraph)}</p>`;
+    return {
+      blockName: "core/paragraph",
+      attrs: {},
+      innerBlocks: [],
+      innerHTML,
+      innerContent: [innerHTML]
+    };
+  });
+}
+
+function parsedSupportedCustomBlocksFromSerializedContent(
+  content: string,
+  customBlockNames: readonly string[],
+  warnings: string[],
+  requestText: string | undefined,
+  customBlockAttributes: ReadonlyMap<string, CustomBlockAttributeDefinition[]>
+): Record<string, unknown>[] | null {
+  if (!customBlockNames.includes("acf/container")) {
+    return null;
+  }
+
+  const containerRe =
+    /<!--\s*wp:acf\/container(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:acf\/container\s*-->/gi;
+  const blocks: Record<string, unknown>[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = containerRe.exec(content)) !== null) {
+    const innerBlocks = parseSerializedCustomBlockChildren(match[2] ?? "");
+    blocks.push({
+      blockName: "acf/container",
+      attrs: acfContainerAttrs(
+        parsedJsonObject(match[1]),
+        requestText,
+        customBlockAttributes.get("acf/container") ?? []
+      ),
+      innerBlocks,
+      innerHTML: "",
+      innerContent: innerBlocks.map(() => null)
+    });
+  }
+
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  warnings.push(
+    "Converted serialized custom block content to parsed blocks for execution: acf/container."
+  );
+  return normalizeParsedBlocks(blocks, requestText, customBlockAttributes)
+    .blocks as Record<string, unknown>[];
+}
+
 function extractAnchorTags(html: string): string[] {
   return [...html.matchAll(/<a\b[\s\S]*?<\/a>/gi)].map((match) => match[0]);
 }
@@ -2765,10 +3247,7 @@ function normalizeAnchorHtmlForStandaloneParagraph(anchorHtml: string): string {
     /target\s*=\s*(['"])_blank\1/i.test(anchorHtml) &&
     !/\brel\s*=/i.test(anchorHtml)
   ) {
-    return anchorHtml.replace(
-      /<a\b/i,
-      '<a rel="noreferrer noopener"'
-    );
+    return anchorHtml.replace(/<a\b/i, '<a rel="noreferrer noopener"');
   }
   return anchorHtml;
 }
@@ -2789,9 +3268,7 @@ function extractRequestedLinkUrl(requestText: string): string | null {
 }
 
 function extractRequestedLinkText(requestText: string): string | null {
-  const quotedTextMatch = requestText.match(
-    /\btext\s+of\s+['"]([^'"]+)['"]/i
-  );
+  const quotedTextMatch = requestText.match(/\btext\s+of\s+['"]([^'"]+)['"]/i);
   if (quotedTextMatch) {
     const value = (quotedTextMatch[1] ?? "").trim();
     return value.length > 0 ? value : null;
@@ -2823,9 +3300,12 @@ function buildRequestedLinkParagraphBlock(
   }
 
   const linkText = extractRequestedLinkText(requestText) ?? url;
-  const target = requestOpensLinkInNewTab(requestText) ? ' target="_blank"' : "";
-  const rel =
-    requestOpensLinkInNewTab(requestText) ? ' rel="noreferrer noopener"' : "";
+  const target = requestOpensLinkInNewTab(requestText)
+    ? ' target="_blank"'
+    : "";
+  const rel = requestOpensLinkInNewTab(requestText)
+    ? ' rel="noreferrer noopener"'
+    : "";
   const innerHTML = `<p><a href="${escapeHtml(url)}"${target}${rel}>${escapeHtml(
     linkText
   )}</a></p>`;
@@ -2839,9 +3319,7 @@ function buildRequestedLinkParagraphBlock(
   };
 }
 
-function paragraphContainsInstructionalPromptLeak(
-  innerHTML: string
-): boolean {
+function paragraphContainsInstructionalPromptLeak(innerHTML: string): boolean {
   const withoutAnchors = innerHTML.replace(/<a\b[\s\S]*?<\/a>/gi, " ");
   const text = stripHtmlToPlainText(withoutAnchors).join(" ").toLowerCase();
   if (text.length === 0) {
@@ -2859,9 +3337,10 @@ function paragraphContainsInstructionalPromptLeak(
 function maybeExtractLinkOnlyParagraphBlock(
   block: Record<string, unknown>
 ): Record<string, unknown> {
-  const innerHTML =
-    typeof block.innerHTML === "string" ? block.innerHTML : "";
-  const anchors = extractAnchorTags(innerHTML).map(normalizeAnchorHtmlForStandaloneParagraph);
+  const innerHTML = typeof block.innerHTML === "string" ? block.innerHTML : "";
+  const anchors = extractAnchorTags(innerHTML).map(
+    normalizeAnchorHtmlForStandaloneParagraph
+  );
   if (
     anchors.length === 0 ||
     !paragraphContainsInstructionalPromptLeak(innerHTML)
@@ -2932,7 +3411,9 @@ function extractSerializedBlocksByBlockNames(
       continue;
     }
 
-    const rawName = normalizedBlockName.slice("core/".length).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rawName = normalizedBlockName
+      .slice("core/".length)
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pairedPattern = new RegExp(
       `<!--\\s*wp:${rawName}(?:\\s+(\\{[\\s\\S]*?\\}))?\\s*-->([\\s\\S]*?)<!--\\s*\\/wp:${rawName}\\s*-->`,
       "gi"
@@ -3013,7 +3494,9 @@ function collectParsedBlockNamesFromUnknown(blocks: unknown[]): string[] {
     if (blockName.length > 0) {
       names.add(blockName);
     }
-    const innerBlocks = Array.isArray(record.innerBlocks) ? record.innerBlocks : [];
+    const innerBlocks = Array.isArray(record.innerBlocks)
+      ? record.innerBlocks
+      : [];
     for (const innerBlock of innerBlocks) {
       visit(innerBlock);
     }
@@ -3056,7 +3539,9 @@ function recoverRequestedBlocksFromMalformedParsedBlocks(input: {
       }
     }
 
-    const innerBlocks = Array.isArray(record.innerBlocks) ? record.innerBlocks : [];
+    const innerBlocks = Array.isArray(record.innerBlocks)
+      ? record.innerBlocks
+      : [];
     for (const innerBlock of innerBlocks) {
       visit(innerBlock);
     }
@@ -3128,14 +3613,15 @@ function selectInsertedBlocksForPlacementRequest(input: {
   const rawBlocks = Array.isArray(input.actionInput.blocks)
     ? input.actionInput.blocks
     : [];
-  const blocks = rawBlocks.length > 0
-    ? normalizeParsedBlocks(rawBlocks).blocks
-    : [];
+  const blocks =
+    rawBlocks.length > 0 ? normalizeParsedBlocks(rawBlocks).blocks : [];
 
   if (blocks.length > 0) {
     if (requestedBlockNames.length > 0) {
       const requestedBlocks = blocks.filter((block) =>
-        requestedBlockNames.includes(normalizeBlockName(objectValue(block).blockName))
+        requestedBlockNames.includes(
+          normalizeBlockName(objectValue(block).blockName)
+        )
       ) as Record<string, unknown>[];
       if (requestedBlocks.length > 0) {
         return requestedBlocks;
@@ -3143,14 +3629,15 @@ function selectInsertedBlocksForPlacementRequest(input: {
     }
 
     if (requestedBlockNames.length > 0) {
-      const recoveredRequestedBlocks = recoverRequestedBlocksFromEscapedParagraphBlocks(
-        {
+      const recoveredRequestedBlocks =
+        recoverRequestedBlocksFromEscapedParagraphBlocks({
           requestText: input.requestText,
           blocks
-        }
-      ).filter((block) =>
-        requestedBlockNames.includes(normalizeBlockName(objectValue(block).blockName))
-      ) as Record<string, unknown>[];
+        }).filter((block) =>
+          requestedBlockNames.includes(
+            normalizeBlockName(objectValue(block).blockName)
+          )
+        ) as Record<string, unknown>[];
       if (recoveredRequestedBlocks.length > 0) {
         return recoveredRequestedBlocks;
       }
@@ -3158,7 +3645,8 @@ function selectInsertedBlocksForPlacementRequest(input: {
 
     if (asksForInlineImage) {
       const imageBlocks = blocks.filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/image"
       ) as Record<string, unknown>[];
       if (imageBlocks.length > 0) {
         return imageBlocks;
@@ -3182,7 +3670,8 @@ function selectInsertedBlocksForPlacementRequest(input: {
 
     if (asksToAddHeading) {
       const headingBlocks = blocks.filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/heading"
       ) as Record<string, unknown>[];
       if (headingBlocks.length > 0) {
         return headingBlocks;
@@ -3191,7 +3680,8 @@ function selectInsertedBlocksForPlacementRequest(input: {
 
     if (asksToAddParagraph) {
       const paragraphBlocks = blocks.filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
       ) as Record<string, unknown>[];
       if (paragraphBlocks.length > 0) {
         return paragraphBlocks;
@@ -3200,7 +3690,8 @@ function selectInsertedBlocksForPlacementRequest(input: {
 
     if (asksForHeading) {
       const headingBlocks = blocks.filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/heading"
       ) as Record<string, unknown>[];
       if (headingBlocks.length > 0) {
         return headingBlocks;
@@ -3215,7 +3706,8 @@ function selectInsertedBlocksForPlacementRequest(input: {
       requestedBlockNames.length === 0
     ) {
       const paragraphBlocks = blocks.filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
       ) as Record<string, unknown>[];
       if (paragraphBlocks.length > 0) {
         return paragraphBlocks;
@@ -3223,16 +3715,18 @@ function selectInsertedBlocksForPlacementRequest(input: {
     }
 
     if (requestAsksForLink(input.requestText)) {
-      const linkParagraphs = blocks.filter((block) => {
-        const record = objectValue(block);
-        return (
-          normalizeBlockName(record.blockName) === "core/paragraph" &&
-          typeof record.innerHTML === "string" &&
-          /<a\b/i.test(record.innerHTML)
-        );
-      }).map((block) =>
-        maybeExtractLinkOnlyParagraphBlock(block as Record<string, unknown>)
-      ) as Record<string, unknown>[];
+      const linkParagraphs = blocks
+        .filter((block) => {
+          const record = objectValue(block);
+          return (
+            normalizeBlockName(record.blockName) === "core/paragraph" &&
+            typeof record.innerHTML === "string" &&
+            /<a\b/i.test(record.innerHTML)
+          );
+        })
+        .map((block) =>
+          maybeExtractLinkOnlyParagraphBlock(block as Record<string, unknown>)
+        ) as Record<string, unknown>[];
       if (linkParagraphs.length > 0) {
         return linkParagraphs;
       }
@@ -3246,15 +3740,15 @@ function selectInsertedBlocksForPlacementRequest(input: {
     }
 
     const nonParagraphBlocks = blocks.filter(
-      (block) => normalizeBlockName(objectValue(block).blockName) !== "core/paragraph"
+      (block) =>
+        normalizeBlockName(objectValue(block).blockName) !== "core/paragraph"
     ) as Record<string, unknown>[];
     if (nonParagraphBlocks.length > 0) {
       return nonParagraphBlocks;
     }
-
   }
 
-    if (rawBlocks.length > 0) {
+  if (rawBlocks.length > 0) {
     const recoveredBlocks = recoverRequestedBlocksFromMalformedParsedBlocks({
       requestText: input.requestText,
       rawBlocks
@@ -3262,7 +3756,9 @@ function selectInsertedBlocksForPlacementRequest(input: {
     if (recoveredBlocks.length > 0) {
       if (requestedBlockNames.length > 0) {
         const requestedBlocks = recoveredBlocks.filter((block) =>
-          requestedBlockNames.includes(normalizeBlockName(objectValue(block).blockName))
+          requestedBlockNames.includes(
+            normalizeBlockName(objectValue(block).blockName)
+          )
         ) as Record<string, unknown>[];
         if (requestedBlocks.length > 0) {
           return requestedBlocks;
@@ -3271,7 +3767,8 @@ function selectInsertedBlocksForPlacementRequest(input: {
 
       if (asksForInlineImage) {
         const imageBlocks = recoveredBlocks.filter(
-          (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
+          (block) =>
+            normalizeBlockName(objectValue(block).blockName) === "core/image"
         ) as Record<string, unknown>[];
         if (imageBlocks.length > 0) {
           return imageBlocks;
@@ -3280,8 +3777,9 @@ function selectInsertedBlocksForPlacementRequest(input: {
 
       if (asksToAddHeading || asksForHeading) {
         const headingBlocks = recoveredBlocks.filter(
-          (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
-          ) as Record<string, unknown>[];
+          (block) =>
+            normalizeBlockName(objectValue(block).blockName) === "core/heading"
+        ) as Record<string, unknown>[];
         if (headingBlocks.length > 0) {
           return headingBlocks;
         }
@@ -3295,7 +3793,9 @@ function selectInsertedBlocksForPlacementRequest(input: {
           requestedBlockNames.length === 0)
       ) {
         const paragraphBlocks = recoveredBlocks.filter(
-          (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+          (block) =>
+            normalizeBlockName(objectValue(block).blockName) ===
+            "core/paragraph"
         ) as Record<string, unknown>[];
         if (paragraphBlocks.length > 0) {
           return paragraphBlocks;
@@ -3322,7 +3822,9 @@ function selectInsertedBlocksForPlacementRequest(input: {
   }
 
   const content =
-    typeof input.actionInput.content === "string" ? input.actionInput.content : null;
+    typeof input.actionInput.content === "string"
+      ? input.actionInput.content
+      : null;
   if (content !== null) {
     if (asksToAddHeading || asksForHeading) {
       const headingBlocks = normalizeParsedBlocks(
@@ -3402,7 +3904,8 @@ function normalizeInlineImagePlacementPlan(
       return action;
     }
 
-    const existingBlocks = nestedInput !== undefined ? nestedInput.blocks : input.blocks;
+    const existingBlocks =
+      nestedInput !== undefined ? nestedInput.blocks : input.blocks;
     if (isFeaturedImageAction && isUpdateAction === false) {
       // continue to rewrite below
     } else if (!isUpdateAction) {
@@ -3456,7 +3959,7 @@ function normalizeInlineImagePlacementPlan(
       ? `Normalized the plan to a single inline post-content image insertion after paragraph ${placement.afterParagraph} because the operator requested placement within the body content.`
       : placement.kind === "relative_block"
         ? `Normalized the plan to a single inline post-content image insertion ${placement.position} ${placement.fromEnd === true ? "the most recent matching " : "the matching "}block because the operator requested placement within the body content.`
-      : `Normalized the plan to a single inline post-content image insertion at the ${placement.kind} of the content because the operator requested placement within the body content.`
+        : `Normalized the plan to a single inline post-content image insertion at the ${placement.kind} of the content because the operator requested placement within the body content.`
   );
 
   return actionPlanSchema.parse({
@@ -3513,18 +4016,22 @@ function normalizeGenericContentInsertionPlan(
     }
 
     if (
-      (requestAsksToAddHeading(requestText) || requestAsksForHeading(requestText)) &&
+      (requestAsksToAddHeading(requestText) ||
+        requestAsksForHeading(requestText)) &&
       selectedBlocks.every(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/paragraph"
       ) &&
       Array.isArray(actionInput.blocks)
     ) {
-      const recoveredHeadingBlocks = recoverRequestedBlocksFromMalformedParsedBlocks({
-        requestText,
-        rawBlocks: actionInput.blocks
-      }).filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
-      ) as Record<string, unknown>[];
+      const recoveredHeadingBlocks =
+        recoverRequestedBlocksFromMalformedParsedBlocks({
+          requestText,
+          rawBlocks: actionInput.blocks
+        }).filter(
+          (block) =>
+            normalizeBlockName(objectValue(block).blockName) === "core/heading"
+        ) as Record<string, unknown>[];
       if (recoveredHeadingBlocks.length > 0) {
         selectedBlocks = recoveredHeadingBlocks;
       }
@@ -3570,7 +4077,7 @@ function normalizeGenericContentInsertionPlan(
       ? `Normalized the plan to an insertion edit after paragraph ${placement.afterParagraph} because the operator requested placement within the existing body content.`
       : placement.kind === "relative_block"
         ? `Normalized the plan to an insertion edit ${placement.position} ${placement.fromEnd === true ? "the most recent matching " : "the matching "}block because the operator requested placement within the existing body content.`
-      : `Normalized the plan to an insertion edit at the ${placement.kind} of the content because the operator requested placement within the existing body content.`
+        : `Normalized the plan to an insertion edit at the ${placement.kind} of the content because the operator requested placement within the existing body content.`
   );
 
   return actionPlanSchema.parse({
@@ -3629,7 +4136,8 @@ function normalizeDefaultInlineImageInsertionPlan(
       selectedBlocks === null ||
       selectedBlocks.length === 0 ||
       !selectedBlocks.every(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/image"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/image"
       )
     ) {
       return action;
@@ -3662,7 +4170,9 @@ function normalizeDefaultInlineImageInsertionPlan(
   });
 }
 
-function requestLooksLikeSingleHeadingLevelChange(requestText: string): boolean {
+function requestLooksLikeSingleHeadingLevelChange(
+  requestText: string
+): boolean {
   if (!/\bheading\b/i.test(requestText)) {
     return false;
   }
@@ -3679,10 +4189,14 @@ function requestLooksLikeSingleHeadingLevelChange(requestText: string): boolean 
     return true;
   }
 
-  return /\bh[1-6]\b[\s\S]{0,20}\bto\b[\s\S]{0,20}\bh[1-6]\b/i.test(requestText);
+  return /\bh[1-6]\b[\s\S]{0,20}\bto\b[\s\S]{0,20}\bh[1-6]\b/i.test(
+    requestText
+  );
 }
 
-function extractSerializedHeadingBlocks(content: string): Record<string, unknown>[] {
+function extractSerializedHeadingBlocks(
+  content: string
+): Record<string, unknown>[] {
   const headingBlocks: Record<string, unknown>[] = [];
   const pattern =
     /<!--\s*wp:heading(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:heading\s*-->/gi;
@@ -3752,7 +4266,8 @@ function normalizeSingleHeadingLevelUpdatePlan(
       const normalizedBlocks = normalizeParsedBlocks(input.blocks).blocks;
       candidateBlockCount = normalizedBlocks.length;
       headingBlocks = normalizedBlocks.filter(
-        (block) => normalizeBlockName(objectValue(block).blockName) === "core/heading"
+        (block) =>
+          normalizeBlockName(objectValue(block).blockName) === "core/heading"
       ) as Record<string, unknown>[];
     } else {
       const contentKey = pickContentKey(input);
@@ -3760,10 +4275,9 @@ function normalizeSingleHeadingLevelUpdatePlan(
       if (typeof content !== "string") {
         return action;
       }
-      headingBlocks = normalizeParsedBlocks(extractSerializedHeadingBlocks(content)).blocks as Record<
-        string,
-        unknown
-      >[];
+      headingBlocks = normalizeParsedBlocks(
+        extractSerializedHeadingBlocks(content)
+      ).blocks as Record<string, unknown>[];
       candidateBlockCount = (content.match(/<!--\s*wp:/gi) ?? []).length / 2;
     }
 
@@ -3773,12 +4287,14 @@ function normalizeSingleHeadingLevelUpdatePlan(
 
     rewrotePlan = true;
     const { content, ...nextInput } = input;
-    const { postContent, ...nextInputWithoutPostContent } = nextInput as typeof nextInput & {
-      postContent?: unknown;
-    };
-    const { post_content, ...finalInput } = nextInputWithoutPostContent as typeof nextInputWithoutPostContent & {
-      post_content?: unknown;
-    };
+    const { postContent, ...nextInputWithoutPostContent } =
+      nextInput as typeof nextInput & {
+        postContent?: unknown;
+      };
+    const { post_content, ...finalInput } =
+      nextInputWithoutPostContent as typeof nextInputWithoutPostContent & {
+        post_content?: unknown;
+      };
 
     if (candidateBlockCount > 1) {
       validationWarnings.push(
@@ -3830,8 +4346,7 @@ function actionContainsSeoDescription(action: Action): boolean {
   const normalizedType = normalizeActionType(action.type);
   const input = action.input as Record<string, unknown>;
   const nestedInput = pickObject(input, "input");
-  const scopes =
-    nestedInput !== undefined ? [input, nestedInput] : [input];
+  const scopes = nestedInput !== undefined ? [input, nestedInput] : [input];
   const metaObject = scopes
     .map((scope) => pickObject(scope, "meta"))
     .find((value) => value !== undefined);
@@ -3876,7 +4391,9 @@ function ensureExplicitSeoMetaAction(
     return plan;
   }
 
-  if (plan.proposedActions.some((action) => actionContainsSeoDescription(action))) {
+  if (
+    plan.proposedActions.some((action) => actionContainsSeoDescription(action))
+  ) {
     return plan;
   }
 
@@ -3966,7 +4483,9 @@ function ensureExplicitFeaturedImageAction(
     return plan;
   }
 
-  if (plan.proposedActions.some((action) => actionContainsFeaturedImage(action))) {
+  if (
+    plan.proposedActions.some((action) => actionContainsFeaturedImage(action))
+  ) {
     return plan;
   }
 
@@ -4036,7 +4555,9 @@ function buildEverySupportedBlockDemo(
       attrs: {},
       innerBlocks: [],
       innerHTML: "One instance of every currently executable Gutenberg block.",
-      innerContent: ["One instance of every currently executable Gutenberg block."]
+      innerContent: [
+        "One instance of every currently executable Gutenberg block."
+      ]
     },
     {
       blockName: "core/image",
@@ -4133,7 +4654,8 @@ function buildEverySupportedBlockDemo(
       attrs: {
         mediaPosition: "left",
         mediaType: "image",
-        mediaUrl: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
+        mediaUrl:
+          "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
         mediaAlt: "Example media"
       },
       innerBlocks: [
@@ -4195,14 +4717,14 @@ function buildEverySupportedBlockDemo(
     },
     {
       blockName: "core/shortcode",
-      attrs: { text: "[gallery ids=\"1\"]" },
+      attrs: { text: '[gallery ids="1"]' },
       innerBlocks: [],
       innerHTML: "",
       innerContent: []
     },
     {
       blockName: "core/html",
-      attrs: { content: "<div class=\"sample-html\">Custom HTML block</div>" },
+      attrs: { content: '<div class="sample-html">Custom HTML block</div>' },
       innerBlocks: [],
       innerHTML: "",
       innerContent: []
@@ -4388,6 +4910,9 @@ export async function buildLlmActionPlan(input: {
   usage: { inputTokens: number; outputTokens: number; provider: string };
 }> {
   const requestText = userCorpusForRequest(input.context, input.requestId);
+  const customBlockNames = supportedCustomBlockNames(input.context);
+  const customBlockAttributes = customBlockAttributesByName(input.context);
+  const executableBlockSummary = supportedBlockSummary(customBlockNames);
   const exhaustiveBlockInstruction = requestAsksForEveryExecutableBlock(
     requestText
   )
@@ -4430,14 +4955,15 @@ ${exhaustiveBlockInstruction}
 For each proposed action, put tool arguments directly in the action.input object. Do not wrap tool arguments in a nested input object inside action.input.
 If requestVisualAnalysis is present, it is an operator-review artifact derived from the uploaded reference image. Use it as the primary structural scaffold for region order, layout intent, and closest Gutenberg block mapping. Prefer its reviewed region breakdown over inventing a new page structure.
 When requestVisualAnalysis describes decorative branding, icon-like marks, screenshot-only ornaments, or image regions without a concrete uploaded/source asset, prefer core/html or simpler structural blocks over core/image. Do not emit a core/image block unless it has a concrete uploaded asset, attachment-backed reference, or a specific verified external image URL you actually know.
-For content-writing actions, use structured block data instead of hand-written serialized HTML whenever the request needs nested, layout, media, spacer, columns, gallery, cover, or other non-trivial Gutenberg blocks. Use input.blocks as an array of WordPress parsed block objects that can be passed to WordPress serialize_blocks(): each block has blockName, attrs, innerBlocks, innerHTML, and innerContent. Parsed blockName values for WordPress core blocks must use the "core/name" form such as "core/columns", "core/column", "core/paragraph", "core/image", and "core/spacer"; never use comment prefixes such as "wp:columns" in parsed blockName. Use input.content only for simple text-only block markup when no nested layout, media, or spacer block is needed. If input.blocks is present, it is the authoritative post body and downstream tools will prefer it over input.content.
-Only use parsed Gutenberg blocks that SitePilot explicitly supports for execution right now: ${SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES.join(", ")}. If the request would require any other block, do not invent it. Use simpler supported blocks where faithful, otherwise surface the limitation in validationWarnings.
+For content-writing actions, use structured block data instead of hand-written serialized HTML whenever the request needs nested, layout, media, spacer, columns, gallery, cover, custom blocks, or other non-trivial Gutenberg blocks. Use input.blocks as an array of WordPress parsed block objects that can be passed to WordPress serialize_blocks(): each block has blockName, attrs, innerBlocks, innerHTML, and innerContent. Parsed blockName values for WordPress core blocks must use the "core/name" form such as "core/columns", "core/column", "core/paragraph", "core/image", and "core/spacer"; never use comment prefixes such as "wp:columns" in parsed blockName. Use input.content only for simple text-only core block markup when no nested layout, custom block, media, or spacer block is needed. If input.blocks is present, it is the authoritative post body and downstream tools will prefer it over input.content.
+Only use parsed Gutenberg blocks that SitePilot explicitly supports for execution right now: ${executableBlockSummary}. If the request would require any other block, do not invent it. Use simpler supported blocks where faithful, otherwise surface the limitation in validationWarnings.
+	${customBlockInstruction(customBlockNames, customBlockAttributes)}
 
 WordPress Gutenberg content rules for create_draft_post and update_post_fields (post_content / content field):
 - Store body content as block serialization: each block uses delimiters <!-- wp:blockname {json attrs} --> ...inner HTML... <!-- /wp:blockname -->. Do not wrap the whole article in a single wp:html block that only describes intent (e.g. never use placeholder text like "Content about X with alternating blocks").
 - Write full copy the user asked for in wp:paragraph blocks (or headings where appropriate). When the user requests photos or headshots, you MUST include wp:image blocks. If an uploaded image is available, use that. If no upload is available, you may include a verified public https:// direct image URL when you actually know one; otherwise leave the URL blank and provide strong descriptive alt text so downstream image sourcing can resolve it. Never invent or guess an external image URL.
 - For inline images placed within post/page content, "inline" means placement within the body content, not wrapping an <img> tag inside a paragraph block. Use a dedicated core/image block unless the operator explicitly asked for a featured image/thumbnail instead.
-- For nested/layout/media/spacer/columns blocks, use input.blocks so WordPress can serialize the parsed block tree. Do not improvise saved HTML for these block types.
+- For nested/layout/media/spacer/columns/custom blocks, use input.blocks so WordPress can serialize the parsed block tree. Do not improvise saved HTML for these block types.
 - Every opening block delimiter must have the correct matching closing delimiter, in the correct nesting order. Block attrs must be valid JSON. Do not emit malformed or partially-open blocks.
 - Do not output planning notes, placeholder labels, or descriptions of intended blocks inside the post content. Output only the final user-facing content.
 - The content value is embedded inside JSON: escape double quotes and newlines in the serialized blocks so the overall planner output remains valid JSON.`;
@@ -4482,7 +5008,9 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
   const obj = parsed as Record<string, unknown>;
   const planId = randomUUID() as ActionPlanId;
   const rawOpenQuestions = Array.isArray(obj.openQuestions)
-    ? obj.openQuestions.filter((value): value is string => typeof value === "string")
+    ? obj.openQuestions.filter(
+        (value): value is string => typeof value === "string"
+      )
     : [];
   const merged: Record<string, unknown> = {
     ...normalizeLegacyActionPlanDraft(obj),
@@ -4509,7 +5037,9 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
           merged.requestSummary.trim().length > 0
             ? merged.requestSummary
             : "Clarify the requested update before execution.",
-        assumptions: Array.isArray(merged.assumptions) ? merged.assumptions : [],
+        assumptions: Array.isArray(merged.assumptions)
+          ? merged.assumptions
+          : [],
         openQuestions:
           openQuestions.length > 0
             ? openQuestions
@@ -4532,7 +5062,9 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
             rollbackSupported: true
           }
         ],
-        dependencies: Array.isArray(merged.dependencies) ? merged.dependencies : [],
+        dependencies: Array.isArray(merged.dependencies)
+          ? merged.dependencies
+          : [],
         approvalRequired: false,
         riskLevel: "low",
         rollbackNotes: Array.isArray(merged.rollbackNotes)
@@ -4565,10 +5097,11 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
     featuredImageCompletedPlan,
     requestText
   );
-  const defaultInlineImageNormalizedPlan = normalizeDefaultInlineImageInsertionPlan(
-    placementNormalizedPlan,
-    requestText
-  );
+  const defaultInlineImageNormalizedPlan =
+    normalizeDefaultInlineImageInsertionPlan(
+      placementNormalizedPlan,
+      requestText
+    );
   const headingLevelNormalizedPlan = normalizeSingleHeadingLevelUpdatePlan(
     defaultInlineImageNormalizedPlan,
     requestText
@@ -4584,7 +5117,9 @@ WordPress Gutenberg content rules for create_draft_post and update_post_fields (
   const plan = normalizePlanPostContent(
     postTypeNormalizedPlan,
     requestText,
-    input.requestAttachments
+    input.requestAttachments,
+    customBlockNames,
+    customBlockAttributes
   );
 
   return {

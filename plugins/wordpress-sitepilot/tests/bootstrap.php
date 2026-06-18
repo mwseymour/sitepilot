@@ -223,6 +223,40 @@ namespace {
 		return implode( "\n", array_map( 'serialize_block', $blocks ) );
 	}
 
+	function parse_blocks( string $content ): array {
+		$blocks = array();
+		if ( preg_match_all( '/<!--\s*wp:acf\/container(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:acf\/container\s*-->/i', $content, $matches, PREG_SET_ORDER ) ) {
+			foreach ( $matches as $match ) {
+				$attrs        = isset( $match[1] ) && '' !== trim( $match[1] ) ? json_decode( $match[1], true ) : array();
+				$inner_blocks = parse_blocks( (string) ( $match[2] ?? '' ) );
+				$blocks[]     = array(
+					'blockName'    => 'acf/container',
+					'attrs'        => is_array( $attrs ) ? $attrs : array(),
+					'innerBlocks'  => $inner_blocks,
+					'innerHTML'    => '',
+					'innerContent' => array_fill( 0, count( $inner_blocks ), null ),
+				);
+			}
+			return $blocks;
+		}
+
+		if ( preg_match_all( '/<!--\s*wp:(paragraph|heading)(?:\s+(\{[\s\S]*?\}))?\s*-->([\s\S]*?)<!--\s*\/wp:\1\s*-->/i', $content, $matches, PREG_SET_ORDER ) ) {
+			foreach ( $matches as $match ) {
+				$attrs      = isset( $match[2] ) && '' !== trim( $match[2] ) ? json_decode( $match[2], true ) : array();
+				$inner_html = trim( (string) ( $match[3] ?? '' ) );
+				$blocks[]   = array(
+					'blockName'    => 'core/' . (string) $match[1],
+					'attrs'        => is_array( $attrs ) ? $attrs : array(),
+					'innerBlocks'  => array(),
+					'innerHTML'    => $inner_html,
+					'innerContent' => '' !== $inner_html ? array( $inner_html ) : array(),
+				);
+			}
+		}
+
+		return $blocks;
+	}
+
 	function serialize_block( array $block ): string {
 		$block_name = (string) $block['blockName'];
 		$comment    = str_starts_with( $block_name, 'core/' ) ? substr( $block_name, 5 ) : $block_name;

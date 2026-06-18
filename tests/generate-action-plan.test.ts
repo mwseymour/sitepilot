@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES,
+  siteConfigSchema,
   type RequestVisualAnalysisPayload,
   type PlannerContext
 } from "@sitepilot/contracts";
@@ -30,6 +31,93 @@ function makePlannerContext(text: string): PlannerContext {
     ],
     targetSummaries: [],
     priorChanges: []
+  };
+}
+
+function makePlannerContextWithLoadedCustomBlock(text: string): PlannerContext {
+  return {
+    ...makePlannerContext(text),
+    siteConfig: siteConfigSchema.parse({
+      id: "config-1",
+      siteId: "site-1",
+      version: 1,
+      requiredSectionsComplete: true,
+      activationStatus: "active",
+      sections: {
+        identity: {
+          siteName: "Example Site",
+          baseUrl: "https://example.com",
+          businessDescription: "Example business",
+          audienceSummary: "Example audience"
+        },
+        structure: {
+          publicSections: ["Home"],
+          restrictedTemplates: [],
+          pageTreeSummary: "Home"
+        },
+        contentModel: {
+          editablePostTypes: ["post", "page"],
+          readOnlyPostTypes: ["attachment"],
+          taxonomyDefinitions: ["category"],
+          thirdPartyBlocks: ["acf/container"],
+          customBlockSupport: [
+            {
+              name: "acf/container",
+              support: "passthrough",
+              reason: "Reviewed container block",
+              schemaNotes: "Use attrs and innerBlocks.",
+              attributes: [
+                {
+                  path: "data.colour",
+                  fieldName: "colour",
+                  fieldKey: "field_container_colour",
+                  label: "Colour",
+                  control: "select",
+                  options: [
+                    { label: "white", value: "bg-white" },
+                    { label: "grey", value: "bg-gray-300" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        seoPolicy: {
+          titlePatterns: ["{title} | {siteName}"],
+          metaProvider: "sitepilot",
+          redirectsRequireApproval: true,
+          internalLinkingExpectation: "Use contextual links."
+        },
+        mediaPolicy: {
+          acceptedFormats: ["image/jpeg"],
+          altTextRequired: true,
+          featuredImageRequiredPostTypes: ["post"]
+        },
+        approvalPolicy: {
+          autoApproveCategories: [],
+          publishRequiresApproval: true,
+          menuChangesRequireApproval: true
+        },
+        toolAccessPolicy: {
+          enabledTools: ["sitepilot-create-draft-post"],
+          disabledTools: [],
+          dryRunOnlyTools: []
+        },
+        contentStylePolicy: {
+          tone: "Professional",
+          readingLevel: "General audience",
+          disallowedWording: []
+        },
+        guardrails: {
+          neverEditPages: [],
+          neverModifyMenuAutomatically: true,
+          neverPublishWithoutApproval: true
+        }
+      },
+      metadata: { notes: [] },
+      createdAt: "2026-04-20T12:00:00.000Z",
+      updatedAt: "2026-04-20T12:00:00.000Z"
+    })
   };
 }
 
@@ -100,8 +188,14 @@ function makeVisualAnalysis(): RequestVisualAnalysisPayload {
         kind: "hero",
         layout: "single_column",
         position: "top",
-        contentSummary: "Large heading, short paragraph, and a prominent image.",
-        suggestedBlocks: ["core/group", "core/heading", "core/paragraph", "core/image"],
+        contentSummary:
+          "Large heading, short paragraph, and a prominent image.",
+        suggestedBlocks: [
+          "core/group",
+          "core/heading",
+          "core/paragraph",
+          "core/image"
+        ],
         emphasis: "primary conversion area",
         confidence: 0.93
       }
@@ -155,7 +249,8 @@ describe("buildLlmActionPlan", () => {
               title: "Big Beefy Boys",
               post_type: "page",
               post_status: "draft",
-              content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
+              content:
+                "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
             },
             targetEntityRefs: [],
             permissionRequirement: "edit_posts",
@@ -200,7 +295,8 @@ describe("buildLlmActionPlan", () => {
               title: "Hot Dog Origins",
               post_type: "post",
               post_status: "draft",
-              content: "<!-- wp:paragraph --><p>Hot dogs have roots in European sausage-making traditions.</p><!-- /wp:paragraph -->"
+              content:
+                "<!-- wp:paragraph --><p>Hot dogs have roots in European sausage-making traditions.</p><!-- /wp:paragraph -->"
             }
           }
         ],
@@ -249,7 +345,8 @@ describe("buildLlmActionPlan", () => {
               title: "Screenshot test 6",
               post_type: "page",
               post_status: "draft",
-              content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
+              content:
+                "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
             },
             targetEntityRefs: [],
             permissionRequirement: "edit_pages",
@@ -294,7 +391,8 @@ describe("buildLlmActionPlan", () => {
               title: "Reference page",
               post_type: "page",
               post_status: "draft",
-              content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
+              content:
+                "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
             },
             targetEntityRefs: [],
             permissionRequirement: "edit_posts",
@@ -315,7 +413,9 @@ describe("buildLlmActionPlan", () => {
     );
 
     await buildLlmActionPlan({
-      context: makePlannerContext("Build a page as close to this screenshot as you can."),
+      context: makePlannerContext(
+        "Build a page as close to this screenshot as you can."
+      ),
       requestId: "req-1",
       siteId: "site-1",
       nowIso: "2026-04-20T12:00:00.000Z",
@@ -324,7 +424,9 @@ describe("buildLlmActionPlan", () => {
       model: "gpt-test"
     });
 
-    const userMessage = capturedMessages.find((message) => message.role === "user");
+    const userMessage = capturedMessages.find(
+      (message) => message.role === "user"
+    );
     expect(userMessage).toBeDefined();
     expect(typeof userMessage?.content).not.toBe("string");
     const textPart = Array.isArray(userMessage?.content)
@@ -334,8 +436,10 @@ describe("buildLlmActionPlan", () => {
     if (textPart?.type !== "text") {
       return;
     }
-    expect(textPart.text).toContain("\"requestVisualAnalysis\"");
-    expect(textPart.text).toContain("\"layoutPattern\": \"hero then alternating two-column sections\"");
+    expect(textPart.text).toContain('"requestVisualAnalysis"');
+    expect(textPart.text).toContain(
+      '"layoutPattern": "hero then alternating two-column sections"'
+    );
   });
 
   it("normalizes plain text post content into paragraph blocks", async () => {
@@ -560,7 +664,7 @@ describe("buildLlmActionPlan", () => {
                     url: "https://upload.wikimedia.org/example.jpg"
                   },
                   innerBlocks: [],
-                  innerHTML: "<div class=\"wp-block-cover\"></div>",
+                  innerHTML: '<div class="wp-block-cover"></div>',
                   innerContent: []
                 }
               ]
@@ -581,9 +685,7 @@ describe("buildLlmActionPlan", () => {
     );
 
     const result = await buildLlmActionPlan({
-      context: makePlannerContext(
-        "Create a page with a gallery block."
-      ),
+      context: makePlannerContext("Create a page with a gallery block."),
       requestId: "req-1",
       siteId: "site-1",
       nowIso: "2026-04-20T12:00:00.000Z",
@@ -592,8 +694,254 @@ describe("buildLlmActionPlan", () => {
     });
 
     expect(result.plan.validationWarnings).toContain(
-      'Structured parsed blocks include unsupported block types that execution will reject: core/gallery. Supported blocks today: core/button, core/buttons, core/code, core/column, core/columns, core/details, core/file, core/group, core/heading, core/html, core/image, core/list, core/list-item, core/media-text, core/more, core/paragraph, core/preformatted, core/pullquote, core/quote, core/separator, core/shortcode, core/spacer, core/table, core/video, core/verse. Add blocked blocks manually in the WordPress post editor for now.'
+      "Structured parsed blocks include unsupported block types that execution will reject: core/gallery. Supported blocks today: core/button, core/buttons, core/code, core/column, core/columns, core/details, core/file, core/group, core/heading, core/html, core/image, core/list, core/list-item, core/media-text, core/more, core/paragraph, core/preformatted, core/pullquote, core/quote, core/separator, core/shortcode, core/spacer, core/table, core/video, core/verse. Add blocked blocks manually in the WordPress post editor for now."
     );
+  });
+
+  it("allows loaded custom ACF container blocks in structured content", async () => {
+    let promptMessages: ChatMessage[] = [];
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft wrapped in an ACF container",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Container block test",
+              blocks: [
+                {
+                  blockName: "acf/container",
+                  attrs: {
+                    name: "acf/container",
+                    data: {}
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "<p>First paragraph.</p>",
+                      innerContent: ["<p>First paragraph.</p>"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: [""]
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      }),
+      (messages) => {
+        promptMessages = messages;
+      }
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithLoadedCustomBlock(
+        "Create a post and wrap the content in the custom container block."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.validationWarnings).not.toContain(
+      expect.stringContaining("unsupported block types")
+    );
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      blocks: [
+        expect.objectContaining({
+          blockName: "acf/container",
+          innerContent: [null]
+        })
+      ]
+    });
+    expect(result.plan.validationWarnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Repaired child placeholders for custom block acf/container"
+        )
+      ])
+    );
+    expect(String(promptMessages[0]?.content)).toContain("acf/container");
+    expect(String(promptMessages[0]?.content)).toContain(
+      'never rewrite it as "core/acf/container"'
+    );
+  });
+
+  it("converts serialized loaded ACF container content to parsed blocks", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a draft wrapped in a serialized ACF container",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Container block test",
+              content:
+                '<!-- wp:acf/container {} --><div class="acf-container"><!-- wp:paragraph --><p>First paragraph.</p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Second paragraph.</p><!-- /wp:paragraph --></div><!-- /wp:acf/container -->'
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithLoadedCustomBlock(
+        "Create a post and wrap the content in the custom container block."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    const input = result.plan.proposedActions[0]!.input;
+    expect(input).not.toHaveProperty("content");
+    expect(input.blocks).toEqual([
+      expect.objectContaining({
+        blockName: "acf/container",
+        attrs: expect.objectContaining({
+          name: "acf/container",
+          data: expect.objectContaining({
+            field_container_colour: "bg-white",
+            field_container_padding_amount: "py-[80px] md:py-[100px]",
+            field_container_bottom_border: "1"
+          }),
+          mode: "preview"
+        }),
+        innerContent: [null, null],
+        innerBlocks: [
+          expect.objectContaining({
+            blockName: "core/paragraph",
+            innerHTML: "<p>First paragraph.</p>"
+          }),
+          expect.objectContaining({
+            blockName: "core/paragraph",
+            innerHTML: "<p>Second paragraph.</p>"
+          })
+        ]
+      })
+    ]);
+    expect(result.plan.validationWarnings).toContain(
+      "Converted serialized custom block content to parsed blocks for execution: acf/container."
+    );
+  });
+
+  it("resolves loaded ACF container colour labels from discovered options", async () => {
+    const client = makeClient(
+      JSON.stringify({
+        requestSummary: "Create a grey ACF container draft",
+        assumptions: [],
+        openQuestions: [],
+        targetEntities: [],
+        proposedActions: [
+          {
+            id: "action-1",
+            type: "create_draft_post",
+            version: 1,
+            input: {
+              title: "Grey container",
+              blocks: [
+                {
+                  blockName: "acf/container",
+                  attrs: {
+                    colour: "grey",
+                    name: "acf/container",
+                    data: {
+                      field_container_colour: "bg-white",
+                      colour: "bg-white"
+                    },
+                    align: "",
+                    mode: "preview"
+                  },
+                  innerBlocks: [
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "<p>First paragraph.</p>",
+                      innerContent: ["<p>First paragraph.</p>"]
+                    }
+                  ],
+                  innerHTML: "",
+                  innerContent: [null]
+                }
+              ]
+            },
+            targetEntityRefs: [],
+            permissionRequirement: "edit_posts",
+            riskLevel: "medium",
+            dryRunCapable: true,
+            rollbackSupported: false
+          }
+        ],
+        dependencies: [],
+        approvalRequired: false,
+        riskLevel: "medium",
+        rollbackNotes: [],
+        validationWarnings: []
+      })
+    );
+
+    const result = await buildLlmActionPlan({
+      context: makePlannerContextWithLoadedCustomBlock(
+        "Create a post wrapped in the custom container block and set the colour to grey."
+      ),
+      requestId: "req-1",
+      siteId: "site-1",
+      nowIso: "2026-04-20T12:00:00.000Z",
+      client,
+      model: "gpt-test"
+    });
+
+    expect(result.plan.proposedActions[0]?.input).toMatchObject({
+      blocks: [
+        {
+          blockName: "acf/container",
+          attrs: {
+            data: {
+              field_container_colour: "bg-gray-300",
+              colour: "bg-gray-300"
+            }
+          }
+        }
+      ]
+    });
   });
 
   it("canonicalizes standalone block batch 1 shapes", async () => {
@@ -651,7 +999,9 @@ describe("buildLlmActionPlan", () => {
     );
 
     const result = await buildLlmActionPlan({
-      context: makePlannerContext("Create a draft with quote, code, and separator blocks."),
+      context: makePlannerContext(
+        "Create a draft with quote, code, and separator blocks."
+      ),
       requestId: "req-1",
       siteId: "site-1",
       nowIso: "2026-04-20T12:00:00.000Z",
@@ -767,8 +1117,8 @@ describe("buildLlmActionPlan", () => {
                       blockName: "core/list-item",
                       attrs: {},
                       innerBlocks: [],
-                      innerHTML: "<li class=\"custom\">Second item</li>",
-                      innerContent: ["<li class=\"custom\">Second item</li>"]
+                      innerHTML: '<li class="custom">Second item</li>',
+                      innerContent: ['<li class="custom">Second item</li>']
                     }
                   ],
                   innerHTML: "",
@@ -842,7 +1192,7 @@ describe("buildLlmActionPlan", () => {
                 }
               ],
               content:
-                '<!-- wp:list --><ul><li>Audits</li><li>Consulting &amp; Mentoring</li></ul><!-- /wp:list -->'
+                "<!-- wp:list --><ul><li>Audits</li><li>Consulting &amp; Mentoring</li></ul><!-- /wp:list -->"
             },
             targetEntityRefs: [],
             permissionRequirement: "edit_posts",
@@ -986,7 +1336,10 @@ describe("buildLlmActionPlan", () => {
       blockName: string;
       innerHTML: string;
       innerContent: Array<string | null>;
-      innerBlocks?: Array<{ innerHTML: string; innerContent: Array<string | null> }>;
+      innerBlocks?: Array<{
+        innerHTML: string;
+        innerContent: Array<string | null>;
+      }>;
     }>;
 
     expect(blocks[0]?.innerContent).toEqual([
@@ -1098,7 +1451,9 @@ describe("buildLlmActionPlan", () => {
     );
 
     const result = await buildLlmActionPlan({
-      context: makePlannerContext("Create pullquote, table, and media text blocks."),
+      context: makePlannerContext(
+        "Create pullquote, table, and media text blocks."
+      ),
       requestId: "req-1",
       siteId: "site-1",
       nowIso: "2026-04-20T12:00:00.000Z",
@@ -1113,8 +1468,12 @@ describe("buildLlmActionPlan", () => {
     expect(blocks[0]?.innerHTML).toBe(
       '<figure class="wp-block-pullquote"><blockquote><p>Big quote</p><cite>Author</cite></blockquote></figure>'
     );
-    expect(blocks[1]?.innerHTML).toContain('<figure class="wp-block-table"><table class="has-fixed-layout">');
-    expect(blocks[1]?.innerHTML).toContain("<figcaption class=\"wp-element-caption\">Pricing</figcaption>");
+    expect(blocks[1]?.innerHTML).toContain(
+      '<figure class="wp-block-table"><table class="has-fixed-layout">'
+    );
+    expect(blocks[1]?.innerHTML).toContain(
+      '<figcaption class="wp-element-caption">Pricing</figcaption>'
+    );
     expect(blocks[2]?.innerContent).toEqual([
       '<div class="wp-block-media-text has-media-on-the-right is-stacked-on-mobile" style="grid-template-columns:auto 40%">',
       '<div class="wp-block-media-text__content">',
@@ -1141,17 +1500,72 @@ describe("buildLlmActionPlan", () => {
               title: "Requested Blocks",
               post_type: "page",
               blocks: [
-                { blockName: "core/more", attrs: { customText: "Continue", noTeaser: true }, innerBlocks: [], innerHTML: "", innerContent: [] },
-                { blockName: "core/html", attrs: { content: "<div>Raw HTML</div>" }, innerBlocks: [], innerHTML: "", innerContent: [] },
-                { blockName: "core/shortcode", attrs: { text: "[gallery ids=\"1,2\"]" }, innerBlocks: [], innerHTML: "", innerContent: [] },
-                { blockName: "core/file", attrs: { href: "https://example.com/file.pdf", fileName: "Brochure.pdf", fileId: "file-link", downloadButtonText: "Download file" }, innerBlocks: [], innerHTML: "", innerContent: [] },
-                { blockName: "core/read-more", attrs: { content: "Read more", linkTarget: "_self" }, innerBlocks: [], innerHTML: "", innerContent: [] },
-                { blockName: "core/video", attrs: { src: "https://example.com/video.mp4", controls: true, caption: "Demo video" }, innerBlocks: [], innerHTML: "", innerContent: [] },
+                {
+                  blockName: "core/more",
+                  attrs: { customText: "Continue", noTeaser: true },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/html",
+                  attrs: { content: "<div>Raw HTML</div>" },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/shortcode",
+                  attrs: { text: '[gallery ids="1,2"]' },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/file",
+                  attrs: {
+                    href: "https://example.com/file.pdf",
+                    fileName: "Brochure.pdf",
+                    fileId: "file-link",
+                    downloadButtonText: "Download file"
+                  },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/read-more",
+                  attrs: { content: "Read more", linkTarget: "_self" },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
+                {
+                  blockName: "core/video",
+                  attrs: {
+                    src: "https://example.com/video.mp4",
+                    controls: true,
+                    caption: "Demo video"
+                  },
+                  innerBlocks: [],
+                  innerHTML: "",
+                  innerContent: []
+                },
                 {
                   blockName: "core/cover",
-                  attrs: { url: "https://example.com/hero.jpg", alt: "Hero", dimRatio: 60 },
+                  attrs: {
+                    url: "https://example.com/hero.jpg",
+                    alt: "Hero",
+                    dimRatio: 60
+                  },
                   innerBlocks: [
-                    { blockName: "core/paragraph", attrs: {}, innerBlocks: [], innerHTML: "Overlay text", innerContent: ["Overlay text"] }
+                    {
+                      blockName: "core/paragraph",
+                      attrs: {},
+                      innerBlocks: [],
+                      innerHTML: "Overlay text",
+                      innerContent: ["Overlay text"]
+                    }
                   ],
                   innerHTML: "",
                   innerContent: []
@@ -1174,7 +1588,9 @@ describe("buildLlmActionPlan", () => {
     );
 
     const result = await buildLlmActionPlan({
-      context: makePlannerContext("Create a page using more, html, shortcode, file, read-more, video, and cover blocks."),
+      context: makePlannerContext(
+        "Create a page using more, html, shortcode, file, read-more, video, and cover blocks."
+      ),
       requestId: "req-1",
       siteId: "site-1",
       nowIso: "2026-04-20T12:00:00.000Z",
@@ -1188,11 +1604,13 @@ describe("buildLlmActionPlan", () => {
     }>;
     expect(blocks[0]?.innerHTML).toBe("<!--more Continue-->\n<!--noteaser-->");
     expect(blocks[1]?.innerHTML).toBe("<div>Raw HTML</div>");
-    expect(blocks[2]?.innerHTML).toBe("[gallery ids=\"1,2\"]");
+    expect(blocks[2]?.innerHTML).toBe('[gallery ids="1,2"]');
     expect(blocks[3]?.innerHTML).toContain('class="wp-block-file"');
     expect(blocks[4]?.innerHTML).toBe("");
     expect(blocks[4]?.innerContent).toEqual([]);
-    expect(blocks[5]?.innerHTML).toContain('<figure class="wp-block-video"><video controls src="https://example.com/video.mp4">');
+    expect(blocks[5]?.innerHTML).toContain(
+      '<figure class="wp-block-video"><video controls src="https://example.com/video.mp4">'
+    );
     expect(blocks[6]?.innerContent).toEqual([
       '<div class="wp-block-cover">',
       '<img class="wp-block-cover__image-background" alt="Hero" src="https://example.com/hero.jpg" style="object-position:50% 50%" data-object-fit="cover" data-object-position="50% 50%"/>',
@@ -1652,9 +2070,7 @@ describe("buildLlmActionPlan", () => {
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(blocks)).toContain(
-      "Totally-Communications-team.jpg"
-    );
+    expect(JSON.stringify(blocks)).toContain("Totally-Communications-team.jpg");
   });
 
   it("rewrites attached inline image requests away from featured-image actions", async () => {
@@ -1689,7 +2105,8 @@ describe("buildLlmActionPlan", () => {
 
     const result = await buildLlmActionPlan({
       context: makePlannerContextWithHistory({
-        requestText: "Now add this image to that post - between paragraph 2 and 3",
+        requestText:
+          "Now add this image to that post - between paragraph 2 and 3",
         targetSummaries: [
           "This thread previously created a draft post with post_id=60. Reuse that post id for follow-up edits to the same draft."
         ],
@@ -1762,7 +2179,8 @@ describe("buildLlmActionPlan", () => {
 
     const result = await buildLlmActionPlan({
       context: makePlannerContextWithHistory({
-        requestText: "in post 60 - add this image at the end of the content area"
+        requestText:
+          "in post 60 - add this image at the end of the content area"
       }),
       requestId: "req-1",
       siteId: "site-1",
@@ -1861,7 +2279,8 @@ describe("buildLlmActionPlan", () => {
 
     const result = await buildLlmActionPlan({
       context: makePlannerContextWithHistory({
-        requestText: "in post 60 add this image between paras 3 and 4\n\nClarification:\ninline"
+        requestText:
+          "in post 60 add this image between paras 3 and 4\n\nClarification:\ninline"
       }),
       requestId: "req-1",
       siteId: "site-1",
@@ -2686,7 +3105,8 @@ describe("buildLlmActionPlan", () => {
         insert_after_paragraph: 2
       });
       expect(
-        (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+        (result.plan.proposedActions[0]?.input as Record<string, unknown>)
+          .blocks
       ).toEqual([expect.objectContaining({ blockName: block.blockName })]);
     }
   );
@@ -2750,7 +3170,9 @@ describe("buildLlmActionPlan", () => {
                     attrs: {},
                     innerBlocks: [],
                     innerHTML: `<p>Paragraph one.${escaped}<p>Paragraph three.</p>`,
-                    innerContent: [`<p>Paragraph one.${escaped}<p>Paragraph three.</p>`]
+                    innerContent: [
+                      `<p>Paragraph one.${escaped}<p>Paragraph three.</p>`
+                    ]
                   }
                 ]
               },
@@ -2785,7 +3207,8 @@ describe("buildLlmActionPlan", () => {
         insert_after_paragraph: 2
       });
       expect(
-        (result.plan.proposedActions[0]?.input as Record<string, unknown>).blocks
+        (result.plan.proposedActions[0]?.input as Record<string, unknown>)
+          .blocks
       ).toEqual([expect.objectContaining({ blockName: expectedBlockName })]);
     }
   );
@@ -3043,7 +3466,8 @@ describe("buildLlmActionPlan", () => {
   it("defaults additive inline image updates without explicit placement to end-of-content insertion", async () => {
     const client = makeClient(
       JSON.stringify({
-        requestSummary: "Update page 171 by adding a football image found online.",
+        requestSummary:
+          "Update page 171 by adding a football image found online.",
         assumptions: [],
         openQuestions: [],
         targetEntities: ["page:171"],
@@ -3208,7 +3632,7 @@ describe("buildLlmActionPlan", () => {
     ]);
     expect(insertedBlocks[0]?.innerHTML).toContain("https://www.google.com");
     expect(insertedBlocks[0]?.innerHTML).toContain(">Wibble</a>");
-    expect(insertedBlocks[0]?.innerHTML).toContain('target=\'_blank\'');
+    expect(insertedBlocks[0]?.innerHTML).toContain("target='_blank'");
   });
 
   it("appends an SEO meta action when the request explicitly asks for meta description and the planner omits it", async () => {

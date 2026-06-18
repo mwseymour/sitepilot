@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   actionPlanSchema,
   auditEntrySchema,
+  classifyDiscoveredCustomBlock,
+  findUnsupportedParsedBlockNames,
   parsedBlockSchema,
   siteConfigSchema,
   signedRequestHeadersSchema
@@ -32,7 +34,25 @@ describe("contracts schemas", () => {
           editablePostTypes: ["page", "post"],
           readOnlyPostTypes: ["acf-field-group"],
           taxonomyDefinitions: ["category", "topic"],
-          thirdPartyBlocks: ["acf/testimonial", "gravityforms/form"]
+          thirdPartyBlocks: ["acf/testimonial", "gravityforms/form"],
+          customBlockSupport: [
+            {
+              name: "acf/container",
+              support: "passthrough",
+              reason: "Reviewed container block",
+              schemaNotes: "Use attrs and innerBlocks.",
+              attributes: [
+                {
+                  path: "data.colour",
+                  fieldName: "colour",
+                  fieldKey: "field_container_colour",
+                  label: "Colour",
+                  control: "select",
+                  options: [{ label: "grey", value: "bg-gray-300" }]
+                }
+              ]
+            }
+          ]
         },
         seoPolicy: {
           titlePatterns: ["{Page Title} | Example Site"],
@@ -74,6 +94,9 @@ describe("contracts schemas", () => {
     });
 
     expect(parsed.sections.identity.siteName).toBe("Example Site");
+    expect(parsed.sections.contentModel.customBlockSupport[0]?.name).toBe(
+      "acf/container"
+    );
   });
 
   it("accepts a legacy site config payload without third-party blocks", () => {
@@ -139,7 +162,34 @@ describe("contracts schemas", () => {
     });
 
     expect(parsed.sections.contentModel.thirdPartyBlocks).toEqual([]);
+    expect(parsed.sections.contentModel.customBlockSupport).toEqual([]);
     expect(parsed.sections.seoPolicy.metaProvider).toBe("sitepilot");
+  });
+
+  it("classifies discovered ACF blocks and validates loaded custom blocks", () => {
+    expect(classifyDiscoveredCustomBlock("acf/container")).toMatchObject({
+      name: "acf/container",
+      support: "passthrough"
+    });
+    expect(classifyDiscoveredCustomBlock("acf/button-brand")).toMatchObject({
+      name: "acf/button-brand",
+      support: "manual_review_required"
+    });
+
+    expect(
+      findUnsupportedParsedBlockNames(
+        [
+          {
+            blockName: "acf/container",
+            attrs: {},
+            innerBlocks: [],
+            innerHTML: "",
+            innerContent: []
+          }
+        ],
+        { supportedCustomBlockNames: ["acf/container"] }
+      )
+    ).toEqual([]);
   });
 
   it("accepts a valid action plan payload", () => {
