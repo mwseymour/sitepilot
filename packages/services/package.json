@@ -7,7 +7,11 @@
     "@sitepilot/contracts": "0.1.0",
     "@sitepilot/domain": "0.1.0",
     "@sitepilot/provider-adapters": "0.1.0",
-    "@sitepilot/validation": "0.1.0"
+    "@sitepilot/validation": "0.1.0",
+    "better-sqlite3": "^12.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
   },
   "exports": {
     ".": {

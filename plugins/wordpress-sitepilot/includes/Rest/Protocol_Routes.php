@@ -9,6 +9,8 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Rest;
 
+use SitePilot\V2\Feature;
+
 /**
  * Registers /wp-json/sitepilot/v1/* routes.
  */
@@ -69,6 +71,11 @@ final class Protocol_Routes {
 				'plugin_version' => SITEPILOT_VERSION,
 				'mcp_namespace'  => 'sitepilot',
 				'mcp_route'      => 'mcp',
+				'v2'             => array(
+					'enabled'        => Feature::enabled(),
+					'bridge_version' => Feature::BRIDGE_VERSION,
+					'base_route'     => rest_url( 'sitepilot/v2' ),
+				),
 			),
 			200
 		);

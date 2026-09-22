@@ -10,6 +10,7 @@
     { "path": "./packages/contracts" },
     { "path": "./packages/repositories" },
     { "path": "./packages/services" },
+    { "path": "./packages/gutenberg-worker" },
     { "path": "./packages/provider-adapters" },
     { "path": "./packages/mcp-client" },
     { "path": "./packages/plugin-protocol" },

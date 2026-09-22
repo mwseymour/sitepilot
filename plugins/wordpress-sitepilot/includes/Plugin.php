@@ -16,6 +16,10 @@ use SitePilot\Mcp\Server_Registrar;
 use SitePilot\Security\Signed_Request_Verifier;
 use SitePilot\Rest\Protocol_Routes;
 use SitePilot\Rest\Registration_Routes;
+use SitePilot\Rest\V2_Routes;
+use SitePilot\V2\Editor_Session;
+use SitePilot\V2\Commit_Service;
+use SitePilot\V2\Media_Service;
 
 /**
  * Loads REST routes, admin UI, MCP adapter integration, and abilities.
@@ -29,7 +33,11 @@ final class Plugin {
 	public static function on_plugins_loaded(): void {
 		Protocol_Routes::register();
 		Registration_Routes::register();
+		V2_Routes::register();
 		Settings_Page::register();
+		Editor_Session::register_enforcement_hooks();
+		Commit_Service::register_hooks();
+		Media_Service::register_hooks();
 
 		add_action( 'shutdown', array( Signed_Request_Verifier::class, 'reset_request_context' ), 999 );
 

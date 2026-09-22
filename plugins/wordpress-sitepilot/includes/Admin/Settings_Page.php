@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace SitePilot\Admin;
 
 use SitePilot\Registration\Store;
+use SitePilot\V2\Feature;
 
 /**
  * Registers Settings → SitePilot.
@@ -55,6 +56,9 @@ final class Settings_Page {
 		echo '<p>' . esc_html__( 'Enter this one-time code in the SitePilot desktop app when registering this site (HTTPS only).', 'sitepilot' ) . '</p>';
 		echo '<p><code style="font-size:14px;">' . esc_html( $reg_code ) . '</code></p>';
 		echo '<p>' . esc_html__( 'SitePilot protocol version:', 'sitepilot' ) . ' <strong>' . esc_html( SITEPILOT_PROTOCOL_VERSION ) . '</strong></p>';
+		echo '<h2>' . esc_html__( 'Gutenberg v2 gate', 'sitepilot' ) . '</h2>';
+		echo '<p><strong>' . esc_html( Feature::enabled() ? __( 'Enabled by deployment configuration', 'sitepilot' ) : __( 'Disabled', 'sitepilot' ) ) . '</strong></p>';
+		echo '<p>' . esc_html__( 'V2 stays disabled by default. Enablement requires a proven editor-session restriction, runtime fingerprint, InnoDB conditional commit, and save/reopen verification on this site.', 'sitepilot' ) . '</p>';
 		echo '</div>';
 	}
 }

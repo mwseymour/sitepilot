@@ -1,0 +1,21 @@
+{
+  "name": "@sitepilot/gutenberg-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sitepilot/contracts": "0.1.0",
+    "@sitepilot/plugin-protocol": "0.1.0",
+    "@sitepilot/services": "0.1.0",
+    "playwright": "^1.54.1"
+  }
+}

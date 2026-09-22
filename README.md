@@ -8,6 +8,7 @@ The current best general overview of the whole system is [docs/system-overview.m
 
 Other high-value documents:
 
+- [v2 build](./docs/v2-build.md) for the proposed Gutenberg content engine within the hosted, single-site Slack/Copilot build
 - [docs/architecture.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/architecture.md) for the locked architectural shape and boundaries
 - [docs/screenshot-analysis-workflow.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/screenshot-analysis-workflow.md) for the screenshot-to-layout review workflow and OpenAI Structured Outputs usage
 - [SPEC.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/SPEC.md) for the full product specification

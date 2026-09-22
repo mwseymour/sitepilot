@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace SitePilot\Mcp;
 
 use SitePilot\Security\Signed_Request_Verifier;
+use SitePilot\V2\Editor_Session;
 
 /**
  * Allows browser sessions (read capability) or HMAC-authenticated desktop clients.
@@ -30,6 +31,10 @@ final class Mcp_Permission {
 		if ( ! $request instanceof \WP_REST_Request ) {
 			return false;
 		}
+		if ( is_user_logged_in() && Editor_Session::current() !== null ) {
+			return false;
+		}
+
 		if ( is_user_logged_in() && current_user_can( 'read' ) ) {
 			return true;
 		}

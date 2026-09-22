@@ -8,6 +8,7 @@
     "paths": {
       "@sitepilot/contracts": ["packages/contracts/src/index.ts"],
       "@sitepilot/domain": ["packages/domain/src/index.ts"],
+      "@sitepilot/gutenberg-worker": ["packages/gutenberg-worker/src/index.ts"],
       "@sitepilot/logging": ["packages/logging/src/index.ts"],
       "@sitepilot/mcp-client": ["packages/mcp-client/src/index.ts"],
       "@sitepilot/plugin-protocol": ["packages/plugin-protocol/src/index.ts"],

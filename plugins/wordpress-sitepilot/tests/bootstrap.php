@@ -76,6 +76,29 @@ namespace {
 		unset( $hook, $callback, $priority );
 	}
 
+	function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed {
+		unset( $hook, $args );
+		return $value;
+	}
+
+	function wp_slash( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_slash', $value );
+		}
+		return is_string( $value ) ? addslashes( $value ) : $value;
+	}
+
+	function wp_unslash( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_unslash', $value );
+		}
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+
+	function maybe_serialize( mixed $value ): string {
+		return serialize( $value );
+	}
+
 	function current_user_can( string $capability, int $post_id = 0 ): bool {
 		unset( $capability, $post_id );
 		return true;

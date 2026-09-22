@@ -38,6 +38,21 @@ final class Signed_Request_Verifier {
 		return self::verify_internal( $request, $path );
 	}
 
+	/**
+	 * Verifies a signed SitePilot REST request against an exact, fixed route.
+	 *
+	 * The caller supplies the route rather than trusting a model- or
+	 * client-provided URL.
+	 */
+	public static function verify_rest_request( \WP_REST_Request $request, string $route ): bool {
+		$path = wp_parse_url( rest_url( ltrim( $route, '/' ) ), PHP_URL_PATH );
+		if ( ! is_string( $path ) || '' === $path ) {
+			return false;
+		}
+
+		return self::verify_internal( $request, rtrim( $path, '/' ) );
+	}
+
 	public static function canonical_mcp_path(): string {
 		$url  = rest_url( 'sitepilot/mcp' );
 		$path = wp_parse_url( $url, PHP_URL_PATH );

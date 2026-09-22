@@ -10,6 +10,8 @@ declare( strict_types = 1 );
 namespace SitePilot\Rest;
 
 use SitePilot\Registration\Store;
+use SitePilot\V2\Feature;
+use SitePilot\V2\Runtime_Fingerprint;
 
 /**
  * Registers POST /wp-json/sitepilot/v1/register.
@@ -154,6 +156,11 @@ final class Registration_Routes {
 			'credential'       => array(
 				'algorithm'               => 'hmac_sha256',
 				'sharedSecretFingerprint' => $fingerprint,
+			),
+			'v2'               => array(
+				'enabled'            => Feature::enabled(),
+				'bridgeVersion'      => Feature::BRIDGE_VERSION,
+				'runtimeFingerprint' => Runtime_Fingerprint::snapshot( 'post', $user_id )['fingerprint'],
 			),
 		);
 
