@@ -1101,6 +1101,128 @@ h2 {
   color: var(--accent);
 }
 
+.chat-v2-controls {
+  margin: 0.75rem 0;
+  padding: 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.chat-v2-controls legend {
+  padding: 0 0.35rem;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.chat-v2-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.chat-v2-target-grid .settings-field:last-child {
+  grid-column: 1 / -1;
+}
+
+.gutenberg-v2-candidate-panel {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 0.85rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-soft));
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+
+.gutenberg-v2-candidate-header,
+.gutenberg-v2-structure-summary,
+.gutenberg-v2-preview-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.gutenberg-v2-candidate-header {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.gutenberg-v2-candidate-header h4,
+.gutenberg-v2-review h5,
+.gutenberg-v2-result h5,
+.gutenberg-v2-validation h5 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.gutenberg-v2-structure-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gutenberg-v2-structure-summary section {
+  padding: 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.gutenberg-v2-structure-summary h6 {
+  margin: 0 0 0.25rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.gutenberg-v2-structure-summary p {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.gutenberg-v2-structure-diff details {
+  margin-top: 0.55rem;
+}
+
+.gutenberg-v2-structure-diff pre {
+  max-height: 15rem;
+  overflow: auto;
+  padding: 0.65rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.72rem;
+}
+
+.gutenberg-v2-preview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gutenberg-v2-preview {
+  margin: 0;
+}
+
+.gutenberg-v2-preview img {
+  display: block;
+  width: 100%;
+  max-height: 20rem;
+  object-fit: contain;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.gutenberg-v2-preview figcaption {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 700px) {
+  .chat-v2-target-grid,
+  .gutenberg-v2-structure-summary,
+  .gutenberg-v2-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .chat-request-panel textarea,
 .chat-composer-card textarea {
   width: 100%;

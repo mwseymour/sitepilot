@@ -13,6 +13,7 @@ import type {
   ChatThreadPayload,
   ImageAttachmentPayload,
   SitePilotDesktopApi,
+  SitePlannerSettings,
   UiPreferences
 } from "@sitepilot/contracts";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
@@ -26,6 +27,11 @@ import {
 } from "@sitepilot/services/request-visual-analysis";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+import {
+  GutenbergV2CandidatePanel,
+  type GutenbergV2UiState,
+  type ReviewArtifact
+} from "./GutenbergV2CandidatePanel.js";
 
 type ThreadRow = ChatThreadPayload;
 type MessageRow = ChatMessagePayload;
@@ -54,6 +60,11 @@ const MAX_IMAGE_DIMENSION = 1280;
 const IMAGE_JPEG_QUALITY = 0.82;
 
 type ChatMode = "request" | "conversation";
+type RequestWorkflow = "legacy" | "gutenberg_v2";
+type GutenbergV2Operation =
+  | "create_draft"
+  | "replace_content"
+  | "apply_operations";
 
 type ThreadTypeMeta = {
   label: string;
@@ -213,9 +224,7 @@ function clarificationLines(message: MessageRow): {
     directLead === "Thanks. I still need a bit more detail:"
   ) {
     const questions = lines.filter((line) => /^\d+\.\s/.test(line));
-    return questions.length > 0
-      ? { intro: [directLead], questions }
-      : null;
+    return questions.length > 0 ? { intro: [directLead], questions } : null;
   }
 
   const questionLabelIndex = lines.findIndex(
@@ -455,7 +464,10 @@ function actionCanResolveViaPlannedCreate(
     return false;
   }
 
-  return priorActions.filter((action) => actionCreatesDraftPost(action.type)).length === 1;
+  return (
+    priorActions.filter((action) => actionCreatesDraftPost(action.type))
+      .length === 1
+  );
 }
 
 function requestCanExecute(status: string): boolean {
@@ -476,9 +488,10 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function extractBeforeAfter(
-  value: unknown
-): { before: Record<string, unknown> | null; after: unknown } {
+function extractBeforeAfter(value: unknown): {
+  before: Record<string, unknown> | null;
+  after: unknown;
+} {
   const record = recordValue(value);
   return {
     before: recordValue(record?.before),
@@ -507,8 +520,16 @@ function buildDiffLines(beforeValue: unknown, afterValue: unknown): DiffLine[] {
     Array<number>(afterLines.length + 1).fill(0)
   );
 
-  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
-    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
+  for (
+    let beforeIndex = beforeLines.length - 1;
+    beforeIndex >= 0;
+    beforeIndex -= 1
+  ) {
+    for (
+      let afterIndex = afterLines.length - 1;
+      afterIndex >= 0;
+      afterIndex -= 1
+    ) {
       lineCounts[beforeIndex]![afterIndex] =
         beforeLines[beforeIndex] === afterLines[afterIndex]
           ? (lineCounts[beforeIndex + 1]?.[afterIndex + 1] ?? 0) + 1
@@ -525,7 +546,10 @@ function buildDiffLines(beforeValue: unknown, afterValue: unknown): DiffLine[] {
 
   while (beforeIndex < beforeLines.length && afterIndex < afterLines.length) {
     if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
-      diffLines.push({ kind: "context", text: `  ${beforeLines[beforeIndex]}` });
+      diffLines.push({
+        kind: "context",
+        text: `  ${beforeLines[beforeIndex]}`
+      });
       beforeIndex += 1;
       afterIndex += 1;
       continue;
@@ -535,7 +559,10 @@ function buildDiffLines(beforeValue: unknown, afterValue: unknown): DiffLine[] {
     const skipAfterScore = lineCounts[beforeIndex]?.[afterIndex + 1] ?? 0;
 
     if (skipBeforeScore >= skipAfterScore) {
-      diffLines.push({ kind: "removed", text: `- ${beforeLines[beforeIndex]}` });
+      diffLines.push({
+        kind: "removed",
+        text: `- ${beforeLines[beforeIndex]}`
+      });
       beforeIndex += 1;
       continue;
     }
@@ -629,13 +656,30 @@ export function ChatPage({
     null
   );
   const [bundle, setBundle] = useState<RequestBundleOk | null>(null);
-  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(null);
+  const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(
+    null
+  );
+  const [sitePlannerSettings, setSitePlannerSettings] =
+    useState<SitePlannerSettings | null>(null);
+  const [requestWorkflow, setRequestWorkflow] =
+    useState<RequestWorkflow>("legacy");
+  const [gutenbergV2Operation, setGutenbergV2Operation] =
+    useState<GutenbergV2Operation>("create_draft");
+  const [gutenbergV2PostType, setGutenbergV2PostType] = useState<
+    "post" | "page"
+  >("post");
+  const [gutenbergV2PostId, setGutenbergV2PostId] = useState("");
+  const [gutenbergV2State, setGutenbergV2State] =
+    useState<GutenbergV2UiState | null>(null);
+  const workflowInitializedRef = useRef(false);
   const [execBusy, setExecBusy] = useState(false);
   const [lastExecHint, setLastExecHint] = useState<string | null>(null);
   const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
     null
   );
-  const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(null);
+  const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(
+    null
+  );
   const [debugCopyLabel, setDebugCopyLabel] = useState("Copy debug log");
   const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(
     () => new Set()
@@ -677,7 +721,8 @@ export function ChatPage({
       const latestRequestId =
         [...res.messages]
           .reverse()
-          .find((message) => message.requestId !== undefined)?.requestId ?? null;
+          .find((message) => message.requestId !== undefined)?.requestId ??
+        null;
       setLastRequestId(latestRequestId);
     },
     [siteId]
@@ -694,9 +739,16 @@ export function ChatPage({
     let cancelled = false;
 
     async function loadUiPreferences(): Promise<void> {
-      const state = await window.sitePilotDesktop.getSettingsState({});
+      if (!data) {
+        return;
+      }
+      const state = await window.sitePilotDesktop.getSettingsState({
+        workspaceId: data.site.workspaceId,
+        siteId
+      });
       if (!cancelled && state.ok) {
         setUiPreferences(state.uiPreferences);
+        setSitePlannerSettings(state.sitePlannerSettings ?? null);
       }
     }
 
@@ -704,7 +756,17 @@ export function ChatPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [data, siteId]);
+
+  useEffect(() => {
+    if (sitePlannerSettings === null || workflowInitializedRef.current) {
+      return;
+    }
+    workflowInitializedRef.current = true;
+    if (sitePlannerSettings.gutenbergV2Enabled) {
+      setRequestWorkflow("gutenberg_v2");
+    }
+  }, [sitePlannerSettings]);
 
   useEffect(() => {
     if (threads.length === 0) {
@@ -783,6 +845,30 @@ export function ChatPage({
     void loadBundle();
   }, [loadBundle]);
 
+  const loadGutenbergV2State = useCallback(
+    async (requestId: string): Promise<void> => {
+      const res = await window.sitePilotDesktop.gutenbergV2GetRequestState({
+        siteId,
+        requestId
+      });
+      if (!res.ok) {
+        setErr(res.message);
+        setGutenbergV2State(null);
+        return;
+      }
+      setGutenbergV2State(res.state);
+    },
+    [siteId]
+  );
+
+  useEffect(() => {
+    if (isConversationMode || lastRequestId === null) {
+      setGutenbergV2State(null);
+      return;
+    }
+    void loadGutenbergV2State(lastRequestId);
+  }, [isConversationMode, lastRequestId, loadGutenbergV2State]);
+
   useEffect(() => {
     const node = messagesRef.current;
     if (!node) {
@@ -818,7 +904,9 @@ export function ChatPage({
   );
   const openQuestions = bundle?.plan?.openQuestions ?? [];
   const canRunPlanDirectly = executableActions.length > 0;
-  const selectedThread = threads.find((thread) => thread.id === selectedThreadId);
+  const selectedThread = threads.find(
+    (thread) => thread.id === selectedThreadId
+  );
   const systemMessageCount = useMemo(
     () => messages.filter(isSystemMessage).length,
     [messages]
@@ -860,7 +948,9 @@ export function ChatPage({
       return;
     }
 
-    const thread = threads.find((candidate) => candidate.id === editingThreadId);
+    const thread = threads.find(
+      (candidate) => candidate.id === editingThreadId
+    );
     if (!thread) {
       cancelThreadRename();
       return;
@@ -929,7 +1019,7 @@ export function ChatPage({
   async function onDeleteThread(threadId: string): Promise<void> {
     const nextSelectedThreadId =
       selectedThreadId === threadId
-        ? threads.find((thread) => thread.id !== threadId)?.id ?? null
+        ? (threads.find((thread) => thread.id !== threadId)?.id ?? null)
         : selectedThreadId;
 
     setDeletingThreadId(threadId);
@@ -963,6 +1053,99 @@ export function ChatPage({
     await loadThreads();
   }
 
+  const gutenbergV2Target = useMemo(() => {
+    if (gutenbergV2Operation === "create_draft") {
+      return {
+        operation: "create_draft" as const,
+        postType: gutenbergV2PostType
+      };
+    }
+    const postId = Number(gutenbergV2PostId.trim());
+    if (!Number.isSafeInteger(postId) || postId <= 0) {
+      return null;
+    }
+    return {
+      operation: gutenbergV2Operation,
+      postType: gutenbergV2PostType,
+      postId
+    };
+  }, [gutenbergV2Operation, gutenbergV2PostId, gutenbergV2PostType]);
+
+  async function generateGutenbergV2Candidate(
+    requestId: string
+  ): Promise<void> {
+    if (gutenbergV2Target === null) {
+      setErr(
+        "Enter a valid positive post ID before generating an update candidate."
+      );
+      return;
+    }
+    const res = await window.sitePilotDesktop.gutenbergV2GenerateCandidate({
+      siteId,
+      requestId,
+      target: gutenbergV2Target
+    });
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setGutenbergV2State(res.state);
+    setErr(null);
+  }
+
+  async function onSubmitGutenbergV2Prompt(
+    text: string,
+    attachments: ImageAttachmentPayload[]
+  ): Promise<void> {
+    if (!selectedThreadId || gutenbergV2Target === null) {
+      setErr("Choose a native editor operation and complete its target first.");
+      setBusy(false);
+      return;
+    }
+    if (bundle?.request.status === "clarifying") {
+      setErr(
+        "Resolve the clarification before generating a native editor candidate."
+      );
+      setBusy(false);
+      return;
+    }
+
+    let requestId: string;
+    const res = await window.sitePilotDesktop.createChatRequest({
+      siteId,
+      threadId: selectedThreadId,
+      userPrompt: text,
+      ...(attachments.length > 0 ? { attachments } : {})
+    });
+    if (!res.ok) {
+      setBusy(false);
+      setErr(res.message);
+      return;
+    }
+    requestId = res.request.id;
+    if (res.request.status === "clarifying") {
+      setBusy(false);
+      setErr(
+        "Answer the clarification before generating a native editor candidate."
+      );
+      setLastRequestId(requestId);
+      await loadMessages(selectedThreadId);
+      await loadThreads();
+      return;
+    }
+
+    setLastRequestId(requestId);
+    setRequestPrompt("");
+    setPendingAttachments([]);
+    setPlanValidationJson(null);
+    setLastExecHint(null);
+    await generateGutenbergV2Candidate(requestId);
+    setBusy(false);
+    await loadMessages(selectedThreadId);
+    await loadThreads();
+    await loadBundle();
+  }
+
   async function onSubmitPrompt(): Promise<void> {
     if (!selectedThreadId || requestPrompt.trim().length === 0) {
       return;
@@ -972,6 +1155,11 @@ export function ChatPage({
     const attachments = pendingAttachments;
     setBusy(true);
     setErr(null);
+
+    if (!isConversationMode && requestWorkflow === "gutenberg_v2") {
+      await onSubmitGutenbergV2Prompt(text, attachments);
+      return;
+    }
 
     if (isConversationMode) {
       const res = await window.sitePilotDesktop.postChatMessage({
@@ -1121,16 +1309,16 @@ export function ChatPage({
     [busy, onSubmitPrompt, requestPrompt]
   );
 
-  async function onPickAttachments(
-    fileList: FileList | null
-  ): Promise<void> {
+  async function onPickAttachments(fileList: FileList | null): Promise<void> {
     if (!fileList || fileList.length === 0) {
       return;
     }
 
     const files = [...fileList];
     if (pendingAttachments.length + files.length > MAX_IMAGE_ATTACHMENTS) {
-      setErr(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images per message.`);
+      setErr(
+        `You can attach up to ${MAX_IMAGE_ATTACHMENTS} images per message.`
+      );
       return;
     }
 
@@ -1314,6 +1502,87 @@ export function ChatPage({
     }
   }
 
+  const onLoadGutenbergV2Artifact = useCallback(
+    async (artifactId: string): Promise<ReviewArtifact | null> => {
+      if (lastRequestId === null) {
+        return null;
+      }
+      const res = await window.sitePilotDesktop.gutenbergV2GetReviewArtifact({
+        siteId,
+        requestId: lastRequestId,
+        artifactId
+      });
+      if (!res.ok) {
+        setErr(res.message);
+        return null;
+      }
+      return res.artifact;
+    },
+    [lastRequestId, siteId]
+  );
+
+  const onDecideGutenbergV2Candidate = useCallback(
+    async (
+      candidateId: string,
+      decision: "approved" | "rejected" | "revision_requested",
+      note?: string
+    ): Promise<void> => {
+      if (lastRequestId === null) {
+        return;
+      }
+      setBusy(true);
+      setErr(null);
+      const res = await window.sitePilotDesktop.gutenbergV2DecideCandidate({
+        siteId,
+        requestId: lastRequestId,
+        candidateId,
+        decision,
+        ...(note !== undefined ? { note } : {})
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      setGutenbergV2State(res.state);
+      setLastExecHint(
+        decision === "approved"
+          ? "Candidate approved. Review the execution status before continuing."
+          : decision === "revision_requested"
+            ? "Revision requested for this candidate."
+            : "Candidate rejected."
+      );
+      if (selectedThreadId) {
+        await loadMessages(selectedThreadId);
+      }
+    },
+    [lastRequestId, loadMessages, selectedThreadId, siteId]
+  );
+
+  const onExecuteGutenbergV2Candidate = useCallback(async (): Promise<void> => {
+    if (lastRequestId === null) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.gutenbergV2ExecuteCandidate({
+      siteId,
+      requestId: lastRequestId
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setGutenbergV2State(res.state);
+    setLastExecHint(
+      res.state.state === "succeeded"
+        ? "Update completed and was verified."
+        : "Execution status refreshed."
+    );
+    await loadBundle();
+  }, [lastRequestId, loadBundle, siteId]);
+
   useEffect(() => {
     setDryRunPreview(null);
   }, [selectedThreadId, lastRequestId]);
@@ -1385,12 +1654,11 @@ export function ChatPage({
       case "approved":
         return {
           title: "Revise request",
-          helper:
-            canRunPlanDirectly
-              ? SHOW_DRY_RUN_UI
-                ? "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
-                : "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
-              : "Add changes here to revise the approved request. SitePilot will update it and you can generate a fresh action plan.",
+          helper: canRunPlanDirectly
+            ? SHOW_DRY_RUN_UI
+              ? "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
+              : "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
+            : "Add changes here to revise the approved request. SitePilot will update it and you can generate a fresh action plan.",
           placeholder: "Describe how the approved request should change…",
           actionLabel: "Update request"
         };
@@ -1438,9 +1706,14 @@ export function ChatPage({
     bundle !== null &&
     bundle.visualAnalysis !== null &&
     bundle.visualAnalysis.analyzedRequestUpdatedAt < bundle.request.updatedAt;
-  const canGeneratePlanNow = canGeneratePlan && visualAnalysisReadyForPlanning;
+  const canGeneratePlanNow =
+    canGeneratePlan &&
+    visualAnalysisReadyForPlanning &&
+    gutenbergV2State === null;
   const executionControlsLocked =
-    bundle !== null && requestExecutionControlsLocked(bundle.request.status);
+    (bundle !== null &&
+      requestExecutionControlsLocked(bundle.request.status)) ||
+    gutenbergV2State !== null;
   const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
   const preserveOriginalImageUploads =
     uiPreferences?.preserveOriginalImageUploads ?? false;
@@ -1475,15 +1748,16 @@ export function ChatPage({
     }
 
     const systemMessages = new Set(
-      messages
-        .filter((message) => message.author.kind === "system")
-        .map((message) => message.body.value)
+      messages.filter(isSystemMessage).map((message) => message.body.value)
     );
 
     void (async () => {
       for (const text of developerMessages) {
         const mirrorKey = `${selectedThreadId}:${lastRequestId ?? "none"}:${text}`;
-        if (systemMessages.has(text) || mirroredFeedbackRef.current.has(mirrorKey)) {
+        if (
+          systemMessages.has(text) ||
+          mirroredFeedbackRef.current.has(mirrorKey)
+        ) {
           continue;
         }
         mirroredFeedbackRef.current.add(mirrorKey);
@@ -1616,8 +1890,8 @@ export function ChatPage({
         <h1>Chat disabled</h1>
         <p className="lede">
           Chat stays off until the discovery check is reviewed and activation
-          completes. Review the latest discovered setup and confirm it to enable chat for
-          this site.
+          completes. Review the latest discovered setup and confirm it to enable
+          chat for this site.
         </p>
         <Link className="btn btn-primary" to={`/site/${siteId}/config`}>
           Go to discovery check
@@ -1714,7 +1988,8 @@ export function ChatPage({
                       <span
                         className={[
                           "chat-thread-pill-label",
-                          t.title.trim().length > THREAD_TITLE_PREVIEW_THRESHOLD &&
+                          t.title.trim().length >
+                            THREAD_TITLE_PREVIEW_THRESHOLD &&
                           !expandedThreadIds.has(t.id)
                             ? "chat-thread-pill-label-collapsed"
                             : "",
@@ -1734,7 +2009,9 @@ export function ChatPage({
                         className="chat-thread-rename"
                         aria-label={`Rename ${t.title}`}
                         disabled={
-                          busy || deletingThreadId !== null || renamingThreadId !== null
+                          busy ||
+                          deletingThreadId !== null ||
+                          renamingThreadId !== null
                         }
                         onClick={() => {
                           startThreadRename(t);
@@ -1848,7 +2125,9 @@ export function ChatPage({
               {pendingDeleteThreadId === t.id ? (
                 <div className="chat-thread-confirm">
                   <p className="small-print">
-                    Delete this {isConversationMode ? "conversation" : "request"} and its history?
+                    Delete this{" "}
+                    {isConversationMode ? "conversation" : "request"} and its
+                    history?
                   </p>
                   <div className="chat-thread-confirm-actions">
                     <button
@@ -1880,7 +2159,8 @@ export function ChatPage({
         {err ? <p className="workspace-error">{err}</p> : null}
         {!selectedThreadId ? (
           <p className="muted">
-            Create a {isConversationMode ? "conversation" : "request"} to start messaging.
+            Create a {isConversationMode ? "conversation" : "request"} to start
+            messaging.
           </p>
         ) : (
           <>
@@ -1893,7 +2173,10 @@ export function ChatPage({
                 <p className="muted small-print">
                   {threadTypeMeta(selectedThread?.type).label}
                 </p>
-                <div className="chat-message-filters" aria-label="Message filters">
+                <div
+                  className="chat-message-filters"
+                  aria-label="Message filters"
+                >
                   <div className="chat-message-filter-group" role="group">
                     <button
                       type="button"
@@ -1952,7 +2235,10 @@ export function ChatPage({
                 {hasVisibleMessages ? (
                   <div ref={messagesRef} className="chat-messages">
                     {filteredMessages.map((m) => (
-                      <article key={m.id} className={`chat-msg ${roleClassName(m)}`}>
+                      <article
+                        key={m.id}
+                        className={`chat-msg ${roleClassName(m)}`}
+                      >
                         <header className="chat-msg-meta">
                           <span className="chat-msg-author">
                             <span className="chat-msg-icon">{roleIcon(m)}</span>
@@ -1988,6 +2274,89 @@ export function ChatPage({
                 <div className="chat-composer-card">
                   <h3>{composerState.title}</h3>
                   <p className="muted small-print">{composerState.helper}</p>
+                  {!isConversationMode &&
+                  sitePlannerSettings?.gutenbergV2Enabled ? (
+                    <fieldset className="chat-v2-controls">
+                      <legend>Content workflow</legend>
+                      <label className="settings-field">
+                        <span>Planner</span>
+                        <select
+                          value={requestWorkflow}
+                          disabled={busy || gutenbergV2State !== null}
+                          onChange={(event) => {
+                            workflowInitializedRef.current = true;
+                            setRequestWorkflow(
+                              event.target.value as RequestWorkflow
+                            );
+                          }}
+                        >
+                          <option value="legacy">Standard planner</option>
+                          <option value="gutenberg_v2">
+                            Native editor candidate
+                          </option>
+                        </select>
+                      </label>
+                      {requestWorkflow === "gutenberg_v2" ? (
+                        <div className="chat-v2-target-grid">
+                          <label className="settings-field">
+                            <span>Operation</span>
+                            <select
+                              value={gutenbergV2Operation}
+                              disabled={busy || gutenbergV2State !== null}
+                              onChange={(event) =>
+                                setGutenbergV2Operation(
+                                  event.target.value as GutenbergV2Operation
+                                )
+                              }
+                            >
+                              <option value="create_draft">Create draft</option>
+                              <option value="replace_content">
+                                Replace all content
+                              </option>
+                              <option value="apply_operations">
+                                Apply selected changes
+                              </option>
+                            </select>
+                          </label>
+                          <label className="settings-field">
+                            <span>Content type</span>
+                            <select
+                              value={gutenbergV2PostType}
+                              disabled={busy || gutenbergV2State !== null}
+                              onChange={(event) =>
+                                setGutenbergV2PostType(
+                                  event.target.value as "post" | "page"
+                                )
+                              }
+                            >
+                              <option value="post">Post</option>
+                              <option value="page">Page</option>
+                            </select>
+                          </label>
+                          {gutenbergV2Operation !== "create_draft" ? (
+                            <label className="settings-field">
+                              <span>Post ID</span>
+                              <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={gutenbergV2PostId}
+                                disabled={busy || gutenbergV2State !== null}
+                                placeholder="e.g. 123"
+                                onChange={(event) =>
+                                  setGutenbergV2PostId(event.target.value)
+                                }
+                              />
+                            </label>
+                          ) : null}
+                          <p className="muted small-print">
+                            This path always creates a review candidate and
+                            requires an explicit approval before saving content.
+                          </p>
+                        </div>
+                      ) : null}
+                    </fieldset>
+                  ) : null}
                   <textarea
                     rows={3}
                     value={requestPrompt}
@@ -2001,7 +2370,8 @@ export function ChatPage({
                   {pendingAttachments.length > 0 ? (
                     <div className="chat-composer-attachments">
                       <p className="muted small-print">
-                        {formatAttachmentCount(pendingAttachments.length)} queued
+                        {formatAttachmentCount(pendingAttachments.length)}{" "}
+                        queued
                       </p>
                       <p className="muted small-print">
                         {preserveOriginalImageUploads
@@ -2050,7 +2420,8 @@ export function ChatPage({
                       type="button"
                       className="btn btn-secondary"
                       disabled={
-                        busy || pendingAttachments.length >= MAX_IMAGE_ATTACHMENTS
+                        busy ||
+                        pendingAttachments.length >= MAX_IMAGE_ATTACHMENTS
                       }
                       onClick={() => attachmentInputRef.current?.click()}
                     >
@@ -2059,7 +2430,12 @@ export function ChatPage({
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={busy || requestPrompt.trim().length === 0}
+                      disabled={
+                        busy ||
+                        requestPrompt.trim().length === 0 ||
+                        (requestWorkflow === "gutenberg_v2" &&
+                          gutenbergV2Target === null)
+                      }
                       onClick={() => void onSubmitPrompt()}
                     >
                       {composerState.actionLabel}
@@ -2087,557 +2463,616 @@ export function ChatPage({
                 </div>
               </div>
 
-              {!isConversationMode ? <aside className="chat-side-column">
-                {bundle ? (
-                  <div className="chat-request-panel">
-                    <h3>Current request</h3>
-                    <ExpandableText
-                      text={bundle.request.userPrompt}
-                      className="chat-request-current"
-                      collapsedClassName="chat-request-current-collapsed"
-                      previewThreshold={REQUEST_PROMPT_PREVIEW_THRESHOLD}
+              {!isConversationMode ? (
+                <aside className="chat-side-column">
+                  {gutenbergV2State ? (
+                    <GutenbergV2CandidatePanel
+                      candidate={gutenbergV2State}
+                      busy={busy}
+                      onDecide={onDecideGutenbergV2Candidate}
+                      onExecute={onExecuteGutenbergV2Candidate}
+                      onLoadArtifact={onLoadGutenbergV2Artifact}
                     />
-                    {bundle.request.attachments &&
-                    bundle.request.attachments.length > 0 ? (
-                      <div className="chat-request-attachments">
-                        <p className="muted small-print">
-                          Attached{" "}
-                          {formatAttachmentCount(bundle.request.attachments.length)}
-                        </p>
-                        <div className="chat-image-grid">
-                          {bundle.request.attachments.map((attachment) => (
-                            <figure
-                              key={`request-${attachment.fileName}-${attachment.sizeBytes}`}
-                              className="chat-image-card"
-                            >
-                              <img
-                                src={attachment.dataUrl}
-                                alt={attachment.fileName}
-                                className="chat-image-preview"
-                              />
-                              <figcaption className="small-print">
-                                {attachment.fileName}
-                              </figcaption>
-                            </figure>
-                          ))}
+                  ) : null}
+                  {bundle ? (
+                    <div className="chat-request-panel">
+                      <h3>Current request</h3>
+                      <ExpandableText
+                        text={bundle.request.userPrompt}
+                        className="chat-request-current"
+                        collapsedClassName="chat-request-current-collapsed"
+                        previewThreshold={REQUEST_PROMPT_PREVIEW_THRESHOLD}
+                      />
+                      {bundle.request.attachments &&
+                      bundle.request.attachments.length > 0 ? (
+                        <div className="chat-request-attachments">
+                          <p className="muted small-print">
+                            Attached{" "}
+                            {formatAttachmentCount(
+                              bundle.request.attachments.length
+                            )}
+                          </p>
+                          <div className="chat-image-grid">
+                            {bundle.request.attachments.map((attachment) => (
+                              <figure
+                                key={`request-${attachment.fileName}-${attachment.sizeBytes}`}
+                                className="chat-image-card"
+                              >
+                                <img
+                                  src={attachment.dataUrl}
+                                  alt={attachment.fileName}
+                                  className="chat-image-preview"
+                                />
+                                <figcaption className="small-print">
+                                  {attachment.fileName}
+                                </figcaption>
+                              </figure>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                    <div className="chat-request-meta">
-                      <h4>Request status</h4>
-                      <p className="small-print">
-                        <span className="badge">{bundle.request.status}</span>
-                        {bundle.pendingApproval ? (
-                          <>
-                            {" "}
-                            <span className="badge badge-warn">
-                              Pending approval
-                            </span>{" "}
-                            <Link
-                              className="small-print"
-                              to={`/site/${siteId}/approvals`}
-                            >
-                              Open approvals
-                            </Link>
-                          </>
-                        ) : null}
-                      </p>
-                    </div>
-                    {visualAnalysisRequired ? (
-                      <div className="chat-bundle-panel">
-                        <h4>Reference analysis</h4>
-                        <p className="muted small-print">
-                          {bundle.visualAnalysis === null
-                            ? "This request looks like a screenshot/mockup build. Analyze the uploaded reference before planning."
-                            : visualAnalysisStale
-                              ? "The request changed after the last screenshot analysis. Re-run analysis, review it, then generate the plan."
-                              : bundle.visualAnalysis.reviewedAt === undefined
-                                ? "Review the generated screenshot manifest, then approve it for planning."
-                                : "Reviewed screenshot manifest is ready for planning."}
-                        </p>
+                      ) : null}
+                      <div className="chat-request-meta">
+                        <h4>Request status</h4>
                         <p className="small-print">
-                          <span className="badge">
-                            {bundle.visualAnalysis === null
-                              ? "missing"
-                              : visualAnalysisStale
-                                ? "stale"
-                                : bundle.visualAnalysis.reviewedAt === undefined
-                                  ? "generated"
-                                  : "reviewed"}
-                          </span>
+                          <span className="badge">{bundle.request.status}</span>
+                          {bundle.pendingApproval ? (
+                            <>
+                              {" "}
+                              <span className="badge badge-warn">
+                                Pending approval
+                              </span>{" "}
+                              <Link
+                                className="small-print"
+                                to={`/site/${siteId}/approvals`}
+                              >
+                                Open approvals
+                              </Link>
+                            </>
+                          ) : null}
                         </p>
-                        {bundle.visualAnalysis ? (
-                          <>
-                            <p className="small-print">
-                              <strong>{bundle.visualAnalysis.pageType}</strong>{" "}
-                              · {bundle.visualAnalysis.layoutPattern}
-                            </p>
-                            <p className="small-print">
-                              {bundle.visualAnalysis.summary}
-                            </p>
-                            <div className="chat-planner-panel">
-                              <h5>Regions</h5>
-                              <ul className="chat-action-list">
-                                {bundle.visualAnalysis.regions.map((region) => (
-                                  <li
-                                    key={region.id}
-                                    className="chat-action-row"
-                                  >
-                                    <div>
-                                      <strong>{region.label}</strong>
-                                      <div className="muted small-print">
-                                        {region.kind} · {region.layout} ·{" "}
-                                        {region.position} · confidence{" "}
-                                        {Math.round(region.confidence * 100)}%
-                                      </div>
-                                      <div className="small-print">
-                                        {region.contentSummary}
-                                      </div>
-                                      <div className="muted small-print">
-                                        Blocks: {region.suggestedBlocks.join(", ")}
-                                      </div>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            {bundle.visualAnalysis.mappingWarnings.length > 0 ? (
+                      </div>
+                      {visualAnalysisRequired ? (
+                        <div className="chat-bundle-panel">
+                          <h4>Reference analysis</h4>
+                          <p className="muted small-print">
+                            {bundle.visualAnalysis === null
+                              ? "This request looks like a screenshot/mockup build. Analyze the uploaded reference before planning."
+                              : visualAnalysisStale
+                                ? "The request changed after the last screenshot analysis. Re-run analysis, review it, then generate the plan."
+                                : bundle.visualAnalysis.reviewedAt === undefined
+                                  ? "Review the generated screenshot manifest, then approve it for planning."
+                                  : "Reviewed screenshot manifest is ready for planning."}
+                          </p>
+                          <p className="small-print">
+                            <span className="badge">
+                              {bundle.visualAnalysis === null
+                                ? "missing"
+                                : visualAnalysisStale
+                                  ? "stale"
+                                  : bundle.visualAnalysis.reviewedAt ===
+                                      undefined
+                                    ? "generated"
+                                    : "reviewed"}
+                            </span>
+                          </p>
+                          {bundle.visualAnalysis ? (
+                            <>
+                              <p className="small-print">
+                                <strong>
+                                  {bundle.visualAnalysis.pageType}
+                                </strong>{" "}
+                                · {bundle.visualAnalysis.layoutPattern}
+                              </p>
+                              <p className="small-print">
+                                {bundle.visualAnalysis.summary}
+                              </p>
                               <div className="chat-planner-panel">
-                                <h5>Mapping warnings</h5>
-                                <ul className="small-print">
-                                  {bundle.visualAnalysis.mappingWarnings.map(
-                                    (warning) => (
-                                      <li key={warning}>{warning}</li>
+                                <h5>Regions</h5>
+                                <ul className="chat-action-list">
+                                  {bundle.visualAnalysis.regions.map(
+                                    (region) => (
+                                      <li
+                                        key={region.id}
+                                        className="chat-action-row"
+                                      >
+                                        <div>
+                                          <strong>{region.label}</strong>
+                                          <div className="muted small-print">
+                                            {region.kind} · {region.layout} ·{" "}
+                                            {region.position} · confidence{" "}
+                                            {Math.round(
+                                              region.confidence * 100
+                                            )}
+                                            %
+                                          </div>
+                                          <div className="small-print">
+                                            {region.contentSummary}
+                                          </div>
+                                          <div className="muted small-print">
+                                            Blocks:{" "}
+                                            {region.suggestedBlocks.join(", ")}
+                                          </div>
+                                        </div>
+                                      </li>
                                     )
                                   )}
                                 </ul>
                               </div>
-                            ) : null}
-                          </>
-                        ) : null}
-                        <div className="action-row">
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={busy}
-                            onClick={() =>
-                              void onAnalyzeRequestVisualAnalysis()
-                            }
-                          >
-                            {bundle.visualAnalysis === null || visualAnalysisStale
-                              ? "Analyze reference"
-                              : "Re-analyze reference"}
-                          </button>
-                          {bundle.visualAnalysis !== null && !visualAnalysisStale ? (
+                              {bundle.visualAnalysis.mappingWarnings.length >
+                              0 ? (
+                                <div className="chat-planner-panel">
+                                  <h5>Mapping warnings</h5>
+                                  <ul className="small-print">
+                                    {bundle.visualAnalysis.mappingWarnings.map(
+                                      (warning) => (
+                                        <li key={warning}>{warning}</li>
+                                      )
+                                    )}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                          <div className="action-row">
                             <button
                               type="button"
-                              className="btn btn-primary"
+                              className="btn btn-secondary"
                               disabled={busy}
                               onClick={() =>
-                                void onReviewRequestVisualAnalysis()
+                                void onAnalyzeRequestVisualAnalysis()
                               }
                             >
-                              {bundle.visualAnalysis.reviewedAt === undefined
-                                ? "Approve analysis"
-                                : "Re-approve analysis"}
+                              {bundle.visualAnalysis === null ||
+                              visualAnalysisStale
+                                ? "Analyze reference"
+                                : "Re-analyze reference"}
                             </button>
-                          ) : null}
+                            {bundle.visualAnalysis !== null &&
+                            !visualAnalysisStale ? (
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                disabled={busy}
+                                onClick={() =>
+                                  void onReviewRequestVisualAnalysis()
+                                }
+                              >
+                                {bundle.visualAnalysis.reviewedAt === undefined
+                                  ? "Approve analysis"
+                                  : "Re-approve analysis"}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
+                      ) : null}
+                      <div className="action-row">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={busy || !canGeneratePlanNow}
+                          onClick={() => void onGeneratePlan()}
+                        >
+                          Generate action plan
+                        </button>
                       </div>
-                    ) : null}
-                    <div className="action-row">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={busy || !canGeneratePlanNow}
-                        onClick={() => void onGeneratePlan()}
-                      >
-                        Generate action plan
-                      </button>
-                    </div>
-                    {canGeneratePlan && !canGeneratePlanNow ? (
-                      <p className="muted small-print">
-                        Generate action plan stays locked until the reference
-                        analysis is current and approved.
-                      </p>
-                    ) : null}
-                    {bundle.plan ? (
-                      <div className="chat-plan-next-steps">
-                        <div className="chat-plan-next-steps-header">
-                          <div>
-                            <p className="eyebrow">Next steps</p>
-                            <h4>
-                              {openQuestions.length > 0
-                                ? "Resolve the remaining questions before running this plan."
-                                : canRunPlanDirectly
-                                  ? "Review and run the generated action plan."
-                                  : "Review the generated action plan."}
-                            </h4>
-                            <p className="muted small-print">
-                              {openQuestions.length > 0
-                                ? "This plan still has unanswered inputs. Clear those first so execution is unambiguous."
-                                : canRunPlanDirectly
-                                  ? executionControlsLocked
-                                    ? "This plan has already been executed. Generate a new plan if you need another run."
-                                    : requestCanExecute(bundle.request.status)
-                                      ? "The plan is ready for direct execution, and each action can still be reviewed individually below."
-                                      : SHOW_DRY_RUN_UI
-                                        ? "Dry-run is available now. Full execution unlocks when the request reaches a runnable state."
-                                        : "Execution unlocks when the request reaches a runnable state."
-                                  : "This plan needs to be run action-by-action below."}
-                            </p>
-                          </div>
-                          <div className="chat-plan-next-steps-meta" aria-label="Plan summary">
-                            <span className="badge">{bundle.plan.proposedActions.length} actions</span>
-                            {openQuestions.length > 0 ? (
-                              <span className="badge badge-warn">
-                                {openQuestions.length} open question
-                                {openQuestions.length === 1 ? "" : "s"}
-                              </span>
-                            ) : (
-                              <span className="badge">Ready for review</span>
-                            )}
-                          </div>
-                        </div>
-                        {openQuestions.length > 0 ? (
-                          <div className="chat-plan-next-steps-section">
-                            <h5>Questions to answer</h5>
-                            <ol className="chat-plan-question-list">
-                              {openQuestions.map((question) => (
-                                <li key={question}>{question}</li>
-                              ))}
-                            </ol>
-                          </div>
-                        ) : null}
-                        {canRunPlanDirectly ? (
-                          <div className="chat-plan-runbar chat-plan-runbar-prominent">
+                      {canGeneratePlan && !canGeneratePlanNow ? (
+                        <p className="muted small-print">
+                          Generate action plan stays locked until the reference
+                          analysis is current and approved.
+                        </p>
+                      ) : null}
+                      {bundle.plan ? (
+                        <div className="chat-plan-next-steps">
+                          <div className="chat-plan-next-steps-header">
                             <div>
-                              <h5>Run this plan</h5>
+                              <p className="eyebrow">Next steps</p>
+                              <h4>
+                                {openQuestions.length > 0
+                                  ? "Resolve the remaining questions before running this plan."
+                                  : canRunPlanDirectly
+                                    ? "Review and run the generated action plan."
+                                    : "Review the generated action plan."}
+                              </h4>
                               <p className="muted small-print">
-                                {requestCanExecute(bundle.request.status)
-                                  ? executableActions.length > 1
-                                    ? "Run every mapped action in sequence or inspect them one by one below."
-                                    : "Run the mapped action now or inspect it below first."
-                                  : "Use a dry-run now, then execute once the request is ready."}
+                                {openQuestions.length > 0
+                                  ? "This plan still has unanswered inputs. Clear those first so execution is unambiguous."
+                                  : canRunPlanDirectly
+                                    ? executionControlsLocked
+                                      ? "This plan has already been executed. Generate a new plan if you need another run."
+                                      : requestCanExecute(bundle.request.status)
+                                        ? "The plan is ready for direct execution, and each action can still be reviewed individually below."
+                                        : SHOW_DRY_RUN_UI
+                                          ? "Dry-run is available now. Full execution unlocks when the request reaches a runnable state."
+                                          : "Execution unlocks when the request reaches a runnable state."
+                                    : "This plan needs to be run action-by-action below."}
                               </p>
                             </div>
-                            <div className="chat-plan-runbar-actions">
-                              {SHOW_DRY_RUN_UI && !executionControlsLocked ? (
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  disabled={execBusy || busy}
-                                  onClick={() => void onRunPlan(true)}
-                                >
-                                  {execBusy && execProgressLabel === "Running dry-run…"
-                                    ? "Running dry-run…"
-                                    : executableActions.length > 1
-                                      ? "Dry-run all"
-                                      : "Dry-run plan"}
-                                </button>
-                              ) : null}
-                              {!executionControlsLocked ? (
-                                <button
-                                  type="button"
-                                  className="btn btn-primary"
-                                  disabled={
-                                    execBusy ||
-                                    busy ||
-                                    !requestCanExecute(bundle.request.status)
-                                  }
-                                  onClick={() => void onRunPlan(false)}
-                                >
-                                  {execBusy && execProgressLabel === "Executing…"
-                                    ? "Executing…"
-                                    : executableActions.length > 1
-                                      ? "Execute all"
-                                      : "Execute plan"}
-                                </button>
-                              ) : null}
+                            <div
+                              className="chat-plan-next-steps-meta"
+                              aria-label="Plan summary"
+                            >
+                              <span className="badge">
+                                {bundle.plan.proposedActions.length} actions
+                              </span>
+                              {openQuestions.length > 0 ? (
+                                <span className="badge badge-warn">
+                                  {openQuestions.length} open question
+                                  {openQuestions.length === 1 ? "" : "s"}
+                                </span>
+                              ) : (
+                                <span className="badge">Ready for review</span>
+                              )}
                             </div>
                           </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {bundle.lastExecution ? (
-                      <p className="muted small-print">
-                        Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
-                        <code className="break-all">
-                          {bundle.lastExecution.idempotencyKey}
-                        </code>
-                      </p>
-                    ) : null}
-                    {dryRunPreview ? (
-                      <div className="chat-bundle-panel">
-                        {(() => {
-                          const { before, after } = extractBeforeAfter(
-                            dryRunPreview.mcpResult
-                          );
-                          const diffLines = buildDiffLines(before, after);
-
-                          return (
-                            <>
-                        <div className="chat-plan-runbar">
-                          <div>
-                            <h4>Dry-run Preview</h4>
-                            <p className="muted small-print">
-                              {dryRunPreview.actionType}
-                              {dryRunPreview.toolName
-                                ? ` → ${dryRunPreview.toolName}`
-                                : ""}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small"
-                            onClick={() => setDryRunPreview(null)}
-                          >
-                            Clear
-                          </button>
+                          {openQuestions.length > 0 ? (
+                            <div className="chat-plan-next-steps-section">
+                              <h5>Questions to answer</h5>
+                              <ol className="chat-plan-question-list">
+                                {openQuestions.map((question) => (
+                                  <li key={question}>{question}</li>
+                                ))}
+                              </ol>
+                            </div>
+                          ) : null}
+                          {canRunPlanDirectly ? (
+                            <div className="chat-plan-runbar chat-plan-runbar-prominent">
+                              <div>
+                                <h5>Run this plan</h5>
+                                <p className="muted small-print">
+                                  {requestCanExecute(bundle.request.status)
+                                    ? executableActions.length > 1
+                                      ? "Run every mapped action in sequence or inspect them one by one below."
+                                      : "Run the mapped action now or inspect it below first."
+                                    : "Use a dry-run now, then execute once the request is ready."}
+                                </p>
+                              </div>
+                              <div className="chat-plan-runbar-actions">
+                                {SHOW_DRY_RUN_UI && !executionControlsLocked ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    disabled={execBusy || busy}
+                                    onClick={() => void onRunPlan(true)}
+                                  >
+                                    {execBusy &&
+                                    execProgressLabel === "Running dry-run…"
+                                      ? "Running dry-run…"
+                                      : executableActions.length > 1
+                                        ? "Dry-run all"
+                                        : "Dry-run plan"}
+                                  </button>
+                                ) : null}
+                                {!executionControlsLocked ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    disabled={
+                                      execBusy ||
+                                      busy ||
+                                      !requestCanExecute(bundle.request.status)
+                                    }
+                                    onClick={() => void onRunPlan(false)}
+                                  >
+                                    {execBusy &&
+                                    execProgressLabel === "Executing…"
+                                      ? "Executing…"
+                                      : executableActions.length > 1
+                                        ? "Execute all"
+                                        : "Execute plan"}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                        {dryRunPreview.requestInput ? (
-                          <>
-                            <h5>Planned MCP request</h5>
-                            <pre className="diag-json">
-                              {JSON.stringify(dryRunPreview.requestInput, null, 2)}
-                            </pre>
-                          </>
-                        ) : null}
-                        <h5>Diff</h5>
-                        <pre className="chat-diff-view" aria-label="Dry-run diff">
-                          {diffLines.map((line, index) => (
-                            <span
-                              key={`${line.kind}-${index}-${line.text}`}
-                              className={`chat-diff-line chat-diff-line-${line.kind}`}
-                            >
-                              {line.text}
-                            </span>
-                          ))}
-                        </pre>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    ) : null}
-                    {!bundle.plan ? (
-                      <p className="muted small-print">
-                        No plan yet. Keep refining the request, then generate a
-                        plan.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {developerToolsEnabled ? (
-                  <details className="chat-debug-panel">
-                    <summary>Developer tools</summary>
-                    <div className="chat-debug-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-small"
-                        disabled={busy || execBusy}
-                        onClick={() => void onCopyDebugLog()}
-                      >
-                        {debugCopyLabel}
-                      </button>
-                      <span className="muted small-print">
-                        Copies chat history, request state, plan data, and last
-                        execution details as JSON.
-                      </span>
-                    </div>
-                    {developerMessages.length > 0 ? (
-                      <div className="chat-planner-panel">
-                        <h3>Feedback log</h3>
-                        <ul className="small-print">
-                          {developerMessages.map((message) => (
-                            <li key={message}>{message}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {bundle?.plan ? (
-                      <div className="chat-bundle-panel">
-                        <h4>Planned actions</h4>
-                        <ul className="chat-action-list">
-                          {bundle.plan.proposedActions.map((action, planIndex) => {
-                            const planActions = bundle.plan?.proposedActions ?? [];
-                            const actionIndex =
-                              planActions.findIndex(
-                                (candidate) => candidate.id === action.id
-                              );
-                            const priorActions =
-                              actionIndex > 0
-                                ? planActions.slice(0, actionIndex)
-                                : [];
-                            const spec = actionToMcpToolCall(
-                              action.type,
-                              action.input,
-                              true
-                            );
-                            const remote =
-                              spec !== null ||
-                              actionCanResolveViaLookup(
-                                action.type,
-                                action.input
-                              ) ||
-                              actionCanResolveViaPlannedCreate(
-                                action.type,
-                                action.input,
-                                priorActions
-                              );
-                            return (
-                              <li key={action.id} className="chat-action-row">
-                                <div className="chat-action-main">
-                                  <div className="chat-action-step">
-                                    Step {planIndex + 1}
-                                  </div>
-                                  <div className="chat-action-copy">
-                                    <strong>{action.type}</strong>
-                                    {remote ? (
-                                      <span className="muted small-print">
-                                        {spec?.toolName ??
-                                          (actionCanResolveViaLookup(
-                                            action.type,
-                                            action.input
-                                          )
-                                            ? "target via lookup"
-                                            : "target via planned create")}
-                                      </span>
-                                    ) : (
-                                      <span className="muted small-print">
-                                        {actionUnavailableReason(
-                                          action.type,
-                                          action.input
-                                        )}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="chat-action-buttons">
-                                  {remote ? (
-                                    <>
-                                      {SHOW_DRY_RUN_UI &&
-                                      !executionControlsLocked ? (
-                                        <button
-                                          type="button"
-                                          className="btn btn-secondary btn-small"
-                                          disabled={execBusy || busy}
-                                          onClick={() =>
-                                            void onExecuteAction(action.id, true)
-                                          }
-                                        >
-                                          Dry-run
-                                        </button>
-                                      ) : null}
-                                      {!executionControlsLocked ? (
-                                        <button
-                                          type="button"
-                                          className="btn btn-primary btn-small"
-                                          disabled={
-                                            execBusy ||
-                                            busy ||
-                                            !requestCanExecute(bundle.request.status)
-                                          }
-                                          onClick={() =>
-                                            void onExecuteAction(action.id, false)
-                                          }
-                                        >
-                                          Execute
-                                        </button>
-                                      ) : null}
-                                    </>
-                                  ) : null}
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                        {executionControlsLocked ? (
-                          <p className="muted small-print">
-                            This plan has already run. Generate a new action plan
-                            to enable execution again.
-                          </p>
-                        ) : !requestCanExecute(bundle.request.status) ? (
-                          <p className="muted small-print">
-                            Execute stays disabled until the request is ready to run.
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                {bundle ? (
-                  <div className="chat-planner-panel">
-                    <h3>Current request prompt</h3>
-                    <pre className="diag-json">{bundle.request.userPrompt}</pre>
-                  </div>
-                ) : null}
-                    {pendingAttachments.length > 0 ? (
-                      <div className="chat-planner-panel">
-                        <h3>Pending image context</h3>
-                        <p className="small-print">
-                          {formatAttachmentCount(pendingAttachments.length)} ·{" "}
-                          {Math.round(pendingAttachmentBytes / 1024)} KB after
-                          compression · planner limit 3 images
-                        </p>
-                      </div>
-                    ) : null}
-                    {planValidationJson ? (
-                      <div className="chat-planner-panel">
-                        <h3>Plan validation</h3>
-                        <pre className="diag-json">{planValidationJson}</pre>
-                      </div>
-                    ) : null}
-                    {bundle?.plan ? (
-                      <div className="chat-planner-panel">
-                        <h3>Planned action input</h3>
-                        <pre className="diag-json">
-                          {JSON.stringify(bundle.plan.proposedActions, null, 2)}
-                        </pre>
-                      </div>
-                    ) : null}
-                    {bundle?.lastExecution?.toolInvocation ? (
-                      <div className="chat-planner-panel">
-                        <h3>Last MCP request</h3>
+                      ) : null}
+                      {bundle.lastExecution ? (
                         <p className="muted small-print">
-                          Tool: {bundle.lastExecution.toolInvocation.toolName}
+                          Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
+                          <code className="break-all">
+                            {bundle.lastExecution.idempotencyKey}
+                          </code>
                         </p>
-                        <pre className="diag-json">
-                          {JSON.stringify(
-                            bundle.lastExecution.toolInvocation.input,
-                            null,
-                            2
-                          )}
-                        </pre>
-                      </div>
-                    ) : null}
-                    {bundle?.lastExecution?.toolInvocation?.output ? (
-                      <div className="chat-planner-panel">
-                        <h3>Last MCP response</h3>
-                        <pre className="diag-json">
-                          {JSON.stringify(
-                            bundle.lastExecution.toolInvocation.output,
-                            null,
-                            2
-                          )}
-                        </pre>
-                      </div>
-                    ) : null}
-                    <div className="chat-planner-panel">
-                      <h3>Planner context</h3>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-small"
-                        disabled={busy}
-                        onClick={() => void onBuildPlannerContext()}
-                      >
-                        Build planner context
-                      </button>
-                      {plannerJson ? (
-                        <pre className="diag-json">{plannerJson}</pre>
+                      ) : null}
+                      {dryRunPreview ? (
+                        <div className="chat-bundle-panel">
+                          {(() => {
+                            const { before, after } = extractBeforeAfter(
+                              dryRunPreview.mcpResult
+                            );
+                            const diffLines = buildDiffLines(before, after);
+
+                            return (
+                              <>
+                                <div className="chat-plan-runbar">
+                                  <div>
+                                    <h4>Dry-run Preview</h4>
+                                    <p className="muted small-print">
+                                      {dryRunPreview.actionType}
+                                      {dryRunPreview.toolName
+                                        ? ` → ${dryRunPreview.toolName}`
+                                        : ""}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-small"
+                                    onClick={() => setDryRunPreview(null)}
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                                {dryRunPreview.requestInput ? (
+                                  <>
+                                    <h5>Planned MCP request</h5>
+                                    <pre className="diag-json">
+                                      {JSON.stringify(
+                                        dryRunPreview.requestInput,
+                                        null,
+                                        2
+                                      )}
+                                    </pre>
+                                  </>
+                                ) : null}
+                                <h5>Diff</h5>
+                                <pre
+                                  className="chat-diff-view"
+                                  aria-label="Dry-run diff"
+                                >
+                                  {diffLines.map((line, index) => (
+                                    <span
+                                      key={`${line.kind}-${index}-${line.text}`}
+                                      className={`chat-diff-line chat-diff-line-${line.kind}`}
+                                    >
+                                      {line.text}
+                                    </span>
+                                  ))}
+                                </pre>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      ) : null}
+                      {!bundle.plan ? (
+                        <p className="muted small-print">
+                          No plan yet. Keep refining the request, then generate
+                          a plan.
+                        </p>
                       ) : null}
                     </div>
-                  </details>
-                ) : null}
-              </aside> : null}
+                  ) : null}
+
+                  {developerToolsEnabled ? (
+                    <details className="chat-debug-panel">
+                      <summary>Developer tools</summary>
+                      <div className="chat-debug-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-small"
+                          disabled={busy || execBusy}
+                          onClick={() => void onCopyDebugLog()}
+                        >
+                          {debugCopyLabel}
+                        </button>
+                        <span className="muted small-print">
+                          Copies chat history, request state, plan data, and
+                          last execution details as JSON.
+                        </span>
+                      </div>
+                      {developerMessages.length > 0 ? (
+                        <div className="chat-planner-panel">
+                          <h3>Feedback log</h3>
+                          <ul className="small-print">
+                            {developerMessages.map((message) => (
+                              <li key={message}>{message}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {bundle?.plan ? (
+                        <div className="chat-bundle-panel">
+                          <h4>Planned actions</h4>
+                          <ul className="chat-action-list">
+                            {bundle.plan.proposedActions.map(
+                              (action, planIndex) => {
+                                const planActions =
+                                  bundle.plan?.proposedActions ?? [];
+                                const actionIndex = planActions.findIndex(
+                                  (candidate) => candidate.id === action.id
+                                );
+                                const priorActions =
+                                  actionIndex > 0
+                                    ? planActions.slice(0, actionIndex)
+                                    : [];
+                                const spec = actionToMcpToolCall(
+                                  action.type,
+                                  action.input,
+                                  true
+                                );
+                                const remote =
+                                  spec !== null ||
+                                  actionCanResolveViaLookup(
+                                    action.type,
+                                    action.input
+                                  ) ||
+                                  actionCanResolveViaPlannedCreate(
+                                    action.type,
+                                    action.input,
+                                    priorActions
+                                  );
+                                return (
+                                  <li
+                                    key={action.id}
+                                    className="chat-action-row"
+                                  >
+                                    <div className="chat-action-main">
+                                      <div className="chat-action-step">
+                                        Step {planIndex + 1}
+                                      </div>
+                                      <div className="chat-action-copy">
+                                        <strong>{action.type}</strong>
+                                        {remote ? (
+                                          <span className="muted small-print">
+                                            {spec?.toolName ??
+                                              (actionCanResolveViaLookup(
+                                                action.type,
+                                                action.input
+                                              )
+                                                ? "target via lookup"
+                                                : "target via planned create")}
+                                          </span>
+                                        ) : (
+                                          <span className="muted small-print">
+                                            {actionUnavailableReason(
+                                              action.type,
+                                              action.input
+                                            )}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="chat-action-buttons">
+                                      {remote ? (
+                                        <>
+                                          {SHOW_DRY_RUN_UI &&
+                                          !executionControlsLocked ? (
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary btn-small"
+                                              disabled={execBusy || busy}
+                                              onClick={() =>
+                                                void onExecuteAction(
+                                                  action.id,
+                                                  true
+                                                )
+                                              }
+                                            >
+                                              Dry-run
+                                            </button>
+                                          ) : null}
+                                          {!executionControlsLocked ? (
+                                            <button
+                                              type="button"
+                                              className="btn btn-primary btn-small"
+                                              disabled={
+                                                execBusy ||
+                                                busy ||
+                                                !requestCanExecute(
+                                                  bundle.request.status
+                                                )
+                                              }
+                                              onClick={() =>
+                                                void onExecuteAction(
+                                                  action.id,
+                                                  false
+                                                )
+                                              }
+                                            >
+                                              Execute
+                                            </button>
+                                          ) : null}
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  </li>
+                                );
+                              }
+                            )}
+                          </ul>
+                          {executionControlsLocked ? (
+                            <p className="muted small-print">
+                              This plan has already run. Generate a new action
+                              plan to enable execution again.
+                            </p>
+                          ) : !requestCanExecute(bundle.request.status) ? (
+                            <p className="muted small-print">
+                              Execute stays disabled until the request is ready
+                              to run.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {bundle ? (
+                        <div className="chat-planner-panel">
+                          <h3>Current request prompt</h3>
+                          <pre className="diag-json">
+                            {bundle.request.userPrompt}
+                          </pre>
+                        </div>
+                      ) : null}
+                      {pendingAttachments.length > 0 ? (
+                        <div className="chat-planner-panel">
+                          <h3>Pending image context</h3>
+                          <p className="small-print">
+                            {formatAttachmentCount(pendingAttachments.length)} ·{" "}
+                            {Math.round(pendingAttachmentBytes / 1024)} KB after
+                            compression · planner limit 3 images
+                          </p>
+                        </div>
+                      ) : null}
+                      {planValidationJson ? (
+                        <div className="chat-planner-panel">
+                          <h3>Plan validation</h3>
+                          <pre className="diag-json">{planValidationJson}</pre>
+                        </div>
+                      ) : null}
+                      {bundle?.plan ? (
+                        <div className="chat-planner-panel">
+                          <h3>Planned action input</h3>
+                          <pre className="diag-json">
+                            {JSON.stringify(
+                              bundle.plan.proposedActions,
+                              null,
+                              2
+                            )}
+                          </pre>
+                        </div>
+                      ) : null}
+                      {bundle?.lastExecution?.toolInvocation ? (
+                        <div className="chat-planner-panel">
+                          <h3>Last MCP request</h3>
+                          <p className="muted small-print">
+                            Tool: {bundle.lastExecution.toolInvocation.toolName}
+                          </p>
+                          <pre className="diag-json">
+                            {JSON.stringify(
+                              bundle.lastExecution.toolInvocation.input,
+                              null,
+                              2
+                            )}
+                          </pre>
+                        </div>
+                      ) : null}
+                      {bundle?.lastExecution?.toolInvocation?.output ? (
+                        <div className="chat-planner-panel">
+                          <h3>Last MCP response</h3>
+                          <pre className="diag-json">
+                            {JSON.stringify(
+                              bundle.lastExecution.toolInvocation.output,
+                              null,
+                              2
+                            )}
+                          </pre>
+                        </div>
+                      ) : null}
+                      <div className="chat-planner-panel">
+                        <h3>Planner context</h3>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-small"
+                          disabled={busy}
+                          onClick={() => void onBuildPlannerContext()}
+                        >
+                          Build planner context
+                        </button>
+                        {plannerJson ? (
+                          <pre className="diag-json">{plannerJson}</pre>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
+                </aside>
+              ) : null}
             </div>
           </>
         )}

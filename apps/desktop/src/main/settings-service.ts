@@ -34,7 +34,8 @@ export type SettingsStateResult =
   | { ok: false; code: string; message: string };
 
 const DEFAULT_SITE_PLANNER_SETTINGS: SitePlannerSettings = {
-  bypassApprovalRequests: false
+  bypassApprovalRequests: false,
+  gutenbergV2Enabled: false
 };
 
 const DEFAULT_UI_PREFERENCES: UiPreferences = {
@@ -78,6 +79,9 @@ function parseSitePlannerSettings(
     const out: Partial<SitePlannerSettings> = {};
     if (typeof record.bypassApprovalRequests === "boolean") {
       out.bypassApprovalRequests = record.bypassApprovalRequests;
+    }
+    if (typeof record.gutenbergV2Enabled === "boolean") {
+      out.gutenbergV2Enabled = record.gutenbergV2Enabled;
     }
     return out;
   } catch {

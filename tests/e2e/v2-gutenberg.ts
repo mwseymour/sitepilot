@@ -6,15 +6,18 @@ import { join } from "node:path";
 import { chromium, type BrowserContext } from "playwright";
 
 import {
+  GUTENBERG_V2_SUPPORT_MATRIX,
   gutenbergV2BlockPlanSchema,
   type GutenbergV2Approval,
   type GutenbergV2BlockPlan,
   type GutenbergV2BlockNode,
   type GutenbergV2CompiledCandidate,
+  type GutenbergV2EditorCapabilitySnapshot,
   type GutenbergV2MediaMapping
 } from "@sitepilot/contracts";
 import {
   WordPressEditorSessionClient,
+  GutenbergV2WorkerError,
   createSignedGutenbergV2Runtime
 } from "@sitepilot/gutenberg-worker";
 import type { PlaywrightGutenbergV2Worker } from "@sitepilot/gutenberg-worker";
@@ -391,7 +394,7 @@ function libraryReusePlan(
   });
 }
 
-function unsupportedButtonWidthPlan(siteId: string): GutenbergV2BlockPlan {
+function buttonWidthProbePlan(siteId: string): GutenbergV2BlockPlan {
   return gutenbergV2BlockPlanSchema.parse({
     schemaVersion: "sitepilot.block-plan/v2",
     planId: `plan-${randomUUID()}`,
@@ -399,7 +402,7 @@ function unsupportedButtonWidthPlan(siteId: string): GutenbergV2BlockPlan {
     operation: "create_draft",
     target: { postType: "post" },
     postFields: {
-      title: "AUTOMATED-TEST-V2-UNSUPPORTED-BUTTON-WIDTH",
+      title: "AUTOMATED-TEST-V2-BUTTON-WIDTH-PROBE",
       status: "draft"
     },
     blocks: [
@@ -423,6 +426,101 @@ function unsupportedButtonWidthPlan(siteId: string): GutenbergV2BlockPlan {
     ],
     media: []
   });
+}
+
+async function runButtonWidthProbe(
+  worker: PlaywrightGutenbergV2Worker,
+  siteId: string
+): Promise<{
+  outcome: "preserved" | "dropped";
+  disposition: "candidate_valid" | "content_changed";
+  issue?: { code: string; blockName?: string; message: string };
+}> {
+  const plan = buttonWidthProbePlan(siteId);
+  const capabilities = await worker.discoverCapabilities({
+    siteId,
+    postType: "post"
+  });
+  try {
+    await worker.compile({
+      candidateId: `button-width-probe-${randomUUID()}`,
+      plan,
+      capabilities
+    });
+    return { outcome: "preserved", disposition: "candidate_valid" };
+  } catch (error) {
+    if (!(error instanceof GutenbergV2WorkerError)) throw error;
+    const changed = error.issues.find(
+      (entry) =>
+        entry.code === "content_changed" && entry.blockName === "core/button"
+    );
+    if (!changed || error.code !== "content_changed") throw error;
+    return {
+      outcome: "dropped",
+      disposition: "content_changed",
+      issue: {
+        code: changed.code,
+        ...(changed.blockName ? { blockName: changed.blockName } : {}),
+        message: changed.message
+      }
+    };
+  }
+}
+
+function capabilityEvidence(snapshot: GutenbergV2EditorCapabilitySnapshot) {
+  const expectedAuthorBlocks = GUTENBERG_V2_SUPPORT_MATRIX.filter(
+    (entry) => entry.mode === "author"
+  ).map((entry) => entry.name);
+  const authorable = snapshot.blocks
+    .filter(
+      (block) =>
+        block.registered &&
+        block.allowed &&
+        block.lock === "none" &&
+        block.v2Support === "author"
+    )
+    .map((block) => block.name)
+    .sort();
+  const expected = [...expectedAuthorBlocks].sort();
+  assert(
+    expected.length === 15,
+    `The release authoring matrix must contain 15 core types, got ${expected.length}.`
+  );
+  assert(
+    JSON.stringify(authorable) === JSON.stringify(expected),
+    `Destination authoring matrix changed: expected ${JSON.stringify(expected)}, got ${JSON.stringify(authorable)}.`
+  );
+
+  return {
+    fingerprint: snapshot.fingerprint,
+    wordpressVersion: snapshot.wordpressVersion,
+    ...(snapshot.gutenbergVersion
+      ? { gutenbergVersion: snapshot.gutenbergVersion }
+      : {}),
+    context: {
+      postType: snapshot.context.postType,
+      theme: snapshot.context.theme,
+      pluginFingerprint: snapshot.context.pluginFingerprint,
+      editorSettingsFingerprint: snapshot.context.editorSettingsFingerprint
+    },
+    registeredBlockCount: snapshot.blocks.filter((block) => block.registered)
+      .length,
+    allowedBlockCount: snapshot.blocks.filter((block) => block.allowed).length,
+    authorable,
+    fixtureGated: snapshot.blocks
+      .filter((block) =>
+        ["core/latest-posts", "acf/container"].includes(block.name)
+      )
+      .map((block) => ({
+        name: block.name,
+        registered: block.registered,
+        allowed: block.allowed,
+        v2Support: block.v2Support,
+        dynamic: block.dynamic,
+        lock: block.lock,
+        attributeSchemaHash: block.attributeSchemaHash
+      }))
+  };
 }
 
 function scopedInsertPlan(
@@ -460,6 +558,317 @@ function scopedInsertPlan(
     ],
     media: []
   });
+}
+
+function historicalCreatePlan(siteId: string): GutenbergV2BlockPlan {
+  return gutenbergV2BlockPlanSchema.parse({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: `plan-${randomUUID()}`,
+    siteId,
+    operation: "create_draft",
+    target: { postType: "post" },
+    postFields: {
+      title: `AUTOMATED-TEST-V2-HISTORICAL-${randomUUID()}`,
+      status: "draft"
+    },
+    blocks: [
+      {
+        ref: "history-paragraph-1",
+        name: "core/paragraph",
+        attributes: { content: "Historical paragraph one." },
+        children: []
+      },
+      {
+        ref: "history-paragraph-2",
+        name: "core/paragraph",
+        attributes: { content: "Historical paragraph two." },
+        children: []
+      },
+      {
+        ref: "history-paragraph-3",
+        name: "core/paragraph",
+        attributes: { content: "Historical paragraph three." },
+        children: []
+      }
+    ],
+    media: []
+  });
+}
+
+function historicalTarget(
+  source: Awaited<ReturnType<PlaywrightGutenbergV2Worker["readSource"]>>
+) {
+  return {
+    postId: source.postId,
+    postType: source.postType,
+    sourceRevision: source.revision,
+    sourceContentHash: source.contentHash,
+    expectedFields: {
+      title: {
+        value: source.fields.title,
+        valueHash: hashGutenbergV2Value(source.fields.title)
+      },
+      excerpt: {
+        value: source.fields.excerpt,
+        valueHash: hashGutenbergV2Value(source.fields.excerpt)
+      }
+    }
+  };
+}
+
+function historicalInsertPlan(
+  siteId: string,
+  source: Awaited<ReturnType<PlaywrightGutenbergV2Worker["readSource"]>>,
+  stage: "heading" | "image",
+  staged: GutenbergV2StagedAsset
+): GutenbergV2BlockPlan {
+  assert(source.blockIndex.length > 0, "Historical workflow source is empty.");
+  const rootFingerprint = source.blockTreeFingerprint;
+  const heading = {
+    ref: "history-heading",
+    name: "core/heading" as const,
+    attributes: { content: "Historical heading", level: 2 },
+    children: []
+  };
+  const image = {
+    ref: "history-image-block",
+    name: "core/image" as const,
+    attributes: {
+      mediaRef: "history-image",
+      alt: "Historical workflow image",
+      sizeSlug: "large" as const,
+      linkDestination: "none" as const
+    },
+    children: []
+  };
+  return gutenbergV2BlockPlanSchema.parse({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: `plan-${randomUUID()}`,
+    siteId,
+    operation: "apply_operations",
+    target: historicalTarget(source),
+    operations: [
+      {
+        id: `history-insert-${stage}`,
+        type: "insert_blocks",
+        parent: { path: [], expectedFingerprint: rootFingerprint },
+        index: stage === "heading" ? 2 : 3,
+        blocks: [stage === "heading" ? heading : image]
+      }
+    ],
+    media:
+      stage === "image"
+        ? [
+            {
+              ref: "history-image",
+              source: {
+                kind: "staged_asset",
+                stagedAssetId: staged.stagedAssetId,
+                checksum: staged.checksum,
+                mediaType: staged.mediaType,
+                byteLength: staged.byteLength
+              },
+              alt: "Historical workflow image"
+            }
+          ]
+        : []
+  });
+}
+
+function historicalHeadingEditPlan(
+  siteId: string,
+  source: Awaited<ReturnType<PlaywrightGutenbergV2Worker["readSource"]>>
+): GutenbergV2BlockPlan {
+  const heading = source.blockIndex.find(
+    (entry) => entry.path.length === 1 && entry.name === "core/heading"
+  );
+  assert(heading, "Historical workflow heading was not found.");
+  return gutenbergV2BlockPlanSchema.parse({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: `plan-${randomUUID()}`,
+    siteId,
+    operation: "apply_operations",
+    target: historicalTarget(source),
+    operations: [
+      {
+        id: "history-edit-heading-level",
+        type: "edit_block",
+        target: {
+          path: heading.path,
+          expectedFingerprint: heading.fingerprint
+        },
+        replacement: {
+          ref: "history-heading-h3",
+          name: "core/heading",
+          attributes: { content: "Historical heading", level: 3 },
+          children: []
+        }
+      }
+    ],
+    media: []
+  });
+}
+
+async function executeHistoricalPlan(
+  service: GutenbergV2ContentService,
+  plan: GutenbergV2BlockPlan
+): Promise<{ postId: number; mediaIds: number[] }> {
+  const executionId = `history-${randomUUID()}`;
+  const candidate = await service.compileCandidate({
+    executionId,
+    idempotencyKey: `history-${randomUUID()}`,
+    plan
+  });
+  await service.recordApproval({ executionId, approval: approval(candidate) });
+  const result = await service.executeApprovedCandidate({ executionId });
+  assert(
+    result.state === "succeeded" && result.postId,
+    `Historical workflow execution ended in ${result.state}.`
+  );
+  return { postId: result.postId, mediaIds: result.createdMediaIds };
+}
+
+function paragraphBlockBytes(rawContent: string): string[] {
+  return (
+    rawContent.match(
+      /<!-- wp:paragraph(?:\s[^>]*)?-->[\s\S]*?<!-- \/wp:paragraph -->/g
+    ) ?? []
+  );
+}
+
+function serializedHeadingLevels(rawContent: string): number[] {
+  const levels: number[] = [];
+  for (const match of rawContent.matchAll(
+    /<!-- wp:heading(?:\s+(\{[\s\S]*?\}))?\s*-->/g
+  )) {
+    const attributes = match[1] === undefined ? {} : JSON.parse(match[1]);
+    levels.push(typeof attributes.level === "number" ? attributes.level : 2);
+  }
+  return levels;
+}
+
+function assertHistoricalPreservation(
+  before: Awaited<ReturnType<PlaywrightGutenbergV2Worker["readSource"]>>,
+  after: Awaited<ReturnType<PlaywrightGutenbergV2Worker["readSource"]>>,
+  expectedParagraphs: string[]
+): void {
+  const beforeParagraphs = paragraphBlockBytes(before.rawContent);
+  assert(
+    beforeParagraphs.length === expectedParagraphs.length,
+    `Historical source had ${beforeParagraphs.length} paragraph bytes; expected ${expectedParagraphs.length}.`
+  );
+  assert(
+    expectedParagraphs.every((bytes) => after.rawContent.includes(bytes)),
+    "Historical workflow changed an unaffected paragraph's serialized bytes."
+  );
+  const beforeRoots = before.blockIndex.filter(
+    (entry) => entry.path.length === 1
+  );
+  const afterRoots = after.blockIndex.filter(
+    (entry) => entry.path.length === 1
+  );
+  for (const [index, paragraph] of beforeRoots
+    .filter((entry) => entry.name === "core/paragraph")
+    .entries()) {
+    const matching = after.blockIndex.find(
+      (entry) =>
+        entry.name === "core/paragraph" &&
+        entry.fingerprint === paragraph.fingerprint
+    );
+    assert(matching, `Historical paragraph ${index + 1} fingerprint changed.`);
+  }
+  assert(
+    afterRoots.length >= beforeRoots.length,
+    "Historical workflow unexpectedly removed a root block."
+  );
+}
+
+async function runHistoricalWorkflow(
+  service: GutenbergV2ContentService,
+  worker: PlaywrightGutenbergV2Worker,
+  siteId: string,
+  staged: GutenbergV2StagedAsset
+): Promise<{
+  postId: number;
+  mediaIds: number[];
+  paragraphs: number;
+  nativeSaveReopen: { blockCount: number; allValid: boolean };
+}> {
+  const created = await executeHistoricalPlan(
+    service,
+    historicalCreatePlan(siteId)
+  );
+  let source = await worker.readSource({
+    executionId: `history-source-${randomUUID()}`,
+    siteId,
+    postType: "post",
+    postId: created.postId
+  });
+  const paragraphs = paragraphBlockBytes(source.rawContent);
+  assert(
+    paragraphs.length === 3,
+    "Historical fixture did not create 3 paragraphs."
+  );
+  const initialSource = source;
+  let mediaIds: number[] = [];
+
+  await executeHistoricalPlan(
+    service,
+    historicalInsertPlan(siteId, source, "heading", staged)
+  );
+  source = await worker.readSource({
+    executionId: `history-source-${randomUUID()}`,
+    siteId,
+    postType: "post",
+    postId: created.postId
+  });
+  assertHistoricalPreservation(initialSource, source, paragraphs);
+
+  const imageExecution = await executeHistoricalPlan(
+    service,
+    historicalInsertPlan(siteId, source, "image", staged)
+  );
+  mediaIds = imageExecution.mediaIds;
+  source = await worker.readSource({
+    executionId: `history-source-${randomUUID()}`,
+    siteId,
+    postType: "post",
+    postId: created.postId
+  });
+  assertHistoricalPreservation(initialSource, source, paragraphs);
+
+  await executeHistoricalPlan(
+    service,
+    historicalHeadingEditPlan(siteId, source)
+  );
+  source = await worker.readSource({
+    executionId: `history-source-${randomUUID()}`,
+    siteId,
+    postType: "post",
+    postId: created.postId
+  });
+  assertHistoricalPreservation(initialSource, source, paragraphs);
+  assert(
+    source.blockIndex.some(
+      (entry) => entry.name === "core/heading" && entry.path.length === 1
+    ),
+    "Historical heading was not retained after the H2 to H3 edit."
+  );
+  assert(
+    serializedHeadingLevels(source.rawContent).includes(3),
+    "Historical heading did not persist its requested H3 level in serialized Gutenberg attributes."
+  );
+  const nativeSaveReopen = await nativeSaveAndReopen(created.postId);
+  assert(
+    nativeSaveReopen.allValid && nativeSaveReopen.blockCount === 5,
+    `Historical workflow reopen returned ${nativeSaveReopen.blockCount}/5 valid blocks.`
+  );
+  return {
+    postId: created.postId,
+    mediaIds,
+    paragraphs: paragraphs.length,
+    nativeSaveReopen
+  };
 }
 
 function replacementPlan(
@@ -772,7 +1181,30 @@ async function assertNativeNegativeControls(
         intent: headingPlan,
         mediaMapping: []
       });
-      return { missing, unsupported, altered, malformed };
+      const escapedDelimiterPlan = {
+        ...missingPlan,
+        planId: "negative-escaped-delimiter",
+        postFields: {
+          title: "Escaped delimiter control",
+          status: "draft"
+        },
+        blocks: [
+          {
+            ref: "paragraph-escaped-1",
+            name: "core/paragraph",
+            attributes: {
+              content: "Expected paragraph"
+            },
+            innerHTML:
+              "<p>Lorem ipsum dolor sit amet.&lt;!-- /wp:paragraph --&gt;\\n&lt;!-- wp:paragraph --&gt;Sed do eiusmod tempor incididunt ut labore.&lt;!-- /wp:paragraph --&gt;\\n&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;\\n&lt;!-- wp:paragraph --&gt;Ut enim ad minim veniam.&lt;!-- /wp:paragraph --&gt;</p>",
+            children: []
+          }
+        ]
+      };
+      const escapedDelimiter = (
+        await bridge.compile({ plan: escapedDelimiterPlan })
+      ).validation;
+      return { missing, unsupported, altered, malformed, escapedDelimiter };
     }, siteId);
     const controls = [
       { name: "missing", report: results.missing, code: "missing_block" },
@@ -785,6 +1217,11 @@ async function assertNativeNegativeControls(
       {
         name: "malformed",
         report: results.malformed,
+        code: "invalid_block_markup"
+      },
+      {
+        name: "escaped delimiter",
+        report: results.escapedDelimiter,
         code: "invalid_block_markup"
       }
     ];
@@ -1028,29 +1465,22 @@ async function main(): Promise<void> {
     const title = `AUTOMATED-TEST-V2-${runId}`;
     const creationPlan = createPlan(registration.siteId, title, staged);
     const expectedNodeCount = countPlanNodes(creationPlan);
-    let rejectedWidth = false;
-    try {
-      await service.compileCandidate({
-        executionId: `negative-${randomUUID()}`,
-        idempotencyKey: `idempotency-${randomUUID()}`,
-        plan: unsupportedButtonWidthPlan(registration.siteId)
-      });
-    } catch (error) {
-      if (!(error instanceof GutenbergV2ServiceError)) throw error;
-      rejectedWidth =
-        error.code === "content_changed" &&
-        error.issues.some(
-          (entry) =>
-            entry.blockName === "core/button" &&
-            entry.message.includes("changed attributes")
-        );
-      console.log(
-        `Expected core/button width rejection: ${error.code}: ${error.message.slice(0, 300)}`
-      );
-    }
-    assert(
-      rejectedWidth,
-      "WordPress 7.1.1 must fail closed when core/button drops width:50."
+    const buttonWidthProbe = await runButtonWidthProbe(
+      worker,
+      registration.siteId
+    );
+    console.log(
+      `core/button width probe: ${buttonWidthProbe.outcome} (${buttonWidthProbe.disposition})`
+    );
+    const capabilities = await service.discoverCapabilities({
+      siteId: registration.siteId,
+      postType: "post"
+    });
+    const capabilitySummary = capabilityEvidence(capabilities);
+    writeFileSync(
+      join(artifactDirectory, "capability-summary.json"),
+      `${JSON.stringify(capabilitySummary, null, 2)}\n`,
+      "utf8"
     );
     const createExecution = `execution-${randomUUID()}`;
     const createIdempotency = `idempotency-${randomUUID()}`;
@@ -1156,6 +1586,12 @@ async function main(): Promise<void> {
       created.postId
     );
     await assertNativeNegativeControls(sessionClient, registration.siteId);
+    const historicalWorkflow = await runHistoricalWorkflow(
+      service,
+      worker,
+      registration.siteId,
+      staged
+    );
 
     const lostExecution = `execution-${randomUUID()}`;
     const lostCandidate = await uncertainService.compileCandidate({
@@ -1357,6 +1793,9 @@ async function main(): Promise<void> {
       lostResponseState: lostResult.state,
       lostResponseDisposition: reconciledReceipt.disposition,
       staleCommitRejected,
+      buttonWidthProbe,
+      capabilitySummary,
+      historicalWorkflow,
       nativeSaveReopen: nativeReopen,
       scopedRollbackOutcome: restored.outcome,
       contentHash: readback.contentHash,
@@ -1365,6 +1804,39 @@ async function main(): Promise<void> {
       mediaAttachmentIds: firstMediaBinding.mapping.map(
         ({ attachmentId }) => attachmentId
       ),
+      createdResources: {
+        primaryDraft: {
+          postId: created.postId,
+          mediaIds: firstMediaBinding.mapping.map(
+            ({ attachmentId }) => attachmentId
+          ),
+          cleanup: {
+            attempted: false,
+            outcome: "retained_for_inspection",
+            reason:
+              "The v2 transport has no exact execution-owned delete operation; the created draft and media remain recorded for manual cleanup."
+          }
+        },
+        reconciledDraft: {
+          postId: reconciledReceipt.postId,
+          cleanup: {
+            attempted: false,
+            outcome: "retained_for_inspection",
+            reason:
+              "The v2 transport has no exact execution-owned delete operation; the created draft remains recorded for manual cleanup."
+          }
+        },
+        historicalDraft: {
+          postId: historicalWorkflow.postId,
+          mediaIds: historicalWorkflow.mediaIds,
+          cleanup: {
+            attempted: false,
+            outcome: "retained_for_inspection",
+            reason:
+              "The v2 transport has no exact execution-owned delete operation; the historical workflow draft remains recorded for manual cleanup."
+          }
+        }
+      },
       reviewArtifact: candidate.reviewArtifact
     };
     writeFileSync(

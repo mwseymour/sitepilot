@@ -95,6 +95,51 @@ describe("Gutenberg v2 contracts", () => {
     }
   });
 
+  it("rejects the dry-run escaped block-comment payload in rich text", () => {
+    for (const content of [
+      "<!-- wp:heading -->New heading!<!-- /wp:heading -->",
+      "&lt;!-- wp:heading --&gt;New heading!&lt;!-- /wp:heading --&gt;",
+      "&#60;!-- wp:heading --&#62;New heading!&#60;!-- /wp:heading --&#62;",
+      "&#x3c;!-- wp:heading --&#x3e;New heading!&#x3c;!-- /wp:heading --&#x3e;",
+      "&lt;!-- /wp:paragraph --&gt;\\n&lt;!-- wp:paragraph --&gt;Sed do eiusmod tempor incididunt ut labore."
+    ]) {
+      expect(() =>
+        gutenbergV2BlockPlanSchema.parse({
+          ...validPlan(),
+          blocks: [{ ...validPlan().blocks[0], attributes: { content } }]
+        })
+      ).toThrow(/serialized Gutenberg block delimiters/i);
+    }
+  });
+
+  it("preserves legitimate rich-text marks and escaped literal text", () => {
+    expect(
+      gutenbergV2BlockPlanSchema.parse({
+        ...validPlan(),
+        blocks: [
+          {
+            ...validPlan().blocks[0],
+            attributes: {
+              content:
+                "<strong>Fish &amp; Chips</strong> with <mark>marks</mark> and the literal text &amp;lt;!-- wp:paragraph --&gt;."
+            }
+          }
+        ]
+      }).blocks[0]?.attributes.content
+    ).toContain("<mark>marks</mark>");
+  });
+
+  it("does not accept v1 action envelopes or fallback block fields", () => {
+    for (const field of ["proposedActions", "actions", "parsedBlocks"]) {
+      expect(() =>
+        gutenbergV2BlockPlanSchema.parse({
+          ...validPlan(),
+          [field]: []
+        })
+      ).toThrow();
+    }
+  });
+
   it("rejects a caption that has no explicit image representation", () => {
     expect(() =>
       gutenbergV2BlockPlanSchema.parse({

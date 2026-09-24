@@ -184,7 +184,20 @@ export {
   decideApprovalResponseSchema,
   ipcAuditEntrySchema,
   listAuditEntriesRequestSchema,
-  listAuditEntriesResponseSchema
+  listAuditEntriesResponseSchema,
+  gutenbergV2RequestStateSchema,
+  gutenbergV2GenerateCandidateRequestSchema,
+  gutenbergV2GenerateCandidateResponseSchema,
+  gutenbergV2DecideCandidateRequestSchema,
+  gutenbergV2DecideCandidateResponseSchema,
+  gutenbergV2ExecuteCandidateRequestSchema,
+  gutenbergV2ExecuteCandidateResponseSchema,
+  gutenbergV2GetRequestStateRequestSchema,
+  gutenbergV2GetRequestStateResponseSchema,
+  gutenbergV2ListPendingCandidatesRequestSchema,
+  gutenbergV2ListPendingCandidatesResponseSchema,
+  gutenbergV2GetReviewArtifactRequestSchema,
+  gutenbergV2GetReviewArtifactResponseSchema
 } from "./ipc.js";
 export type {
   ApprovalSummary,

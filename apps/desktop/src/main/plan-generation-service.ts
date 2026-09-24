@@ -33,6 +33,10 @@ import { validateActionPlan } from "@sitepilot/validation";
 import type { PlanValidationOutcome } from "@sitepilot/validation";
 
 import { getDatabase } from "./app-database.js";
+import {
+  claimV1RequestEngine,
+  hasGutenbergV2RequestMapping
+} from "./gutenberg-v2-chat-service.js";
 import { buildPlannerContextForThread } from "./planner-context-service.js";
 import { sourceImagesForActionPlan } from "./image-sourcing-service.js";
 import { getSecureStorage } from "./app-secure-storage.js";
@@ -379,6 +383,13 @@ async function finalizeActionPlanForRequest(input: {
   usage: PlannerUsage;
 }): Promise<GenerateActionPlanResult> {
   const db = getDatabase();
+  if (!claimV1RequestEngine(input.siteId, input.requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
+    };
+  }
   const request = await db.repositories.requests.getById(input.requestId);
   if (
     !request ||
@@ -608,6 +619,13 @@ export async function generateFixtureBackedActionPlanForRequest(input: {
   plan: ContractActionPlan;
   preservePlanExactly?: boolean;
 }): Promise<GenerateActionPlanResult> {
+  if (hasGutenbergV2RequestMapping(input.siteId, input.requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
+    };
+  }
   const db = getDatabase();
   const request = await db.repositories.requests.getById(input.requestId);
   if (
@@ -619,6 +637,13 @@ export async function generateFixtureBackedActionPlanForRequest(input: {
       ok: false,
       code: "request_not_found",
       message: "Request not found for this thread."
+    };
+  }
+  if (!claimV1RequestEngine(input.siteId, input.requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
     };
   }
 
@@ -636,7 +661,10 @@ export async function generateFixtureBackedActionPlanForRequest(input: {
       return ctxResult;
     }
 
-    plan = enrichActionPlanWithPostLookupFromContext(input.plan, ctxResult.context);
+    plan = enrichActionPlanWithPostLookupFromContext(
+      input.plan,
+      ctxResult.context
+    );
     plan = await sourceImagesForActionPlan({
       plan,
       requestText: request.userPrompt,
@@ -665,6 +693,13 @@ export async function generateActionPlanForRequest(
   threadId: ChatThreadId,
   requestId: RequestId
 ): Promise<GenerateActionPlanResult> {
+  if (hasGutenbergV2RequestMapping(siteId, requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
+    };
+  }
   const db = getDatabase();
   const request = await db.repositories.requests.getById(requestId);
   if (!request || request.siteId !== siteId || request.threadId !== threadId) {
@@ -672,6 +707,13 @@ export async function generateActionPlanForRequest(
       ok: false,
       code: "request_not_found",
       message: "Request not found for this thread."
+    };
+  }
+  if (!claimV1RequestEngine(siteId, requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
     };
   }
 

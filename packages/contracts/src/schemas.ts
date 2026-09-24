@@ -116,7 +116,8 @@ export const siteConfigSchema = z.object({
 });
 
 export const sitePlannerSettingsSchema = z.object({
-  bypassApprovalRequests: z.boolean()
+  bypassApprovalRequests: z.boolean(),
+  gutenbergV2Enabled: z.boolean().default(false)
 });
 
 export const uiPreferencesSchema = z.object({

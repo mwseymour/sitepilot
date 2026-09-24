@@ -14,6 +14,7 @@
     { "path": "../../packages/mcp-client" },
     { "path": "../../packages/plugin-protocol" },
     { "path": "../../packages/provider-adapters" },
+    { "path": "../../packages/gutenberg-worker" },
     { "path": "../../packages/repositories" },
     { "path": "../../packages/services" },
     { "path": "../../packages/validation" }

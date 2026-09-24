@@ -10,6 +10,7 @@ import {
   gutenbergV2JobRecordSchema,
   gutenbergV2PrepareCommitResponseSchema,
   gutenbergV2ReadbackSchema,
+  gutenbergV2SourceSnapshotSchema,
   gutenbergV2ValidationFailureCodeSchema,
   gutenbergV2ValidationIssueSchema,
   gutenbergV2ValidationReportSchema,
@@ -347,6 +348,38 @@ export class GutenbergV2ContentService {
     return snapshot;
   }
 
+  /** Read the trusted editor source through the configured WordPress transport. */
+  public async readSource(input: {
+    executionId?: string;
+    siteId: string;
+    postType: "post" | "page";
+    postId: number;
+  }): Promise<GutenbergV2SourceSnapshot> {
+    const source = gutenbergV2SourceSnapshotSchema.parse(
+      await this.#dependencies.wordpress.readSource({
+        siteId: input.siteId,
+        target: {
+          postId: input.postId,
+          postType: input.postType,
+          sourceRevision: "unbound",
+          sourceContentHash: "0".repeat(64),
+          expectedFields: {}
+        }
+      })
+    );
+    if (
+      source.siteId !== input.siteId ||
+      source.postId !== input.postId ||
+      source.postType !== input.postType
+    ) {
+      throw new GutenbergV2ServiceError(
+        "runtime_changed",
+        "The source snapshot does not match the requested destination."
+      );
+    }
+    return source;
+  }
+
   public async compileCandidate(input: {
     executionId: string;
     idempotencyKey: string;
@@ -529,6 +562,33 @@ export class GutenbergV2ContentService {
     return this.#transition(job, "approved", {
       approvalId: approval.approvalId,
       approval
+    });
+  }
+
+  public async rejectCandidate(input: {
+    executionId: string;
+    candidateId: string;
+  }): Promise<GutenbergV2JobRecord> {
+    const job = await this.#requireJob(input.executionId);
+    if (job.candidate?.candidateId !== input.candidateId) {
+      throw new GutenbergV2ServiceError(
+        "approval_invalid",
+        "The decision is not bound to the current candidate."
+      );
+    }
+    if (job.state === "rejected") return job;
+    if (job.state !== "review_ready") {
+      throw new GutenbergV2ServiceError(
+        "approval_invalid",
+        `Execution ${input.executionId} is not ready for a review decision.`
+      );
+    }
+    return this.#transition(job, "rejected", {
+      failure: issue(
+        "approval_invalid",
+        "compile",
+        "The candidate was rejected during review."
+      )
     });
   }
 

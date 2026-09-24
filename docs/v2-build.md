@@ -67,7 +67,7 @@ The first production increment covers:
 
 Start the compiler with paragraphs, headings, groups, columns/column, images, lists/list-item, buttons/button, quotes and spacers. Add the remaining currently supported core types through the same acceptance process, including table, pullquote and media-text. Record the exact enabled set per release; do not advertise complete parity before it passes.
 
-Include one representative dynamic block and the reviewed `acf/container` integration when the target environment provides it. Additional third-party blocks require demonstrated schema, editor-context and render compatibility.
+Dynamic blocks and `acf/container` remain fixture-gated. The current MAMP profile does not register `acf/container`, so it provides no authoring evidence for that block. Additional third-party blocks require demonstrated schema, editor-context and render compatibility.
 
 Initial exclusions: arbitrary plugin installation, theme/template editing, changing synced-pattern definitions, changing bound attributes, editing locked structures, automatic repair of unrelated existing invalid content, and unrestricted model-authored HTML. Existing permitted content may be preserved under the rules below. These exclusions do not remove capabilities from v1.
 
@@ -94,7 +94,7 @@ flowchart TD
 - Load a SitePilot bridge in the real destination editor bootstrap. Match post type, editing user, relevant theme/plugin scripts, block supports and editor settings. A page that merely loads `wp.blocks` and core blocks is insufficient for plugin compatibility.
 - Load the destination's `wp.blocks` and related packages through WordPress dependencies. An independently bundled latest `@wordpress/block-library` is not authoritative for another site's version.
 - Wait for bridge readiness, required script registration and the expected capability fingerprint. A DOM body or admin shell being present is insufficient.
-- Keep preflight work in memory or private staging. Do not populate a real editable post in a way that lets normal autosave modify it before approval. Document any unavoidable scratch/auto-draft side effects and their cleanup.
+- Keep preflight work in memory or private staging. Do not populate a real editable post in a way that lets normal autosave modify it before approval. When a native fixture creates a draft or media, record the exact IDs and cleanup outcome; retain them for inspection when the transport has no execution-owned delete operation.
 - Recover from worker restarts, expired sessions and browser crashes using durable backend job state. An unavailable runtime returns a retryable failure; it never permits unverified writes.
 
 ### WordPress authentication

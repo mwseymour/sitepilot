@@ -8,11 +8,12 @@ import {
 import { Link } from "react-router-dom";
 
 import type {
+  ipcChannels,
+  IpcResponse,
   PlannerPreferencesPayload,
   SiteCustomBlockSupportEntry,
   SitePlannerSettings,
-  UiPreferences,
-  WordPressCoreBlockIndex
+  UiPreferences
 } from "@sitepilot/contracts";
 import {
   WORDPRESS_CORE_BLOCK_REFERENCE_URL,
@@ -21,6 +22,11 @@ import {
 } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+
+type SettingsStateResponse = IpcResponse<typeof ipcChannels.settingsGetState>;
+type CoreBlockIndex = NonNullable<
+  Extract<SettingsStateResponse, { ok: true }>["coreBlockIndex"]
+>;
 
 type GapComplexity = "simple" | "medium" | "complex";
 type StructuralRole =
@@ -41,7 +47,7 @@ function isPassthroughCustomBlockEntry(
 }
 
 function blockHasRelationshipRules(
-  block: WordPressCoreBlockIndex["blocks"][number]
+  block: CoreBlockIndex["blocks"][number]
 ): boolean {
   return (
     block.parent.length > 0 ||
@@ -51,7 +57,7 @@ function blockHasRelationshipRules(
 }
 
 function classifyGapComplexity(
-  block: WordPressCoreBlockIndex["blocks"][number]
+  block: CoreBlockIndex["blocks"][number]
 ): GapComplexity {
   const score =
     (block.renderPath ? 2 : 0) +
@@ -69,9 +75,7 @@ function classifyGapComplexity(
   return "simple";
 }
 
-function complexityLabel(
-  block: WordPressCoreBlockIndex["blocks"][number]
-): string {
+function complexityLabel(block: CoreBlockIndex["blocks"][number]): string {
   const complexity = classifyGapComplexity(block);
   if (complexity === "complex") {
     return "Complex";
@@ -82,9 +86,7 @@ function complexityLabel(
   return "Simple";
 }
 
-function blockSignals(
-  block: WordPressCoreBlockIndex["blocks"][number]
-): string {
+function blockSignals(block: CoreBlockIndex["blocks"][number]): string {
   const signals: string[] = [];
   if (block.renderPath) {
     signals.push("render");
@@ -105,7 +107,7 @@ function blockSignals(
 }
 
 function classifyStructuralRole(
-  block: WordPressCoreBlockIndex["blocks"][number]
+  block: CoreBlockIndex["blocks"][number]
 ): StructuralRole {
   if (block.canContainInnerBlocks) {
     return "container";
@@ -119,9 +121,7 @@ function classifyStructuralRole(
   return "standalone";
 }
 
-function structuralRoleLabel(
-  block: WordPressCoreBlockIndex["blocks"][number]
-): string {
+function structuralRoleLabel(block: CoreBlockIndex["blocks"][number]): string {
   const role = classifyStructuralRole(block);
   if (role === "container") {
     return "Container";
@@ -135,7 +135,7 @@ function structuralRoleLabel(
   return "Standalone";
 }
 
-export function SiteSettingsPage(): ReactElement {
+export function SiteSettingsPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [err, setErr] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -149,8 +149,9 @@ export function SiteSettingsPage(): ReactElement {
   );
   const [sitePlannerSettings, setSitePlannerSettings] =
     useState<SitePlannerSettings | null>(null);
-  const [coreBlockIndex, setCoreBlockIndex] =
-    useState<WordPressCoreBlockIndex | null>(null);
+  const [coreBlockIndex, setCoreBlockIndex] = useState<CoreBlockIndex | null>(
+    null
+  );
   const [wordpressCoreSourcePath, setWordPressCoreSourcePath] = useState<
     string | null
   >(null);
@@ -225,7 +226,10 @@ export function SiteSettingsPage(): ReactElement {
     setPlanner(state.planner);
     setUiPreferences(state.uiPreferences);
     setSitePlannerSettings(
-      state.sitePlannerSettings ?? { bypassApprovalRequests: false }
+      state.sitePlannerSettings ?? {
+        bypassApprovalRequests: false,
+        gutenbergV2Enabled: false
+      }
     );
     setHasSecret(state.siteHasSigningSecret ?? false);
     setCoreBlockIndex(state.coreBlockIndex ?? null);
@@ -535,19 +539,40 @@ export function SiteSettingsPage(): ReactElement {
               disabled={busy}
               onChange={(e) => {
                 setSitePlannerSettings({
+                  ...sitePlannerSettings,
                   bypassApprovalRequests: e.target.checked
                 });
               }}
             />
             <span>Approval bypass</span>
           </label>
+          <label className="settings-field settings-checkbox">
+            <input
+              className="settings-checkbox-input"
+              type="checkbox"
+              checked={sitePlannerSettings.gutenbergV2Enabled}
+              disabled={busy}
+              onChange={(e) => {
+                setSitePlannerSettings({
+                  ...sitePlannerSettings,
+                  gutenbergV2Enabled: e.target.checked
+                });
+              }}
+            />
+            <span>Enable native editor candidate workflow</span>
+          </label>
+          <p className="muted small-print">
+            When enabled, Chat can generate a Gutenberg v2 candidate for an
+            explicitly selected post operation. Every candidate still needs a
+            review decision before it can run.
+          </p>
           <button
             type="button"
             className="btn btn-primary"
             disabled={busy}
             onClick={() => void onSaveSitePlannerSettings()}
           >
-            Save site approval setting
+            Save site settings
           </button>
         </section>
       ) : null}

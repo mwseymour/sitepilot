@@ -1,29 +1,63 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement
+} from "react";
 import { Link } from "react-router-dom";
 
-import type { ApprovalSummary } from "@sitepilot/contracts";
+import type {
+  ipcChannels,
+  ApprovalSummary,
+  IpcResponse
+} from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+import {
+  GutenbergV2CandidatePanel,
+  type ReviewArtifact
+} from "./GutenbergV2CandidatePanel.js";
 
 type ApprovalRow = ApprovalSummary;
+type GutenbergV2PendingResponse = IpcResponse<
+  typeof ipcChannels.gutenbergV2ListPendingCandidates
+>;
+type GutenbergV2PendingCandidate = Extract<
+  GutenbergV2PendingResponse,
+  { ok: true }
+>["candidates"][number];
 
-export function ApprovalsPage(): ReactElement {
+export function ApprovalsPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
+  const [v2Candidates, setV2Candidates] = useState<
+    GutenbergV2PendingCandidate[]
+  >([]);
   const [err, setErr] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [lastThreadId, setLastThreadId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await window.sitePilotDesktop.listPendingApprovals({ siteId });
+    const [res, v2Res] = await Promise.all([
+      window.sitePilotDesktop.listPendingApprovals({ siteId }),
+      window.sitePilotDesktop.gutenbergV2ListPendingCandidates({ siteId })
+    ]);
+    const errors: string[] = [];
     if (!res.ok) {
-      setErr(res.message);
+      errors.push(res.message);
       setApprovals([]);
-      return;
+    } else {
+      setApprovals(res.approvals);
     }
-    setErr(null);
-    setApprovals(res.approvals);
+    if (!v2Res.ok) {
+      errors.push(v2Res.message);
+      setV2Candidates([]);
+    } else {
+      setV2Candidates(v2Res.candidates);
+    }
+    setErr(errors.length > 0 ? errors.join(" ") : null);
   }, [siteId]);
 
   useEffect(() => {
@@ -61,6 +95,89 @@ export function ApprovalsPage(): ReactElement {
     );
     await load();
   }
+
+  async function onDecideV2(
+    candidate: GutenbergV2PendingCandidate,
+    decision: "approved" | "rejected" | "revision_requested",
+    note?: string
+  ): Promise<void> {
+    setBusy(true);
+    setErr(null);
+    setMessage(null);
+    const res = await window.sitePilotDesktop.gutenbergV2DecideCandidate({
+      siteId,
+      requestId: candidate.requestId,
+      candidateId: candidate.candidate?.candidateId ?? "",
+      decision,
+      ...(note !== undefined ? { note } : {})
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    setMessage(
+      decision === "approved"
+        ? "Native editor candidate approved. Open Chat to continue execution."
+        : decision === "revision_requested"
+          ? "Native editor candidate sent back for revision."
+          : "Native editor candidate rejected."
+    );
+    await load();
+  }
+
+  const onLoadV2Artifact = useCallback(
+    async (
+      candidate: GutenbergV2PendingCandidate,
+      artifactId: string
+    ): Promise<ReviewArtifact | null> => {
+      const res = await window.sitePilotDesktop.gutenbergV2GetReviewArtifact({
+        siteId,
+        requestId: candidate.requestId,
+        artifactId
+      });
+      if (!res.ok) {
+        setErr(res.message);
+        return null;
+      }
+      return res.artifact;
+    },
+    [siteId]
+  );
+
+  const v2ArtifactLoaders = useMemo(
+    () =>
+      new Map(
+        v2Candidates.map((candidate) => [
+          candidate.requestId,
+          (artifactId: string) => onLoadV2Artifact(candidate, artifactId)
+        ])
+      ),
+    [onLoadV2Artifact, v2Candidates]
+  );
+
+  const onExecuteV2 = useCallback(
+    async (candidate: GutenbergV2PendingCandidate): Promise<void> => {
+      setBusy(true);
+      setErr(null);
+      const res = await window.sitePilotDesktop.gutenbergV2ExecuteCandidate({
+        siteId,
+        requestId: candidate.requestId
+      });
+      setBusy(false);
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      setMessage(
+        res.state.state === "succeeded"
+          ? "Native editor update completed and was verified."
+          : "Native editor execution status refreshed."
+      );
+      await load();
+    },
+    [load, siteId]
+  );
 
   if (loading) {
     return <p className="muted">Loading workspace…</p>;
@@ -107,57 +224,88 @@ export function ApprovalsPage(): ReactElement {
           Refresh
         </button>
       </div>
-      {approvals.length === 0 ? (
+      {approvals.length === 0 && v2Candidates.length === 0 ? (
         <p className="muted">No pending approvals for this site.</p>
       ) : (
-        <ul className="approval-list">
-          {approvals.map((a) => (
-            <li key={a.id} className="approval-card">
-              <header>
-                <span className="approval-id">
-                  {a.requestPrompt ?? "Approval request"}
-                </span>
-              </header>
+        <>
+          {v2Candidates.length > 0 ? (
+            <section className="approval-section">
+              <h2>Native editor candidates</h2>
               <p className="muted small-print">
-                Request {a.requestId}
-                {" · "}
-                Plan {a.planId}
-                {a.expiresAt ? (
-                  <>
-                    {" "}
-                    · expires <time dateTime={a.expiresAt}>{a.expiresAt}</time>
-                  </>
-                ) : null}
+                Every candidate is tied to its exact compiled content and needs
+                an explicit decision, even when approval bypass is enabled.
               </p>
-              <div className="approval-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-small"
-                  disabled={busy}
-                  onClick={() => void onDecide(a.id, "approved")}
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={busy}
-                  onClick={() => void onDecide(a.id, "revision_requested")}
-                >
-                  Request revision
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={busy}
-                  onClick={() => void onDecide(a.id, "rejected")}
-                >
-                  Reject
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              <ul className="approval-list">
+                {v2Candidates.map((candidate) => (
+                  <li key={candidate.requestId} className="approval-card">
+                    <GutenbergV2CandidatePanel
+                      candidate={candidate}
+                      busy={busy}
+                      onDecide={(candidateId, decision, note) =>
+                        onDecideV2(candidate, decision, note)
+                      }
+                      onExecute={() => onExecuteV2(candidate)}
+                      onLoadArtifact={
+                        v2ArtifactLoaders.get(candidate.requestId)!
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {approvals.length > 0 ? (
+            <ul className="approval-list">
+              {approvals.map((a) => (
+                <li key={a.id} className="approval-card">
+                  <header>
+                    <span className="approval-id">
+                      {a.requestPrompt ?? "Approval request"}
+                    </span>
+                  </header>
+                  <p className="muted small-print">
+                    Request {a.requestId}
+                    {" · "}
+                    Plan {a.planId}
+                    {a.expiresAt ? (
+                      <>
+                        {" "}
+                        · expires{" "}
+                        <time dateTime={a.expiresAt}>{a.expiresAt}</time>
+                      </>
+                    ) : null}
+                  </p>
+                  <div className="approval-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-small"
+                      disabled={busy}
+                      onClick={() => void onDecide(a.id, "approved")}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      disabled={busy}
+                      onClick={() => void onDecide(a.id, "revision_requested")}
+                    >
+                      Request revision
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      disabled={busy}
+                      onClick={() => void onDecide(a.id, "rejected")}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
       )}
     </article>
   );

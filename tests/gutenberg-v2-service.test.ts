@@ -320,6 +320,70 @@ afterEach(() => {
 });
 
 describe("GutenbergV2ContentService", () => {
+  it("reads existing post source through the trusted transport and rejects mismatched identity", async () => {
+    const env = harness();
+    const source: GutenbergV2SourceSnapshot = {
+      schemaVersion: "sitepilot.source-snapshot/v2",
+      siteId: "site-1",
+      postId: 42,
+      postType: "post",
+      revision: "revision-1",
+      rawContent: content,
+      contentHash: hashGutenbergV2Content(content),
+      fields: expectedFields,
+      fieldsHash: hashGutenbergV2Value(expectedFields),
+      blockTreeFingerprint: "5".repeat(64),
+      blockIndex: []
+    };
+    vi.mocked(env.wordpress.readSource).mockResolvedValueOnce(source);
+    await expect(
+      env.service.readSource({ siteId: "site-1", postType: "post", postId: 42 })
+    ).resolves.toEqual(source);
+    vi.mocked(env.wordpress.readSource).mockResolvedValueOnce({
+      ...source,
+      postId: 43
+    });
+    await expect(
+      env.service.readSource({ siteId: "site-1", postType: "post", postId: 42 })
+    ).rejects.toMatchObject({ code: "runtime_changed" });
+  });
+
+  it("records an exact review rejection and makes revision requests terminal until regeneration", async () => {
+    const env = harness();
+    const candidate = await env.service.compileCandidate({
+      executionId: "execution-1",
+      idempotencyKey: "key-1",
+      plan: plan()
+    });
+    await expect(
+      env.service.rejectCandidate({
+        executionId: "execution-1",
+        candidateId: `${candidate.candidateId}-other`
+      })
+    ).rejects.toMatchObject({ code: "approval_invalid" });
+    await expect(
+      env.service.rejectCandidate({
+        executionId: "execution-1",
+        candidateId: candidate.candidateId
+      })
+    ).resolves.toMatchObject({ state: "rejected" });
+    await expect(
+      env.service.recordApproval({
+        executionId: "execution-1",
+        approval: {
+          schemaVersion: "sitepilot.approval/v2",
+          approvalId: "approval-after-reject",
+          approverId: "approver-1",
+          approvedAt: env.clockState.value.toISOString(),
+          expiresAt: new Date(
+            env.clockState.value.getTime() + 60_000
+          ).toISOString(),
+          binding: createGutenbergV2ApprovalBinding(candidate)
+        }
+      })
+    ).rejects.toMatchObject({ code: "approval_invalid" });
+  });
+
   it("uses SQLite CAS across connections and reloads immutable approvals", async () => {
     const directory = mkdtempSync(join(tmpdir(), "sitepilot-gutenberg-v2-"));
     temporaryDirectories.push(directory);

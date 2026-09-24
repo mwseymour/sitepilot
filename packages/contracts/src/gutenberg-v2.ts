@@ -76,11 +76,16 @@ function byteLength(value: string): number {
 
 function decodeAttributeEntities(value: string): string {
   return value.replace(
-    /&(?:#(\d+)|#x([a-f0-9]+)|colon|tab|newline|amp|quot|apos);?/gi,
+    /&(?:#(\d+)|#x([a-f0-9]+)|colon|tab|newline|amp|quot|apos|lt|gt);?/gi,
     (match, decimal: string | undefined, hexadecimal: string | undefined) => {
-      if (decimal) return String.fromCodePoint(Number.parseInt(decimal, 10));
-      if (hexadecimal)
-        return String.fromCodePoint(Number.parseInt(hexadecimal, 16));
+      if (decimal) {
+        const codePoint = Number.parseInt(decimal, 10);
+        return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+      }
+      if (hexadecimal) {
+        const codePoint = Number.parseInt(hexadecimal, 16);
+        return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+      }
       const named = match.toLowerCase().replace(/[&;]/g, "");
       return (
         {
@@ -89,7 +94,9 @@ function decodeAttributeEntities(value: string): string {
           newline: "\n",
           amp: "&",
           quot: '"',
-          apos: "'"
+          apos: "'",
+          lt: "<",
+          gt: ">"
         }[named] ?? match
       );
     }
@@ -109,6 +116,13 @@ function isAllowedLink(value: string): boolean {
 }
 
 const richTextSchema = boundedTextSchema.superRefine((value, context) => {
+  if (/<\s*!--\s*\/?wp:/i.test(decodeAttributeEntities(value))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "Rich text must not contain serialized Gutenberg block delimiters."
+    });
+  }
   if (
     /<\/?(?:script|style|iframe|object|embed|form|input|textarea|select|button)\b/i.test(
       value

@@ -47,9 +47,9 @@ The lifecycle is `compileCandidate`, operator review, `recordApproval`, then `ex
 
 ## Supported content
 
-The initial authoring matrix contains paragraph, heading, group, columns, column, image, list, list item, buttons, button, quote, spacer, table, pullquote, and media-text. Latest Posts and ACF Container remain fixture-gated and are authorable only when discovery reports `author_when_reviewed` for the destination.
+The initial authoring matrix contains 15 core authoring types: paragraph, heading, group, columns, column, image, list, list item, buttons, button, quote, spacer, table, pullquote, and media-text. Latest Posts and ACF Container remain outside the current release gate. They are not registered in the MAMP test profile, so this implementation does not claim `author_when_reviewed` support for either block; a future destination-specific fixture must prove it before they can be enabled.
 
-Every block object and attribute object is strict. Unknown attributes, unsupported nesting, unsafe rich text, raw wrapper markup, excessive depth or count, and destination normalization loss fail closed. Optional attributes should be omitted unless the operator requested them. In particular, button `width` is valid in the static contract but is omitted by the v2 planner because the release WordPress runtime can normalize it away. Destination round-trip validation remains authoritative.
+Every block object and attribute object is strict. Unknown attributes, unsupported nesting, unsafe rich text, raw wrapper markup, excessive depth or count, and destination normalization loss fail closed. Optional attributes should be omitted unless the operator requested them. In particular, button `width` is valid in the static contract. The native probe records either preservation or a structured `content_changed` result when the destination normalizes it away; the v2 planner still omits it unless a destination fixture proves preservation. Destination round-trip validation remains authoritative.
 
 Scoped update planning uses `SourceSnapshot.blockIndex`, whose entries contain native editor paths and fingerprints. The generator accepts model-selected paths but replaces every model fingerprint with the trusted source index value.
 
@@ -90,7 +90,14 @@ The release gate runs the legacy suite and the explicitly enabled v2 native harn
 nvm use 22.22.3
 npm run test:e2e:all
 npm run test:e2e:v2
+npm run test:e2e:v2-chat
 ```
+
+`test:e2e:v2-chat` exercises the real desktop chat boundary against the configured
+MAMP destination. It uses a temporary desktop database and deterministic planner,
+then prints only a redacted artifact summary and the created draft post ID for
+manual cleanup. Run it only while the managed MAMP site is available; it does not
+start services, change ports, or modify the WordPress plugin.
 
 ## Verification evidence
 

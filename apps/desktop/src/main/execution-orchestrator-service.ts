@@ -12,7 +12,8 @@ import {
   type SiteCustomBlockSupportEntry,
   SUPPORTED_WORDPRESS_CORE_BLOCK_NAMES
 } from "@sitepilot/contracts";
-import { McpHttpClient, normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import type { McpHttpClient } from "@sitepilot/mcp-client";
 import type {
   ActionId,
   ActionPlanId,
@@ -35,6 +36,10 @@ import {
 
 import { getDatabase } from "./app-database.js";
 import { DEFAULT_OPERATOR } from "./chat-service.js";
+import {
+  claimV1RequestEngine,
+  hasGutenbergV2RequestMapping
+} from "./gutenberg-v2-chat-service.js";
 import { resolveExternalImageReference } from "./image-sourcing-service.js";
 import { createMcpClientForSite } from "./site-mcp-client.js";
 
@@ -1659,6 +1664,13 @@ async function deriveRequestStatusAfterSuccessfulAction(input: {
 export async function executePlanAction(
   input: ExecutePlanActionInput
 ): Promise<ExecutePlanActionResult> {
+  if (hasGutenbergV2RequestMapping(input.siteId, input.requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
+    };
+  }
   const db = getDatabase();
   const site = await db.repositories.sites.getById(input.siteId);
   const request = await db.repositories.requests.getById(input.requestId);
@@ -1667,6 +1679,13 @@ export async function executePlanAction(
       ok: false,
       code: "request_not_found",
       message: "Request or site not found for this execution."
+    };
+  }
+  if (!claimV1RequestEngine(input.siteId, input.requestId)) {
+    return {
+      ok: false,
+      code: "request_engine_conflict",
+      message: "This request belongs to the Gutenberg v2 engine."
     };
   }
 

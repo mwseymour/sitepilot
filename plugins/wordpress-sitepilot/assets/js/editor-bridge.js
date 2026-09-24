@@ -317,6 +317,24 @@
     }, {});
   }
 
+  function containsSerializedBlockDelimiter(value) {
+    if (typeof value === "string") {
+      const decoded = document.createElement("textarea");
+      decoded.innerHTML = value;
+      const delimiter = /<\s*!--\s*\/?wp:/i;
+      return delimiter.test(value) || delimiter.test(decoded.value);
+    }
+    if (Array.isArray(value)) {
+      return value.some((entry) => containsSerializedBlockDelimiter(entry));
+    }
+    if (value && typeof value === "object") {
+      return Object.values(value).some((entry) =>
+        containsSerializedBlockDelimiter(entry)
+      );
+    }
+    return false;
+  }
+
   function countNodes(nodes) {
     return nodes.reduce(
       (count, node) =>
@@ -340,6 +358,20 @@
           "invalid_nesting",
           "policy",
           "Block nesting exceeds the v2 limit.",
+          { blockName: node.name, blockPath: path, planRef: node.ref }
+        )
+      );
+      return null;
+    }
+    if (
+      containsSerializedBlockDelimiter(node.attributes || {}) ||
+      containsSerializedBlockDelimiter(node.innerHTML)
+    ) {
+      issues.push(
+        issue(
+          "invalid_block_markup",
+          "policy",
+          "Rich text must not contain serialized Gutenberg block delimiters.",
           { blockName: node.name, blockPath: path, planRef: node.ref }
         )
       );
@@ -613,6 +645,16 @@
             node.name === "core/missing" ? "missing_block" : "fallback_block",
             "policy",
             `Existing ${node.name} content cannot be safely edited.`,
+            { blockName: node.name, blockPath: nodePath }
+          )
+        );
+        valid = false;
+      } else if (containsSerializedBlockDelimiter(node.attributes || {})) {
+        issues.push(
+          issue(
+            "invalid_block_markup",
+            "policy",
+            "Existing rich text contains serialized Gutenberg block delimiters.",
             { blockName: node.name, blockPath: nodePath }
           )
         );

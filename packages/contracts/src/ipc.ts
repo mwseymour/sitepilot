@@ -27,6 +27,12 @@ import {
   uiPreferencesSchema,
   workspaceListResponseSchema
 } from "./schemas.js";
+import {
+  gutenbergV2ExecutionResultSchema,
+  gutenbergV2ExecutionStateSchema,
+  gutenbergV2ValidationIssueSchema,
+  gutenbergV2ValidationReportSchema
+} from "./gutenberg-v2.js";
 
 const indexedCoreBlockEntrySchema = z.object({
   name: z.string().min(1),
@@ -94,6 +100,12 @@ export const ipcChannels = {
   listAuditEntries: "audit.listEntries",
   getRequestBundle: "chat.getRequestBundle",
   executePlanAction: "execution.executePlanAction",
+  gutenbergV2GenerateCandidate: "gutenbergV2.generateCandidate",
+  gutenbergV2DecideCandidate: "gutenbergV2.decideCandidate",
+  gutenbergV2ExecuteCandidate: "gutenbergV2.executeCandidate",
+  gutenbergV2GetRequestState: "gutenbergV2.getRequestState",
+  gutenbergV2ListPendingCandidates: "gutenbergV2.listPendingCandidates",
+  gutenbergV2GetReviewArtifact: "gutenbergV2.getReviewArtifact",
   getProviderStatus: "settings.getProviderStatus",
   settingsGetState: "settings.getState",
   settingsSetProviderSecret: "settings.setProviderSecret",
@@ -104,7 +116,8 @@ export const ipcChannels = {
   settingsClearSiteSigningSecret: "settings.clearSiteSigningSecret",
   settingsReindexCoreBlocks: "settings.reindexCoreBlocks",
   settingsSetWordPressCoreSourcePath: "settings.setWordPressCoreSourcePath",
-  settingsChooseWordPressCoreSourcePath: "settings.chooseWordPressCoreSourcePath",
+  settingsChooseWordPressCoreSourcePath:
+    "settings.chooseWordPressCoreSourcePath",
   getCompatibilityInfo: "app.getCompatibilityInfo",
   exportBuildSiteBundle: "export.buildSiteBundle",
   importApplySiteBundle: "import.applySiteBundle"
@@ -432,17 +445,20 @@ export const appendSystemChatMessageRequestSchema = z.object({
   requestId: idSchema.optional()
 });
 
-export const appendSystemChatMessageResponseSchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    message: chatMessageSchema
-  }),
-  z.object({
-    ok: z.literal(false),
-    code: z.string().min(1),
-    message: z.string().min(1)
-  })
-]);
+export const appendSystemChatMessageResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      message: chatMessageSchema
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]
+);
 
 export const createChatRequestRequestSchema = z.object({
   siteId: idSchema,
@@ -544,8 +560,9 @@ export const analyzeRequestVisualAnalysisRequestSchema = z.object({
   requestId: idSchema
 });
 
-export const analyzeRequestVisualAnalysisResponseSchema =
-  z.discriminatedUnion("ok", [
+export const analyzeRequestVisualAnalysisResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
     z.object({
       ok: z.literal(true),
       analysis: requestVisualAnalysisSchema
@@ -555,7 +572,8 @@ export const analyzeRequestVisualAnalysisResponseSchema =
       code: z.string().min(1),
       message: z.string().min(1)
     })
-  ]);
+  ]
+);
 
 export const reviewRequestVisualAnalysisRequestSchema = z.object({
   siteId: idSchema,
@@ -869,6 +887,144 @@ export const executePlanActionResponseSchema = z.discriminatedUnion("ok", [
   })
 ]);
 
+const gutenbergV2TargetSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("create_draft"),
+    postType: z.enum(["post", "page"])
+  }),
+  z.object({
+    operation: z.literal("replace_content"),
+    postType: z.enum(["post", "page"]),
+    postId: z.number().int().positive()
+  }),
+  z.object({
+    operation: z.literal("apply_operations"),
+    postType: z.enum(["post", "page"]),
+    postId: z.number().int().positive()
+  })
+]);
+
+const gutenbergV2ArtifactReferenceSchema = z.object({
+  id: z.string().min(1).max(200),
+  kind: z.enum(["structure_diff", "preview"]),
+  viewport: z.enum(["desktop", "mobile"]).optional()
+});
+
+const gutenbergV2CandidateSummarySchema = z.object({
+  candidateId: idSchema,
+  planId: idSchema,
+  operation: z.enum(["create_draft", "replace_content", "apply_operations"]),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  intentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  capabilityFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceRevision: z.string().min(1).optional(),
+  requestedPostFields: z
+    .object({
+      title: z.string().optional(),
+      excerpt: z.string().optional()
+    })
+    .strict(),
+  validation: gutenbergV2ValidationReportSchema,
+  reviewArtifacts: z.array(gutenbergV2ArtifactReferenceSchema).min(1).max(3)
+});
+
+export const gutenbergV2RequestStateSchema = z.object({
+  requestId: idSchema,
+  siteId: idSchema,
+  executionId: idSchema,
+  target: gutenbergV2TargetSchema,
+  state: gutenbergV2ExecutionStateSchema,
+  candidate: gutenbergV2CandidateSummarySchema.optional(),
+  result: gutenbergV2ExecutionResultSchema.optional(),
+  failure: gutenbergV2ValidationIssueSchema.optional(),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema
+});
+
+const gutenbergV2FailureResponseSchema = z.object({
+  ok: z.literal(false),
+  code: z.string().min(1),
+  message: z.string().min(1)
+});
+
+export const gutenbergV2GenerateCandidateRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema,
+  target: gutenbergV2TargetSchema
+});
+export const gutenbergV2GenerateCandidateResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({ ok: z.literal(true), state: gutenbergV2RequestStateSchema }),
+    gutenbergV2FailureResponseSchema
+  ]
+);
+
+export const gutenbergV2DecideCandidateRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema,
+  candidateId: idSchema,
+  decision: z.enum(["approved", "rejected", "revision_requested"]),
+  note: z.string().max(4_000).optional()
+});
+export const gutenbergV2DecideCandidateResponseSchema =
+  gutenbergV2GenerateCandidateResponseSchema;
+
+export const gutenbergV2ExecuteCandidateRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema
+});
+export const gutenbergV2ExecuteCandidateResponseSchema =
+  gutenbergV2GenerateCandidateResponseSchema;
+
+export const gutenbergV2GetRequestStateRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema
+});
+export const gutenbergV2GetRequestStateResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      state: gutenbergV2RequestStateSchema.nullable()
+    }),
+    gutenbergV2FailureResponseSchema
+  ]
+);
+
+export const gutenbergV2ListPendingCandidatesRequestSchema = z.object({
+  siteId: idSchema
+});
+export const gutenbergV2ListPendingCandidatesResponseSchema =
+  z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      candidates: z.array(gutenbergV2RequestStateSchema)
+    }),
+    gutenbergV2FailureResponseSchema
+  ]);
+
+export const gutenbergV2GetReviewArtifactRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema,
+  artifactId: z.string().min(1).max(200)
+});
+export const gutenbergV2GetReviewArtifactResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      artifact: z.object({
+        id: z.string().min(1).max(200),
+        kind: z.enum(["structure_diff", "preview"]),
+        mimeType: z.enum(["application/json", "image/png"]),
+        dataBase64: z.string().min(1).max(28_000_000)
+      })
+    }),
+    gutenbergV2FailureResponseSchema
+  ]
+);
+
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
@@ -989,6 +1145,30 @@ export const ipcContracts = {
   [ipcChannels.executePlanAction]: {
     request: executePlanActionRequestSchema,
     response: executePlanActionResponseSchema
+  },
+  [ipcChannels.gutenbergV2GenerateCandidate]: {
+    request: gutenbergV2GenerateCandidateRequestSchema,
+    response: gutenbergV2GenerateCandidateResponseSchema
+  },
+  [ipcChannels.gutenbergV2DecideCandidate]: {
+    request: gutenbergV2DecideCandidateRequestSchema,
+    response: gutenbergV2DecideCandidateResponseSchema
+  },
+  [ipcChannels.gutenbergV2ExecuteCandidate]: {
+    request: gutenbergV2ExecuteCandidateRequestSchema,
+    response: gutenbergV2ExecuteCandidateResponseSchema
+  },
+  [ipcChannels.gutenbergV2GetRequestState]: {
+    request: gutenbergV2GetRequestStateRequestSchema,
+    response: gutenbergV2GetRequestStateResponseSchema
+  },
+  [ipcChannels.gutenbergV2ListPendingCandidates]: {
+    request: gutenbergV2ListPendingCandidatesRequestSchema,
+    response: gutenbergV2ListPendingCandidatesResponseSchema
+  },
+  [ipcChannels.gutenbergV2GetReviewArtifact]: {
+    request: gutenbergV2GetReviewArtifactRequestSchema,
+    response: gutenbergV2GetReviewArtifactResponseSchema
   },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
@@ -1146,6 +1326,26 @@ export interface SitePilotDesktopApi {
   executePlanAction: (
     request: IpcRequest<typeof ipcChannels.executePlanAction>
   ) => Promise<IpcResponse<typeof ipcChannels.executePlanAction>>;
+  gutenbergV2GenerateCandidate: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2GenerateCandidate>
+  ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2GenerateCandidate>>;
+  gutenbergV2DecideCandidate: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2DecideCandidate>
+  ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2DecideCandidate>>;
+  gutenbergV2ExecuteCandidate: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2ExecuteCandidate>
+  ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2ExecuteCandidate>>;
+  gutenbergV2GetRequestState: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2GetRequestState>
+  ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2GetRequestState>>;
+  gutenbergV2ListPendingCandidates: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2ListPendingCandidates>
+  ) => Promise<
+    IpcResponse<typeof ipcChannels.gutenbergV2ListPendingCandidates>
+  >;
+  gutenbergV2GetReviewArtifact: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2GetReviewArtifact>
+  ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2GetReviewArtifact>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
   getSettingsState: (
     request: IpcRequest<typeof ipcChannels.settingsGetState>
@@ -1161,9 +1361,7 @@ export interface SitePilotDesktopApi {
   ) => Promise<IpcResponse<typeof ipcChannels.settingsSetPlannerPreferences>>;
   setSitePlannerSettings: (
     request: IpcRequest<typeof ipcChannels.settingsSetSitePlannerSettings>
-  ) => Promise<
-    IpcResponse<typeof ipcChannels.settingsSetSitePlannerSettings>
-  >;
+  ) => Promise<IpcResponse<typeof ipcChannels.settingsSetSitePlannerSettings>>;
   setUiPreferences: (
     request: IpcRequest<typeof ipcChannels.settingsSetUiPreferences>
   ) => Promise<IpcResponse<typeof ipcChannels.settingsSetUiPreferences>>;
@@ -1179,7 +1377,9 @@ export interface SitePilotDesktopApi {
     IpcResponse<typeof ipcChannels.settingsSetWordPressCoreSourcePath>
   >;
   chooseWordPressCoreSourcePath: (
-    request?: IpcRequest<typeof ipcChannels.settingsChooseWordPressCoreSourcePath>
+    request?: IpcRequest<
+      typeof ipcChannels.settingsChooseWordPressCoreSourcePath
+    >
   ) => Promise<
     IpcResponse<typeof ipcChannels.settingsChooseWordPressCoreSourcePath>
   >;

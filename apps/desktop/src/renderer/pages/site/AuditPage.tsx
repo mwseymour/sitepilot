@@ -15,7 +15,7 @@ function actorLabel(row: AuditRow): string {
   return row.actor.userProfileId;
 }
 
-export function AuditPage(): ReactElement {
+export function AuditPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
   const [entries, setEntries] = useState<AuditRow[]>([]);
   const [err, setErr] = useState<string | null>(null);

@@ -72,6 +72,14 @@ import {
   setUiPreferences,
   setProviderSecret
 } from "./settings-service.js";
+import {
+  decideGutenbergV2Candidate,
+  executeGutenbergV2Candidate,
+  generateGutenbergV2Candidate,
+  getGutenbergV2RequestState,
+  getGutenbergV2ReviewArtifact,
+  listGutenbergV2PendingCandidates
+} from "./gutenberg-v2-chat-service.js";
 
 function parseRequest<TChannel extends IpcChannel>(
   channel: TChannel,
@@ -95,7 +103,9 @@ function contractRequestPayload(entity: Request) {
     requestedBy: entity.requestedBy,
     status: entity.status,
     userPrompt: entity.userPrompt,
-    ...(entity.attachments !== undefined ? { attachments: entity.attachments } : {}),
+    ...(entity.attachments !== undefined
+      ? { attachments: entity.attachments }
+      : {}),
     ...(entity.latestPlanId !== undefined
       ? { latestPlanId: entity.latestPlanId }
       : {}),
@@ -257,16 +267,22 @@ export function registerIpcHandlers(): void {
     return parseResponse(ipcChannels.postChatMessage, result);
   });
 
-  ipcMain.handle(ipcChannels.appendSystemChatMessage, async (_event, payload) => {
-    const request = parseRequest(ipcChannels.appendSystemChatMessage, payload);
-    const result = await appendSystemChatMessage(
-      request.siteId as SiteId,
-      request.threadId as ChatThreadId,
-      request.text,
-      request.requestId as RequestId | undefined
-    );
-    return parseResponse(ipcChannels.appendSystemChatMessage, result);
-  });
+  ipcMain.handle(
+    ipcChannels.appendSystemChatMessage,
+    async (_event, payload) => {
+      const request = parseRequest(
+        ipcChannels.appendSystemChatMessage,
+        payload
+      );
+      const result = await appendSystemChatMessage(
+        request.siteId as SiteId,
+        request.threadId as ChatThreadId,
+        request.text,
+        request.requestId as RequestId | undefined
+      );
+      return parseResponse(ipcChannels.appendSystemChatMessage, result);
+    }
+  );
 
   ipcMain.handle(ipcChannels.createChatRequest, async (_event, payload) => {
     const request = parseRequest(ipcChannels.createChatRequest, payload);
@@ -559,6 +575,97 @@ export function registerIpcHandlers(): void {
     });
   });
 
+  ipcMain.handle(
+    ipcChannels.gutenbergV2GenerateCandidate,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.gutenbergV2GenerateCandidate,
+        payload
+      );
+      const result = await generateGutenbergV2Candidate({
+        siteId: req.siteId as SiteId,
+        requestId: req.requestId as RequestId,
+        target: req.target
+      });
+      return parseResponse(ipcChannels.gutenbergV2GenerateCandidate, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.gutenbergV2DecideCandidate,
+    async (_event, payload) => {
+      const req = parseRequest(ipcChannels.gutenbergV2DecideCandidate, payload);
+      const result = await decideGutenbergV2Candidate({
+        siteId: req.siteId as SiteId,
+        requestId: req.requestId as RequestId,
+        candidateId: req.candidateId,
+        decision: req.decision,
+        ...(req.note === undefined ? {} : { note: req.note })
+      });
+      return parseResponse(ipcChannels.gutenbergV2DecideCandidate, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.gutenbergV2ExecuteCandidate,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.gutenbergV2ExecuteCandidate,
+        payload
+      );
+      const result = await executeGutenbergV2Candidate({
+        siteId: req.siteId as SiteId,
+        requestId: req.requestId as RequestId
+      });
+      return parseResponse(ipcChannels.gutenbergV2ExecuteCandidate, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.gutenbergV2GetRequestState,
+    async (_event, payload) => {
+      const req = parseRequest(ipcChannels.gutenbergV2GetRequestState, payload);
+      const result = await getGutenbergV2RequestState({
+        siteId: req.siteId as SiteId,
+        requestId: req.requestId as RequestId
+      });
+      return parseResponse(ipcChannels.gutenbergV2GetRequestState, result);
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.gutenbergV2ListPendingCandidates,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.gutenbergV2ListPendingCandidates,
+        payload
+      );
+      const result = await listGutenbergV2PendingCandidates({
+        siteId: req.siteId as SiteId
+      });
+      return parseResponse(
+        ipcChannels.gutenbergV2ListPendingCandidates,
+        result
+      );
+    }
+  );
+
+  ipcMain.handle(
+    ipcChannels.gutenbergV2GetReviewArtifact,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.gutenbergV2GetReviewArtifact,
+        payload
+      );
+      const result = await getGutenbergV2ReviewArtifact({
+        siteId: req.siteId as SiteId,
+        requestId: req.requestId as RequestId,
+        artifactId: req.artifactId
+      });
+      return parseResponse(ipcChannels.gutenbergV2GetReviewArtifact, result);
+    }
+  );
+
   ipcMain.handle(ipcChannels.settingsGetState, async (_event, payload) => {
     const req = parseRequest(ipcChannels.settingsGetState, payload);
     const result = await getSettingsState({
@@ -619,10 +726,7 @@ export function registerIpcHandlers(): void {
         siteId: req.siteId as SiteId,
         settings: req.settings
       });
-      return parseResponse(
-        ipcChannels.settingsSetSitePlannerSettings,
-        result
-      );
+      return parseResponse(ipcChannels.settingsSetSitePlannerSettings, result);
     }
   );
 

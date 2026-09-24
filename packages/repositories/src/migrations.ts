@@ -357,5 +357,27 @@ export const sqliteMigrations: SqliteMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_request_visual_analyses_site_request
         ON request_visual_analyses(site_id, request_id)`
     ]
+  },
+  {
+    id: "006_gutenberg_v2_request_executions",
+    description:
+      "Link desktop requests to immutable Gutenberg v2 execution records.",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS gutenberg_v2_request_executions (
+        request_id TEXT PRIMARY KEY,
+        site_id TEXT NOT NULL,
+        execution_id TEXT NOT NULL UNIQUE,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        target_json TEXT NOT NULL,
+        decision TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (request_id) REFERENCES requests(id),
+        FOREIGN KEY (site_id) REFERENCES sites(id)
+      )`,
+      `ALTER TABLE requests ADD COLUMN content_engine TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_gutenberg_v2_request_executions_site
+        ON gutenberg_v2_request_executions(site_id, updated_at)`
+    ]
   }
 ];
