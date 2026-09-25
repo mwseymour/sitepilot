@@ -934,6 +934,11 @@ const gutenbergV2CandidateSummarySchema = z.object({
       excerpt: z.string().optional()
     })
     .strict(),
+  /** Set when the candidate sets the post's featured image. */
+  featuredImage: z
+    .object({ label: z.string().max(2_000) })
+    .strict()
+    .optional(),
   validation: gutenbergV2ValidationReportSchema,
   reviewArtifacts: z.array(gutenbergV2ArtifactReferenceSchema).min(1).max(3)
 });

@@ -43,7 +43,7 @@ Gutenberg's public APIs are documented building blocks. The new work is the adap
 
 ## 3. Implemented additive integration
 
-The in-progress implementation is isolated in these v2 paths and remains disabled by default:
+The implementation is isolated in these v2 paths and is the default content engine (a site can opt out with `SITEPILOT_V2_ENABLED` set to `false`):
 
 | Location                                                                                               | Implemented v2 responsibility                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -276,7 +276,7 @@ Remaining rollout gates include:
 - Redacted captures of the client's current recurring invalid-block regressions and their expected outcomes.
 - Native save/reopen fixtures for every third-party block proposed for authoring; discovery alone does not enable them.
 
-Implementation is authorised behind the disabled-by-default v2 feature flag. Production enablement and hosted deployment require the rollout gates and release evidence above. The Slack application and Copilot commercial/authentication integration remain separate authorised workstreams with their own acceptance gates.
+v2 is now the default content engine; `SITEPILOT_V2_ENABLED=false` turns it off per site. Production enablement and hosted deployment require the rollout gates and release evidence above. The Slack application and Copilot commercial/authentication integration remain separate authorised workstreams with their own acceptance gates.
 
 ## References
 

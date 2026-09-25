@@ -53,7 +53,8 @@ export type {
   BuildLlmGutenbergV2PlanResult,
   GutenbergV2PlanningModelClient,
   GutenbergV2PlanningTarget,
-  GutenbergV2PlanRevision
+  GutenbergV2PlanRevision,
+  GutenbergV2ReferenceImage
 } from "./gutenberg-v2-plan-generator.js";
 
 export {

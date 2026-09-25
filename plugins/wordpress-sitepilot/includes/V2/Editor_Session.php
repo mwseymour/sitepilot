@@ -67,8 +67,16 @@ final class Editor_Session {
 		$scratch = false;
 		if ( $post_id > 0 ) {
 			$post = get_post( $post_id );
-			if ( ! $post instanceof \WP_Post || $post_type !== $post->post_type || ! user_can( $user, 'edit_post', $post_id ) ) {
-				return self::error( 'permission_denied', 'The service identity cannot open the requested editor context.', 403 );
+			// One code for every refusal, but a message that says which one, so
+			// operators can act on it.
+			if ( ! $post instanceof \WP_Post ) {
+				return self::error( 'permission_denied', sprintf( 'There is no %1$s with ID %2$d on this site.', $post_type, $post_id ), 403 );
+			}
+			if ( $post_type !== $post->post_type ) {
+				return self::error( 'permission_denied', sprintf( 'ID %1$d is a %2$s, not a %3$s. Choose the matching content type.', $post_id, $post->post_type, $post_type ), 403 );
+			}
+			if ( ! user_can( $user, 'edit_post', $post_id ) ) {
+				return self::error( 'permission_denied', sprintf( 'The SitePilot WordPress user is not allowed to edit %1$s %2$d.', $post_type, $post_id ), 403 );
 			}
 		} else {
 			$post_type_object = get_post_type_object( $post_type );

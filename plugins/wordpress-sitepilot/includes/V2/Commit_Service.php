@@ -147,6 +147,19 @@ final class Commit_Service {
 				'status'  => (string) $source_post->post_status,
 			);
 		}
+		// The featured image must be one of the approved, bound media items.
+		$featured_media_id = 0;
+		$featured_ref      = $candidate['requestedPostFields']['featuredMediaRef'] ?? null;
+		if ( null !== $featured_ref ) {
+			foreach ( $media_mapping as $mapping ) {
+				if ( is_array( $mapping ) && (string) ( $mapping['ref'] ?? '' ) === (string) $featured_ref ) {
+					$featured_media_id = absint( $mapping['attachmentId'] ?? 0 );
+				}
+			}
+			if ( $featured_media_id < 1 || ! wp_attachment_is_image( $featured_media_id ) ) {
+				return self::error( 'schema_invalid', 'The featured image is not a bound image attachment of this candidate.', 400 );
+			}
+		}
 		$prepared_id = 'pc_' . substr( hash( 'sha256', $site_id . "\n" . $execution_id . "\n" . $idempotency . "\n" . $candidate['candidateId'] ), 0, 40 );
 		$before_ref  = 'before_' . substr( hash( 'sha256', $site_id . "\n" . $execution_id . "\n" . $idempotency ), 0, 40 );
 		$now         = time();
@@ -173,6 +186,7 @@ final class Commit_Service {
 			'finalContentHash'          => $final_hash,
 			'serverPreparedContentHash' => hash( 'sha256', $prepared_content ),
 			'serverPreparedFieldsHash' => self::fields_hash( $prepared_fields['title'], $prepared_fields['excerpt'], $prepared_fields['status'] ),
+			...( $featured_media_id > 0 ? array( 'featuredMediaId' => $featured_media_id ) : array() ),
 			'preparedAt'                => gmdate( 'c', $now ),
 			'expiresAt'                 => gmdate( 'c', min( $now + self::PREPARED_TTL, strtotime( (string) $approval['expiresAt'] ) ) ),
 		);
@@ -323,6 +337,13 @@ final class Commit_Service {
 				}
 			}
 
+			$featured_media_id = absint( $prepared['featuredMediaId'] ?? 0 );
+			if ( $featured_media_id > 0 && (int) get_post_thumbnail_id( $post_id ) !== $featured_media_id ) {
+				if ( ! set_post_thumbnail( $post_id, $featured_media_id ) ) {
+					throw new \RuntimeException( 'conditional_commit_failed' );
+				}
+			}
+
 			$row_after = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID = %d", $post_id ), ARRAY_A );
 			if ( ! is_array( $row_after ) ) {
 				throw new \RuntimeException( 'conditional_commit_failed' );
@@ -333,6 +354,7 @@ final class Commit_Service {
 				'fieldsHash'  => self::fields_hash( (string) $row_after['post_title'], (string) $row_after['post_excerpt'], (string) $row_after['post_status'] ),
 				'status'      => (string) $row_after['post_status'],
 				'revision'    => self::revision_identifier( $post_id, $row_after ),
+				'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
 			);
 			self::update_option_row( $before_key, $before_record );
 			$receipt = array(
@@ -417,6 +439,7 @@ final class Commit_Service {
 				'status'  => (string) $post->post_status,
 			),
 			'fieldsHash'    => self::fields_hash( (string) $post->post_title, (string) $post->post_excerpt, (string) $post->post_status ),
+			'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
 		);
 	}
 
@@ -465,6 +488,7 @@ final class Commit_Service {
 				|| ! hash_equals( (string) ( $written['status'] ?? '' ), (string) $row['post_status'] )
 				|| ! hash_equals( $expected_revision, $current_revision )
 				|| ! hash_equals( (string) ( $written['revision'] ?? '' ), $current_revision )
+				|| ( array_key_exists( 'featuredMediaId', $written ) && (int) $written['featuredMediaId'] !== (int) get_post_thumbnail_id( $post_id ) )
 			) {
 				$wpdb->query( 'ROLLBACK' );
 				return array( 'schemaVersion' => 'sitepilot.recover-response/v2', 'outcome' => 'conflict', 'evidenceRef' => $before_ref );
@@ -492,6 +516,17 @@ final class Commit_Service {
 			);
 			if ( is_wp_error( $result ) || (int) $result !== $post_id ) {
 				throw new \RuntimeException( 'rollback_failed' );
+			}
+			if ( is_array( $before ) && array_key_exists( '_thumbnail_id', $before ) ) {
+				$previous_thumbnail = absint( $before['_thumbnail_id'] );
+				if ( $previous_thumbnail > 0 ) {
+					set_post_thumbnail( $post_id, $previous_thumbnail );
+				} else {
+					delete_post_thumbnail( $post_id );
+				}
+				if ( (int) get_post_thumbnail_id( $post_id ) !== $previous_thumbnail ) {
+					throw new \RuntimeException( 'rollback_failed' );
+				}
 			}
 			$restored_row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID = %d FOR UPDATE", $post_id ), ARRAY_A );
 			if ( ! is_array( $restored_row ) || ! self::row_matches_before( $restored_row, $before ) ) {
@@ -786,13 +821,14 @@ final class Commit_Service {
 		return (int) $result;
 	}
 
-	/** @param array<string, mixed> $row @return array<string, string> */
+	/** @param array<string, mixed> $row @return array<string, int|string> */
 	private static function before_state( array $row ): array {
 		return array(
-			'post_content' => (string) $row['post_content'],
-			'post_title'   => (string) $row['post_title'],
-			'post_excerpt' => (string) $row['post_excerpt'],
-			'post_status'  => (string) $row['post_status'],
+			'post_content'  => (string) $row['post_content'],
+			'post_title'    => (string) $row['post_title'],
+			'post_excerpt'  => (string) $row['post_excerpt'],
+			'post_status'   => (string) $row['post_status'],
+			'_thumbnail_id' => isset( $row['ID'] ) ? (int) get_post_thumbnail_id( (int) $row['ID'] ) : 0,
 		);
 	}
 

@@ -655,15 +655,24 @@ export const gutenbergV2ExistingTargetSchema = z
   })
   .strict();
 
+// The featured image (post thumbnail) is set from one of the plan's own
+// media items, so it is approved, uploaded and verified like block media.
+const featuredMediaRefSchema = identifierSchema;
+
 const postFieldChangesSchema = z
   .object({
     title: z.string().trim().min(1).max(1_000).optional(),
-    excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional()
+    excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
+    featuredMediaRef: featuredMediaRefSchema.optional()
   })
   .strict()
-  .refine((value) => value.title !== undefined || value.excerpt !== undefined, {
-    message: "At least one post field change is required."
-  });
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.excerpt !== undefined ||
+      value.featuredMediaRef !== undefined,
+    { message: "At least one post field change is required." }
+  );
 
 const nodeTargetSchema = z
   .object({
@@ -732,6 +741,7 @@ const createDraftPlanSchema = z
       .object({
         title: z.string().trim().min(1).max(1_000),
         excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
+        featuredMediaRef: featuredMediaRefSchema.optional(),
         status: z.literal("draft")
       })
       .strict(),
@@ -761,9 +771,10 @@ const applyOperationsPlanSchema = z
     operation: z.literal("apply_operations"),
     target: gutenbergV2ExistingTargetSchema,
     postFields: postFieldChangesSchema.optional(),
+    // Empty only for a fields-only change (e.g. setting the featured image);
+    // validatePlanStructure enforces that postFields are present then.
     operations: z
       .array(gutenbergV2ScopedOperationSchema)
-      .min(1)
       .max(GUTENBERG_V2_LIMITS.maxOperations)
   })
   .strict();
@@ -805,6 +816,26 @@ function validatePlanStructure(
       code: z.ZodIssueCode.custom,
       path: ["media"],
       message: "Media refs must be unique."
+    });
+  }
+  const featuredMediaRef = plan.postFields?.featuredMediaRef;
+  if (featuredMediaRef !== undefined && !mediaRefs.has(featuredMediaRef)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["postFields", "featuredMediaRef"],
+      message: `Unknown media ref: ${featuredMediaRef}`
+    });
+  }
+  if (
+    plan.operation === "apply_operations" &&
+    plan.operations.length === 0 &&
+    plan.postFields === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["operations"],
+      message:
+        "A scoped update needs at least one operation or post field change."
     });
   }
 
@@ -1240,6 +1271,7 @@ const requestedPostFieldsSchema = z
   .object({
     title: z.string().max(1_000).optional(),
     excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
+    featuredMediaRef: featuredMediaRefSchema.optional(),
     status: z.literal("draft").optional()
   })
   .strict();
@@ -1555,6 +1587,8 @@ export const gutenbergV2PreparedCommitSchema = z
     finalContentHash: sha256Schema,
     serverPreparedContentHash: sha256Schema,
     serverPreparedFieldsHash: sha256Schema,
+    /** Attachment the commit sets as the post thumbnail, when requested. */
+    featuredMediaId: positiveIntegerSchema.optional(),
     preparedAt: isoTimestampSchema,
     expiresAt: isoTimestampSchema
   })
@@ -1825,7 +1859,9 @@ export const gutenbergV2ReadbackSchema = z
         status: z.string().trim().min(1).max(100)
       })
       .strict(),
-    fieldsHash: sha256Schema
+    fieldsHash: sha256Schema,
+    /** Current post thumbnail attachment ID; 0 when there is none. */
+    featuredMediaId: nonNegativeIntegerSchema.optional()
   })
   .strict();
 

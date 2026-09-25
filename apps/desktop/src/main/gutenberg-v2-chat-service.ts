@@ -30,9 +30,21 @@ import { z } from "zod";
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import { DEFAULT_OPERATOR } from "./chat-service.js";
+import {
+  candidateReadyReport,
+  decisionReport,
+  executionReport,
+  failureReport,
+  friendlyCandidateReady,
+  friendlyDecision,
+  friendlyExecution,
+  friendlyFailureFallback,
+  parsePlainLanguage,
+  plainLanguagePrompt,
+  requestNotices
+} from "./gutenberg-v2-report.js";
 import { createGutenbergV2DesktopRuntime } from "./gutenberg-v2-runtime-service.js";
 import { loadPlannerPreferences } from "./planner-preferences-service.js";
-import { loadSitePlannerSettings } from "./settings-service.js";
 import { fetchSiteUrl } from "./site-fetch.js";
 
 const targetSchema = z.discriminatedUnion("operation", [
@@ -148,6 +160,32 @@ function errorResult(error: unknown): {
   };
 }
 
+function reportableError(error: unknown): {
+  message: string;
+  code?: string;
+  retryable?: boolean;
+  issues?: readonly (GutenbergV2ServiceError["issues"][number] | string)[];
+} {
+  if (error instanceof GutenbergV2ServiceError) {
+    return {
+      message: error.message,
+      code: error.code,
+      retryable: error.retryable,
+      issues: error.issues
+    };
+  }
+  if (error instanceof GutenbergV2PlanGenerationError) {
+    return {
+      message: error.message,
+      code: "planner_model_failed",
+      issues: error.issues
+    };
+  }
+  return {
+    message: error instanceof Error ? error.message : "Unknown failure."
+  };
+}
+
 async function choosePlanner(siteId: SiteId): ReturnType<PlannerFactory> {
   if (plannerFactoryForTests) return plannerFactoryForTests({ siteId });
   const db = getDatabase();
@@ -209,14 +247,8 @@ async function assertV2Enabled(
       message: "Site must be active before Gutenberg v2 can be used."
     };
   }
-  const settings = await loadSitePlannerSettings(getSecureStorage(), siteId);
-  if (!settings.gutenbergV2Enabled) {
-    return {
-      ok: false,
-      code: "gutenberg_v2_not_enabled",
-      message: "Gutenberg v2 is not enabled for this site."
-    };
-  }
+  // v2 is the default content engine. The per-site desktop setting is
+  // retired; the destination plugin's protocol flag is the only gate.
   if (protocolProbeForTests) {
     return (await protocolProbeForTests(site.baseUrl))
       ? { ok: true }
@@ -425,6 +457,18 @@ function toState(mapping: Mapping, job: GutenbergV2JobRecord) {
                 ([field]) => field === "title" || field === "excerpt"
               )
             ),
+            ...(candidate.requestedPostFields.featuredMediaRef === undefined
+              ? {}
+              : {
+                  featuredImage: {
+                    label:
+                      candidate.intent.media.find(
+                        (item) =>
+                          item.ref ===
+                          candidate.requestedPostFields.featuredMediaRef
+                      )?.alt ?? candidate.requestedPostFields.featuredMediaRef
+                  }
+                }),
             validation: candidate.validation,
             reviewArtifacts: artifactReferences(candidate)
           }
@@ -435,6 +479,22 @@ function toState(mapping: Mapping, job: GutenbergV2JobRecord) {
     createdAt: mapping.createdAt,
     updatedAt: mapping.updatedAt
   };
+}
+
+function mediaAttachments(
+  attachments: ImageAttachmentPayload[] | undefined
+): ImageAttachmentPayload[] {
+  return (attachments ?? []).filter(
+    (attachment) => attachment.purpose !== "reference"
+  );
+}
+
+function referenceAttachments(
+  attachments: ImageAttachmentPayload[] | undefined
+): ImageAttachmentPayload[] {
+  return (attachments ?? []).filter(
+    (attachment) => attachment.purpose === "reference"
+  );
 }
 
 function decodeAttachments(attachments: ImageAttachmentPayload[] | undefined) {
@@ -449,11 +509,14 @@ function decodeAttachments(attachments: ImageAttachmentPayload[] | undefined) {
         "schema_invalid",
         `Attachment ${index + 1} is not a supported raster data URL.`
       );
+    // The decoded bytes are authoritative: they are checksummed when staged
+    // and size-limited by the media policy. `sizeBytes` is display metadata
+    // and may be an estimate for re-encoded uploads.
     const bytes = Buffer.from(match[2]!, "base64");
-    if (bytes.byteLength === 0 || bytes.byteLength !== attachment.sizeBytes) {
+    if (bytes.byteLength === 0) {
       throw new GutenbergV2ServiceError(
         "schema_invalid",
-        `Attachment ${index + 1} size does not match its bytes.`
+        `Attachment ${index + 1} is empty.`
       );
     }
     return {
@@ -505,10 +568,34 @@ async function saveRequestStatus(
   }
 }
 
+/**
+ * Explain a technical failure report in plain language with the site's
+ * planning model. Only failures pay for this call; the deterministic
+ * fallback keeps a readable message if the model is unavailable.
+ */
+async function explainForOperator(
+  siteId: SiteId,
+  technical: string,
+  fallback: string
+): Promise<string> {
+  try {
+    const planner = await choosePlanner(siteId);
+    if (!planner.ok) return fallback;
+    const result = await planner.client.complete(
+      [{ role: "user", content: plainLanguagePrompt(technical) }],
+      planner.model
+    );
+    return parsePlainLanguage(result.text) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function appendV2LifecycleMessage(
   siteId: SiteId,
   requestId: RequestId,
-  text: string
+  text: string,
+  technicalDetails?: string
 ): Promise<void> {
   const request = await getDatabase().repositories.requests.getById(requestId);
   if (!request || request.siteId !== siteId) return;
@@ -519,7 +606,13 @@ async function appendV2LifecycleMessage(
     siteId,
     requestId,
     author: { kind: "assistant" },
-    body: { format: "plain_text", value: text },
+    body: {
+      format: "plain_text",
+      value: text,
+      ...(technicalDetails === undefined || technicalDetails === text
+        ? {}
+        : { technicalDetails: technicalDetails.slice(0, 20_000) })
+    },
     createdAt: timestamp,
     updatedAt: timestamp
   });
@@ -644,6 +737,22 @@ async function withdrawGutenbergV2Approval(input: {
       decision: "approval_withdrawn",
       note: input.note.trim().slice(0, 4_000)
     });
+    await appendV2LifecycleMessage(
+      input.siteId,
+      input.requestId,
+      friendlyDecision({
+        decision: "withdrawn",
+        target: mapping.target,
+        note: input.note
+      }),
+      decisionReport({
+        decision: "withdrawn",
+        target: mapping.target,
+        candidateId: input.candidateId,
+        approverId: DEFAULT_OPERATOR.userProfileId,
+        note: input.note
+      })
+    );
     return { ok: true };
   } catch (error) {
     return errorResult(error);
@@ -822,13 +931,28 @@ export async function generateGutenbergV2Candidate(input: {
   try {
     const planner = await choosePlanner(input.siteId);
     if (!planner.ok) return planner;
-    const attachments = decodeAttachments(request.attachments);
+    // Media attachments are staged and placed; reference attachments (PDF
+    // pages, mock-ups) are only shown to the planner.
+    const attachments = decodeAttachments(
+      mediaAttachments(request.attachments)
+    );
+    const referenceImages = referenceAttachments(request.attachments).map(
+      (attachment) => ({
+        label: attachment.fileName,
+        mediaType: attachment.mediaType,
+        dataUrl: attachment.dataUrl
+      })
+    );
     const media = [];
+    const stagedChecksums = new Set<string>();
     for (const attachment of attachments) {
       const staged = await runtime.runtime.stagedAssets.stage({
         bytes: attachment.bytes,
         mediaType: attachment.mediaType
       });
+      // The same image attached twice (e.g. across retries) is one media item.
+      if (stagedChecksums.has(staged.checksum)) continue;
+      stagedChecksums.add(staged.checksum);
       media.push({
         ref: attachment.ref,
         source: {
@@ -902,6 +1026,7 @@ export async function generateGutenbergV2Candidate(input: {
       target,
       capabilities,
       ...(media.length > 0 ? { media } : {}),
+      ...(referenceImages.length > 0 ? { referenceImages } : {}),
       ...(revision === undefined ? {} : { revision }),
       client: planner.client,
       model: planner.model
@@ -915,10 +1040,24 @@ export async function generateGutenbergV2Candidate(input: {
     if (!job)
       throw new Error("The v2 execution journal did not retain the candidate.");
     await saveRequestStatus(input.requestId, input.siteId, "awaiting_approval");
+    const notices = requestNotices({
+      prompt: request.userPrompt,
+      attachmentCount: mediaAttachments(request.attachments).length,
+      referenceCount: referenceAttachments(request.attachments).length
+    });
     await appendV2LifecycleMessage(
       input.siteId,
       input.requestId,
-      "Gutenberg v2 candidate is ready for review."
+      friendlyCandidateReady({ target: input.target, candidate, notices }),
+      candidateReadyReport({
+        target: input.target,
+        candidate,
+        executionId: mapping.executionId,
+        notices,
+        ...(input.revisionNote === undefined
+          ? {}
+          : { revisionNote: input.revisionNote })
+      })
     );
     await appendV2Audit(input.siteId, input.requestId, "approval_requested", {
       engine: "gutenberg_v2",
@@ -934,15 +1073,42 @@ export async function generateGutenbergV2Candidate(input: {
     if (uncertain && ["committing", "verifying"].includes(uncertain.state)) {
       return { ok: true as const, state: toState(mapping, uncertain) };
     }
+    const reported = reportableError(error);
     await appendV2Audit(input.siteId, input.requestId, "execution_failed", {
       engine: "gutenberg_v2",
       executionId: mapping.executionId,
       phase: "generation",
-      code:
-        error instanceof GutenbergV2ServiceError
-          ? error.code
-          : "planner_model_failed"
+      code: reported.code ?? "generation_failed",
+      message: reported.message,
+      issues: reported.issues ?? []
     }).catch(() => undefined);
+    const failureNotices = requestNotices({
+      prompt: request.userPrompt,
+      attachmentCount: mediaAttachments(request.attachments).length,
+      referenceCount: referenceAttachments(request.attachments).length,
+      failed: true
+    });
+    const technical = failureReport({
+      stage: "generation",
+      target: input.target,
+      executionId: mapping.executionId,
+      error: reported,
+      notices: failureNotices
+    });
+    await appendV2LifecycleMessage(
+      input.siteId,
+      input.requestId,
+      await explainForOperator(
+        input.siteId,
+        technical,
+        friendlyFailureFallback({
+          stage: "generation",
+          target: input.target,
+          notices: failureNotices
+        })
+      ),
+      technical
+    ).catch(() => undefined);
     return errorResult(error);
   } finally {
     await runtime.runtime.close();
@@ -1009,15 +1175,21 @@ export async function decideGutenbergV2Candidate(input: {
     await appendV2LifecycleMessage(
       input.siteId,
       input.requestId,
-      input.decision === "approved"
-        ? "Gutenberg v2 candidate approved."
-        : input.decision === "revision_requested"
-          ? `Gutenberg v2 revision requested.${
-              input.note === undefined || input.note.trim().length === 0
-                ? ""
-                : ` Feedback: ${input.note.trim().slice(0, 4_000)}`
-            }`
-          : "Gutenberg v2 candidate rejected."
+      friendlyDecision({
+        decision: input.decision,
+        target: mapping.target,
+        ...(input.note === undefined ? {} : { note: input.note })
+      }),
+      decisionReport({
+        decision: input.decision,
+        target: mapping.target,
+        candidateId: input.candidateId,
+        approverId: DEFAULT_OPERATOR.userProfileId,
+        ...(input.note === undefined ? {} : { note: input.note }),
+        ...(next.approval?.expiresAt === undefined
+          ? {}
+          : { expiresAt: next.approval.expiresAt })
+      })
     );
     await appendV2Audit(input.siteId, input.requestId, "approval_decided", {
       engine: "gutenberg_v2",
@@ -1070,10 +1242,28 @@ export async function executeGutenbergV2Candidate(input: {
           ? "partially_completed"
           : "failed"
     );
+    const executionTechnical = executionReport({
+      target: mapping.target,
+      result,
+      job: await runtime.runtime.journal
+        .get(mapping.executionId)
+        .catch(() => null)
+    });
+    const executionFriendly = friendlyExecution({
+      target: mapping.target,
+      result
+    });
     await appendV2LifecycleMessage(
       input.siteId,
       input.requestId,
-      `Gutenberg v2 execution ${result.state}.`
+      result.state === "succeeded"
+        ? executionFriendly
+        : await explainForOperator(
+            input.siteId,
+            executionTechnical,
+            executionFriendly
+          ),
+      executionTechnical
     );
     await appendV2Audit(
       input.siteId,
@@ -1097,18 +1287,63 @@ export async function executeGutenbergV2Candidate(input: {
     if (uncertain && ["committing", "verifying"].includes(uncertain.state)) {
       return { ok: true as const, state: toState(mapping, uncertain) };
     }
+    const reported = reportableError(error);
     await appendV2Audit(input.siteId, input.requestId, "execution_failed", {
       engine: "gutenberg_v2",
       executionId: mapping.executionId,
-      code:
-        error instanceof GutenbergV2ServiceError
-          ? error.code
-          : "execution_failed"
+      code: reported.code ?? "execution_failed",
+      message: reported.message,
+      issues: reported.issues ?? []
     }).catch(() => undefined);
+    const executionFailure = failureReport({
+      stage: "execution",
+      target: mapping.target,
+      executionId: mapping.executionId,
+      error: reported
+    });
+    await appendV2LifecycleMessage(
+      input.siteId,
+      input.requestId,
+      await explainForOperator(
+        input.siteId,
+        executionFailure,
+        friendlyFailureFallback({ stage: "execution", target: mapping.target })
+      ),
+      executionFailure
+    ).catch(() => undefined);
     return errorResult(error);
   } finally {
     await runtime.runtime.close();
   }
+}
+
+/**
+ * The post most recently written by a v2 request in this thread, as an
+ * update target. Follow-ups in a thread that already produced a post update
+ * that post instead of drafting a new one.
+ */
+export async function findGutenbergV2WrittenPostTarget(input: {
+  siteId: SiteId;
+  requestIds: readonly RequestId[];
+}): Promise<GutenbergV2Target | null> {
+  for (const requestId of input.requestIds) {
+    const mapping = readMapping(input.siteId, requestId);
+    if (!mapping) continue;
+    const current = await getGutenbergV2RequestState({
+      siteId: input.siteId,
+      requestId
+    });
+    if (!current.ok || !current.state) continue;
+    const postId = current.state.result?.postId;
+    if (current.state.state === "succeeded" && postId !== undefined) {
+      return {
+        operation: "apply_operations",
+        postType: mapping.target.postType,
+        postId
+      };
+    }
+  }
+  return null;
 }
 
 // Read-only inspection remains available after either feature gate is disabled

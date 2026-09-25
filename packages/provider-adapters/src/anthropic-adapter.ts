@@ -103,7 +103,7 @@ export function createAnthropicChatClient(
         },
         body: JSON.stringify({
           model,
-          max_tokens: 4096,
+          max_tokens: 16_384,
           system: system.length > 0 ? system : undefined,
           messages: [{ role: "user", content: user }]
         })

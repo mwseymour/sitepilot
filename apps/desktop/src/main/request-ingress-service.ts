@@ -17,6 +17,7 @@ import {
 import { getDatabase } from "./app-database.js";
 import {
   continueGutenbergV2AfterFollowUp,
+  findGutenbergV2WrittenPostTarget,
   hasGutenbergV2RequestMapping,
   type GutenbergV2Target
 } from "./gutenberg-v2-chat-service.js";
@@ -355,13 +356,29 @@ export async function ingestRequestThreadMessage(input: {
     };
   }
 
+  // A thread that already wrote a post with v2 updates that post; the
+  // composer's default "create draft" target would otherwise start a new one.
+  let gutenbergV2Target = input.gutenbergV2Target;
+  if (gutenbergV2Target?.operation === "create_draft") {
+    const newestFirst = [...requests]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((request) => request.id);
+    const written = await findGutenbergV2WrittenPostTarget({
+      siteId: input.siteId,
+      requestIds: newestFirst
+    });
+    if (written !== null) {
+      gutenbergV2Target = written;
+    }
+  }
+
   const created = fromCreateResult(
     await createTypedRequestForThread(
       input.siteId,
       input.threadId,
       trimmed,
       attachments,
-      input.gutenbergV2Target !== undefined ? "gutenberg_v2" : undefined
+      gutenbergV2Target !== undefined ? "gutenberg_v2" : undefined
     ),
     "created"
   );
@@ -375,9 +392,7 @@ export async function ingestRequestThreadMessage(input: {
       threadId: input.threadId,
       request: created.request,
       note: trimmed,
-      ...(input.gutenbergV2Target !== undefined
-        ? { gutenbergV2Target: input.gutenbergV2Target }
-        : {}),
+      ...(gutenbergV2Target !== undefined ? { gutenbergV2Target } : {}),
       ...(input.alwaysContinue !== undefined
         ? { alwaysContinue: input.alwaysContinue }
         : {})

@@ -4,11 +4,13 @@ import type { SiteConfig } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import { SiteConfigForm } from "./SiteConfigForm.js";
+import { useAppBusy } from "../../button-loading.js";
 
 export function ConfigPage(): ReactElement | null {
   const { siteId, data, loading, reload } = useSiteWorkspace();
   const [draft, setDraft] = useState<SiteConfig | null>(null);
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

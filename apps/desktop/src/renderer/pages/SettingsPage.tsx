@@ -5,10 +5,12 @@ import type {
   PlannerPreferencesPayload,
   UiPreferences
 } from "@sitepilot/contracts";
+import { useAppBusy } from "../button-loading.js";
 
 export function SettingsPage(): ReactElement {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
   const [compat, setCompat] = useState<string | null>(null);
   const [providers, setProviders] = useState<
     { provider: string; label: string; isDefault: boolean }[]

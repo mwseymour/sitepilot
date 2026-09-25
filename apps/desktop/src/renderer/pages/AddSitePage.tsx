@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactElement } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAppBusy } from "../button-loading.js";
 
 type SiteEnvironment = "production" | "staging" | "development";
 
@@ -12,6 +13,7 @@ export function AddSitePage(): ReactElement {
   const [environment, setEnvironment] =
     useState<SiteEnvironment>("development");
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {

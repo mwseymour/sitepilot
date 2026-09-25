@@ -18,6 +18,9 @@ import {
   GutenbergV2CandidatePanel,
   type ReviewArtifact
 } from "./GutenbergV2CandidatePanel.js";
+import { useAppBusy } from "../../button-loading.js";
+
+const SHOW_V1_APPROVALS = false;
 
 type ApprovalRow = ApprovalSummary;
 type GutenbergV2PendingResponse = IpcResponse<
@@ -38,6 +41,7 @@ export function ApprovalsPage(): ReactElement | null {
   const [message, setMessage] = useState<string | null>(null);
   const [lastThreadId, setLastThreadId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
 
   const load = useCallback(async () => {
     const [res, v2Res] = await Promise.all([
@@ -198,6 +202,10 @@ export function ApprovalsPage(): ReactElement | null {
     );
   }
 
+  // v1 plan approvals remain in the codebase but are no longer shown; the
+  // native editor candidates are the only approval flow in the UI.
+  const visibleApprovals = SHOW_V1_APPROVALS ? approvals : [];
+
   return (
     <article className="panel-card">
       <h1>Approvals</h1>
@@ -224,7 +232,7 @@ export function ApprovalsPage(): ReactElement | null {
           Refresh
         </button>
       </div>
-      {approvals.length === 0 && v2Candidates.length === 0 ? (
+      {visibleApprovals.length === 0 && v2Candidates.length === 0 ? (
         <p className="muted">No pending approvals for this site.</p>
       ) : (
         <>
@@ -254,9 +262,9 @@ export function ApprovalsPage(): ReactElement | null {
               </ul>
             </section>
           ) : null}
-          {approvals.length > 0 ? (
+          {visibleApprovals.length > 0 ? (
             <ul className="approval-list">
-              {approvals.map((a) => (
+              {visibleApprovals.map((a) => (
                 <li key={a.id} className="approval-card">
                   <header>
                     <span className="approval-id">

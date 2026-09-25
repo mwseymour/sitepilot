@@ -38,6 +38,8 @@ import {
   type GutenbergV2UiState,
   type ReviewArtifact
 } from "./GutenbergV2CandidatePanel.js";
+import { pdfToReferencePages } from "../../pdf-pages.js";
+import { useAppBusy } from "../../button-loading.js";
 
 type ThreadRow = ChatThreadPayload;
 type MessageRow = ChatMessagePayload;
@@ -62,11 +64,15 @@ type DryRunPreview = {
 const SHOW_DRY_RUN_UI = true;
 const MAX_IMAGE_ATTACHMENTS = 8;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 1280;
 const IMAGE_JPEG_QUALITY = 0.82;
 
 type ChatMode = "request" | "conversation";
 type RequestWorkflow = "legacy" | "gutenberg_v2";
+
+// The v1 planner remains in the codebase but is no longer offered in the UI.
+const SHOW_V1_WORKFLOW = false;
 type GutenbergV2Operation =
   | "create_draft"
   | "replace_content"
@@ -97,8 +103,9 @@ const THREAD_TYPE_META: Record<string, ThreadTypeMeta> = {
       "Research and read-only chat. Use it for site lookups or external source intake before creating a Request."
   },
   general_request: {
-    label: "Standard request",
-    description: "Default planning and execution workflow for site changes."
+    label: "Content request",
+    description:
+      "Built in this site’s WordPress editor, reviewed, then applied after approval."
   },
   content_creation: {
     label: "Content creation",
@@ -262,7 +269,20 @@ function clarificationLines(message: MessageRow): {
 function renderMessageBody(message: MessageRow): ReactElement {
   const clarification = clarificationLines(message);
   if (!clarification) {
-    return <p className="chat-msg-body">{message.body.value}</p>;
+    const technicalDetails = message.body.technicalDetails;
+    if (technicalDetails === undefined) {
+      return <p className="chat-msg-body">{message.body.value}</p>;
+    }
+    // Plain language first; the raw diagnostic report stays one click away.
+    return (
+      <div className="chat-msg-body">
+        <p className="chat-msg-body-lead">{message.body.value}</p>
+        <details className="chat-msg-technical">
+          <summary>Show technical details</summary>
+          <pre>{technicalDetails}</pre>
+        </details>
+      </div>
+    );
   }
 
   return (
@@ -354,7 +374,8 @@ async function fileToImageAttachment(
   const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
 
   const base64 = dataUrl.split(",")[1] ?? "";
-  const sizeBytes = Math.ceil((base64.length * 3) / 4);
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  const sizeBytes = (base64.length * 3) / 4 - padding;
 
   return new Promise((resolve) => {
     resolve({
@@ -668,7 +689,7 @@ export function ChatPage({
   const [sitePlannerSettings, setSitePlannerSettings] =
     useState<SitePlannerSettings | null>(null);
   const [requestWorkflow, setRequestWorkflow] =
-    useState<RequestWorkflow>("legacy");
+    useState<RequestWorkflow>("gutenberg_v2");
   const [gutenbergV2Operation, setGutenbergV2Operation] =
     useState<GutenbergV2Operation>("create_draft");
   const [gutenbergV2PostType, setGutenbergV2PostType] = useState<
@@ -679,6 +700,7 @@ export function ChatPage({
     useState<GutenbergV2UiState | null>(null);
   const workflowInitializedRef = useRef(false);
   const [execBusy, setExecBusy] = useState(false);
+  useAppBusy(busy || execBusy);
   const [lastExecHint, setLastExecHint] = useState<string | null>(null);
   const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
     null
@@ -769,9 +791,8 @@ export function ChatPage({
       return;
     }
     workflowInitializedRef.current = true;
-    if (sitePlannerSettings.gutenbergV2Enabled) {
-      setRequestWorkflow("gutenberg_v2");
-    }
+    // v2 is the only workflow offered in the UI; v1 stays reachable in code.
+    setRequestWorkflow(SHOW_V1_WORKFLOW ? requestWorkflow : "gutenberg_v2");
   }, [sitePlannerSettings]);
 
   useEffect(() => {
@@ -839,11 +860,16 @@ export function ChatPage({
       requestId: lastRequestId
     });
     if (!res.ok) {
-      setErr(res.message);
       setBundle(null);
+      // Switching threads briefly pairs the new thread with the previous
+      // thread's request; the message load that follows selects the right one.
+      if (res.code !== "thread_mismatch") {
+        setErr(res.message);
+      }
       return;
     }
-    setErr(null);
+    // Do not clear `err` here: this reload runs straight after a failed
+    // action and would otherwise hide that action's error.
     setBundle(res);
   }, [isConversationMode, siteId, selectedThreadId, lastRequestId]);
 
@@ -1018,6 +1044,10 @@ export function ChatPage({
       return;
     }
     await loadThreads();
+    setLastRequestId(null);
+    setBundle(null);
+    setGutenbergV2State(null);
+    setMessages([]);
     setSelectedThreadId(res.thread.id);
     startThreadRename(res.thread);
   }
@@ -1146,6 +1176,11 @@ export function ChatPage({
     setBusy(false);
     if (res.request) {
       setLastRequestId(res.request.id);
+      // The message is saved on the request even when the follow-on
+      // generation fails; leaving it in the box would resend it as a
+      // duplicate follow-up.
+      setRequestPrompt("");
+      setPendingAttachments([]);
     }
     if (!res.ok) {
       setErr(res.message);
@@ -1197,37 +1232,56 @@ export function ChatPage({
     }
 
     const files = [...fileList];
-    if (pendingAttachments.length + files.length > MAX_IMAGE_ATTACHMENTS) {
-      setErr(
-        `You can attach up to ${MAX_IMAGE_ATTACHMENTS} images per message.`
-      );
-      return;
-    }
-
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
-        setErr(`${file.name} is not an image.`);
+      const isPdf = file.type === "application/pdf";
+      if (!isPdf && !file.type.startsWith("image/")) {
+        setErr(`${file.name} is not an image or PDF.`);
         return;
       }
-      if (file.size > MAX_IMAGE_BYTES) {
-        setErr(`${file.name} is larger than 8 MB.`);
+      if (file.size > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
+        setErr(`${file.name} is larger than ${isPdf ? "20" : "8"} MB.`);
         return;
       }
     }
 
     try {
-      const attachments = await Promise.all(
-        files.map((file) =>
-          fileToImageAttachment(
-            file,
-            uiPreferences?.preserveOriginalImageUploads ?? false
-          )
-        )
-      );
+      const notes: string[] = [];
+      const attachments: ImageAttachmentPayload[] = [];
+      for (const file of files) {
+        if (file.type === "application/pdf") {
+          // PDFs are layout/content references: each page becomes an image
+          // the planner reads; nothing from them is uploaded to the site.
+          const { pages, totalPages } = await pdfToReferencePages(file);
+          attachments.push(...pages);
+          if (totalPages > pages.length) {
+            notes.push(
+              `${file.name}: only the first ${pages.length} of ${totalPages} pages are used.`
+            );
+          }
+        } else {
+          attachments.push(
+            await fileToImageAttachment(
+              file,
+              uiPreferences?.preserveOriginalImageUploads ?? false
+            )
+          );
+        }
+      }
+      if (
+        pendingAttachments.length + attachments.length >
+        MAX_IMAGE_ATTACHMENTS
+      ) {
+        setErr(
+          `You can attach up to ${MAX_IMAGE_ATTACHMENTS} images or PDF pages per message.`
+        );
+        return;
+      }
       setPendingAttachments((current) => [...current, ...attachments]);
-      setErr(null);
+      setErr(notes.length > 0 ? notes.join(" ") : null);
     } catch (error) {
-      setErr(error instanceof Error ? error.message : "Failed to read image.");
+      setErr(
+        error instanceof Error ? error.message : "Failed to read the file."
+      );
     }
   }
 
@@ -1256,7 +1310,10 @@ export function ChatPage({
   async function onDecidePlanApproval(
     decision: "approved" | "rejected"
   ): Promise<void> {
-    if (bundle?.pendingApproval === null || bundle?.pendingApproval === undefined) {
+    if (
+      bundle?.pendingApproval === null ||
+      bundle?.pendingApproval === undefined
+    ) {
       return;
     }
     setBusy(true);
@@ -1487,6 +1544,9 @@ export function ChatPage({
         ...(note !== undefined ? { note } : {})
       });
       setBusy(false);
+      if (selectedThreadId) {
+        await loadMessages(selectedThreadId);
+      }
       if (!res.ok) {
         setErr(res.message);
         return;
@@ -1499,9 +1559,6 @@ export function ChatPage({
             ? "Revision requested for this candidate."
             : "Candidate rejected."
       );
-      if (selectedThreadId) {
-        await loadMessages(selectedThreadId);
-      }
     },
     [lastRequestId, loadMessages, selectedThreadId, siteId]
   );
@@ -1517,6 +1574,10 @@ export function ChatPage({
       requestId: lastRequestId
     });
     setBusy(false);
+    // The execution report is posted to the thread on success and failure.
+    if (selectedThreadId) {
+      await loadMessages(selectedThreadId);
+    }
     if (!res.ok) {
       setErr(res.message);
       return;
@@ -1528,7 +1589,7 @@ export function ChatPage({
         : "Execution status refreshed."
     );
     await loadBundle();
-  }, [lastRequestId, loadBundle, siteId]);
+  }, [lastRequestId, loadBundle, loadMessages, selectedThreadId, siteId]);
 
   useEffect(() => {
     setDryRunPreview(null);
@@ -1550,7 +1611,9 @@ export function ChatPage({
     return null;
   }
 
-  const composerState = useMemo(() => {
+  // Plain values, not hooks: this code runs after the component's early
+  // `loading`/`!data` returns, where hooks would change the hook count.
+  const composerState = (() => {
     if (isConversationMode) {
       return {
         title: "Conversation",
@@ -1566,7 +1629,9 @@ export function ChatPage({
       return {
         title: "New request",
         helper:
-          "Start with what you want changed on the site. SitePilot will ask follow-up questions if it needs more detail.",
+          requestWorkflow === "gutenberg_v2"
+            ? "Describe the change. SitePilot builds it in this site’s WordPress editor and shows you a preview before anything is saved."
+            : "Start with what you want changed on the site. SitePilot will ask follow-up questions if it needs more detail.",
         placeholder: "Ask SitePilot to create, edit, or analyse something…",
         actionLabel: "Send"
       };
@@ -1586,7 +1651,9 @@ export function ChatPage({
         return {
           title: "Refine request",
           helper:
-            "Add detail only if the request is incomplete. When it is ready, generate a plan.",
+            requestWorkflow === "gutenberg_v2"
+              ? "Reply to change this request. SitePilot rebuilds the candidate for you to review."
+              : "Add detail only if the request is incomplete. When it is ready, generate a plan.",
           placeholder: "Add more detail to the current request…",
           actionLabel: "Update request"
         };
@@ -1602,7 +1669,9 @@ export function ChatPage({
         return {
           title: "Change this request",
           helper:
-            "Run the plan in the request panel, or reply here to change the same request. You can attach images.",
+            requestWorkflow === "gutenberg_v2"
+              ? "Apply the approved update from the candidate panel, or reply here to change it. Replying withdraws the approval."
+              : "Run the plan in the request panel, or reply here to change the same request. You can attach images.",
           placeholder: "Describe how this request should change…",
           actionLabel: "Update request"
         };
@@ -1623,7 +1692,7 @@ export function ChatPage({
           actionLabel: "Send"
         };
     }
-  }, [bundle, canRunPlanDirectly, isConversationMode]);
+  })();
 
   const canGeneratePlan =
     !isConversationMode &&
@@ -1650,6 +1719,13 @@ export function ChatPage({
     bundle !== null &&
     bundle.visualAnalysis !== null &&
     bundle.visualAnalysis.analyzedRequestUpdatedAt < bundle.request.updatedAt;
+  // The v2 candidate panel owns review, approval and execution for its
+  // request; v1's next-step card and analysis controls would duplicate them.
+  const isV2Request =
+    bundle !== null &&
+    gutenbergV2State !== null &&
+    gutenbergV2State.requestId === bundle.request.id;
+  const isV2Workflow = requestWorkflow === "gutenberg_v2" || isV2Request;
   const canGeneratePlanNow =
     canGeneratePlan &&
     visualAnalysisReadyForPlanning &&
@@ -1675,7 +1751,7 @@ export function ChatPage({
             bundle.visualAnalysis !== null &&
             !visualAnalysisStale &&
             bundle.visualAnalysis.reviewedAt === undefined,
-          gutenbergV2Enabled: sitePlannerSettings?.gutenbergV2Enabled ?? false,
+          gutenbergV2Enabled: true,
           requestWorkflow,
           gutenbergV2State: gutenbergV2State?.state ?? null,
           openQuestionCount: openQuestions.length,
@@ -1726,96 +1802,65 @@ export function ChatPage({
     (total, attachment) => total + attachment.sizeBytes,
     0
   );
-  const debugExport = useMemo(
-    () => ({
-      exportedAt: new Date().toISOString(),
-      siteId,
-      site: {
-        id: data.site.id,
-        name: data.site.name,
-        activationStatus: data.site.activationStatus,
-        workspaceId: data.site.workspaceId,
-        environment: data.site.environment,
-        baseUrl: data.site.baseUrl
-      },
-      uiState: {
-        selectedThreadId,
-        lastRequestId,
-        developerToolsEnabled,
-        preserveOriginalImageUploads,
-        busy,
-        execBusy,
-        activityLabel,
-        execProgressLabel,
-        lastExecHint,
-        error: err
-      },
-      threadList: threads,
-      selectedThread: selectedThread ?? null,
-      messages: messages.map((message) => ({
-        ...message,
-        attachments:
-          message.attachments?.map((attachment) =>
-            summarizeImageAttachment(attachment)
-          ) ?? []
-      })),
-      currentRequestPromptDraft: requestPrompt,
-      pendingAttachments: pendingAttachments.map((attachment) =>
-        summarizeImageAttachment(attachment)
-      ),
-      debugPanels: {
-        feedbackLog: developerMessages,
-        currentRequestPrompt: bundle?.request.userPrompt ?? null,
-        visualAnalysis: bundle?.visualAnalysis ?? null,
-        planValidation: parseJsonDebugValue(planValidationJson),
-        plannedActions: bundle?.plan?.proposedActions ?? null,
-        lastMcpRequest: bundle?.lastExecution?.toolInvocation
-          ? {
-              toolName: bundle.lastExecution.toolInvocation.toolName,
-              input: bundle.lastExecution.toolInvocation.input
-            }
-          : null,
-        lastMcpResponse: bundle?.lastExecution?.toolInvocation?.output ?? null,
-        plannerContext: parseJsonDebugValue(plannerJson),
-        dryRunPreview
-      },
-      bundle,
-      workspaceData: data
-    }),
-    [
-      activityLabel,
-      busy,
-      bundle,
-      data.site.activationStatus,
-      data.site.baseUrl,
-      data.site.environment,
-      data.site.id,
-      data.site.name,
-      data.site.workspaceId,
-      developerMessages,
+  const buildDebugExport = () => ({
+    exportedAt: new Date().toISOString(),
+    siteId,
+    site: {
+      id: data.site.id,
+      name: data.site.name,
+      activationStatus: data.site.activationStatus,
+      workspaceId: data.site.workspaceId,
+      environment: data.site.environment,
+      baseUrl: data.site.baseUrl
+    },
+    uiState: {
+      selectedThreadId,
+      lastRequestId,
       developerToolsEnabled,
-      dryRunPreview,
-      err,
+      preserveOriginalImageUploads,
+      busy,
       execBusy,
+      activityLabel,
       execProgressLabel,
       lastExecHint,
-      lastRequestId,
-      messages,
-      pendingAttachments,
-      planValidationJson,
-      plannerJson,
-      preserveOriginalImageUploads,
-      requestPrompt,
-      selectedThread,
-      selectedThreadId,
-      siteId,
-      threads
-    ]
-  );
+      error: err
+    },
+    threadList: threads,
+    selectedThread: selectedThread ?? null,
+    messages: messages.map((message) => ({
+      ...message,
+      attachments:
+        message.attachments?.map((attachment) =>
+          summarizeImageAttachment(attachment)
+        ) ?? []
+    })),
+    currentRequestPromptDraft: requestPrompt,
+    pendingAttachments: pendingAttachments.map((attachment) =>
+      summarizeImageAttachment(attachment)
+    ),
+    debugPanels: {
+      feedbackLog: developerMessages,
+      currentRequestPrompt: bundle?.request.userPrompt ?? null,
+      visualAnalysis: bundle?.visualAnalysis ?? null,
+      planValidation: parseJsonDebugValue(planValidationJson),
+      plannedActions: bundle?.plan?.proposedActions ?? null,
+      lastMcpRequest: bundle?.lastExecution?.toolInvocation
+        ? {
+            toolName: bundle.lastExecution.toolInvocation.toolName,
+            input: bundle.lastExecution.toolInvocation.input
+          }
+        : null,
+      lastMcpResponse: bundle?.lastExecution?.toolInvocation?.output ?? null,
+      plannerContext: parseJsonDebugValue(plannerJson),
+      dryRunPreview
+    },
+    bundle,
+    workspaceData: data
+  });
 
-  const onCopyDebugLog = useCallback(async (): Promise<void> => {
+  const onCopyDebugLog = async (): Promise<void> => {
     try {
-      await copyTextToClipboard(JSON.stringify(debugExport, null, 2));
+      await copyTextToClipboard(JSON.stringify(buildDebugExport(), null, 2));
       setDebugCopyLabel("Copied");
     } catch (error) {
       setDebugCopyLabel(
@@ -1830,7 +1875,7 @@ export function ChatPage({
       setDebugCopyLabel("Copy debug log");
       debugCopyResetTimerRef.current = null;
     }, 2000);
-  }, [debugExport]);
+  };
 
   if (!chatEnabled) {
     return (
@@ -1860,7 +1905,9 @@ export function ChatPage({
         <div className="chat-threads-header">
           <div>
             <h2>{isConversationMode ? "Conversations" : "Requests"}</h2>
-            <p className="muted small-print chat-mode-lede">{pageCopy.pageLede}</p>
+            <p className="muted small-print chat-mode-lede">
+              {pageCopy.pageLede}
+            </p>
           </div>
           <button
             type="button"
@@ -2231,28 +2278,29 @@ export function ChatPage({
                 <div className="chat-composer-card">
                   <h3>{composerState.title}</h3>
                   <p className="muted small-print">{composerState.helper}</p>
-                  {!isConversationMode &&
-                  sitePlannerSettings?.gutenbergV2Enabled ? (
+                  {!isConversationMode ? (
                     <fieldset className="chat-v2-controls">
                       <legend>Content workflow</legend>
-                      <label className="settings-field">
-                        <span>Planner</span>
-                        <select
-                          value={requestWorkflow}
-                          disabled={busy || gutenbergV2State !== null}
-                          onChange={(event) => {
-                            workflowInitializedRef.current = true;
-                            setRequestWorkflow(
-                              event.target.value as RequestWorkflow
-                            );
-                          }}
-                        >
-                          <option value="legacy">Standard planner</option>
-                          <option value="gutenberg_v2">
-                            Native editor candidate
-                          </option>
-                        </select>
-                      </label>
+                      {SHOW_V1_WORKFLOW ? (
+                        <label className="settings-field">
+                          <span>Planner</span>
+                          <select
+                            value={requestWorkflow}
+                            disabled={busy || gutenbergV2State !== null}
+                            onChange={(event) => {
+                              workflowInitializedRef.current = true;
+                              setRequestWorkflow(
+                                event.target.value as RequestWorkflow
+                              );
+                            }}
+                          >
+                            <option value="legacy">Standard planner</option>
+                            <option value="gutenberg_v2">
+                              Native editor candidate
+                            </option>
+                          </select>
+                        </label>
+                      ) : null}
                       {requestWorkflow === "gutenberg_v2" ? (
                         <div className="chat-v2-target-grid">
                           <label className="settings-field">
@@ -2345,7 +2393,9 @@ export function ChatPage({
                             : "Original image files will be kept at full size for planning and upload."
                           : "Images are resized before planning so they are sent as compressed references instead of full-size originals."}
                         {!isConversationMode
-                          ? " The planner uses up to 3 images per request."
+                          ? requestWorkflow === "gutenberg_v2"
+                            ? " “Place in post” images are added to the content; “Layout reference” images and PDF pages are only used to work out what to build."
+                            : " The planner uses up to 3 images per request."
                           : ""}
                       </p>
                       <div className="chat-image-grid">
@@ -2362,6 +2412,35 @@ export function ChatPage({
                             <figcaption className="small-print">
                               {attachment.fileName}
                             </figcaption>
+                            <button
+                              type="button"
+                              className={`chat-attachment-purpose${
+                                attachment.purpose === "reference"
+                                  ? " is-reference"
+                                  : ""
+                              }`}
+                              disabled={busy}
+                              title="Switch between placing this image in the content and using it only as a layout reference"
+                              onClick={() =>
+                                setPendingAttachments((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? {
+                                          ...item,
+                                          purpose:
+                                            item.purpose === "reference"
+                                              ? "media"
+                                              : "reference"
+                                        }
+                                      : item
+                                  )
+                                )
+                              }
+                            >
+                              {attachment.purpose === "reference"
+                                ? "Layout reference"
+                                : "Place in post"}
+                            </button>
                             <button
                               type="button"
                               className="chat-image-remove"
@@ -2390,7 +2469,7 @@ export function ChatPage({
                       }
                       onClick={() => attachmentInputRef.current?.click()}
                     >
-                      Add images
+                      {isConversationMode ? "Add images" : "Add images or PDF"}
                     </button>
                     <button
                       type="button"
@@ -2421,7 +2500,7 @@ export function ChatPage({
                   <input
                     ref={attachmentInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                     multiple
                     hidden
                     onChange={(event) => {
@@ -2434,6 +2513,23 @@ export function ChatPage({
 
               {!isConversationMode ? (
                 <aside className="chat-side-column">
+                  {busy &&
+                  requestWorkflow === "gutenberg_v2" &&
+                  (gutenbergV2State === null ||
+                    gutenbergV2State.state !== "review_ready") ? (
+                    <section
+                      className="gutenberg-v2-candidate-panel"
+                      aria-live="polite"
+                    >
+                      <p className="eyebrow">Native editor candidate</p>
+                      <h4>Building the candidate…</h4>
+                      <p className="muted small-print">
+                        Planning the blocks, then compiling and previewing them
+                        in this site’s WordPress editor. Long posts can take a
+                        minute or two.
+                      </p>
+                    </section>
+                  ) : null}
                   {gutenbergV2State ? (
                     <GutenbergV2CandidatePanel
                       candidate={gutenbergV2State}
@@ -2445,7 +2541,7 @@ export function ChatPage({
                   ) : null}
                   {bundle ? (
                     <div className="chat-request-panel">
-                      {requestNextAction ? (
+                      {requestNextAction && !isV2Workflow ? (
                         <div className="chat-next-action">
                           <div className="chat-next-action-copy">
                             <span className="badge">
@@ -2472,7 +2568,9 @@ export function ChatPage({
                                     !canGeneratePlanNow) ||
                                   (requestNextAction.primary.id ===
                                     "run_plan" &&
-                                    (!requestCanExecute(bundle.request.status) ||
+                                    (!requestCanExecute(
+                                      bundle.request.status
+                                    ) ||
                                       execBusy))
                                 }
                                 onClick={() =>
@@ -2484,7 +2582,8 @@ export function ChatPage({
                                 {requestNextAction.primary.label}
                               </button>
                             ) : null}
-                            {requestNextAction.primary?.id === "approve_plan" ? (
+                            {requestNextAction.primary?.id ===
+                            "approve_plan" ? (
                               <button
                                 type="button"
                                 className="btn btn-secondary"
@@ -2566,23 +2665,25 @@ export function ChatPage({
                           </div>
                         </div>
                       ) : null}
-                      <div className="chat-request-meta">
-                        <h4>Request status</h4>
-                        <p className="small-print">
-                          <span className="badge">
-                            {humanRequestStatus(bundle.request.status)}
-                          </span>
-                          {bundle.pendingApproval ? (
-                            <>
-                              {" "}
-                              <span className="badge badge-warn">
-                                Pending approval
-                              </span>
-                            </>
-                          ) : null}
-                        </p>
-                      </div>
-                      {visualAnalysisRequired ? (
+                      {!isV2Workflow ? (
+                        <div className="chat-request-meta">
+                          <h4>Request status</h4>
+                          <p className="small-print">
+                            <span className="badge">
+                              {humanRequestStatus(bundle.request.status)}
+                            </span>
+                            {bundle.pendingApproval ? (
+                              <>
+                                {" "}
+                                <span className="badge badge-warn">
+                                  Pending approval
+                                </span>
+                              </>
+                            ) : null}
+                          </p>
+                        </div>
+                      ) : null}
+                      {visualAnalysisRequired && !isV2Workflow ? (
                         <div className="chat-bundle-panel">
                           <h4>Reference analysis</h4>
                           <p className="muted small-print">
@@ -2696,7 +2797,9 @@ export function ChatPage({
                           </div>
                         </div>
                       ) : null}
-                      {canGeneratePlan && !canGeneratePlanNow ? (
+                      {canGeneratePlan &&
+                      !canGeneratePlanNow &&
+                      !isV2Workflow ? (
                         <p className="muted small-print">
                           Generate plan stays locked until the reference
                           analysis is current and approved.
@@ -2799,7 +2902,7 @@ export function ChatPage({
                           })()}
                         </div>
                       ) : null}
-                      {!bundle.plan ? (
+                      {!bundle.plan && !isV2Workflow ? (
                         <p className="muted small-print">
                           No plan yet. Keep refining the request, then generate
                           a plan.

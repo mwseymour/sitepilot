@@ -2,7 +2,7 @@
 
 The v2 path is additive and does not fall back to SitePilot's v1 content writer. Its public TypeScript entry points are `@sitepilot/contracts`, `@sitepilot/services`, and `@sitepilot/gutenberg-worker`.
 
-The WordPress plugin keeps v2 disabled unless the destination explicitly defines `SITEPILOT_V2_ENABLED` as the boolean `true`. Enable it only on a destination that has passed the native editor and persistence fixtures. The worker connects to WordPress; it does not start a local web server.
+v2 is the default content engine. The WordPress plugin enables it unless the destination defines `SITEPILOT_V2_ENABLED` as the boolean `false`, which acts as a per-site off switch. The desktop app no longer has a per-site v2 setting and no longer offers the v1 planner in its UI; the v1 code paths remain in the codebase. The worker connects to WordPress; it does not start a local web server.
 
 ## Runtime construction
 

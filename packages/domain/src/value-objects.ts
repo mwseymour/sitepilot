@@ -63,5 +63,8 @@ export interface ModelReference {
 
 export interface LocalizedTextBlock {
   format: "plain_text" | "markdown" | "html";
+  /** What people read: plain language, safe to relay (e.g. to Slack). */
   value: string;
+  /** Optional raw diagnostic report shown on request in the app only. */
+  technicalDetails?: string;
 }

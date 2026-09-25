@@ -852,10 +852,21 @@ body *:has(${captureSelector}) {
       expectedFingerprint: input.capabilities.fingerprint,
       postId: readback.postId
     });
+    const featuredRef = input.candidate.requestedPostFields.featuredMediaRef;
     return this.#withPostFieldValidation(
       report,
       input.candidate.requestedPostFields,
-      readback.fields
+      readback.fields,
+      featuredRef === undefined
+        ? undefined
+        : {
+            expectedId:
+              input.preparedCommit.featuredMediaId ??
+              input.preparedCommit.mediaMapping.find(
+                (entry) => entry.ref === featuredRef
+              )?.attachmentId,
+            actualId: readback.featuredMediaId
+          }
     );
   }
 
@@ -1031,15 +1042,25 @@ body *:has(${captureSelector}) {
     expected: {
       title?: string | undefined;
       excerpt?: string | undefined;
+      featuredMediaRef?: string | undefined;
       status?: "draft" | undefined;
     },
-    actual: { title: string; excerpt: string; status: string }
+    actual: { title: string; excerpt: string; status: string },
+    featured?: { expectedId: number | undefined; actualId: number | undefined }
   ): GutenbergV2ValidationReport {
-    const mismatches = Object.entries(expected).filter(
-      (entry): entry is [keyof typeof actual, string] =>
-        entry[1] !== undefined &&
-        actual[entry[0] as keyof typeof actual] !== entry[1]
+    const mismatches: string[] = (
+      ["title", "excerpt", "status"] as const
+    ).filter(
+      (field) =>
+        expected[field] !== undefined && actual[field] !== expected[field]
     );
+    if (
+      featured !== undefined &&
+      (featured.expectedId === undefined ||
+        featured.actualId !== featured.expectedId)
+    ) {
+      mismatches.push("featured image");
+    }
     const checked = report.contentPreservation.checked.includes("post_fields")
       ? report.contentPreservation.checked
       : [...report.contentPreservation.checked, "post_fields" as const];
@@ -1058,7 +1079,7 @@ body *:has(${captureSelector}) {
           code: "content_changed",
           severity: "error",
           phase: "verify",
-          message: `Persisted post fields differ from approval: ${mismatches.map(([field]) => field).join(", ")}.`
+          message: `Persisted post fields differ from approval: ${mismatches.join(", ")}.`
         }
       ],
       contentPreservation: {
@@ -1217,9 +1238,16 @@ body *:has(${captureSelector}) {
       return await Promise.race([run(), deadline]);
     } catch (error) {
       if (error instanceof GutenbergV2WorkerError) throw error;
+      // Keep the underlying cause (bounded) so operators and the technical
+      // report can see what actually failed.
+      const cause =
+        error instanceof Error ? error.message : String(error ?? "");
+      const detail = cause.replace(/\s+/g, " ").trim().slice(0, 400);
       throw new GutenbergV2WorkerError(
         "editor_unavailable",
-        "The destination Gutenberg editor worker failed before producing a trusted result.",
+        `The destination Gutenberg editor worker failed before producing a trusted result.${
+          detail.length > 0 ? ` Cause: ${detail}` : ""
+        }`,
         true,
         error
       );
@@ -1242,9 +1270,14 @@ body *:has(${captureSelector}) {
       } catch (error) {
         this.#browserPromise = undefined;
         if (attempt === 1) {
+          const cause = error instanceof Error ? error.message : "";
           throw new GutenbergV2WorkerError(
             "editor_unavailable",
-            "Chromium could not start.",
+            `Chromium could not start.${
+              cause
+                ? ` Cause: ${cause.replace(/\s+/g, " ").trim().slice(0, 400)}`
+                : ""
+            }`,
             true,
             error
           );

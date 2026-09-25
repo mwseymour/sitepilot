@@ -168,7 +168,7 @@ final class Abilities_Registrar {
 			'sitepilot/find-posts',
 			array(
 				'label'               => __( 'Find posts', 'sitepilot' ),
-				'description'         => __( 'Finds posts by status, slug, title, search text, category, and post type.', 'sitepilot' ),
+				'description'         => __( 'Finds posts by status, slug, title, search text, category, and post type, sorted by date, modified, title, ID, or random order.', 'sitepilot' ),
 				'category'            => 'sitepilot',
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -184,6 +184,16 @@ final class Abilities_Registrar {
 							'minimum' => 1,
 							'maximum' => 20,
 							'default' => 10,
+						),
+						'orderby'   => array(
+							'type'    => 'string',
+							'enum'    => array( 'date', 'modified', 'title', 'ID', 'rand' ),
+							'default' => 'modified',
+						),
+						'order'     => array(
+							'type'    => 'string',
+							'enum'    => array( 'ASC', 'DESC' ),
+							'default' => 'DESC',
 						),
 					),
 					'additionalProperties' => false,

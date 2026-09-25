@@ -25,6 +25,17 @@ type ChosenProvider =
   | { kind: "anthropic"; client: ChatModelClient; model: string }
   | { kind: "stub" };
 
+type ResponseKind =
+  | "list"
+  | "count"
+  | "id"
+  | "content"
+  | "url"
+  | "created"
+  | "modified";
+
+type ConversationToolName = "sitepilot-find-posts" | "sitepilot-get-post";
+
 type ConversationPlan =
   | { mode: "reply"; reply: string }
   | {
@@ -34,14 +45,8 @@ type ConversationPlan =
     }
   | {
       mode: "tool";
-      toolName: "sitepilot-find-posts" | "sitepilot-get-post";
-      responseKind:
-        | "list"
-        | "count"
-        | "content"
-        | "url"
-        | "created"
-        | "modified";
+      toolName: ConversationToolName;
+      responseKind: ResponseKind;
       arguments: Record<string, unknown>;
     }
   | {
@@ -106,7 +111,9 @@ function looksLikeWriteRequest(text: string): boolean {
 }
 
 function parseCount(text: string): number | null {
-  const match = text.match(/\b(?:last|latest|first|show|fetch|get|list|find)\s+(\d{1,2})\b/i);
+  const match = text.match(
+    /\b(?:last|latest|newest|oldest|first|show|fetch|get|list|find|give)(?:\s+me)?\s+(\d{1,2})\b/i
+  );
   if (!match) {
     return null;
   }
@@ -182,9 +189,35 @@ function buildGetPostArguments(text: string): Record<string, unknown> | null {
   return null;
 }
 
-function detectResponseKind(
+function detectOrdering(
   text: string
-): "content" | "url" | "created" | "modified" | null {
+): { orderby: "date" | "modified" | "rand"; order: "ASC" | "DESC" } | null {
+  if (/\brandom(ly)?\b/i.test(text)) {
+    return { orderby: "rand", order: "DESC" };
+  }
+  if (/\b(oldest|first)\b/i.test(text)) {
+    return { orderby: "date", order: "ASC" };
+  }
+  if (/\b(last|latest|newest|most recent|recent(ly)?)\b.*\b(updated|modified|edited)\b/i.test(text)) {
+    return { orderby: "modified", order: "DESC" };
+  }
+  if (/\b(last|latest|newest|most recent|recent(ly)?)\b/i.test(text)) {
+    return { orderby: "date", order: "DESC" };
+  }
+  return null;
+}
+
+function asksForSingleLatest(text: string): boolean {
+  return (
+    /\b(the\s+)?(last|latest|newest|most recent|oldest|first)\s+(post|page)\b/i.test(text) &&
+    parseCount(text) === null
+  );
+}
+
+function detectResponseKind(text: string): Exclude<ResponseKind, "list" | "count"> | null {
+  if (/\b(id|ids)\b/i.test(text)) {
+    return "id";
+  }
   if (/\b(url|permalink|link)\b/i.test(text)) {
     return "url";
   }
@@ -264,8 +297,12 @@ function fallbackConversationPlan(text: string): ConversationPlan {
     };
   }
 
-  if (/\b(find|list|show|get|fetch)\b/i.test(normalized) && /\b(posts?|pages?)\b/i.test(normalized)) {
+  if (
+    /\b(find|list|show|get|fetch|give|what|which)\b/i.test(normalized) &&
+    /\b(posts?|pages?)\b/i.test(normalized)
+  ) {
     const postType = detectPostType(normalized) ?? "post";
+    const category = extractCategory(normalized);
     return {
       mode: "tool",
       toolName: "sitepilot-find-posts",
@@ -273,10 +310,9 @@ function fallbackConversationPlan(text: string): ConversationPlan {
       arguments: {
         post_type: postType,
         status: "any",
-        ...(extractCategory(normalized) !== null
-          ? { category: extractCategory(normalized) ?? undefined }
-          : {}),
-        limit: parseCount(normalized) ?? 10
+        ...(category !== null ? { category } : {}),
+        ...(detectOrdering(normalized) ?? {}),
+        limit: parseCount(normalized) ?? (asksForSingleLatest(normalized) ? 1 : 10)
       }
     };
   }

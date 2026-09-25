@@ -64,9 +64,9 @@ export function modePageCopy(mode: ChatMode): {
   return {
     navHint: "Make site changes",
     pageLede:
-      "A request becomes a plan you generate, approve, and run. Use Conversations only when you need to look something up first.",
+      "A request builds the change in this site’s WordPress editor for you to review, approve and apply. Use Conversations only when you need to look something up first.",
     emptyState:
-      "Create a request, describe the change, then generate a plan. Conversations will not change the site.",
+      "Create a request and describe the change. You review a preview before anything is saved. Conversations will not change the site.",
     otherModeLabel: "Open Conversations",
     otherModePathSegment: "conversations"
   };
@@ -92,7 +92,8 @@ export function resolveRequestNextAction(input: {
     return {
       statusLabel,
       title: "Answer the clarification question",
-      helper: "Answer the question in the composer below to keep this request moving.",
+      helper:
+        "Answer the question in the composer below to keep this request moving.",
       primary: { id: "reply", label: "Reply in the composer" },
       secondary: []
     };
@@ -102,7 +103,8 @@ export function resolveRequestNextAction(input: {
     return {
       statusLabel,
       title: "Answer plan questions",
-      helper: "Reply in the composer with answers so the plan can run without ambiguity.",
+      helper:
+        "Reply in the composer with answers so the plan can run without ambiguity.",
       primary: { id: "reply", label: "Answer questions" },
       secondary: []
     };
@@ -126,16 +128,14 @@ export function resolveRequestNextAction(input: {
     return {
       statusLabel,
       title: "Approve reference analysis",
-      helper: "Next: review and approve the reference analysis before planning.",
+      helper:
+        "Next: review and approve the reference analysis before planning.",
       primary: { id: "approve_analysis", label: "Approve analysis" },
       secondary: []
     };
   }
 
-  if (
-    input.gutenbergV2Enabled &&
-    input.requestWorkflow === "gutenberg_v2"
-  ) {
+  if (input.gutenbergV2Enabled && input.requestWorkflow === "gutenberg_v2") {
     if (input.gutenbergV2State === "review_ready") {
       return {
         statusLabel,
@@ -172,23 +172,18 @@ export function resolveRequestNextAction(input: {
     }
   }
 
-  if (
-    input.requestStatus === "awaiting_approval" ||
-    input.pendingApproval
-  ) {
+  if (input.requestStatus === "awaiting_approval" || input.pendingApproval) {
     return {
       statusLabel,
       title: "Approve the plan",
-      helper: "Next: approve this plan in the request panel, or regenerate it if it needs changes.",
+      helper:
+        "Next: approve this plan in the request panel, or regenerate it if it needs changes.",
       primary: { id: "approve_plan", label: "Approve plan" },
       secondary: [{ id: "generate_plan", label: "Regenerate plan" }]
     };
   }
 
-  if (
-    input.requestStatus === "new" ||
-    input.requestStatus === "drafted"
-  ) {
+  if (input.requestStatus === "new" || input.requestStatus === "drafted") {
     return {
       statusLabel,
       title: "Generate a plan",
@@ -222,8 +217,7 @@ export function resolveRequestNextAction(input: {
     return {
       statusLabel,
       title: "Plan already ran",
-      helper:
-        "This plan already ran. Start a new request for another change.",
+      helper: "This plan already ran. Start a new request for another change.",
       primary: null,
       secondary: []
     };

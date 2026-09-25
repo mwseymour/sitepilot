@@ -613,9 +613,9 @@ h2 {
 
 .chat-threads-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
   margin-bottom: 0.75rem;
 }
 
@@ -905,6 +905,33 @@ h2 {
   animation: activity-spin 0.8s linear infinite;
 }
 
+/* Inline spinner on a button whose action is in progress (button-loading.ts). */
+button[data-loading] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  cursor: progress;
+}
+
+button[data-loading]::before {
+  content: "";
+  flex: none;
+  width: 0.85em;
+  height: 0.85em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  opacity: 0.85;
+  animation: activity-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button[data-loading]::before {
+    animation-duration: 2.4s;
+  }
+}
+
 @keyframes activity-spin {
   to {
     transform: rotate(360deg);
@@ -1142,11 +1169,33 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
-  margin-top: 0.55rem;
+  margin-top: 0.2rem;
 }
 
-.chat-v2-target-grid .settings-field:last-child {
+.chat-v2-target-grid .settings-field {
+  margin: 0;
+  max-width: none;
+}
+
+.chat-v2-target-grid .settings-field:last-child,
+.chat-v2-target-grid > p {
   grid-column: 1 / -1;
+}
+
+.chat-v2-target-grid > p {
+  margin: 0;
+}
+
+.gutenberg-v2-candidate-panel > .eyebrow,
+.gutenberg-v2-candidate-panel > h4,
+.gutenberg-v2-candidate-panel > p,
+.gutenberg-v2-candidate-header p {
+  margin: 0;
+}
+
+.gutenberg-v2-candidate-header > div {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .gutenberg-v2-candidate-panel {
@@ -1224,6 +1273,31 @@ h2 {
   border-radius: 9px;
   background: var(--surface-2);
   font-size: 0.8rem;
+}
+
+.gutenberg-v2-reject {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.gutenberg-v2-reject textarea {
+  width: 100%;
+}
+
+.gutenberg-v2-changes {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gutenberg-v2-change-label {
+  margin: 0 0 0.3rem;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .gutenberg-v2-outline li {
@@ -2930,4 +3004,43 @@ h2 {
     justify-content: center;
     padding-inline: 0;
   }
+}
+
+.chat-msg-technical {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.chat-msg-technical summary {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.chat-msg-technical pre {
+  margin: 0.4rem 0 0;
+  padding: 0.6rem;
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.chat-attachment-purpose {
+  margin-top: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.chat-attachment-purpose.is-reference {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-soft));
+  color: var(--accent);
+  font-weight: 600;
 }

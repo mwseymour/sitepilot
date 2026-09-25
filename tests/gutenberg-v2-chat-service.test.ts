@@ -18,6 +18,7 @@ import {
   configureGutenbergV2PlannerFactory,
   configureGutenbergV2ProtocolProbe,
   continueGutenbergV2AfterFollowUp,
+  findGutenbergV2WrittenPostTarget,
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate,
   generateGutenbergV2Candidate,
@@ -361,20 +362,20 @@ afterEach(() => {
 });
 
 describe("desktop Gutenberg v2 chat boundary", () => {
-  it("enforces the local gate before planner selection", async () => {
+  it("does not need the retired per-site setting to generate", async () => {
     setup(false);
-    const planner = vi.fn();
-    configureGutenbergV2PlannerFactory(async () => {
-      planner();
-      throw new Error("planner must not run");
-    });
+    configureGutenbergV2ProtocolProbe(async () => true);
+    configureFakeRuntime();
+    configureDeterministicPlanner();
     const result = await generateGutenbergV2Candidate({
       siteId: "site-1" as SiteId,
       requestId: "request-1" as RequestId,
       target: { operation: "create_draft", postType: "post" }
     });
-    expect(result).toMatchObject({ code: "gutenberg_v2_not_enabled" });
-    expect(planner).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      state: { state: "review_ready" }
+    });
   });
 
   it("enforces the destination gate before planner selection", async () => {
@@ -514,7 +515,20 @@ describe("desktop Gutenberg v2 chat boundary", () => {
                   name: "core/paragraph",
                   attributes: { content: "Generated" },
                   children: []
-                }
+                },
+                ...(JSON.parse(messages[1].content).media.length > 0
+                  ? [
+                      {
+                        ref: "img1",
+                        name: "core/image",
+                        attributes: {
+                          mediaRef: "attachment-1",
+                          alt: "hero.png"
+                        },
+                        children: []
+                      }
+                    ]
+                  : [])
               ]
             }),
             usage: { inputTokens: 1, outputTokens: 1 }
@@ -544,6 +558,7 @@ describe("desktop Gutenberg v2 chat boundary", () => {
     });
     expect(created).toMatchObject({ ok: true });
     expect(state.plans[0].media[0].source.kind).toBe("staged_asset");
+    expect(state.plans[0].media[0].alt).toBe("hero.png");
     expect(state.plans[0].media[0].source.checksum).toMatch(/^[a-f0-9]{64}$/);
     expect(state.plans[0].media[0].source.byteLength).toBe(bytes.length);
     const context = JSON.parse(plannerMessages[0][1].content);
@@ -993,5 +1008,39 @@ describe("desktop Gutenberg v2 chat boundary", () => {
       state: { state: "review_ready" }
     });
     expect((retried as any).state.executionId).not.toBe(failedExecutionId);
+  });
+
+  it("finds the post a thread already wrote so follow-ups update it", async () => {
+    setup(true);
+    configureGutenbergV2ProtocolProbe(async () => true);
+    configureFakeRuntime();
+    configureDeterministicPlanner();
+    const lookup = () =>
+      findGutenbergV2WrittenPostTarget({
+        siteId: "site-1" as SiteId,
+        requestIds: ["request-1" as RequestId]
+      });
+    await expect(lookup()).resolves.toBeNull();
+    const generated = await generateGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      target: { operation: "create_draft", postType: "post" }
+    });
+    await expect(lookup()).resolves.toBeNull();
+    await decideGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      candidateId: (generated as any).state.candidate.candidateId,
+      decision: "approved"
+    });
+    await executeGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId
+    });
+    await expect(lookup()).resolves.toEqual({
+      operation: "apply_operations",
+      postType: "post",
+      postId: 42
+    });
   });
 });

@@ -35,13 +35,11 @@ MCP calls require a logged-in user with `read` capability (or stronger). After `
 
 Vendor directory is gitignored; run `composer install` after clone.
 
-## Gutenberg v2 feasibility gate
+## Gutenberg v2 content engine
 
-The v2 editor bridge and commit routes are additive and disabled by default. A
-deployment must define `SITEPILOT_V2_ENABLED` as the boolean `true` only after
-the target-site authentication, editor-runtime, and InnoDB transaction checks
-have passed. There is deliberately no wp-admin switch that can bypass that
-gate.
+The v2 editor bridge and commit routes are the default content engine. To turn
+v2 off on a site, define `SITEPILOT_V2_ENABLED` as the boolean `false` in
+`wp-config.php`. There is deliberately no wp-admin switch for it.
 
 The signed v2 transport is rooted at `/wp-json/sitepilot/v2` and exposes
 `editor-sessions`, `editor-bootstrap`, `prepare`, `commit`, `reconcile`,

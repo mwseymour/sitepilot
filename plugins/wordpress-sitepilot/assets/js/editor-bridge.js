@@ -335,6 +335,24 @@
     return false;
   }
 
+  function blockMediaRefs(intent) {
+    const refs = new Set();
+    const visit = (nodes) => {
+      (Array.isArray(nodes) ? nodes : []).forEach((node) => {
+        if (!node || typeof node !== "object") return;
+        const ref = node.attributes && node.attributes.mediaRef;
+        if (typeof ref === "string") refs.add(ref);
+        visit(node.children);
+      });
+    };
+    visit(intent && intent.blocks);
+    ((intent && intent.operations) || []).forEach((operation) => {
+      visit(operation && operation.blocks);
+      if (operation && operation.replacement) visit([operation.replacement]);
+    });
+    return refs;
+  }
+
   function countNodes(nodes) {
     return nodes.reduce(
       (count, node) =>
@@ -1540,7 +1558,11 @@
             })
       )
     );
+    // Only media placed in blocks renders in the canvas; a featured image
+    // (postFields.featuredMediaRef) is not part of the content.
+    const renderedRefs = blockMediaRefs(input.intent);
     for (const mapping of previewMapping) {
+      if (!renderedRefs.has(mapping.ref)) continue;
       const renderedImage = images.find(
         (candidate) =>
           candidate.getAttribute("src") === mapping.dataUrl ||

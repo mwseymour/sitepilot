@@ -27,6 +27,9 @@ final class Post_Query {
 		$category  = isset( $input['category'] ) ? sanitize_title( (string) $input['category'] ) : '';
 		$limit     = isset( $input['limit'] ) ? (int) $input['limit'] : 10;
 		$limit     = max( 1, min( 20, $limit ) );
+		$orderby   = isset( $input['orderby'] ) ? (string) $input['orderby'] : 'modified';
+		$orderby   = in_array( $orderby, array( 'date', 'modified', 'title', 'ID', 'rand' ), true ) ? $orderby : 'modified';
+		$order     = isset( $input['order'] ) && 'ASC' === strtoupper( (string) $input['order'] ) ? 'ASC' : 'DESC';
 
 		if ( 'any' !== $post_type && ! post_type_exists( $post_type ) ) {
 			return array(
@@ -42,8 +45,8 @@ final class Post_Query {
 			'post_type'           => 'any' === $post_type ? 'any' : $post_type,
 			'post_status'         => 'any' === $status ? 'any' : $status,
 			'posts_per_page'      => $limit,
-			'orderby'             => 'modified',
-			'order'               => 'DESC',
+			'orderby'             => $orderby,
+			'order'               => $order,
 			'ignore_sticky_posts' => true,
 			'no_found_rows'       => false,
 		);

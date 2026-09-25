@@ -269,16 +269,6 @@ async function main(): Promise<void> {
       operation: "create_draft" as const,
       postType: "post" as const
     };
-    const disabled = await generateGutenbergV2Candidate({
-      siteId,
-      requestId,
-      target
-    });
-    assert(
-      "code" in disabled && disabled.code === "gutenberg_v2_not_enabled",
-      "The local Gutenberg v2 gate did not block generation."
-    );
-
     await saveSitePlannerSettings(secureStorage, siteId, {
       bypassApprovalRequests: false,
       gutenbergV2Enabled: true

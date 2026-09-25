@@ -22,6 +22,11 @@ import {
 } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+import { useAppBusy } from "../../button-loading.js";
+
+// The native editor workflow is always on; its per-site toggle is retired
+// and hidden (the setting is still read for stored-settings compatibility).
+const SHOW_RETIRED_V2_TOGGLE = false;
 
 type SettingsStateResponse = IpcResponse<typeof ipcChannels.settingsGetState>;
 type CoreBlockIndex = NonNullable<
@@ -140,6 +145,7 @@ export function SiteSettingsPage(): ReactElement | null {
   const [err, setErr] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
   const [hasSecret, setHasSecret] = useState<boolean | null>(null);
   const [planner, setPlanner] = useState<PlannerPreferencesPayload | null>(
     null
@@ -546,26 +552,30 @@ export function SiteSettingsPage(): ReactElement | null {
             />
             <span>Approval bypass</span>
           </label>
-          <label className="settings-field settings-checkbox">
-            <input
-              className="settings-checkbox-input"
-              type="checkbox"
-              checked={sitePlannerSettings.gutenbergV2Enabled}
-              disabled={busy}
-              onChange={(e) => {
-                setSitePlannerSettings({
-                  ...sitePlannerSettings,
-                  gutenbergV2Enabled: e.target.checked
-                });
-              }}
-            />
-            <span>Enable native editor candidate workflow</span>
-          </label>
-          <p className="muted small-print">
-            When enabled, Chat can generate a Gutenberg v2 candidate for an
-            explicitly selected post operation. Every candidate still needs a
-            review decision before it can run.
-          </p>
+          {SHOW_RETIRED_V2_TOGGLE ? (
+            <>
+              <label className="settings-field settings-checkbox">
+                <input
+                  className="settings-checkbox-input"
+                  type="checkbox"
+                  checked={sitePlannerSettings.gutenbergV2Enabled}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setSitePlannerSettings({
+                      ...sitePlannerSettings,
+                      gutenbergV2Enabled: e.target.checked
+                    });
+                  }}
+                />
+                <span>Enable native editor candidate workflow</span>
+              </label>
+              <p className="muted small-print">
+                When enabled, Chat can generate a Gutenberg v2 candidate for an
+                explicitly selected post operation. Every candidate still needs
+                a review decision before it can run.
+              </p>
+            </>
+          ) : null}
           <button
             type="button"
             className="btn btn-primary"

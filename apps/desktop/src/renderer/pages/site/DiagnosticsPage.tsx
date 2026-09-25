@@ -3,10 +3,12 @@ import { useState, type ReactElement } from "react";
 import type { ConnectivityDiagnosticsResult } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+import { useAppBusy } from "../../button-loading.js";
 
 export function DiagnosticsPage(): ReactElement {
   const { siteId, data, reload } = useSiteWorkspace();
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
   const [diag, setDiag] = useState<ConnectivityDiagnosticsResult | null>(null);
   const [discoveryMsg, setDiscoveryMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

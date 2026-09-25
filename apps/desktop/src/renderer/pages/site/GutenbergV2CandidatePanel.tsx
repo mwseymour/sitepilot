@@ -158,6 +158,82 @@ function planBlocks(side: unknown): unknown {
   return plan?.blocks ?? record.blocks;
 }
 
+function blockPathLabel(path: unknown): string {
+  return Array.isArray(path) && path.length > 0
+    ? `position ${path.map((index) => Number(index) + 1).join(" › ")}`
+    : "the top level";
+}
+
+/** Existing post structure from the trusted source block index. */
+function sourceIndexOutline(side: unknown): OutlineEntry[] {
+  const record = recordValue(side);
+  if (!record || !Array.isArray(record.blockIndex)) {
+    return blockOutline(planBlocks(side));
+  }
+  return record.blockIndex.flatMap((entry) => {
+    const item = recordValue(entry);
+    if (!item || typeof item.name !== "string" || !Array.isArray(item.path)) {
+      return [];
+    }
+    return [
+      {
+        depth: Math.max(0, item.path.length - 1),
+        name: item.name.replace(/^core\//, ""),
+        text: blockPathLabel(item.path)
+      }
+    ];
+  });
+}
+
+type ChangeSummary = { label: string; blocks: OutlineEntry[] };
+
+/** Human-readable scoped operations from an apply_operations plan. */
+function planOperations(side: unknown): ChangeSummary[] {
+  const plan = recordValue(recordValue(side)?.plan);
+  if (!plan || !Array.isArray(plan.operations)) {
+    return [];
+  }
+  return plan.operations.flatMap((operation): ChangeSummary[] => {
+    const item = recordValue(operation);
+    if (!item) {
+      return [];
+    }
+    if (item.type === "insert_blocks") {
+      const blocks = blockOutline(item.blocks);
+      const parent = recordValue(item.parent);
+      const position = typeof item.index === "number" ? item.index + 1 : "?";
+      const where =
+        Array.isArray(parent?.path) && parent.path.length > 0
+          ? ` inside the block at ${blockPathLabel(parent.path)}`
+          : "";
+      const count = Array.isArray(item.blocks) ? item.blocks.length : 0;
+      return [
+        {
+          label: `Insert ${count} ${count === 1 ? "block" : "blocks"} at position ${position}${where}`,
+          blocks
+        }
+      ];
+    }
+    if (item.type === "edit_block") {
+      return [
+        {
+          label: `Replace the block at ${blockPathLabel(recordValue(item.target)?.path)}`,
+          blocks: blockOutline([item.replacement])
+        }
+      ];
+    }
+    if (item.type === "remove_block") {
+      return [
+        {
+          label: `Remove the block at ${blockPathLabel(recordValue(item.target)?.path)}`,
+          blocks: []
+        }
+      ];
+    }
+    return [];
+  });
+}
+
 function Outline({ entries }: { entries: OutlineEntry[] }): ReactElement {
   return (
     <ol className="gutenberg-v2-outline">
@@ -199,7 +275,11 @@ function StructureDiff({
   const before = record?.before ?? record?.source ?? null;
   const after = record?.after ?? record?.candidate ?? null;
   const afterOutline = blockOutline(planBlocks(after));
-  const beforeOutline = blockOutline(planBlocks(before));
+  const beforeOutline = sourceIndexOutline(before);
+  const operations = planOperations(after);
+  const afterPlan = recordValue(recordValue(after)?.plan);
+  const fieldsOnly =
+    Array.isArray(afterPlan?.operations) && afterPlan.operations.length === 0;
 
   return (
     <div
@@ -212,14 +292,39 @@ function StructureDiff({
           <Outline entries={beforeOutline} />
         </details>
       ) : null}
-      <h6>
-        {beforeOutline.length > 0 ? "Proposed content" : "New content"} (
-        {afterOutline.length} blocks)
-      </h6>
-      {afterOutline.length > 0 ? (
-        <Outline entries={afterOutline} />
+      {fieldsOnly ? (
+        <p className="muted small-print">
+          No content changes. Only the post settings shown above change.
+        </p>
+      ) : operations.length > 0 ? (
+        <>
+          <h6>
+            Changes ({operations.length}{" "}
+            {operations.length === 1 ? "change" : "changes"})
+          </h6>
+          <ol className="gutenberg-v2-changes">
+            {operations.map((operation, index) => (
+              <li key={`${index}-${operation.label}`}>
+                <p className="gutenberg-v2-change-label">{operation.label}</p>
+                {operation.blocks.length > 0 ? (
+                  <Outline entries={operation.blocks} />
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </>
       ) : (
-        <p className="muted small-print">No block outline was supplied.</p>
+        <>
+          <h6>
+            {beforeOutline.length > 0 ? "Proposed content" : "New content"} (
+            {afterOutline.length} blocks)
+          </h6>
+          {afterOutline.length > 0 ? (
+            <Outline entries={afterOutline} />
+          ) : (
+            <p className="muted small-print">No block outline was supplied.</p>
+          )}
+        </>
       )}
       <details>
         <summary>Raw structure data</summary>
@@ -292,6 +397,9 @@ export function GutenbergV2CandidatePanel({
   );
   const [artifactError, setArtifactError] = useState<string | null>(null);
   const [artifactLoadAttempt, setArtifactLoadAttempt] = useState(0);
+  // Rejecting records a required reason so admins (and Slack) see why.
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
   const [previewLoadStatus, setPreviewLoadStatus] = useState<
     Record<string, "loaded" | "failed">
   >({});
@@ -407,6 +515,12 @@ export function GutenbergV2CandidatePanel({
         <p className="gutenberg-v2-title">
           <strong>Title:</strong>{" "}
           {candidate.candidate.requestedPostFields.title}
+        </p>
+      ) : null}
+      {candidate.candidate?.featuredImage ? (
+        <p className="muted small-print">
+          <strong>Featured image:</strong>{" "}
+          {candidate.candidate.featuredImage.label}
         </p>
       ) : null}
       {candidate.candidate?.requestedPostFields.excerpt ? (
@@ -544,14 +658,57 @@ export function GutenbergV2CandidatePanel({
             <button
               type="button"
               className="btn btn-secondary"
-              disabled={busy || !reviewReady}
-              onClick={() =>
-                void onDecide(candidate.candidate!.candidateId, "rejected")
-              }
+              disabled={busy || !reviewReady || rejecting}
+              onClick={() => setRejecting(true)}
             >
               Reject
             </button>
           </div>
+          {rejecting ? (
+            <div className="gutenberg-v2-reject">
+              <label className="settings-field">
+                <span>Reason for rejecting</span>
+                <textarea
+                  rows={3}
+                  value={rejectReason}
+                  disabled={busy}
+                  maxLength={4_000}
+                  placeholder="What is wrong with this update? This is recorded in the thread and audit log."
+                  onChange={(event) => setRejectReason(event.target.value)}
+                />
+              </label>
+              <div className="action-row">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy || rejectReason.trim().length === 0}
+                  onClick={() =>
+                    void onDecide(
+                      candidate.candidate!.candidateId,
+                      "rejected",
+                      rejectReason.trim()
+                    ).then(() => {
+                      setRejecting(false);
+                      setRejectReason("");
+                    })
+                  }
+                >
+                  Confirm rejection
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setRejecting(false);
+                    setRejectReason("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {canExecute ? (

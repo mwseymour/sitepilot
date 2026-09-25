@@ -35,7 +35,8 @@ export type SettingsStateResult =
 
 const DEFAULT_SITE_PLANNER_SETTINGS: SitePlannerSettings = {
   bypassApprovalRequests: false,
-  gutenbergV2Enabled: false
+  // Retired: v2 is always on. Kept for stored-settings compatibility.
+  gutenbergV2Enabled: true
 };
 
 const DEFAULT_UI_PREFERENCES: UiPreferences = {

@@ -5,6 +5,7 @@ import type { AuditLogEntry } from "@sitepilot/contracts";
 import { auditEventTypes } from "@sitepilot/domain";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+import { useAppBusy } from "../../button-loading.js";
 
 type AuditRow = AuditLogEntry;
 
@@ -20,6 +21,7 @@ export function AuditPage(): ReactElement | null {
   const [entries, setEntries] = useState<AuditRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useAppBusy(busy);
   const [requestFilter, setRequestFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [since, setSince] = useState("");

@@ -1476,8 +1476,11 @@ export class GutenbergV2ContentService {
     )
       ? approvedReport.contentPreservation.checked
       : [...approvedReport.contentPreservation.checked, "post_fields" as const];
+    // The featured image is verified by attachment ID in the worker, not as
+    // a text field here.
     const mismatchedFields = Object.entries(expectedFields).filter(
       ([field, expected]) =>
+        field !== "featuredMediaRef" &&
         expected !== undefined &&
         readback.fields[field as keyof typeof readback.fields] !== expected
     );

@@ -43,9 +43,9 @@ describe("modePageCopy", () => {
     expect(modePageCopy("request")).toEqual({
       navHint: "Make site changes",
       pageLede:
-        "A request becomes a plan you generate, approve, and run. Use Conversations only when you need to look something up first.",
+        "A request builds the change in this site’s WordPress editor for you to review, approve and apply. Use Conversations only when you need to look something up first.",
       emptyState:
-        "Create a request, describe the change, then generate a plan. Conversations will not change the site.",
+        "Create a request and describe the change. You review a preview before anything is saved. Conversations will not change the site.",
       otherModeLabel: "Open Conversations",
       otherModePathSegment: "conversations"
     });

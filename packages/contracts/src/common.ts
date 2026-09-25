@@ -38,14 +38,20 @@ export const toolInvocationStatusSchema = z.enum(toolInvocationStatuses);
 
 export const localizedTextBlockSchema = z.object({
   format: z.enum(["plain_text", "markdown", "html"]),
-  value: z.string().min(1)
+  value: z.string().min(1),
+  technicalDetails: z.string().max(20_000).optional()
 });
 
 export const imageAttachmentSchema = z.object({
   fileName: z.string().min(1).max(260),
   mediaType: z.string().regex(/^image\//),
   sizeBytes: z.number().int().nonnegative(),
-  dataUrl: z.string().regex(/^data:image\//)
+  dataUrl: z.string().regex(/^data:image\//),
+  /**
+   * "media" (default) is placed in the content; "reference" is a layout or
+   * content mock-up (e.g. a PDF page) the planner reads but never uploads.
+   */
+  purpose: z.enum(["media", "reference"]).optional()
 });
 
 export const actorSchema = z.object({

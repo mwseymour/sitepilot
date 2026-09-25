@@ -843,3 +843,406 @@ describe("buildLlmGutenbergV2Plan drafts", () => {
     });
   });
 });
+
+describe("buildLlmGutenbergV2Plan repair", () => {
+  const invalidDraft = JSON.stringify({
+    postFields: { title: "Garden" },
+    blocks: [
+      {
+        ref: "img-1",
+        name: "core/image",
+        attributes: { mediaRef: "attachment-1", alt: "Beds" },
+        children: []
+      }
+    ]
+  });
+  const validDraft = JSON.stringify({
+    postFields: { title: "Garden" },
+    blocks: [
+      {
+        ref: "p1",
+        name: "core/paragraph",
+        attributes: { content: "Beds" },
+        children: []
+      }
+    ]
+  });
+
+  it("sends validation issues back once and accepts a corrected draft", async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: invalidDraft,
+        usage: { inputTokens: 1, outputTokens: 2 }
+      })
+      .mockResolvedValueOnce({
+        text: validDraft,
+        usage: { inputTokens: 3, outputTokens: 4 }
+      });
+
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Create a garden post with the attached image.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    const repairMessage = complete.mock.calls[1]![0][1].content as string;
+    expect(repairMessage).toContain("failed SitePilot's strict validation");
+    expect(repairMessage).toContain(invalidDraft);
+    expect(result.usage).toMatchObject({ inputTokens: 4, outputTokens: 6 });
+  });
+
+  it("reports the schema issues when the repair also fails", async () => {
+    const complete = vi.fn().mockResolvedValue({
+      text: invalidDraft,
+      usage: { inputTokens: 1, outputTokens: 1 }
+    });
+
+    await expect(
+      buildLlmGutenbergV2Plan({
+        request: "Create a garden post with the attached image.",
+        siteId: "site-1",
+        target: { operation: "create_draft", postType: "post" },
+        capabilities: capabilities(),
+        client: { providerId: "test", complete },
+        model: "test-model"
+      })
+    ).rejects.toThrow(/failed strict validation: .+/);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("buildLlmGutenbergV2Plan blank text", () => {
+  it("repairs whitespace-only copy instead of compiling it", async () => {
+    const draft = (content: string) =>
+      JSON.stringify({
+        postFields: { title: "Blank" },
+        blocks: [
+          {
+            ref: "p1",
+            name: "core/paragraph",
+            attributes: { content },
+            children: []
+          }
+        ]
+      });
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: draft(" "),
+        usage: { inputTokens: 1, outputTokens: 1 }
+      })
+      .mockResolvedValueOnce({
+        text: draft("Real copy."),
+        usage: { inputTokens: 1, outputTokens: 1 }
+      });
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Create a post with one paragraph.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]![0][1].content).toContain(
+      "blocks.0.attributes.content: whitespace-only text"
+    );
+    if (result.plan.operation !== "create_draft") throw new Error("draft");
+    expect(result.plan.blocks[0]!.attributes).toEqual({
+      content: "Real copy."
+    });
+  });
+});
+
+describe("buildLlmGutenbergV2Plan table shapes", () => {
+  it("reshapes wrapped and plain-string table rows without changing content", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "Table" },
+        blocks: [
+          {
+            ref: "t1",
+            name: "core/table",
+            attributes: {
+              head: { cells: ["Season", "Sow"] },
+              body: {
+                rows: [
+                  ["Spring", "Peas"],
+                  { cells: [{ content: "Summer" }, "Beans"] }
+                ]
+              }
+            },
+            children: []
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Create a table.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+    if (result.plan.operation !== "create_draft") throw new Error("draft");
+    expect(result.plan.blocks[0]!.attributes).toEqual({
+      head: [
+        {
+          cells: [
+            { content: "Season", tag: "th" },
+            { content: "Sow", tag: "th" }
+          ]
+        }
+      ],
+      body: [
+        {
+          cells: [
+            { content: "Spring", tag: "td" },
+            { content: "Peas", tag: "td" }
+          ]
+        },
+        {
+          cells: [
+            { content: "Summer", tag: "td" },
+            { content: "Beans", tag: "td" }
+          ]
+        }
+      ]
+    });
+  });
+});
+
+describe("buildLlmGutenbergV2Plan unsupplied media", () => {
+  it("drops images and unwraps media-text that reference media never supplied", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "No media" },
+        blocks: [
+          {
+            ref: "hero",
+            name: "core/image",
+            attributes: { mediaRef: "media-1", alt: "Hero" },
+            children: []
+          },
+          {
+            ref: "mt",
+            name: "core/media-text",
+            attributes: {
+              mediaRef: "media-2",
+              mediaAlt: "Seedlings",
+              mediaPosition: "right"
+            },
+            children: [
+              {
+                ref: "mt-h",
+                name: "core/heading",
+                attributes: { content: "Start small", level: 3 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Start with the first attached image.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+    if (result.plan.operation !== "create_draft") throw new Error("draft");
+    expect(result.plan.blocks.map((block) => block.name)).toEqual([
+      "core/heading"
+    ]);
+  });
+});
+
+describe("buildLlmGutenbergV2Plan reference images", () => {
+  it("sends reference pages as vision input and lists them in the context", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "From PDF" },
+        blocks: [
+          {
+            ref: "h1",
+            name: "core/heading",
+            attributes: { content: "Where it usually hides", level: 2 },
+            children: []
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    await buildLlmGutenbergV2Plan({
+      request: "Build this post from the attached PDF.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      referenceImages: [
+        {
+          label: "test-post.pdf (page 1 of 3)",
+          mediaType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,AAAA"
+        }
+      ],
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+    const calls = complete.mock.calls as unknown as Array<
+      [Array<{ role: string; content: unknown }>, string]
+    >;
+    const user = calls[0]![0][1]!.content as Array<{
+      type: string;
+      text?: string;
+      dataUrl?: string;
+    }>;
+    expect(user[1]).toEqual({
+      type: "image",
+      mediaType: "image/jpeg",
+      dataUrl: "data:image/jpeg;base64,AAAA"
+    });
+    expect(JSON.parse(user[0]!.text!).referenceImages).toEqual([
+      "test-post.pdf (page 1 of 3)"
+    ]);
+    expect(calls[0]![0][0]!.content).toContain("Leave out site chrome");
+  });
+});
+
+describe("buildLlmGutenbergV2Plan featured image", () => {
+  const media = [
+    {
+      ref: "attachment-1",
+      source: {
+        kind: "staged_asset" as const,
+        stagedAssetId: `${"a".repeat(64)}.jpg`,
+        checksum: "a".repeat(64),
+        mediaType: "image/jpeg" as const,
+        byteLength: 10
+      },
+      alt: "harvest.jpg"
+    }
+  ];
+
+  it("sets only the featured image on an existing post with no operations", async () => {
+    const source: GutenbergV2SourceSnapshot = {
+      schemaVersion: "sitepilot.source-snapshot/v2",
+      siteId: "site-1",
+      postId: 42,
+      postType: "post",
+      revision: "revision-1",
+      rawContent: content,
+      contentHash: hashGutenbergV2Content(content),
+      fields: expectedFields,
+      fieldsHash: hashGutenbergV2Value(expectedFields),
+      blockTreeFingerprint: "5".repeat(64),
+      blockIndex: [
+        { path: [0], name: "core/paragraph", fingerprint: "6".repeat(64) }
+      ]
+    };
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { featuredMediaRef: "attachment-1" },
+        operations: []
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Add this as the featured image.",
+      siteId: "site-1",
+      target: { operation: "apply_operations", source },
+      capabilities: capabilities(),
+      media,
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+    if (result.plan.operation !== "apply_operations") throw new Error("ops");
+    expect(result.plan.operations).toEqual([]);
+    expect(result.plan.postFields).toEqual({
+      featuredMediaRef: "attachment-1"
+    });
+  });
+
+  it("rejects a featured image ref that is not supplied media", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "Post", featuredMediaRef: "missing" },
+        blocks: [
+          {
+            ref: "p1",
+            name: "core/paragraph",
+            attributes: { content: "Body" },
+            children: []
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    await expect(
+      buildLlmGutenbergV2Plan({
+        request: "Create a post with a featured image.",
+        siteId: "site-1",
+        target: { operation: "create_draft", postType: "post" },
+        capabilities: capabilities(),
+        media,
+        client: { providerId: "test", complete },
+        model: "test-model"
+      })
+    ).rejects.toThrow(
+      /postFields\.featuredMediaRef: Unknown media ref: missing/
+    );
+  });
+});
+
+describe("buildLlmGutenbergV2Plan media pruning", () => {
+  it("keeps only media the draft uses so unused images are never uploaded", async () => {
+    const item = (ref: string, digit: string) => ({
+      ref,
+      source: {
+        kind: "staged_asset" as const,
+        stagedAssetId: `${digit.repeat(64)}.jpg`,
+        checksum: digit.repeat(64),
+        mediaType: "image/jpeg" as const,
+        byteLength: 10
+      },
+      alt: `${ref}.jpg`
+    });
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "Pruned", featuredMediaRef: "attachment-2" },
+        blocks: [
+          {
+            ref: "p1",
+            name: "core/paragraph",
+            attributes: { content: "Body" },
+            children: []
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Use the second image as the featured image.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      media: [item("attachment-1", "a"), item("attachment-2", "b")],
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+    expect(result.plan.media.map((media) => media.ref)).toEqual([
+      "attachment-2"
+    ]);
+  });
+});
