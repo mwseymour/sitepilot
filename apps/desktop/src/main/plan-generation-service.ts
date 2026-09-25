@@ -580,6 +580,12 @@ async function finalizeActionPlanForRequest(input: {
     input.plan.proposedActions.length === 1
       ? `Plan ready: ${actionCountLabel} - ${input.plan.proposedActions[0]?.type}.`
       : `Plan ready: ${actionCountLabel}.`;
+  const nextStepLine =
+    validation.kind === "blocked_clarification"
+      ? null
+      : validation.kind === "blocked_approval" && !approvalBypassApplied
+        ? "Next: approve this plan in the request panel."
+        : "Next: run this plan from the request panel.";
   const planMessageLines = [
     planReadySummary,
     validationSummary,
@@ -592,7 +598,8 @@ async function finalizeActionPlanForRequest(input: {
       : null,
     input.plan.proposedActions.length > 1 && actionSummary.length > 0
       ? `Planned actions:\n${actionSummary}`
-      : null
+      : null,
+    nextStepLine
   ].filter((line): line is string => Boolean(line));
 
   await db.repositories.chatMessages.save({

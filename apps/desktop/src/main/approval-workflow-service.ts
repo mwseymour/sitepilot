@@ -153,12 +153,12 @@ export async function decideApprovalForSite(input: {
       updatedAt: request.updatedAt
     });
 
-    const decisionLabel =
+    const decisionMessage =
       input.decision === "approved"
-        ? "approved"
+        ? "Plan approved. Next: run it from the request panel."
         : input.decision === "revision_requested"
-          ? "sent back for revision"
-          : "rejected";
+          ? "Plan sent back. Next: update the request, then generate a new plan."
+          : "Plan rejected. Next: update the request, then generate a new plan.";
 
     await db.repositories.chatMessages.save({
       id: randomUUID() as ChatMessageId,
@@ -168,11 +168,7 @@ export async function decideApprovalForSite(input: {
       author: { kind: "system" },
       body: {
         format: "plain_text",
-        value: `Approval ${decisionLabel}.${
-          input.decision === "approved"
-            ? " The plan is now unlocked for execution from the Chat screen."
-            : ""
-        }`
+        value: decisionMessage
       },
       createdAt: ts,
       updatedAt: ts

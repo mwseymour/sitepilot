@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { Link, NavLink, Outlet, useParams } from "react-router-dom";
 
+import { modePageCopy } from "../chat-workflow.js";
 import {
   SiteWorkspaceProvider,
   useSiteWorkspace
@@ -89,10 +90,25 @@ function SiteWorkspaceChrome(): ReactElement {
     );
   }, [sidebarCollapsed]);
 
-  const links: { to: string; label: string; icon: string }[] = [
+  const links: {
+    to: string;
+    label: string;
+    icon: string;
+    navHint?: string;
+  }[] = [
     { to: `overview`, label: "Overview", icon: "overview" },
-    { to: `chat`, label: "Requests", icon: "requests" },
-    { to: `conversations`, label: "Conversations", icon: "conversations" },
+    {
+      to: `chat`,
+      label: "Requests",
+      icon: "requests",
+      navHint: modePageCopy("request").navHint
+    },
+    {
+      to: `conversations`,
+      label: "Conversations",
+      icon: "conversations",
+      navHint: modePageCopy("conversation").navHint
+    },
     { to: `config`, label: "Discovery check", icon: "checklist" },
     { to: `approvals`, label: "Approvals", icon: "approvals" },
     { to: `audit`, label: "Audit", icon: "audit" },
@@ -161,7 +177,12 @@ function SiteWorkspaceChrome(): ReactElement {
             >
               <span className="workspace-link-content">
                 {renderNavIcon(l.icon)}
-                <span className="workspace-link-label">{l.label}</span>
+                <span className="workspace-link-copy">
+                  <span className="workspace-link-label">{l.label}</span>
+                  {l.navHint ? (
+                    <span className="workspace-link-hint">{l.navHint}</span>
+                  ) : null}
+                </span>
               </span>
             </NavLink>
           ))}

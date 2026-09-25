@@ -236,7 +236,7 @@ async function createRequestRecordForThread(input: {
       author: { kind: "assistant" },
       body: {
         format: "plain_text",
-        value: "Review in Current Request panel."
+        value: "Request captured. Next: generate a plan from the request panel."
       },
       requestId: request.id,
       createdAt: ts,
@@ -382,16 +382,16 @@ async function buildThreadReply(
           requestId: request.id,
           text:
             runnableCount === 1
-              ? "This plan is ready. Use the Execute plan button in the Current request panel."
-              : "This plan is ready. Use the action buttons in the Planned actions list to run each step."
+              ? "Nothing new to add. Next: run the plan from the request panel."
+              : "Nothing new to add. Next: run each action from the request panel."
         };
       }
       return {
         requestId: request.id,
         text:
           runnableCount === 1
-            ? "Note recorded. This plan is approved and ready to run from the Current request panel."
-            : "Note recorded. This plan is approved. Use the action buttons in the Planned actions list to run each step."
+            ? "Note saved. Next: run the plan from the request panel."
+            : "Note saved. Next: run each action from the request panel."
       };
     case "executing":
       return {
@@ -409,7 +409,7 @@ async function buildThreadReply(
       return {
         requestId: request.id,
         text:
-          "Note recorded. Review in Current Request panel."
+          "Note saved. Next: generate a plan from the request panel."
       };
   }
 }
@@ -751,6 +751,17 @@ export async function appendSystemChatMessage(
     return t;
   }
   const db = getDatabase();
+  const existingMessages =
+    await db.repositories.chatMessages.listByThreadId(threadId);
+  const latestMessage = existingMessages.at(-1);
+  if (
+    latestMessage !== undefined &&
+    "kind" in latestMessage.author &&
+    latestMessage.author.kind === "system" &&
+    latestMessage.body.value === text
+  ) {
+    return { ok: true, message: latestMessage };
+  }
   const ts = nowIso();
   const message: ChatMessage = {
     id: randomUUID() as ChatMessageId,
@@ -1022,7 +1033,7 @@ export async function answerClarificationForRequest(
       body: {
         format: "plain_text",
         value:
-          "Clarification recorded. Review the updated request below, then generate an action plan when you're ready."
+          "Answer recorded. Next: generate a plan from the request panel."
       },
       createdAt: ts,
       updatedAt: ts
@@ -1134,11 +1145,11 @@ export async function amendRequestForThread(
         value:
           request.latestPlanId !== undefined
             ? runnableCount === 1
-              ? "Confirmation noted. The current request is unchanged, and the existing plan is still ready in the Current Request panel. Use the Execute plan button there."
+              ? "Nothing changed. Next: run the plan from the request panel."
               : runnableCount > 1
-                ? "Confirmation noted. The current request is unchanged, and the existing plan is still ready in the Current Request panel. Use the action buttons in the Planned actions list there."
-                : "Confirmation noted. The current request is unchanged, so the existing analysis and plan state stay available in the Current Request panel."
-            : "Confirmation noted. The current request is unchanged, so the existing analysis and plan state stay available in the Current Request panel."
+                ? "Nothing changed. Next: run each action from the request panel."
+                : "Nothing changed. The current request and plan are unchanged."
+            : "Nothing changed. The current request and plan are unchanged."
       },
       createdAt: ts,
       updatedAt: ts
@@ -1175,7 +1186,7 @@ export async function amendRequestForThread(
     body: {
       format: "plain_text",
       value:
-        "Added to the current request. Review it below, then generate an action plan when you're ready."
+        "Request updated. Next: generate a plan from the request panel."
     },
     createdAt: ts,
     updatedAt: ts

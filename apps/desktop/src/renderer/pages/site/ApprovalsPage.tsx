@@ -282,7 +282,7 @@ export function ApprovalsPage(): ReactElement | null {
                       disabled={busy}
                       onClick={() => void onDecide(a.id, "approved")}
                     >
-                      Approve
+                      Approve plan
                     </button>
                     <button
                       type="button"

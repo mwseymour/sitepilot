@@ -407,7 +407,7 @@ export function GutenbergV2CandidatePanel({
                 void onDecide(candidate.candidate!.candidateId, "approved")
               }
             >
-              Approve candidate
+              Approve this update
             </button>
             <button
               type="button"
@@ -445,7 +445,7 @@ export function GutenbergV2CandidatePanel({
             onClick={() => void onExecute()}
           >
             {candidate.state === "approved"
-              ? "Execute approved candidate"
+              ? "Apply this update to the site"
               : "Continue execution"}
           </button>
         </div>

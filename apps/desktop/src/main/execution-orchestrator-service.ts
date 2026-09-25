@@ -1930,7 +1930,7 @@ export async function executePlanAction(
       siteId: input.siteId,
       requestId: input.requestId,
       author: { kind: "assistant" },
-      text: `Dry-run completed for ${spec.toolName}.`
+      text: `Dry-run succeeded for ${spec.toolName}. The site was not changed.`
     });
     return {
       ok: true,
@@ -2241,7 +2241,9 @@ export async function executePlanAction(
     siteId: input.siteId,
     requestId: input.requestId,
     author: { kind: "assistant" },
-    text: `${input.dryRun ? "Dry-run completed" : "Execution completed"} for ${spec.toolName}.`
+    text: input.dryRun
+      ? `Dry-run succeeded for ${spec.toolName}. The site was not changed.`
+      : `Applied ${spec.toolName} to the site.`
   });
 
   return {

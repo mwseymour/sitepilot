@@ -26,6 +26,12 @@ import {
   requestVisualAnalysisIsCurrent
 } from "@sitepilot/services/request-visual-analysis";
 
+import {
+  humanRequestStatus,
+  modePageCopy,
+  resolveRequestNextAction,
+  type RequestNextActionId
+} from "../../chat-workflow.js";
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import {
   GutenbergV2CandidatePanel,
@@ -688,7 +694,7 @@ export function ChatPage({
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const debugCopyResetTimerRef = useRef<number | null>(null);
-  const mirroredFeedbackRef = useRef<Set<string>>(new Set());
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadThreads = useCallback(async () => {
     const res = await window.sitePilotDesktop.listChatThreads({ siteId });
@@ -1371,6 +1377,71 @@ export function ChatPage({
     await loadMessages(selectedThreadId);
   }
 
+  async function onDecidePlanApproval(
+    decision: "approved" | "rejected"
+  ): Promise<void> {
+    if (bundle?.pendingApproval === null || bundle?.pendingApproval === undefined) {
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const res = await window.sitePilotDesktop.decideApproval({
+      siteId,
+      approvalRequestId: bundle.pendingApproval.id,
+      decision
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    if (selectedThreadId !== null) {
+      await loadBundle();
+      await loadMessages(selectedThreadId);
+    }
+  }
+
+  async function onRequestNextAction(id: RequestNextActionId): Promise<void> {
+    switch (id) {
+      case "reply":
+        composerTextareaRef.current?.focus();
+        return;
+      case "generate_plan":
+        await onGeneratePlan();
+        return;
+      case "analyze_reference":
+        await onAnalyzeRequestVisualAnalysis();
+        return;
+      case "approve_analysis":
+        await onReviewRequestVisualAnalysis();
+        return;
+      case "approve_plan":
+        await onDecidePlanApproval("approved");
+        return;
+      case "run_plan":
+        await onRunPlan(false);
+        return;
+      case "generate_candidate":
+        if (lastRequestId !== null) {
+          await generateGutenbergV2Candidate(lastRequestId);
+        }
+        return;
+      case "approve_candidate":
+        if (gutenbergV2State?.candidate) {
+          await onDecideGutenbergV2Candidate(
+            gutenbergV2State.candidate.candidateId,
+            "approved"
+          );
+        }
+        return;
+      case "apply_update":
+        await onExecuteGutenbergV2Candidate();
+        return;
+      default:
+        return;
+    }
+  }
+
   async function onAnalyzeRequestVisualAnalysis(): Promise<void> {
     if (!selectedThreadId || bundle === null) {
       return;
@@ -1639,7 +1710,7 @@ export function ChatPage({
         return {
           title: "Refine request",
           helper:
-            "Add more context here. The current request will be updated; generate an action plan only when you're ready.",
+            "Add detail only if the request is incomplete. When it is ready, generate a plan.",
           placeholder: "Add more detail to the current request…",
           actionLabel: "Update request"
         };
@@ -1647,18 +1718,15 @@ export function ChatPage({
         return {
           title: "Revise request",
           helper:
-            "Add changes here to revise the request. SitePilot will update it and you can generate a fresh action plan after that.",
+            "Approve the plan in the request panel, or describe a change here to revise it.",
           placeholder: "Describe how the request should change…",
           actionLabel: "Update request"
         };
       case "approved":
         return {
           title: "Revise request",
-          helper: canRunPlanDirectly
-            ? SHOW_DRY_RUN_UI
-              ? "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
-              : "Add changes here to revise the approved request. SitePilot will update it, and you can generate a fresh action plan before running anything."
-            : "Add changes here to revise the approved request. SitePilot will update it and you can generate a fresh action plan.",
+          helper:
+            "Run the plan in the request panel, or describe a change here to revise it.",
           placeholder: "Describe how the approved request should change…",
           actionLabel: "Update request"
         };
@@ -1714,6 +1782,39 @@ export function ChatPage({
     (bundle !== null &&
       requestExecutionControlsLocked(bundle.request.status)) ||
     gutenbergV2State !== null;
+  const pageCopy = modePageCopy(mode);
+  const requestNextAction =
+    bundle !== null && !isConversationMode
+      ? resolveRequestNextAction({
+          requestStatus: bundle.request.status,
+          hasPlan: bundle.plan !== null && bundle.plan !== undefined,
+          pendingApproval: bundle.pendingApproval !== null,
+          canRunPlanDirectly,
+          visualAnalysisRequired,
+          visualAnalysisReady:
+            !visualAnalysisRequired ||
+            (bundle.visualAnalysis !== null && !visualAnalysisStale),
+          visualAnalysisNeedsReview:
+            visualAnalysisRequired &&
+            bundle.visualAnalysis !== null &&
+            !visualAnalysisStale &&
+            bundle.visualAnalysis.reviewedAt === undefined,
+          gutenbergV2Enabled: sitePlannerSettings?.gutenbergV2Enabled ?? false,
+          requestWorkflow,
+          gutenbergV2State: gutenbergV2State?.state ?? null,
+          openQuestionCount: openQuestions.length,
+          executionLocked:
+            bundle !== null &&
+            requestExecutionControlsLocked(bundle.request.status)
+        })
+      : null;
+  const composerWorkflowIsSecondary =
+    requestNextAction?.primary?.id === "generate_plan" ||
+    requestNextAction?.primary?.id === "approve_plan" ||
+    requestNextAction?.primary?.id === "run_plan";
+  const showInChatApprove =
+    requestNextAction?.primary?.id === "approve_plan" &&
+    bundle?.pendingApproval !== null;
   const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
   const preserveOriginalImageUploads =
     uiPreferences?.preserveOriginalImageUploads ?? false;
@@ -1741,38 +1842,6 @@ export function ChatPage({
         ]
       : [])
   ];
-
-  useEffect(() => {
-    if (selectedThreadId === null || developerMessages.length === 0) {
-      return;
-    }
-
-    const systemMessages = new Set(
-      messages.filter(isSystemMessage).map((message) => message.body.value)
-    );
-
-    void (async () => {
-      for (const text of developerMessages) {
-        const mirrorKey = `${selectedThreadId}:${lastRequestId ?? "none"}:${text}`;
-        if (
-          systemMessages.has(text) ||
-          mirroredFeedbackRef.current.has(mirrorKey)
-        ) {
-          continue;
-        }
-        mirroredFeedbackRef.current.add(mirrorKey);
-        const res = await window.sitePilotDesktop.appendSystemChatMessage({
-          siteId,
-          threadId: selectedThreadId,
-          text,
-          ...(lastRequestId !== null ? { requestId: lastRequestId } : {})
-        });
-        if (!res.ok) {
-          mirroredFeedbackRef.current.delete(mirrorKey);
-        }
-      }
-    })();
-  }, [developerMessages, lastRequestId, messages, selectedThreadId, siteId]);
 
   const pendingAttachmentBytes = pendingAttachments.reduce(
     (total, attachment) => total + attachment.sizeBytes,
@@ -1910,7 +1979,10 @@ export function ChatPage({
       ) : null}
       <aside className="chat-threads">
         <div className="chat-threads-header">
-          <h2>{isConversationMode ? "Conversations" : "Requests"}</h2>
+          <div>
+            <h2>{isConversationMode ? "Conversations" : "Requests"}</h2>
+            <p className="muted small-print chat-mode-lede">{pageCopy.pageLede}</p>
+          </div>
           <button
             type="button"
             className="btn btn-secondary btn-small"
@@ -2159,8 +2231,10 @@ export function ChatPage({
         {err ? <p className="workspace-error">{err}</p> : null}
         {!selectedThreadId ? (
           <p className="muted">
-            Create a {isConversationMode ? "conversation" : "request"} to start
-            messaging.
+            {pageCopy.emptyState}{" "}
+            <Link to={`/site/${siteId}/${pageCopy.otherModePathSegment}`}>
+              {pageCopy.otherModeLabel}
+            </Link>
           </p>
         ) : (
           <>
@@ -2171,7 +2245,11 @@ export function ChatPage({
                     (isConversationMode ? "Conversation" : "Request")}
                 </h2>
                 <p className="muted small-print">
-                  {threadTypeMeta(selectedThread?.type).label}
+                  {threadTypeMeta(selectedThread?.type).label} ·{" "}
+                  {threadTypeMeta(selectedThread?.type).description}
+                </p>
+                <p className="muted small-print chat-mode-lede">
+                  {pageCopy.pageLede}
                 </p>
                 <div
                   className="chat-message-filters"
@@ -2358,6 +2436,7 @@ export function ChatPage({
                     </fieldset>
                   ) : null}
                   <textarea
+                    ref={composerTextareaRef}
                     rows={3}
                     value={requestPrompt}
                     placeholder={composerState.placeholder}
@@ -2429,7 +2508,11 @@ export function ChatPage({
                     </button>
                     <button
                       type="button"
-                      className="btn btn-primary"
+                      className={
+                        composerWorkflowIsSecondary
+                          ? "btn btn-secondary"
+                          : "btn btn-primary"
+                      }
                       disabled={
                         busy ||
                         requestPrompt.trim().length === 0 ||
@@ -2440,7 +2523,7 @@ export function ChatPage({
                     >
                       {composerState.actionLabel}
                     </button>
-                    {bundle?.pendingApproval ? (
+                    {bundle?.pendingApproval && !showInChatApprove ? (
                       <Link
                         className="btn btn-secondary"
                         to={`/site/${siteId}/approvals`}
@@ -2476,6 +2559,92 @@ export function ChatPage({
                   ) : null}
                   {bundle ? (
                     <div className="chat-request-panel">
+                      {requestNextAction ? (
+                        <div className="chat-next-action">
+                          <div className="chat-next-action-copy">
+                            <span className="badge">
+                              {requestNextAction.statusLabel}
+                            </span>
+                            <h4>{requestNextAction.title}</h4>
+                            <p className="muted small-print">
+                              {requestNextAction.helper}
+                            </p>
+                          </div>
+                          <div className="action-row chat-next-action-buttons">
+                            {requestNextAction.primary ? (
+                              <button
+                                type="button"
+                                className={
+                                  requestNextAction.primary.id === "reply"
+                                    ? "btn btn-secondary"
+                                    : "btn btn-primary"
+                                }
+                                disabled={
+                                  busy ||
+                                  (requestNextAction.primary.id ===
+                                    "generate_plan" &&
+                                    !canGeneratePlanNow) ||
+                                  (requestNextAction.primary.id ===
+                                    "run_plan" &&
+                                    (!requestCanExecute(bundle.request.status) ||
+                                      execBusy))
+                                }
+                                onClick={() =>
+                                  void onRequestNextAction(
+                                    requestNextAction.primary!.id
+                                  )
+                                }
+                              >
+                                {requestNextAction.primary.label}
+                              </button>
+                            ) : null}
+                            {requestNextAction.primary?.id === "approve_plan" ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                disabled={busy}
+                                onClick={() =>
+                                  void onDecidePlanApproval("rejected")
+                                }
+                              >
+                                Reject plan
+                              </button>
+                            ) : null}
+                            {requestNextAction.secondary.map((action) => (
+                              <button
+                                key={action.id}
+                                type="button"
+                                className="btn btn-secondary"
+                                disabled={
+                                  busy ||
+                                  (action.id === "generate_plan" &&
+                                    !canGeneratePlanNow)
+                                }
+                                onClick={() =>
+                                  void onRequestNextAction(action.id)
+                                }
+                              >
+                                {action.label}
+                              </button>
+                            ))}
+                            {requestNextAction.primary?.id === "run_plan" &&
+                            SHOW_DRY_RUN_UI &&
+                            !executionControlsLocked ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                disabled={execBusy || busy}
+                                onClick={() => void onRunPlan(true)}
+                              >
+                                {execBusy &&
+                                execProgressLabel === "Running dry-run…"
+                                  ? "Running dry-run…"
+                                  : "Dry-run plan"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                       <h3>Current request</h3>
                       <ExpandableText
                         text={bundle.request.userPrompt}
@@ -2514,19 +2683,15 @@ export function ChatPage({
                       <div className="chat-request-meta">
                         <h4>Request status</h4>
                         <p className="small-print">
-                          <span className="badge">{bundle.request.status}</span>
+                          <span className="badge">
+                            {humanRequestStatus(bundle.request.status)}
+                          </span>
                           {bundle.pendingApproval ? (
                             <>
                               {" "}
                               <span className="badge badge-warn">
                                 Pending approval
-                              </span>{" "}
-                              <Link
-                                className="small-print"
-                                to={`/site/${siteId}/approvals`}
-                              >
-                                Open approvals
-                              </Link>
+                              </span>
                             </>
                           ) : null}
                         </p>
@@ -2645,64 +2810,29 @@ export function ChatPage({
                           </div>
                         </div>
                       ) : null}
-                      <div className="action-row">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          disabled={busy || !canGeneratePlanNow}
-                          onClick={() => void onGeneratePlan()}
-                        >
-                          Generate action plan
-                        </button>
-                      </div>
                       {canGeneratePlan && !canGeneratePlanNow ? (
                         <p className="muted small-print">
-                          Generate action plan stays locked until the reference
+                          Generate plan stays locked until the reference
                           analysis is current and approved.
                         </p>
                       ) : null}
                       {bundle.plan ? (
                         <div className="chat-plan-next-steps">
-                          <div className="chat-plan-next-steps-header">
-                            <div>
-                              <p className="eyebrow">Next steps</p>
-                              <h4>
-                                {openQuestions.length > 0
-                                  ? "Resolve the remaining questions before running this plan."
-                                  : canRunPlanDirectly
-                                    ? "Review and run the generated action plan."
-                                    : "Review the generated action plan."}
-                              </h4>
-                              <p className="muted small-print">
-                                {openQuestions.length > 0
-                                  ? "This plan still has unanswered inputs. Clear those first so execution is unambiguous."
-                                  : canRunPlanDirectly
-                                    ? executionControlsLocked
-                                      ? "This plan has already been executed. Generate a new plan if you need another run."
-                                      : requestCanExecute(bundle.request.status)
-                                        ? "The plan is ready for direct execution, and each action can still be reviewed individually below."
-                                        : SHOW_DRY_RUN_UI
-                                          ? "Dry-run is available now. Full execution unlocks when the request reaches a runnable state."
-                                          : "Execution unlocks when the request reaches a runnable state."
-                                    : "This plan needs to be run action-by-action below."}
-                              </p>
-                            </div>
-                            <div
-                              className="chat-plan-next-steps-meta"
-                              aria-label="Plan summary"
-                            >
-                              <span className="badge">
-                                {bundle.plan.proposedActions.length} actions
+                          <div
+                            className="chat-plan-next-steps-meta"
+                            aria-label="Plan summary"
+                          >
+                            <span className="badge">
+                              {bundle.plan.proposedActions.length} actions
+                            </span>
+                            {openQuestions.length > 0 ? (
+                              <span className="badge badge-warn">
+                                {openQuestions.length} open question
+                                {openQuestions.length === 1 ? "" : "s"}
                               </span>
-                              {openQuestions.length > 0 ? (
-                                <span className="badge badge-warn">
-                                  {openQuestions.length} open question
-                                  {openQuestions.length === 1 ? "" : "s"}
-                                </span>
-                              ) : (
-                                <span className="badge">Ready for review</span>
-                              )}
-                            </div>
+                            ) : (
+                              <span className="badge">Ready for review</span>
+                            )}
                           </div>
                           {openQuestions.length > 0 ? (
                             <div className="chat-plan-next-steps-section">
@@ -2712,56 +2842,6 @@ export function ChatPage({
                                   <li key={question}>{question}</li>
                                 ))}
                               </ol>
-                            </div>
-                          ) : null}
-                          {canRunPlanDirectly ? (
-                            <div className="chat-plan-runbar chat-plan-runbar-prominent">
-                              <div>
-                                <h5>Run this plan</h5>
-                                <p className="muted small-print">
-                                  {requestCanExecute(bundle.request.status)
-                                    ? executableActions.length > 1
-                                      ? "Run every mapped action in sequence or inspect them one by one below."
-                                      : "Run the mapped action now or inspect it below first."
-                                    : "Use a dry-run now, then execute once the request is ready."}
-                                </p>
-                              </div>
-                              <div className="chat-plan-runbar-actions">
-                                {SHOW_DRY_RUN_UI && !executionControlsLocked ? (
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    disabled={execBusy || busy}
-                                    onClick={() => void onRunPlan(true)}
-                                  >
-                                    {execBusy &&
-                                    execProgressLabel === "Running dry-run…"
-                                      ? "Running dry-run…"
-                                      : executableActions.length > 1
-                                        ? "Dry-run all"
-                                        : "Dry-run plan"}
-                                  </button>
-                                ) : null}
-                                {!executionControlsLocked ? (
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary"
-                                    disabled={
-                                      execBusy ||
-                                      busy ||
-                                      !requestCanExecute(bundle.request.status)
-                                    }
-                                    onClick={() => void onRunPlan(false)}
-                                  >
-                                    {execBusy &&
-                                    execProgressLabel === "Executing…"
-                                      ? "Executing…"
-                                      : executableActions.length > 1
-                                        ? "Execute all"
-                                        : "Execute plan"}
-                                  </button>
-                                ) : null}
-                              </div>
                             </div>
                           ) : null}
                         </div>

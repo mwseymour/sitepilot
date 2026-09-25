@@ -66,7 +66,8 @@ const db = {
       save: vi.fn(async () => undefined)
     },
     chatMessages: {
-      save: vi.fn(async () => undefined)
+      save: vi.fn(async () => undefined),
+      listByThreadId: vi.fn(async () => [])
     }
   }
 };
@@ -173,10 +174,44 @@ describe("chat service request revision", () => {
       expect.objectContaining({
         author: { kind: "assistant" },
         body: expect.objectContaining({
-          value: expect.stringContaining("Execute plan button")
+          value: expect.stringContaining(
+            "Nothing changed. Next: run the plan from the request panel."
+          )
         })
       })
     );
+  });
+
+  it("skips duplicate consecutive system messages", async () => {
+    const existingSystemMessage = {
+      id: "msg-system-1",
+      threadId: thread.id,
+      siteId: site.id,
+      author: { kind: "system" as const },
+      body: { format: "plain_text" as const, value: "Status update" },
+      createdAt: "2026-04-24T10:01:00.000Z",
+      updatedAt: "2026-04-24T10:01:00.000Z"
+    };
+    db.repositories.chatMessages.listByThreadId.mockResolvedValue([
+      existingSystemMessage
+    ]);
+
+    const { appendSystemChatMessage } = await import(
+      "../apps/desktop/src/main/chat-service.js"
+    );
+
+    const result = await appendSystemChatMessage(
+      site.id as never,
+      thread.id as never,
+      "Status update"
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.message).toEqual(existingSystemMessage);
+    expect(db.repositories.chatMessages.save).not.toHaveBeenCalled();
   });
 
   it("creates a new request thread when a conversation turn returns research handoff content", async () => {

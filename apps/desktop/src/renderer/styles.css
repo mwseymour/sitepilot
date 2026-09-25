@@ -290,6 +290,23 @@ h2 {
   gap: 0.6rem;
 }
 
+.workspace-link-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.workspace-link-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
+.workspace-grid.is-sidebar-collapsed .workspace-link-hint {
+  display: none;
+}
+
 .workspace-link-icon,
 .workspace-toggle-icon {
   width: 1.1rem;
@@ -1285,6 +1302,30 @@ h2 {
 
 .chat-request-meta {
   margin-bottom: 0.75rem;
+}
+
+.chat-mode-lede {
+  margin-top: 0.35rem;
+  max-width: 42rem;
+}
+
+.chat-next-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  margin-bottom: 0.85rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+}
+
+.chat-next-action-copy h4 {
+  margin: 0.35rem 0 0.25rem;
+}
+
+.chat-next-action-buttons {
+  flex-wrap: wrap;
 }
 
 .chat-plan-runbar {
