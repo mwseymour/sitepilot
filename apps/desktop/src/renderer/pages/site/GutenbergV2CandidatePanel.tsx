@@ -97,19 +97,86 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function structureLabel(value: unknown): string {
-  const record = recordValue(value);
-  if (!record) {
-    return "No structure details were supplied.";
+type OutlineEntry = { depth: number; name: string; text: string };
+
+const OUTLINE_TEXT_ATTRIBUTES = [
+  "content",
+  "text",
+  "value",
+  "citation",
+  "alt",
+  "caption",
+  "mediaAlt"
+];
+
+function plainText(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function blockOutline(blocks: unknown, depth = 0): OutlineEntry[] {
+  if (!Array.isArray(blocks)) {
+    return [];
   }
-  const blocks = Array.isArray(record.blocks)
-    ? record.blocks.length
-    : undefined;
-  const summary =
-    typeof record.summary === "string" ? record.summary : undefined;
+  return blocks.flatMap((block) => {
+    const record = recordValue(block);
+    if (!record || typeof record.name !== "string") {
+      return [];
+    }
+    const attributes = recordValue(record.attributes) ?? {};
+    const textAttribute = OUTLINE_TEXT_ATTRIBUTES.find(
+      (key) => typeof attributes[key] === "string" && attributes[key] !== ""
+    );
+    const level =
+      record.name === "core/heading" && typeof attributes.level === "number"
+        ? `H${attributes.level} `
+        : "";
+    const text = textAttribute
+      ? plainText(attributes[textAttribute] as string)
+      : "";
+    return [
+      {
+        depth,
+        name: record.name.replace(/^core\//, ""),
+        text: `${level}${text}`.trim()
+      },
+      ...blockOutline(record.children, depth + 1)
+    ];
+  });
+}
+
+function planBlocks(side: unknown): unknown {
+  const record = recordValue(side);
+  if (!record) {
+    return undefined;
+  }
+  const plan = recordValue(record.plan);
+  return plan?.blocks ?? record.blocks;
+}
+
+function Outline({ entries }: { entries: OutlineEntry[] }): ReactElement {
   return (
-    summary ??
-    (blocks === undefined ? "Compiled structure" : `${blocks} blocks`)
+    <ol className="gutenberg-v2-outline">
+      {entries.map((entry, index) => (
+        <li
+          key={`${index}-${entry.name}`}
+          style={{ paddingLeft: `${entry.depth * 1.1}rem` }}
+        >
+          <span className="gutenberg-v2-outline-name">{entry.name}</span>
+          {entry.text ? (
+            <span className="gutenberg-v2-outline-text">
+              {entry.text.length > 90
+                ? `${entry.text.slice(0, 90)}…`
+                : entry.text}
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -131,26 +198,80 @@ function StructureDiff({
   const record = recordValue(value);
   const before = record?.before ?? record?.source ?? null;
   const after = record?.after ?? record?.candidate ?? null;
+  const afterOutline = blockOutline(planBlocks(after));
+  const beforeOutline = blockOutline(planBlocks(before));
 
   return (
     <div
       className="gutenberg-v2-structure-diff"
       aria-label="Structure comparison"
     >
-      <div className="gutenberg-v2-structure-summary">
-        <section>
-          <h6>Before</h6>
-          <p>{structureLabel(before)}</p>
-        </section>
-        <section>
-          <h6>After</h6>
-          <p>{structureLabel(after)}</p>
-        </section>
-      </div>
+      {beforeOutline.length > 0 ? (
+        <details>
+          <summary>Current content ({beforeOutline.length} blocks)</summary>
+          <Outline entries={beforeOutline} />
+        </details>
+      ) : null}
+      <h6>
+        {beforeOutline.length > 0 ? "Proposed content" : "New content"} (
+        {afterOutline.length} blocks)
+      </h6>
+      {afterOutline.length > 0 ? (
+        <Outline entries={afterOutline} />
+      ) : (
+        <p className="muted small-print">No block outline was supplied.</p>
+      )}
       <details>
-        <summary>View the full structure comparison</summary>
+        <summary>Raw structure data</summary>
         <pre>{JSON.stringify(value, null, 2)}</pre>
       </details>
+    </div>
+  );
+}
+
+function PreviewLightbox({
+  source,
+  label,
+  onClose
+}: {
+  source: string;
+  label: string;
+  onClose: () => void;
+}): ReactElement {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="gutenberg-v2-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      onClick={onClose}
+    >
+      <div
+        className="gutenberg-v2-lightbox-body"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="gutenberg-v2-lightbox-header">
+          <strong>{label}</strong>
+          <button
+            type="button"
+            className="btn btn-secondary btn-small"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+        <img src={source} alt={label} />
+      </div>
     </div>
   );
 }
@@ -162,6 +283,10 @@ export function GutenbergV2CandidatePanel({
   onExecute,
   onLoadArtifact
 }: Props): ReactElement {
+  const [enlarged, setEnlarged] = useState<{
+    source: string;
+    label: string;
+  } | null>(null);
   const [artifacts, setArtifacts] = useState<Record<string, ReviewArtifact>>(
     {}
   );
@@ -337,29 +462,41 @@ export function GutenbergV2CandidatePanel({
             <div className="gutenberg-v2-preview-grid">
               {previews.map(({ artifact: preview, reference }) => {
                 const source = safePreviewSource(preview);
+                const label =
+                  reference.viewport === "mobile"
+                    ? "Mobile preview"
+                    : "Desktop preview";
                 return source ? (
-                  <figure key={preview.id} className="gutenberg-v2-preview">
-                    <img
-                      src={source}
-                      alt={`${reference.viewport === "mobile" ? "Mobile" : "Desktop"} preview of candidate content`}
-                      onLoad={() =>
-                        setPreviewLoadStatus((current) => ({
-                          ...current,
-                          [preview.id]: "loaded"
-                        }))
-                      }
-                      onError={() =>
-                        setPreviewLoadStatus((current) => ({
-                          ...current,
-                          [preview.id]: "failed"
-                        }))
-                      }
-                    />
+                  <figure
+                    key={preview.id}
+                    className={`gutenberg-v2-preview gutenberg-v2-preview-${reference.viewport ?? "desktop"}`}
+                  >
+                    <button
+                      type="button"
+                      className="gutenberg-v2-preview-open"
+                      title="Open full size"
+                      onClick={() => setEnlarged({ source, label })}
+                    >
+                      <img
+                        src={source}
+                        alt={`${label} of candidate content`}
+                        onLoad={() =>
+                          setPreviewLoadStatus((current) => ({
+                            ...current,
+                            [preview.id]: "loaded"
+                          }))
+                        }
+                        onError={() =>
+                          setPreviewLoadStatus((current) => ({
+                            ...current,
+                            [preview.id]: "failed"
+                          }))
+                        }
+                      />
+                    </button>
                     <figcaption className="small-print">
-                      {reference.viewport === "mobile"
-                        ? "Mobile preview from this site’s WordPress editor"
-                        : "Desktop preview from this site’s WordPress editor"}
-                      . This is the connected site, not a mock.
+                      {label} from this site’s WordPress editor. Click to
+                      enlarge.
                     </figcaption>
                   </figure>
                 ) : null;
@@ -430,6 +567,13 @@ export function GutenbergV2CandidatePanel({
               : "Continue execution"}
           </button>
         </div>
+      ) : null}
+      {enlarged ? (
+        <PreviewLightbox
+          source={enlarged.source}
+          label={enlarged.label}
+          onClose={() => setEnlarged(null)}
+        />
       ) : null}
     </section>
   );

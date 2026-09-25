@@ -253,6 +253,14 @@ function configureFakeRuntime() {
       job.approvalId = approval.approvalId;
       return job;
     }),
+    withdrawApproval: vi.fn(async ({ executionId, candidateId }: any) => {
+      const job = jobs.get(executionId);
+      if (job.candidate.candidateId !== candidateId)
+        throw new Error("candidate mismatch");
+      if (job.state !== "approved") throw new Error("not approved");
+      job.state = "stale_approval";
+      return job;
+    }),
     rejectCandidate: vi.fn(async ({ executionId, candidateId }: any) => {
       const job = jobs.get(executionId);
       if (job.candidate.candidateId !== candidateId)
@@ -852,5 +860,138 @@ describe("desktop Gutenberg v2 chat boundary", () => {
       executionId: resumeExecutionId,
       idempotencyKey: resumeIdempotencyKey
     });
+  });
+
+  it("revises from the previous plan, withdraws approvals and stops after a write", async () => {
+    setup(true);
+    configureGutenbergV2ProtocolProbe(async () => true);
+    const state = configureFakeRuntime();
+    const plannerMessages: any[] = [];
+    configureGutenbergV2PlannerFactory(async () => ({
+      ok: true as const,
+      model: "test-model",
+      client: {
+        providerId: "test",
+        complete: vi.fn(async (messages: any[]) => {
+          plannerMessages.push(messages);
+          return {
+            text: JSON.stringify({
+              postFields: { title: "Generated" },
+              blocks: [
+                {
+                  ref: `p${plannerMessages.length}`,
+                  name: "core/paragraph",
+                  attributes: { content: `Version ${plannerMessages.length}` },
+                  children: []
+                }
+              ]
+            }),
+            usage: { inputTokens: 1, outputTokens: 1 }
+          };
+        })
+      }
+    }));
+    const first = await generateGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      target: { operation: "create_draft", postType: "post" }
+    });
+    const firstExecutionId = (first as any).state.executionId;
+
+    const revised = await continueGutenbergV2AfterFollowUp({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      note: "Add a closing paragraph"
+    });
+    expect(revised).toMatchObject({
+      ok: true,
+      state: { state: "review_ready" }
+    });
+    expect(state.jobs.get(firstExecutionId).state).toBe("rejected");
+    const context = JSON.parse(plannerMessages[1][1].content);
+    expect(context.revision.instructions).toEqual(["Add a closing paragraph"]);
+    expect(context.revision.previousPlan.blocks[0].attributes.content).toBe(
+      "Version 1"
+    );
+
+    const revisedExecutionId = (revised as any).state.executionId;
+    await decideGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      candidateId: (revised as any).state.candidate.candidateId,
+      decision: "approved"
+    });
+    const afterApproval = await continueGutenbergV2AfterFollowUp({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      note: "Change the title"
+    });
+    expect(afterApproval).toMatchObject({
+      ok: true,
+      state: { state: "review_ready" }
+    });
+    expect(state.jobs.get(revisedExecutionId).state).toBe("stale_approval");
+    expect(
+      JSON.parse(plannerMessages[2][1].content).revision.previousPlan.blocks[0]
+        .attributes.content
+    ).toBe("Version 2");
+
+    await decideGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      candidateId: (afterApproval as any).state.candidate.candidateId,
+      decision: "approved"
+    });
+    await executeGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId
+    });
+    await expect(
+      continueGutenbergV2AfterFollowUp({
+        siteId: "site-1" as SiteId,
+        requestId: "request-1" as RequestId,
+        note: "One more change"
+      })
+    ).resolves.toMatchObject({ ok: false, code: "execution_complete" });
+  });
+
+  it("starts a fresh execution after a compile failure instead of sticking", async () => {
+    setup(true);
+    configureGutenbergV2ProtocolProbe(async () => true);
+    const state = configureFakeRuntime();
+    configureDeterministicPlanner();
+    const compile = state.runtime.content.compileCandidate;
+    const original = compile.getMockImplementation()!;
+    compile.mockImplementationOnce(
+      async ({ executionId, idempotencyKey }: any) => {
+        state.jobs.set(executionId, {
+          executionId,
+          idempotencyKey,
+          siteId: "site-1",
+          state: "pre_write_failed",
+          revision: 2
+        });
+        throw new Error("Block core/spacer failed Gutenberg validation.");
+      }
+    );
+    const failed = await generateGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      target: { operation: "create_draft", postType: "post" }
+    });
+    expect(failed).toMatchObject({ ok: false });
+    const failedExecutionId = [...state.jobs.keys()][0]!;
+    compile.mockImplementation(original);
+
+    const retried = await generateGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      target: { operation: "create_draft", postType: "post" }
+    });
+    expect(retried).toMatchObject({
+      ok: true,
+      state: { state: "review_ready" }
+    });
+    expect((retried as any).state.executionId).not.toBe(failedExecutionId);
   });
 });

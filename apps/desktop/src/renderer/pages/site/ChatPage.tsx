@@ -1710,7 +1710,10 @@ export function ChatPage({
     ...(activityLabel ? [`Activity: ${activityLabel}`] : []),
     ...(execProgressLabel ? [`Execution: ${execProgressLabel}`] : []),
     ...(lastExecHint ? [`Hint: ${lastExecHint}`] : []),
-    ...(visualAnalysisRequired && !visualAnalysisReadyForPlanning
+    ...(visualAnalysisRequired &&
+    !visualAnalysisReadyForPlanning &&
+    requestWorkflow !== "gutenberg_v2" &&
+    gutenbergV2State === null
       ? [
           visualAnalysisStale
             ? "Visual analysis: stale review artifact; re-run analysis before planning."

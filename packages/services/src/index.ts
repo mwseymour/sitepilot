@@ -52,7 +52,8 @@ export type {
   BuildLlmGutenbergV2PlanInput,
   BuildLlmGutenbergV2PlanResult,
   GutenbergV2PlanningModelClient,
-  GutenbergV2PlanningTarget
+  GutenbergV2PlanningTarget,
+  GutenbergV2PlanRevision
 } from "./gutenberg-v2-plan-generator.js";
 
 export {

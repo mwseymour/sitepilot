@@ -7,7 +7,8 @@ import {
   GutenbergV2PlanGenerationError,
   GutenbergV2ServiceError,
   hashGutenbergV2Value,
-  type GutenbergV2PlanningModelClient
+  type GutenbergV2PlanningModelClient,
+  type GutenbergV2PlanRevision
 } from "@sitepilot/services";
 import type {
   GutenbergV2CompiledCandidate,
@@ -80,6 +81,36 @@ type PlannerFactory = (input: {
 let plannerFactoryForTests: PlannerFactory | undefined;
 let protocolProbeForTests: ((siteUrl: string) => Promise<boolean>) | undefined;
 const inFlightV2Generations = new Set<string>();
+
+// Jobs that ended before anything was written: a new candidate may replace them.
+const PRE_WRITE_TERMINAL_STATES = new Set([
+  "rejected",
+  "pre_write_failed",
+  "stale_approval"
+]);
+// Jobs that wrote to the destination: the request is finished for v2.
+const WRITTEN_STATES = new Set([
+  "succeeded",
+  "post_write_verification_failed",
+  "rolled_back",
+  "rollback_conflict",
+  "manual_intervention_required"
+]);
+function previousPlanFrom(
+  job: GutenbergV2JobRecord | null | undefined
+): GutenbergV2PlanRevision["previousPlan"] | undefined {
+  const intent = job?.candidate?.intent as Record<string, unknown> | undefined;
+  if (!intent) return undefined;
+  return {
+    ...(intent.postFields === undefined
+      ? {}
+      : { postFields: intent.postFields }),
+    ...(intent.blocks === undefined ? {} : { blocks: intent.blocks }),
+    ...(intent.operations === undefined
+      ? {}
+      : { operations: intent.operations })
+  };
+}
 
 /** Test seam: callers provide a deterministic planner, never a mock HTTP route. */
 export function configureGutenbergV2PlannerFactory(
@@ -540,11 +571,19 @@ export async function continueGutenbergV2AfterFollowUp(input: {
     });
     if (!current.ok) return current;
     const candidateId = current.state?.candidate?.candidateId;
-    if (
-      candidateId !== undefined &&
-      (current.state?.state === "review_ready" ||
-        current.state?.state === "approved")
-    ) {
+    const state = current.state?.state;
+    if (state !== undefined && WRITTEN_STATES.has(state)) {
+      const postId = current.state?.result?.postId;
+      return {
+        ok: false as const,
+        code: "execution_complete",
+        message:
+          postId !== undefined
+            ? `This request already wrote post #${postId}. Start a new request for further changes.`
+            : "This request already wrote to the destination. Start a new request for further changes."
+      };
+    }
+    if (candidateId !== undefined && state === "review_ready") {
       const revision = await decideGutenbergV2Candidate({
         siteId: input.siteId,
         requestId: input.requestId,
@@ -553,19 +592,72 @@ export async function continueGutenbergV2AfterFollowUp(input: {
         note: input.note
       });
       if (!revision.ok) return revision;
+    } else if (candidateId !== undefined && state === "approved") {
+      const withdrawn = await withdrawGutenbergV2Approval({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        candidateId,
+        note: input.note
+      });
+      if (!withdrawn.ok) return withdrawn;
     }
   }
   return generateGutenbergV2Candidate({
     siteId: input.siteId,
     requestId: input.requestId,
-    target
+    target,
+    // Only a follow-up on an existing candidate is a revision; a new request's
+    // first message is already its prompt.
+    ...(mapping ? { revisionNote: input.note } : {})
   });
+}
+
+async function withdrawGutenbergV2Approval(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  candidateId: string;
+  note: string;
+}): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  const mapping = readMapping(input.siteId, input.requestId);
+  if (!mapping) {
+    return {
+      ok: false,
+      code: "gutenberg_v2_request_not_found",
+      message: "No Gutenberg v2 execution exists for this request."
+    };
+  }
+  const runtime = await createGutenbergV2DesktopRuntime(input.siteId);
+  if (!runtime.ok) return runtime;
+  try {
+    await runtime.runtime.content.withdrawApproval({
+      executionId: mapping.executionId,
+      candidateId: input.candidateId
+    });
+    saveMapping({
+      ...mapping,
+      decision: "revision_requested",
+      updatedAt: nowIso()
+    });
+    await appendV2Audit(input.siteId, input.requestId, "approval_decided", {
+      engine: "gutenberg_v2",
+      candidateId: input.candidateId,
+      decision: "approval_withdrawn",
+      note: input.note.trim().slice(0, 4_000)
+    });
+    return { ok: true };
+  } catch (error) {
+    return errorResult(error);
+  } finally {
+    await runtime.runtime.close();
+  }
 }
 
 export async function generateGutenbergV2Candidate(input: {
   siteId: SiteId;
   requestId: RequestId;
   target: GutenbergV2Target;
+  /** The operator follow-up that superseded the previous candidate. */
+  revisionNote?: string;
 }) {
   const enabled = await assertV2Enabled(input.siteId);
   if (!enabled.ok) return enabled;
@@ -616,13 +708,25 @@ export async function generateGutenbergV2Candidate(input: {
         "A Gutenberg v2 candidate is still being generated; retry its request state."
     };
   }
+  let existingJob: GutenbergV2JobRecord | null = null;
   if (existing) {
     const runtime = await createGutenbergV2DesktopRuntime(input.siteId);
     if (!runtime.ok) return runtime;
     try {
-      const job = await runtime.runtime.journal.get(existing.executionId);
+      existingJob = await runtime.runtime.journal.get(existing.executionId);
+      const job = existingJob;
       if (job?.state === "review_ready" && existing.decision === null) {
         return { ok: true as const, state: toState(existing, job) };
+      }
+      if (job && WRITTEN_STATES.has(job.state)) {
+        return {
+          ok: false as const,
+          code: "execution_complete",
+          message:
+            job.result?.postId !== undefined
+              ? `This request already wrote post #${job.result.postId}. Start a new request for further changes.`
+              : "This request already wrote to the destination. Start a new request for further changes."
+        };
       }
       if (
         job &&
@@ -632,7 +736,7 @@ export async function generateGutenbergV2Candidate(input: {
           ok: false as const,
           code: "execution_in_progress",
           message:
-            "This Gutenberg v2 candidate is currently being applied or verified."
+            "This Gutenberg v2 candidate is approved or being applied. Execute it before generating again."
         };
       if (job?.state === "compiling") {
         return {
@@ -691,15 +795,14 @@ export async function generateGutenbergV2Candidate(input: {
           message: "Another content engine already owns this request."
         };
   }
-  if (existing && existing.decision !== null) {
-    if (existing.decision === "approved") {
-      return {
-        ok: false as const,
-        code: "execution_in_progress",
-        message:
-          "This Gutenberg v2 candidate is approved and must be executed before generating again."
-      };
-    }
+  // A decided candidate, or a job that failed before writing, cannot resume
+  // under the same execution identity; start a fresh one for the new attempt.
+  if (
+    existing &&
+    (existing.decision !== null ||
+      (existingJob !== null &&
+        PRE_WRITE_TERMINAL_STATES.has(existingJob.state)))
+  ) {
     mapping = {
       ...mapping,
       executionId: randomUUID(),
@@ -780,12 +883,26 @@ export async function generateGutenbergV2Candidate(input: {
             operation: input.target.operation,
             source: source!
           };
+    // request.userPrompt already holds the merged follow-up; the previous
+    // plan lets the model keep untouched content stable.
+    const previousPlan =
+      input.revisionNote === undefined
+        ? undefined
+        : previousPlanFrom(existingJob);
+    const revision: GutenbergV2PlanRevision | undefined =
+      input.revisionNote === undefined
+        ? undefined
+        : {
+            instructions: [input.revisionNote],
+            ...(previousPlan === undefined ? {} : { previousPlan })
+          };
     const planned = await buildLlmGutenbergV2Plan({
       request: request.userPrompt,
       siteId: input.siteId,
       target,
       capabilities,
       ...(media.length > 0 ? { media } : {}),
+      ...(revision === undefined ? {} : { revision }),
       client: planner.client,
       model: planner.model
     });

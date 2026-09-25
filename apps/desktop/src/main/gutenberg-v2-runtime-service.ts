@@ -18,6 +18,7 @@ import {
 import type { SiteId } from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
+import { fetchSiteUrl, isLoopbackHttpsSiteUrl } from "./site-fetch.js";
 import { loadRegisteredSiteContext } from "./site-site-context.js";
 import { resolveRuntimeChildPath } from "./runtime-context.js";
 
@@ -92,6 +93,9 @@ export async function createGutenbergV2DesktopRuntime(
     };
   }
 
+  // Local development sites (*.localhost, loopback IPs) commonly use
+  // self-signed certificates; mirror fetchSiteUrl's loopback-only policy.
+  const loopbackHttps = isLoopbackHttpsSiteUrl(context.site.baseUrl);
   const options: SignedGutenbergV2RuntimeOptions = {
     siteUrl: context.site.baseUrl,
     siteId,
@@ -100,7 +104,9 @@ export async function createGutenbergV2DesktopRuntime(
     stagedAssets,
     reviewArtifactDirectory: join(root, "review", siteId),
     maxConcurrentJobs: 1,
-    jobTimeoutMs: 120_000
+    jobTimeoutMs: 120_000,
+    fetchImplementation: fetchSiteUrl,
+    ...(loopbackHttps ? { ignoreHTTPSErrors: true } : {})
   };
   const signed = createSignedGutenbergV2Runtime(options);
   const artifacts = new FileGutenbergV2ReviewArtifactStore(

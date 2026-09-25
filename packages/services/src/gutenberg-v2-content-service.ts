@@ -592,6 +592,37 @@ export class GutenbergV2ContentService {
     });
   }
 
+  /**
+   * Withdraw an approval that has not started execution, e.g. because the
+   * operator asked for a change. The job becomes stale; nothing was written.
+   */
+  public async withdrawApproval(input: {
+    executionId: string;
+    candidateId: string;
+  }): Promise<GutenbergV2JobRecord> {
+    const job = await this.#requireJob(input.executionId);
+    if (job.candidate?.candidateId !== input.candidateId) {
+      throw new GutenbergV2ServiceError(
+        "approval_invalid",
+        "The withdrawal is not bound to the current candidate."
+      );
+    }
+    if (job.state === "stale_approval") return job;
+    if (job.state !== "approved") {
+      throw new GutenbergV2ServiceError(
+        "approval_invalid",
+        `Execution ${input.executionId} has no approval that can be withdrawn.`
+      );
+    }
+    return this.#transition(job, "stale_approval", {
+      failure: issue(
+        "approval_invalid",
+        "commit",
+        "The approval was withdrawn before execution."
+      )
+    });
+  }
+
   public async prepareCommit(input: {
     executionId: string;
   }): Promise<GutenbergV2PrepareCommitResponse> {

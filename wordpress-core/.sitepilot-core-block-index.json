@@ -1,9 +1,9 @@
 {
   "sourceRoot": "/Users/mattseymour/Desktop/ai-dev/sitepilot/wordpress-core",
   "cachePath": "/Users/mattseymour/Desktop/ai-dev/sitepilot/wordpress-core/.sitepilot-core-block-index.json",
-  "generatedAt": "2026-06-18T18:56:27.252Z",
-  "wordpressVersion": "7.0",
-  "indexedBlockCount": 109,
+  "generatedAt": "2026-09-24T19:54:28.635Z",
+  "wordpressVersion": "7.1.2",
+  "indexedBlockCount": 115,
   "executableBlockCount": 25,
   "missingReferenceBlocks": [
     "core/comment-author-avatar",
@@ -11,15 +11,9 @@
     "core/form-input",
     "core/form-submission-notification",
     "core/form-submit-button",
-    "core/playlist",
-    "core/playlist-track",
     "core/post-comment",
     "core/tab",
-    "core/tab-list",
-    "core/tab-panel",
-    "core/tab-panels",
-    "core/table-of-contents",
-    "core/tabs"
+    "core/table-of-contents"
   ],
   "additionalSnapshotBlocks": [
     "core/legacy-widget",
@@ -447,8 +441,7 @@
         "textColor",
         "title",
         "type",
-        "url",
-        "width"
+        "url"
       ],
       "supports": [
         "__experimentalBorder",
@@ -456,6 +449,7 @@
         "alignWide",
         "anchor",
         "color",
+        "dimensions",
         "interactivity",
         "reusable",
         "shadow",
@@ -1220,6 +1214,7 @@
       "ancestor": [],
       "allowedBlocks": [],
       "attributes": [
+        "allowedVideoProviders",
         "alt",
         "backgroundType",
         "contentPosition",
@@ -1513,6 +1508,7 @@
         "aspectRatio",
         "caption",
         "columns",
+        "dynamicContent",
         "fixedHeight",
         "ids",
         "imageCrop",
@@ -1672,7 +1668,9 @@
       "ancestor": [],
       "allowedBlocks": [],
       "attributes": [
-        "label"
+        "description",
+        "label",
+        "opensInNewTab"
       ],
       "supports": [
         "anchor",
@@ -1709,6 +1707,7 @@
         "customCSS",
         "html",
         "interactivity",
+        "listView",
         "visibility"
       ],
       "styleFiles": [
@@ -1737,7 +1736,10 @@
       "ancestor": [],
       "allowedBlocks": [],
       "attributes": [
-        "icon"
+        "flipHorizontal",
+        "flipVertical",
+        "icon",
+        "rotation"
       ],
       "supports": [
         "__experimentalBorder",
@@ -1788,6 +1790,7 @@
         "height",
         "href",
         "id",
+        "isDecorative",
         "lightbox",
         "linkClass",
         "linkDestination",
@@ -1885,7 +1888,6 @@
       "attributes": [
         "addLinkToFeaturedImage",
         "categories",
-        "columns",
         "displayAuthor",
         "displayFeaturedImage",
         "displayPostContent",
@@ -1898,7 +1900,6 @@
         "featuredImageSizeWidth",
         "order",
         "orderBy",
-        "postLayout",
         "postsToShow",
         "selectedAuthor"
       ],
@@ -1909,6 +1910,7 @@
         "color",
         "html",
         "interactivity",
+        "layout",
         "spacing",
         "typography"
       ],
@@ -2031,6 +2033,7 @@
         "anchor",
         "className",
         "color",
+        "html",
         "interactivity",
         "spacing",
         "splitting",
@@ -2440,6 +2443,7 @@
       "attributes": [
         "description",
         "id",
+        "isParentSubmenu",
         "isTopLevelItem",
         "kind",
         "label",
@@ -2519,7 +2523,6 @@
         "core/page-list-item"
       ],
       "attributes": [
-        "isNested",
         "parentPageID"
       ],
       "supports": [
@@ -2659,6 +2662,107 @@
         "visibility"
       ],
       "styleFiles": []
+    },
+    {
+      "name": "core/playlist",
+      "label": "Playlist",
+      "title": "Playlist",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/playlist/block.json",
+      "canContainInnerBlocks": true,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": false,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/playlist.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/playlist-track"
+      ],
+      "attributes": [
+        "caption",
+        "order",
+        "showArtists",
+        "showImages",
+        "showNumbers",
+        "showPlayButtonArtwork",
+        "showTrackLength",
+        "showTracklist",
+        "type",
+        "waveformBackgroundColor",
+        "waveformBackgroundGradient",
+        "waveformColor",
+        "waveformGradient",
+        "waveformStyle"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "__experimentalExposeControlsToChildren",
+        "align",
+        "anchor",
+        "color",
+        "interactivity",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/playlist/editor-rtl.css",
+        "wp-includes/blocks/playlist/editor-rtl.min.css",
+        "wp-includes/blocks/playlist/editor.css",
+        "wp-includes/blocks/playlist/editor.min.css",
+        "wp-includes/blocks/playlist/style-rtl.css",
+        "wp-includes/blocks/playlist/style-rtl.min.css",
+        "wp-includes/blocks/playlist/style.css",
+        "wp-includes/blocks/playlist/style.min.css"
+      ]
+    },
+    {
+      "name": "core/playlist-track",
+      "label": "Playlist Track",
+      "title": "Playlist track",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/playlist-track/block.json",
+      "canContainInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": true,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/playlist-track.php",
+      "apiVersion": 3,
+      "category": "media",
+      "parent": [
+        "core/playlist"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "album",
+        "artist",
+        "blob",
+        "id",
+        "image",
+        "imageAlt",
+        "length",
+        "src",
+        "title",
+        "type"
+      ],
+      "supports": [
+        "html",
+        "interactivity",
+        "reusable"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/playlist-track/style-rtl.css",
+        "wp-includes/blocks/playlist-track/style-rtl.min.css",
+        "wp-includes/blocks/playlist-track/style.css",
+        "wp-includes/blocks/playlist-track/style.min.css"
+      ]
     },
     {
       "name": "core/post-author",
@@ -2951,8 +3055,7 @@
       "attributes": [
         "datetime",
         "format",
-        "isLink",
-        "textAlign"
+        "isLink"
       ],
       "supports": [
         "__experimentalBorder",
@@ -2991,8 +3094,7 @@
       "attributes": [
         "excerptLength",
         "moreText",
-        "showMoreOnNewLine",
-        "textAlign"
+        "showMoreOnNewLine"
       ],
       "supports": [
         "__experimentalBorder",
@@ -3094,7 +3196,6 @@
         "linkLabel",
         "showTitle",
         "taxonomy",
-        "textAlign",
         "type"
       ],
       "supports": [
@@ -3254,8 +3355,8 @@
         "level",
         "levelOptions",
         "linkTarget",
-        "rel",
-        "textAlign"
+        "placeholder",
+        "rel"
       ],
       "supports": [
         "__experimentalBorder",
@@ -3328,7 +3429,6 @@
       "allowedBlocks": [],
       "attributes": [
         "citation",
-        "textAlign",
         "value"
       ],
       "supports": [
@@ -3605,7 +3705,6 @@
         "levelOptions",
         "showPrefix",
         "showSearchTerm",
-        "textAlign",
         "type"
       ],
       "supports": [
@@ -3824,11 +3923,11 @@
         "buttonPosition",
         "buttonText",
         "buttonUseIcon",
-        "isSearchFieldHidden",
         "label",
         "placeholder",
         "query",
         "showLabel",
+        "tagName",
         "width",
         "widthUnit"
       ],
@@ -4000,8 +4099,7 @@
       "allowedBlocks": [],
       "attributes": [
         "level",
-        "levelOptions",
-        "textAlign"
+        "levelOptions"
       ],
       "supports": [
         "__experimentalBorder",
@@ -4047,8 +4145,7 @@
         "isLink",
         "level",
         "levelOptions",
-        "linkTarget",
-        "textAlign"
+        "linkTarget"
       ],
       "supports": [
         "__experimentalBorder",
@@ -4202,6 +4299,123 @@
       ]
     },
     {
+      "name": "core/tab-list",
+      "label": "Tab List",
+      "title": "Tab List",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/tab-list/block.json",
+      "canContainInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": true,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/tab-list.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/tabs"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "tabs"
+      ],
+      "supports": [
+        "__experimentalBorder",
+        "ariaLabel",
+        "color",
+        "html",
+        "layout",
+        "lock",
+        "spacing",
+        "typography",
+        "visibility"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/tab-list/editor-rtl.css",
+        "wp-includes/blocks/tab-list/editor-rtl.min.css",
+        "wp-includes/blocks/tab-list/editor.css",
+        "wp-includes/blocks/tab-list/editor.min.css",
+        "wp-includes/blocks/tab-list/style-rtl.css",
+        "wp-includes/blocks/tab-list/style-rtl.min.css",
+        "wp-includes/blocks/tab-list/style.css",
+        "wp-includes/blocks/tab-list/style.min.css"
+      ]
+    },
+    {
+      "name": "core/tab-panel",
+      "label": "Tab Panel",
+      "title": "Tab Panel",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/tab-panel/block.json",
+      "canContainInnerBlocks": false,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": true,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/tab-panel.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/tab-panels"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [],
+      "attributes": [
+        "label"
+      ],
+      "supports": [
+        "anchor",
+        "color",
+        "html",
+        "layout",
+        "spacing",
+        "typography",
+        "visibility"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/tab-panel/style-rtl.css",
+        "wp-includes/blocks/tab-panel/style-rtl.min.css",
+        "wp-includes/blocks/tab-panel/style.css",
+        "wp-includes/blocks/tab-panel/style.min.css"
+      ]
+    },
+    {
+      "name": "core/tab-panels",
+      "label": "Tab Panels",
+      "title": "Tab Panels",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/tab-panels/block.json",
+      "canContainInnerBlocks": true,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": true,
+      "hasAncestorRestriction": false,
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [
+        "core/tabs"
+      ],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/tab-panel"
+      ],
+      "attributes": [],
+      "supports": [
+        "__experimentalBorder",
+        "color",
+        "html",
+        "lock",
+        "spacing",
+        "typography",
+        "visibility"
+      ],
+      "styleFiles": []
+    },
+    {
       "name": "core/table",
       "label": "Table",
       "title": "Table",
@@ -4247,6 +4461,48 @@
         "wp-includes/blocks/table/theme-rtl.min.css",
         "wp-includes/blocks/table/theme.css",
         "wp-includes/blocks/table/theme.min.css"
+      ]
+    },
+    {
+      "name": "core/tabs",
+      "label": "Tabs",
+      "title": "Tabs",
+      "executable": false,
+      "status": "indexed",
+      "reason": "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.",
+      "metadataPath": "wp-includes/blocks/tabs/block.json",
+      "canContainInnerBlocks": true,
+      "likelyUsesInnerBlocks": true,
+      "hasParentRestriction": false,
+      "hasAncestorRestriction": false,
+      "phpRegistrationPath": "wp-includes/blocks/tabs.php",
+      "apiVersion": 3,
+      "category": "design",
+      "parent": [],
+      "ancestor": [],
+      "allowedBlocks": [
+        "core/tab-list",
+        "core/tab-panels"
+      ],
+      "attributes": [
+        "activeTabIndex",
+        "editorActiveTabIndex"
+      ],
+      "supports": [
+        "align",
+        "anchor",
+        "color",
+        "html",
+        "interactivity",
+        "layout",
+        "spacing",
+        "typography"
+      ],
+      "styleFiles": [
+        "wp-includes/blocks/tabs/style-rtl.css",
+        "wp-includes/blocks/tabs/style-rtl.min.css",
+        "wp-includes/blocks/tabs/style.css",
+        "wp-includes/blocks/tabs/style.min.css"
       ]
     },
     {
@@ -4426,8 +4682,7 @@
       "attributes": [
         "isLink",
         "level",
-        "levelOptions",
-        "textAlign"
+        "levelOptions"
       ],
       "supports": [
         "__experimentalBorder",
@@ -4617,6 +4872,7 @@
         "blob",
         "caption",
         "controls",
+        "height",
         "id",
         "loop",
         "muted",
@@ -4624,7 +4880,8 @@
         "poster",
         "preload",
         "src",
-        "tracks"
+        "tracks",
+        "width"
       ],
       "supports": [
         "align",

@@ -29,6 +29,15 @@ function shouldBypassTlsVerification(url: URL): boolean {
   return url.protocol === "https:" && isLoopbackHostname(url.hostname);
 }
 
+/** True when local-development TLS relaxation applies to this site URL. */
+export function isLoopbackHttpsSiteUrl(siteUrl: string): boolean {
+  try {
+    return shouldBypassTlsVerification(new URL(siteUrl));
+  } catch {
+    return false;
+  }
+}
+
 function loopbackLookup(hostname: string): LookupFunction | undefined {
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     return (_target, optionsOrCallback, callback) => {

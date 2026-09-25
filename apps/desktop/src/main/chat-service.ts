@@ -222,16 +222,20 @@ async function createRequestRecordForThread(input: {
   thread: ChatThread;
   userPrompt: string;
   attachments?: ImageAttachmentPayload[];
+  contentEngine?: "gutenberg_v2";
 }): Promise<CreateRequestResult> {
   const db = getDatabase();
-  const recent = await db.repositories.requests.listBySiteId(input.siteId);
-  const recentPrompts = recent.map((r: Request) => r.userPrompt).slice(0, 50);
-
-  const analysis = analyzeClarification({
-    userPrompt: input.userPrompt,
-    recentPromptsForSite: recentPrompts,
-    ...(input.attachments !== undefined ? { attachments: input.attachments } : {})
-  });
+  const isGutenbergV2 = input.contentEngine === "gutenberg_v2";
+  // Gutenberg v2 requests carry an explicit operation and target, so v1's
+  // target/outcome clarification questions do not apply to them.
+  const analysis = isGutenbergV2
+    ? { needsClarification: false, questions: [] as string[] }
+    : analyzeClarification({
+        userPrompt: input.userPrompt,
+        ...(input.attachments !== undefined
+          ? { attachments: input.attachments }
+          : {})
+      });
 
   const ts = nowIso();
   const status: Request["status"] = analysis.needsClarification
@@ -280,7 +284,7 @@ async function createRequestRecordForThread(input: {
   };
   await db.repositories.chatMessages.save(userMessage);
 
-  if (!analysis.needsClarification) {
+  if (!analysis.needsClarification && !isGutenbergV2) {
     await db.repositories.chatMessages.save({
       id: randomUUID() as ChatMessageId,
       threadId: input.thread.id,
@@ -297,21 +301,6 @@ async function createRequestRecordForThread(input: {
   }
 
   let clarificationRound: ClarificationRound | undefined;
-
-  if (analysis.duplicateWarnings.length > 0) {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId: input.thread.id,
-      siteId: input.siteId,
-      author: { kind: "system" },
-      body: {
-        format: "plain_text",
-        value: analysis.duplicateWarnings.join("\n")
-      },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
 
   if (analysis.needsClarification) {
     clarificationRound = {
@@ -891,7 +880,8 @@ export async function createTypedRequestForThread(
   siteId: SiteId,
   threadId: ChatThreadId,
   userPrompt: string,
-  attachments?: ImageAttachmentPayload[]
+  attachments?: ImageAttachmentPayload[],
+  contentEngine?: "gutenberg_v2"
 ): Promise<CreateRequestResult> {
   const gate = await requireActiveSite(siteId);
   if (!gate.ok) {
@@ -905,7 +895,8 @@ export async function createTypedRequestForThread(
     siteId,
     thread: t.thread,
     userPrompt,
-    ...(attachments !== undefined ? { attachments } : {})
+    ...(attachments !== undefined ? { attachments } : {}),
+    ...(contentEngine !== undefined ? { contentEngine } : {})
   });
 }
 
@@ -992,17 +983,12 @@ export async function answerClarificationForRequest(
   });
 
   const mergedPrompt = `${request.userPrompt}\n\nClarification:\n${trimmed}`;
-  const recent = (await db.repositories.requests.listBySiteId(siteId))
-    .filter((item: Request) => item.id !== requestId)
-    .map((item: Request) => item.userPrompt)
-    .slice(0, 50);
   const mergedRequestAttachments = mergeAttachments(
     request.attachments,
     attachments
   );
   const analysis = analyzeClarification({
     userPrompt: mergedPrompt,
-    recentPromptsForSite: recent,
     ...(mergedRequestAttachments !== undefined
       ? { attachments: mergedRequestAttachments }
       : {})
@@ -1023,21 +1009,6 @@ export async function answerClarificationForRequest(
     updatedAt: ts
   };
   await db.repositories.requests.save(updatedRequest);
-
-  if (analysis.duplicateWarnings.length > 0) {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      author: { kind: "system" },
-      body: {
-        format: "plain_text",
-        value: analysis.duplicateWarnings.join("\n")
-      },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
 
   if (analysis.needsClarification) {
     clarificationRound = {

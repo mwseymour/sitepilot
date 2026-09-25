@@ -808,6 +808,11 @@ h2 {
 .chat-side-column {
   position: sticky;
   top: 1rem;
+  /* Sticky content taller than the window must scroll on its own, or the
+     lower part of the panel (decision controls) is unreachable. */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .chat-main-header {
@@ -1200,6 +1205,49 @@ h2 {
   margin-top: 0.55rem;
 }
 
+.gutenberg-v2-structure-diff h6 {
+  margin: 0.2rem 0 0.35rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.gutenberg-v2-outline {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  max-height: 18rem;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+}
+
+.gutenberg-v2-outline li {
+  display: flex;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.gutenberg-v2-outline-name {
+  flex: none;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.gutenberg-v2-outline-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .gutenberg-v2-structure-diff pre {
   max-height: 15rem;
   overflow: auto;
@@ -1210,21 +1258,71 @@ h2 {
 }
 
 .gutenberg-v2-preview-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .gutenberg-v2-preview {
   margin: 0;
 }
 
+.gutenberg-v2-preview-mobile {
+  max-width: 16rem;
+}
+
+.gutenberg-v2-preview-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
 .gutenberg-v2-preview img {
   display: block;
   width: 100%;
-  max-height: 20rem;
+  max-height: 26rem;
   object-fit: contain;
+  object-position: top;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: var(--surface-2);
+}
+
+.gutenberg-v2-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  overflow: auto;
+  background: rgb(0 0 0 / 55%);
+}
+
+.gutenberg-v2-lightbox-body {
+  display: grid;
+  gap: 0.6rem;
+  max-width: min(1200px, 100%);
+  padding: 0.8rem;
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+
+.gutenberg-v2-lightbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-primary);
+}
+
+.gutenberg-v2-lightbox-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
 }
 
 .gutenberg-v2-preview figcaption {

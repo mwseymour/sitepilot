@@ -360,7 +360,8 @@ export async function ingestRequestThreadMessage(input: {
       input.siteId,
       input.threadId,
       trimmed,
-      attachments
+      attachments,
+      input.gutenbergV2Target !== undefined ? "gutenberg_v2" : undefined
     ),
     "created"
   );

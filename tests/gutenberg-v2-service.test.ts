@@ -779,3 +779,67 @@ describe("buildLlmGutenbergV2Plan", () => {
     expect(result.usage.provider).toBe("private-provider");
   });
 });
+
+describe("buildLlmGutenbergV2Plan drafts", () => {
+  it("normalizes numeric spacer heights and forwards revision context", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "Revised" },
+        blocks: [
+          {
+            ref: "group-1",
+            name: "core/group",
+            attributes: {},
+            children: [
+              {
+                ref: "spacer-1",
+                name: "core/spacer",
+                attributes: { height: 40 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const previousPlan = {
+      postFields: { title: "Original" },
+      blocks: [
+        {
+          ref: "p1",
+          name: "core/paragraph",
+          attributes: { content: "Keep me" },
+          children: []
+        }
+      ]
+    };
+
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Create a post.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: capabilities(),
+      revision: { instructions: ["Add a spacer."], previousPlan },
+      client: { providerId: "test", complete },
+      model: "test-model"
+    });
+
+    if (result.plan.operation !== "create_draft") {
+      throw new Error("Expected a create_draft plan.");
+    }
+    expect(result.plan.blocks[0]!.children[0]!.attributes).toEqual({
+      height: "40px"
+    });
+    const calls = complete.mock.calls as unknown as Array<
+      [Array<{ role: string; content: string }>, string]
+    >;
+    const userMessage = JSON.parse(calls[0]![0][1]!.content) as {
+      revision?: unknown;
+    };
+    expect(userMessage.revision).toEqual({
+      instructions: ["Add a spacer."],
+      previousPlan
+    });
+  });
+});
