@@ -55,6 +55,10 @@ export type {
   GutenbergV2PlanningTarget
 } from "./gutenberg-v2-plan-generator.js";
 
+export {
+  fallbackMergedRequestPrompt,
+  mergeRevisedRequestPrompt
+} from "./request-revision-merge.js";
 export { analyzeClarification } from "./clarification-engine.js";
 export type { ClarificationAnalysis } from "./clarification-engine.js";
 export { buildPlannerContext } from "./planner-context.js";

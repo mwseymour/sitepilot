@@ -21,12 +21,19 @@ import type {
 import {
   analyzeClarification,
   canResolveActionViaPostLookup,
+  mergeRevisedRequestPrompt,
   requestVisualAnalysisIsCurrent
 } from "@sitepilot/services";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
+import {
+  createAnthropicChatClient,
+  createOpenAiChatClient
+} from "@sitepilot/provider-adapters";
 
 import { getDatabase } from "./app-database.js";
+import { getSecureStorage } from "./app-secure-storage.js";
 import { buildConversationReply } from "./conversation-service.js";
+import { loadPlannerPreferences } from "./planner-preferences-service.js";
 
 export const DEFAULT_OPERATOR: ActorRef = {
   userProfileId: "local-operator" as UserProfileId,
@@ -102,6 +109,51 @@ function mergeAttachments(
 ): ImageAttachmentPayload[] | undefined {
   const merged = [...normalizeAttachments(existing), ...normalizeAttachments(incoming)];
   return merged.length > 0 ? merged : undefined;
+}
+
+async function mergeFollowUpIntoRequestPrompt(
+  currentPrompt: string,
+  followUp: string
+): Promise<string> {
+  try {
+    const storage = getSecureStorage();
+    const prefs = await loadPlannerPreferences(storage);
+    const openaiKey = await storage.get({
+      namespace: "provider",
+      keyId: "openai"
+    });
+    const anthropicKey = await storage.get({
+      namespace: "provider",
+      keyId: "anthropic"
+    });
+    const openai =
+      openaiKey !== undefined
+        ? {
+            client: createOpenAiChatClient(openaiKey),
+            model: prefs.openaiModel
+          }
+        : undefined;
+    const anthropic =
+      anthropicKey !== undefined
+        ? {
+            client: createAnthropicChatClient(anthropicKey),
+            model: prefs.anthropicModel
+          }
+        : undefined;
+    const chosen =
+      prefs.preferredProvider === "anthropic"
+        ? (anthropic ?? openai)
+        : (openai ?? anthropic);
+    return mergeRevisedRequestPrompt({
+      currentPrompt,
+      followUp,
+      ...(chosen === undefined
+        ? {}
+        : { client: chosen.client, model: chosen.model })
+    });
+  } catch {
+    return mergeRevisedRequestPrompt({ currentPrompt, followUp });
+  }
 }
 
 function isSimpleRequestConfirmation(text: string): boolean {
@@ -1159,13 +1211,18 @@ export async function amendRequestForThread(
     return { ok: true, request };
   }
 
+  const mergedPrompt = await mergeFollowUpIntoRequestPrompt(
+    request.userPrompt,
+    trimmed
+  );
+
   const updatedRequest: Request = {
     id: request.id,
     siteId: request.siteId,
     threadId: request.threadId,
     requestedBy: request.requestedBy,
     status: "new",
-    userPrompt: `${request.userPrompt}\n\nAdditional context:\n${trimmed}`,
+    userPrompt: mergedPrompt,
     ...(mergedRequestAttachments !== undefined
       ? { attachments: mergedRequestAttachments }
       : {}),
@@ -1186,7 +1243,7 @@ export async function amendRequestForThread(
     body: {
       format: "plain_text",
       value:
-        "Request updated. Next: generate a plan from the request panel."
+        "Request updated to include that change. Next: generate a plan from the request panel."
     },
     createdAt: ts,
     updatedAt: ts

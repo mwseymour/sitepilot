@@ -166,7 +166,6 @@ export function GutenbergV2CandidatePanel({
     {}
   );
   const [artifactError, setArtifactError] = useState<string | null>(null);
-  const [decisionNote, setDecisionNote] = useState("");
   const [artifactLoadAttempt, setArtifactLoadAttempt] = useState(0);
   const [previewLoadStatus, setPreviewLoadStatus] = useState<
     Record<string, "loaded" | "failed">
@@ -185,7 +184,6 @@ export function GutenbergV2CandidatePanel({
     let active = true;
     setArtifacts({});
     setArtifactError(null);
-    setDecisionNote("");
     setPreviewLoadStatus({});
 
     void Promise.allSettled(
@@ -316,8 +314,10 @@ export function GutenbergV2CandidatePanel({
         <div className="gutenberg-v2-review">
           <h5>Review before approval</h5>
           <p className="muted small-print">
-            Compare the compiled structure and responsive previews. Approval is
-            tied to this exact candidate.
+            Compare the compiled structure and responsive previews from this
+            connected WordPress site’s editor. Approval is required before
+            anything is saved. To change the update, reply in the thread — you
+            can attach images there.
           </p>
           {artifactFailure ? (
             <>
@@ -357,8 +357,9 @@ export function GutenbergV2CandidatePanel({
                     />
                     <figcaption className="small-print">
                       {reference.viewport === "mobile"
-                        ? "Mobile preview"
-                        : "Desktop preview"}
+                        ? "Mobile preview from this site’s WordPress editor"
+                        : "Desktop preview from this site’s WordPress editor"}
+                      . This is the connected site, not a mock.
                     </figcaption>
                   </figure>
                 ) : null;
@@ -384,16 +385,10 @@ export function GutenbergV2CandidatePanel({
 
       {isAwaitingDecision && candidate.candidate ? (
         <div className="gutenberg-v2-decision">
-          <label className="settings-field">
-            <span>Revision note (optional)</span>
-            <textarea
-              rows={2}
-              value={decisionNote}
-              disabled={busy}
-              placeholder="Describe the adjustment you need…"
-              onChange={(event) => setDecisionNote(event.target.value)}
-            />
-          </label>
+          <p className="muted small-print">
+            Approve this update, or reply in the thread to change it. The thread
+            accepts images and updates the same request.
+          </p>
           <div className="action-row">
             <button
               type="button"
@@ -408,20 +403,6 @@ export function GutenbergV2CandidatePanel({
               }
             >
               Approve this update
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy || !reviewReady}
-              onClick={() =>
-                void onDecide(
-                  candidate.candidate!.candidateId,
-                  "revision_requested",
-                  decisionNote.trim() || undefined
-                )
-              }
-            >
-              Request revision
             </button>
             <button
               type="button"

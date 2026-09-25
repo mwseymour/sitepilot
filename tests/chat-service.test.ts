@@ -115,12 +115,42 @@ describe("chat service request revision", () => {
     }
     expect(result.request.status).toBe("new");
     expect(result.request.userPrompt).toContain("Do not use the summary block.");
+    expect(result.request.userPrompt).toContain("Build a comparison page.");
+    expect(result.request.userPrompt.trim()).not.toBe(
+      "Do not use the summary block."
+    );
     expect(db.repositories.requests.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: request.id,
         status: "new"
       })
     );
+  });
+
+  it("merges a follow-up into the same request instead of replacing it", async () => {
+    const { amendRequestForThread } = await import(
+      "../apps/desktop/src/main/chat-service.js"
+    );
+    db.repositories.requests.getById.mockResolvedValue({
+      ...request,
+      status: "drafted",
+      userPrompt: "Create a post with 2 carrots."
+    });
+
+    const result = await amendRequestForThread(
+      site.id as never,
+      thread.id as never,
+      request.id as never,
+      "Also add 1 plum."
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.request.userPrompt).toContain("2 carrots");
+    expect(result.request.userPrompt).toContain("1 plum");
+    expect(result.request.userPrompt.trim()).not.toBe("Also add 1 plum.");
   });
 
   it("still blocks revisions while execution is running", async () => {

@@ -1116,28 +1116,77 @@ export function ChatPage({
       return;
     }
 
+    const existingRequestId =
+      bundle !== null &&
+      lastRequestId !== null &&
+      bundle.request.id === lastRequestId &&
+      bundle.request.status !== "executing" &&
+      bundle.request.status !== "completed" &&
+      bundle.request.status !== "failed" &&
+      bundle.request.status !== "reverted" &&
+      bundle.request.status !== "archived"
+        ? lastRequestId
+        : null;
+
     let requestId: string;
-    const res = await window.sitePilotDesktop.createChatRequest({
-      siteId,
-      threadId: selectedThreadId,
-      userPrompt: text,
-      ...(attachments.length > 0 ? { attachments } : {})
-    });
-    if (!res.ok) {
-      setBusy(false);
-      setErr(res.message);
-      return;
-    }
-    requestId = res.request.id;
-    if (res.request.status === "clarifying") {
-      setBusy(false);
-      setErr(
-        "Answer the clarification before generating a native editor candidate."
-      );
-      setLastRequestId(requestId);
-      await loadMessages(selectedThreadId);
-      await loadThreads();
-      return;
+    if (existingRequestId !== null) {
+      const res = await window.sitePilotDesktop.amendRequest({
+        siteId,
+        threadId: selectedThreadId,
+        requestId: existingRequestId,
+        text,
+        ...(attachments.length > 0 ? { attachments } : {})
+      });
+      if (!res.ok) {
+        setBusy(false);
+        setErr(res.message);
+        return;
+      }
+      requestId = existingRequestId;
+      const candidateId = gutenbergV2State?.candidate?.candidateId;
+      if (
+        candidateId !== undefined &&
+        (gutenbergV2State?.state === "review_ready" ||
+          gutenbergV2State?.state === "approved")
+      ) {
+        const revision = await window.sitePilotDesktop.gutenbergV2DecideCandidate(
+          {
+            siteId,
+            requestId,
+            candidateId,
+            decision: "revision_requested",
+            note: text
+          }
+        );
+        if (!revision.ok) {
+          setBusy(false);
+          setErr(revision.message);
+          return;
+        }
+      }
+    } else {
+      const res = await window.sitePilotDesktop.createChatRequest({
+        siteId,
+        threadId: selectedThreadId,
+        userPrompt: text,
+        ...(attachments.length > 0 ? { attachments } : {})
+      });
+      if (!res.ok) {
+        setBusy(false);
+        setErr(res.message);
+        return;
+      }
+      requestId = res.request.id;
+      if (res.request.status === "clarifying") {
+        setBusy(false);
+        setErr(
+          "Answer the clarification before generating a native editor candidate."
+        );
+        setLastRequestId(requestId);
+        await loadMessages(selectedThreadId);
+        await loadThreads();
+        return;
+      }
     }
 
     setLastRequestId(requestId);
@@ -1208,33 +1257,12 @@ export function ChatPage({
 
     if (
       bundle &&
-      (bundle.request.status === "new" || bundle.request.status === "drafted")
-    ) {
-      const res = await window.sitePilotDesktop.amendRequest({
-        siteId,
-        threadId: selectedThreadId,
-        requestId: bundle.request.id,
-        text,
-        ...(attachments.length > 0 ? { attachments } : {})
-      });
-      setBusy(false);
-      if (!res.ok) {
-        setErr(res.message);
-        return;
-      }
-      setRequestPrompt("");
-      setPendingAttachments([]);
-      setPlanValidationJson(null);
-      await loadMessages(selectedThreadId);
-      await loadBundle();
-      return;
-    }
-
-    if (
-      bundle &&
-      (bundle.request.status === "awaiting_approval" ||
+      (bundle.request.status === "new" ||
+        bundle.request.status === "drafted" ||
+        bundle.request.status === "awaiting_approval" ||
         bundle.request.status === "approved")
     ) {
+      const hadPlan = bundle.plan !== null && bundle.plan !== undefined;
       const res = await window.sitePilotDesktop.amendRequest({
         siteId,
         threadId: selectedThreadId,
@@ -1242,16 +1270,22 @@ export function ChatPage({
         text,
         ...(attachments.length > 0 ? { attachments } : {})
       });
-      setBusy(false);
       if (!res.ok) {
+        setBusy(false);
         setErr(res.message);
         return;
       }
+      setLastRequestId(bundle.request.id);
       setRequestPrompt("");
       setPendingAttachments([]);
       setPlanValidationJson(null);
       setLastExecHint(null);
       await loadMessages(selectedThreadId);
+      if (hadPlan) {
+        await onGeneratePlan();
+        return;
+      }
+      setBusy(false);
       await loadBundle();
       return;
     }
@@ -1716,18 +1750,18 @@ export function ChatPage({
         };
       case "awaiting_approval":
         return {
-          title: "Revise request",
+          title: "Change this request",
           helper:
-            "Approve the plan in the request panel, or describe a change here to revise it.",
-          placeholder: "Describe how the request should change…",
+            "Reply here to change the same request. You can attach images. This updates the current request; it does not start a new one.",
+          placeholder: "Describe the change, and attach images if you need to…",
           actionLabel: "Update request"
         };
       case "approved":
         return {
-          title: "Revise request",
+          title: "Change this request",
           helper:
-            "Run the plan in the request panel, or describe a change here to revise it.",
-          placeholder: "Describe how the approved request should change…",
+            "Run the plan in the request panel, or reply here to change the same request. You can attach images.",
+          placeholder: "Describe how this request should change…",
           actionLabel: "Update request"
         };
       case "executing":
@@ -2437,7 +2471,14 @@ export function ChatPage({
                   ) : null}
                   <textarea
                     ref={composerTextareaRef}
-                    rows={3}
+                    rows={
+                      !isConversationMode &&
+                      (bundle?.request.status === "awaiting_approval" ||
+                        bundle?.request.status === "approved" ||
+                        gutenbergV2State?.state === "review_ready")
+                        ? 8
+                        : 4
+                    }
                     value={requestPrompt}
                     placeholder={composerState.placeholder}
                     onFocus={savePendingThreadRename}
