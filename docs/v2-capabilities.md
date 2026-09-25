@@ -22,8 +22,17 @@ If the post changes in WordPress between review and write, the write is refused.
 | Replace all content | Rewrites the body of an existing post or page. Blocks that v2 cannot author must be kept or deleted on purpose; see below. |
 | Apply selected changes | Inserts, edits, moves or removes individual blocks, and can do several in one request. Everything else in the post stays exactly as stored. |
 | Post fields only | Changes the title, excerpt, featured image or SEO fields without touching the content. |
+| Publish / Unpublish | Publishes a draft (or a post pending review), or takes a published post back to a draft. Nothing else changes. |
 
-Existing posts keep their status. An approved edit to a published post updates the live post. WordPress keeps revisions.
+New content is always created as a draft, and edits keep the post's status. An approved edit to a published post updates the live post straight away; the approval message says so ("This post is live"). WordPress keeps revisions.
+
+## Publishing and unpublishing
+
+- **Publishing is its own step.** Choose **Publish** or **Unpublish** as the operation, with the post ID. In a thread that has already written a post, a short follow-up such as "publish it", "make it live", "unpublish it" or "take it down" does the same for that post.
+- **The approval says exactly what happens**, for example: "Ready to publish post #946 “Opening hours”. Once you approve and apply it, it will be live at https://…/opening-hours/."
+- **Only the status changes.** Content, title, excerpt and SEO fields stay exactly as stored. If the post changes in WordPress after approval, the change is refused.
+- **It needs the publish permission.** The SitePilot WordPress user must be allowed to publish that content type, not only edit it.
+- **It is checked from outside.** After publishing, SitePilot loads the post's URL as an anonymous visitor and expects it to load. After unpublishing, it expects the URL to stop loading. If the check fails, the status is put back, unless someone has changed the post since.
 
 ## Blocks v2 can write
 
@@ -98,7 +107,7 @@ Planned work for each gap is in the [v2 roadmap](./v2-roadmap.md).
 - **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely, but v2 cannot author them.
 - **Some ACF field types.** ACF image and file fields take existing media-library IDs only, not attached media. Blocks that store their fields in post meta (`usePostMeta`), or that have a required field of a type v2 cannot fill (such as gallery, user or Google Map), stay kept-only.
 - **Other SEO plugins.** Only Yoast SEO fields can be edited. RankMath and All in One SEO are detected but not written. The social (Open Graph) image cannot be set yet.
-- **Publishing.** Publish, unpublish and schedule are not available; new content is always a draft (Phase 4).
+- **Scheduling and private posts.** A post can be published or unpublished (back to draft), but not scheduled or made private.
 - **Choosing the post from the message.** In a Request, "update the last created post" does not pick the post; enter the post ID. Conversations can find it (Phase 5).
 - **Large videos.** Uploads over 10 MB need a streaming upload that is not built yet.
 - **Embed previews.** YouTube and Vimeo embeds show as a blank frame in review screenshots, because third-party players are blocked there.

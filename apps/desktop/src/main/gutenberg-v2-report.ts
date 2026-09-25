@@ -20,6 +20,12 @@ export type GutenbergV2ReportTarget =
       operation: "replace_content" | "apply_operations";
       postType: "post" | "page";
       postId: number;
+    }
+  | {
+      operation: "set_status";
+      postType: "post" | "page";
+      postId: number;
+      status: "publish" | "draft";
     };
 
 const MAX_LISTED_ISSUES = 10;
@@ -30,9 +36,13 @@ function targetLabel(target: GutenbergV2ReportTarget): string {
     return `new ${target.postType} draft`;
   }
   const verb =
-    target.operation === "replace_content"
-      ? "replace all content of"
-      : "scoped changes to";
+    target.operation === "set_status"
+      ? target.status === "publish"
+        ? "publish"
+        : "unpublish"
+      : target.operation === "replace_content"
+        ? "replace all content of"
+        : "scoped changes to";
   return `${verb} ${target.postType} #${target.postId}`;
 }
 
@@ -112,6 +122,9 @@ function featuredImageLabel(
 }
 
 function changeSummary(candidate: GutenbergV2CompiledCandidate): string {
+  if (candidate.intent.operation === "set_status") {
+    return "unchanged (status change only)";
+  }
   const intent = candidate.intent as {
     blocks?: unknown;
     operations?: Array<{ type?: string }>;
@@ -365,17 +378,48 @@ function contentNoun(target: GutenbergV2ReportTarget): string {
   return target.postType === "page" ? "page" : "post";
 }
 
+function capitalised(value: string): string {
+  return `${value[0]!.toUpperCase()}${value.slice(1)}`;
+}
+
 function subject(target: GutenbergV2ReportTarget): string {
   return target.operation === "create_draft"
     ? `the new ${contentNoun(target)}`
     : `${contentNoun(target)} #${target.postId}`;
 }
 
+/**
+ * The approval card for a status change says exactly what will happen and
+ * where, since approving it changes what the public sees.
+ */
+function statusChangeReady(input: {
+  target: Extract<GutenbergV2ReportTarget, { operation: "set_status" }>;
+  title?: string;
+  publicUrl?: string;
+}): string {
+  const which = `${contentNoun(input.target)} #${input.target.postId}${
+    input.title ? ` “${input.title}”` : ""
+  }`;
+  const where = input.publicUrl ?? "its URL";
+  return input.target.status === "publish"
+    ? `Ready to publish ${which}. Once you approve and apply it, it will be live at ${where}. Only the status changes; the content stays as it is.`
+    : `Ready to unpublish ${which}. Once you approve and apply it, it goes back to being a draft and ${where} will stop loading for visitors.`;
+}
+
 export function friendlyCandidateReady(input: {
   target: GutenbergV2ReportTarget;
   candidate: GutenbergV2CompiledCandidate;
   notices?: readonly string[];
+  /** For a status change: the post's title and public URL. */
+  status?: { title?: string; publicUrl?: string };
 }): string {
+  if (input.target.operation === "set_status") {
+    return [
+      statusChangeReady({ target: input.target, ...input.status }),
+      "Approve it, or reject it to leave the post as it is. Nothing changes until you approve and apply it.",
+      ...(input.notices ?? [])
+    ].join(" ");
+  }
   const title = input.candidate.requestedPostFields.title;
   const featured = featuredImageLabel(input.candidate);
   const what =
@@ -431,6 +475,23 @@ export function friendlyExecution(input: {
     input.result.postId !== undefined
       ? `${contentNoun(input.target)} #${input.result.postId}`
       : subject(input.target);
+  if (input.target.operation === "set_status") {
+    const publish = input.target.status === "publish";
+    switch (input.result.state) {
+      case "succeeded":
+        return publish
+          ? `Done. ${capitalised(where)} is published, and SitePilot checked that it loads for visitors.`
+          : `Done. ${capitalised(where)} is back to a draft, and SitePilot checked that it no longer loads for visitors.`;
+      case "rolled_back":
+        return publish
+          ? `${capitalised(where)} was published but didn't load for visitors, so SitePilot put it back to a draft. Please check it in WordPress.`
+          : `${capitalised(where)} was unpublished but still loaded for visitors, so SitePilot put it back to published. Please check it in WordPress.`;
+      case "rollback_conflict":
+        return `The status change to ${where} didn't pass the final check, and someone has edited it since, so SitePilot left it as it is. Please check it in WordPress.`;
+      default:
+        return `The status change to ${where} didn't finish cleanly. Please check it in WordPress before trying again.`;
+    }
+  }
   switch (input.result.state) {
     case "succeeded":
       return input.target.operation === "create_draft"

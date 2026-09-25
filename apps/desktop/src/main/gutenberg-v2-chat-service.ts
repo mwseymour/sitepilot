@@ -14,8 +14,10 @@ import {
   GUTENBERG_V2_SEO_FIELDS,
   GUTENBERG_V2_SEO_FIELD_LABELS,
   type GutenbergV2CompiledCandidate,
+  type GutenbergV2BlockPlan,
   type GutenbergV2JobRecord,
   type GutenbergV2SeoChanges,
+  type GutenbergV2SourceSnapshot,
   type ImageAttachmentPayload
 } from "@sitepilot/contracts";
 import type {
@@ -64,6 +66,12 @@ const targetSchema = z.discriminatedUnion("operation", [
     operation: z.literal("apply_operations"),
     postType: z.enum(["post", "page"]),
     postId: z.number().int().positive()
+  }),
+  z.object({
+    operation: z.literal("set_status"),
+    postType: z.enum(["post", "page"]),
+    postId: z.number().int().positive(),
+    status: z.enum(["publish", "draft"])
   })
 ]);
 export type GutenbergV2Target = z.infer<typeof targetSchema>;
@@ -118,6 +126,38 @@ function seoChangeList(seo: GutenbergV2SeoChanges) {
       ? []
       : [{ field, label: GUTENBERG_V2_SEO_FIELD_LABELS[field], value }];
   });
+}
+
+/** The plan for a publish or unpublish, bound to the post as it is now. */
+function statusPlan(
+  siteId: string,
+  target: Extract<GutenbergV2Target, { operation: "set_status" }>,
+  source: GutenbergV2SourceSnapshot
+): GutenbergV2BlockPlan {
+  return {
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: randomUUID(),
+    siteId,
+    operation: "set_status",
+    target: {
+      postId: source.postId,
+      postType: source.postType,
+      sourceRevision: source.revision,
+      sourceContentHash: source.contentHash,
+      expectedFields: {
+        title: {
+          value: source.fields.title,
+          valueHash: hashGutenbergV2Value(source.fields.title)
+        },
+        excerpt: {
+          value: source.fields.excerpt,
+          valueHash: hashGutenbergV2Value(source.fields.excerpt)
+        }
+      }
+    },
+    status: { to: target.status },
+    media: []
+  };
 }
 
 function previousPlanFrom(
@@ -434,9 +474,11 @@ export function hasGutenbergV2RequestMapping(
 }
 
 function artifactReferences(candidate: GutenbergV2CompiledCandidate) {
+  // A status change renders nothing new, so it has no review artifacts.
+  if (candidate.reviewArtifact === undefined) return [];
   return [
     { id: "structure", kind: "structure_diff" as const },
-    ...candidate.reviewArtifact.previewRefs.map((_, index) => ({
+    ...(candidate.reviewArtifact?.previewRefs ?? []).map((_, index) => ({
       id: `preview-${index}`,
       kind: "preview" as const,
       viewport: index === 0 ? ("desktop" as const) : ("mobile" as const)
@@ -645,7 +687,8 @@ async function appendV2Audit(
     | "approval_decided"
     | "execution_started"
     | "execution_completed"
-    | "execution_failed",
+    | "execution_failed"
+    | "post_status_changed",
   metadata: Record<string, unknown>
 ): Promise<void> {
   const timestamp = nowIso();
@@ -948,13 +991,13 @@ export async function generateGutenbergV2Candidate(input: {
     return runtime;
   }
   try {
-    const planner = await choosePlanner(input.siteId);
-    if (!planner.ok) return planner;
+    const statusChange = input.target.operation === "set_status";
     // Media attachments are staged and placed; reference attachments (PDF
-    // pages, mock-ups) are only shown to the planner.
-    const attachments = decodeAttachments(
-      mediaAttachments(request.attachments)
-    );
+    // pages, mock-ups) are only shown to the planner. A status change uses
+    // neither.
+    const attachments = statusChange
+      ? []
+      : decodeAttachments(mediaAttachments(request.attachments));
     const referenceImages = referenceAttachments(request.attachments).map(
       (attachment) => ({
         label: attachment.fileName,
@@ -1016,58 +1059,95 @@ export async function generateGutenbergV2Candidate(input: {
         "The trusted source snapshot does not match the requested destination."
       );
     }
-    const target =
-      input.target.operation === "create_draft"
-        ? {
-            operation: "create_draft" as const,
-            postType: input.target.postType
-          }
-        : {
-            operation: input.target.operation,
-            source: source!
-          };
-    // request.userPrompt already holds the merged follow-up; the previous
-    // plan lets the model keep untouched content stable.
-    const previousPlan =
-      input.revisionNote === undefined
-        ? undefined
-        : previousPlanFrom(existingJob);
-    const revision: GutenbergV2PlanRevision | undefined =
-      input.revisionNote === undefined
-        ? undefined
-        : {
-            instructions: [input.revisionNote],
-            ...(previousPlan === undefined ? {} : { previousPlan })
-          };
-    const planned = await buildLlmGutenbergV2Plan({
-      request: request.userPrompt,
-      siteId: input.siteId,
-      target,
-      capabilities,
-      ...(media.length > 0 ? { media } : {}),
-      ...(referenceImages.length > 0 ? { referenceImages } : {}),
-      ...(revision === undefined ? {} : { revision }),
-      client: planner.client,
-      model: planner.model
-    });
-    const candidate = await runtime.runtime.content.compileCandidate({
-      executionId: mapping.executionId,
-      idempotencyKey: mapping.idempotencyKey,
-      plan: planned.plan
-    });
+    let candidate: GutenbergV2CompiledCandidate;
+    const liveNotices: string[] = [];
+    if (input.target.operation === "set_status") {
+      // Publishing is its own approved step: no planner, no content change.
+      candidate = await runtime.runtime.content.compileCandidate({
+        executionId: mapping.executionId,
+        idempotencyKey: mapping.idempotencyKey,
+        plan: statusPlan(input.siteId, input.target, source!)
+      });
+    } else {
+      if (source?.fields.status === "publish") {
+        liveNotices.push(
+          `This ${input.target.postType} is live: approving and applying these changes updates the live ${input.target.postType} straight away.`
+        );
+      }
+      const target =
+        input.target.operation === "create_draft"
+          ? {
+              operation: "create_draft" as const,
+              postType: input.target.postType
+            }
+          : {
+              operation: input.target.operation,
+              source: source!
+            };
+      // request.userPrompt already holds the merged follow-up; the previous
+      // plan lets the model keep untouched content stable.
+      const previousPlan =
+        input.revisionNote === undefined
+          ? undefined
+          : previousPlanFrom(existingJob);
+      const revision: GutenbergV2PlanRevision | undefined =
+        input.revisionNote === undefined
+          ? undefined
+          : {
+              instructions: [input.revisionNote],
+              ...(previousPlan === undefined ? {} : { previousPlan })
+            };
+      const planner = await choosePlanner(input.siteId);
+      if (!planner.ok) return planner;
+      const planned = await buildLlmGutenbergV2Plan({
+        request: request.userPrompt,
+        siteId: input.siteId,
+        target,
+        capabilities,
+        ...(media.length > 0 ? { media } : {}),
+        ...(referenceImages.length > 0 ? { referenceImages } : {}),
+        ...(revision === undefined ? {} : { revision }),
+        client: planner.client,
+        model: planner.model
+      });
+      candidate = await runtime.runtime.content.compileCandidate({
+        executionId: mapping.executionId,
+        idempotencyKey: mapping.idempotencyKey,
+        plan: planned.plan
+      });
+    }
     const job = await runtime.runtime.journal.get(mapping.executionId);
     if (!job)
       throw new Error("The v2 execution journal did not retain the candidate.");
     await saveRequestStatus(input.requestId, input.siteId, "awaiting_approval");
-    const notices = requestNotices({
-      prompt: request.userPrompt,
-      attachmentCount: mediaAttachments(request.attachments).length,
-      referenceCount: referenceAttachments(request.attachments).length
-    });
+    const notices = statusChange
+      ? []
+      : [
+          ...requestNotices({
+            prompt: request.userPrompt,
+            attachmentCount: mediaAttachments(request.attachments).length,
+            referenceCount: referenceAttachments(request.attachments).length
+          }),
+          ...liveNotices
+        ];
     await appendV2LifecycleMessage(
       input.siteId,
       input.requestId,
-      friendlyCandidateReady({ target: input.target, candidate, notices }),
+      friendlyCandidateReady({
+        target: input.target,
+        candidate,
+        notices,
+        ...(statusChange && source
+          ? {
+              status: {
+                title: source.fields.title,
+                ...(source.publicUrl === undefined
+                  ? {}
+                  : { publicUrl: source.publicUrl })
+              }
+            }
+          : {})
+      }),
       candidateReadyReport({
         target: input.target,
         candidate,
@@ -1295,6 +1375,23 @@ export async function executeGutenbergV2Candidate(input: {
         postId: result.postId
       }
     );
+    if (
+      mapping.target.operation === "set_status" &&
+      result.state === "succeeded"
+    ) {
+      await appendV2Audit(
+        input.siteId,
+        input.requestId,
+        "post_status_changed",
+        {
+          engine: "gutenberg_v2",
+          executionId: mapping.executionId,
+          postId: result.postId,
+          postType: mapping.target.postType,
+          to: mapping.target.status
+        }
+      );
+    }
     const job = await runtime.runtime.journal.get(mapping.executionId);
     if (!job)
       throw new Error("The v2 execution journal did not retain the result.");
@@ -1459,8 +1556,8 @@ export async function getGutenbergV2ReviewArtifact(input: {
     const refs = artifactReferences(candidate);
     const ref =
       input.artifactId === "structure"
-        ? candidate.reviewArtifact.structureDiffRef
-        : candidate.reviewArtifact.previewRefs[
+        ? candidate.reviewArtifact?.structureDiffRef
+        : candidate.reviewArtifact?.previewRefs[
             Number(input.artifactId.replace("preview-", ""))
           ];
     const found =

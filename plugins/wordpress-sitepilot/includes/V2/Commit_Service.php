@@ -95,6 +95,16 @@ final class Commit_Service {
 		if ( $content_error instanceof \WP_Error ) {
 			return $content_error;
 		}
+		$status_to = 'set_status' === (string) $candidate['operation'] ? self::requested_status( $candidate ) : null;
+		if ( 'set_status' === (string) $candidate['operation'] ) {
+			// A status change never touches content: it must be the post as stored.
+			if ( null === $status_to ) {
+				return self::error( 'schema_invalid', 'The status change is invalid.', 400 );
+			}
+			if ( null === $source_content || ! hash_equals( hash( 'sha256', $source_content ), hash( 'sha256', $content ) ) ) {
+				return self::error( 'content_changed', 'A status change must keep the stored content exactly.', 409 );
+			}
+		}
 
 		$media_error = self::validate_media_mapping( $candidate, $media_mapping );
 		if ( $media_error instanceof \WP_Error ) {
@@ -131,10 +141,18 @@ final class Commit_Service {
 
 		$user_id = get_current_user_id();
 		if ( ! self::can_write( $operation, $post_type, $post_id ) ) {
-			return self::error( 'permission_denied', 'The registered service identity cannot write this target.', 403 );
+			return 'set_status' === $operation
+				? self::error( 'permission_denied', sprintf( 'The SitePilot WordPress user is not allowed to publish or unpublish %ss.', $post_type ), 403 )
+				: self::error( 'permission_denied', 'The registered service identity cannot write this target.', 403 );
+		}
+		if ( null !== $status_to ) {
+			$transition_error = self::check_status_transition( (string) get_post_status( (int) $post_id ), $status_to );
+			if ( $transition_error instanceof \WP_Error ) {
+				return $transition_error;
+			}
 		}
 
-		$prepared_content = self::sanitize_content_for_save( $content );
+		$prepared_content = null !== $status_to ? $content : self::sanitize_content_for_save( $content );
 		$prepared_policy_error = self::validate_serialized_policy( $prepared_content, $source_content );
 		if ( $prepared_policy_error instanceof \WP_Error ) {
 			return $prepared_policy_error;
@@ -161,7 +179,7 @@ final class Commit_Service {
 			$prepared_fields = array(
 				'title'   => (string) ( $candidate['requestedPostFields']['title'] ?? $source_post->post_title ),
 				'excerpt' => (string) ( $candidate['requestedPostFields']['excerpt'] ?? $source_post->post_excerpt ),
-				'status'  => (string) $source_post->post_status,
+				'status'  => $status_to ?? (string) $source_post->post_status,
 			);
 		}
 		// The featured image must be one of the approved, bound media items.
@@ -205,6 +223,8 @@ final class Commit_Service {
 			'serverPreparedFieldsHash' => self::fields_hash( $prepared_fields['title'], $prepared_fields['excerpt'], $prepared_fields['status'] ),
 			...( $featured_media_id > 0 ? array( 'featuredMediaId' => $featured_media_id ) : array() ),
 			...( null !== $seo_changes ? array( 'serverPreparedSeoHash' => Seo_Adapter::hash( array_merge( self::seo_base( $post_id ), $seo_changes ) ) ) : array() ),
+			// Verification checks this URL stops loading once unpublished.
+			...( 'draft' === $status_to ? array( 'publishedUrl' => (string) get_permalink( (int) $post_id ) ) : array() ),
 			'preparedAt'                => gmdate( 'c', $now ),
 			'expiresAt'                 => gmdate( 'c', min( $now + self::PREPARED_TTL, strtotime( (string) $approval['expiresAt'] ) ) ),
 		);
@@ -340,11 +360,23 @@ final class Commit_Service {
 				$before_record['state']  = self::before_state( $row );
 				self::update_option_row( $before_key, $before_record );
 				clean_post_cache( $post_id );
-				$update = array(
-					'ID'           => $post_id,
-					'post_content' => (string) $prepared['finalContent'],
-				);
-				foreach ( array( 'title' => 'post_title', 'excerpt' => 'post_excerpt' ) as $request_key => $post_key ) {
+				$status_to = 'set_status' === (string) $prepared['operation'] ? self::requested_status( $candidate ) : null;
+				if ( null !== $status_to ) {
+					if ( self::check_status_transition( (string) $row['post_status'], $status_to ) instanceof \WP_Error ) {
+						throw new \RuntimeException( 'stale_source' );
+					}
+					// Only the status changes; content and fields stay as stored.
+					$update = array(
+						'ID'          => $post_id,
+						'post_status' => $status_to,
+					);
+				} else {
+					$update = array(
+						'ID'           => $post_id,
+						'post_content' => (string) $prepared['finalContent'],
+					);
+				}
+				foreach ( null === $status_to ? array( 'title' => 'post_title', 'excerpt' => 'post_excerpt' ) : array() as $request_key => $post_key ) {
 					if ( array_key_exists( $request_key, $candidate['requestedPostFields'] ) ) {
 						$update[ $post_key ] = (string) $candidate['requestedPostFields'][ $request_key ];
 					}
@@ -470,6 +502,7 @@ final class Commit_Service {
 			'fieldsHash'    => self::fields_hash( (string) $post->post_title, (string) $post->post_excerpt, (string) $post->post_status ),
 			'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
 			...self::seo_readback( $post_id ),
+			'permalink'     => (string) get_permalink( $post_id ),
 		);
 	}
 
@@ -605,7 +638,7 @@ final class Commit_Service {
 		if ( 'sitepilot.compiled-candidate/v2' !== $candidate['schemaVersion'] || 'sitepilot.approval/v2' !== ( $approval['schemaVersion'] ?? null ) || ! isset( $approval['approvalId'], $approval['expiresAt'], $approval['binding'] ) || ! is_array( $approval['binding'] ) ) {
 			return self::error( 'schema_invalid', 'Candidate or approval schema version is invalid.', 400 );
 		}
-		if ( ! in_array( $candidate['operation'], array( 'create_draft', 'replace_content', 'apply_operations' ), true ) ) {
+		if ( ! in_array( $candidate['operation'], array( 'create_draft', 'replace_content', 'apply_operations', 'set_status' ), true ) ) {
 			return self::error( 'schema_invalid', 'Candidate operation is invalid.', 400 );
 		}
 		if ( ! is_array( $candidate['sourceState'] ) || ! isset( $candidate['sourceState']['affectedFieldsHash'] ) ) {
@@ -740,7 +773,28 @@ final class Commit_Service {
 			$object = get_post_type_object( $post_type );
 			return $object && current_user_can( $object->cap->create_posts );
 		}
+		if ( 'set_status' === $operation ) {
+			// Publishing needs the post type's own publish capability, not
+			// only permission to edit the post.
+			$object = get_post_type_object( $post_type );
+			return null !== $post_id && $object && current_user_can( 'edit_post', $post_id ) && current_user_can( $object->cap->publish_posts );
+		}
 		return null !== $post_id && current_user_can( 'edit_post', $post_id );
+	}
+
+	/** @param array<string, mixed> $candidate */
+	private static function requested_status( array $candidate ): ?string {
+		$to = $candidate['intent']['status']['to'] ?? null;
+		return in_array( $to, array( 'publish', 'draft' ), true ) ? $to : null;
+	}
+
+	/**
+	 * Content is always created as a draft. It can be published from draft
+	 * or pending review, and unpublished (back to draft) only when published.
+	 */
+	private static function check_status_transition( string $from, string $to ): ?\WP_Error {
+		$allowed = 'publish' === $to ? in_array( $from, array( 'draft', 'pending' ), true ) : 'publish' === $from;
+		return $allowed ? null : self::error( 'stale_source', sprintf( 'The post is "%1$s", so it cannot be changed to "%2$s".', $from, $to ), 409 );
 	}
 
 	/** @param array<string, mixed> $intent */

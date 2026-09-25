@@ -1272,12 +1272,33 @@ const applyOperationsPlanSchema = z
   })
   .strict();
 
-function collectPlanBlocks(plan: {
-  blocks?: GutenbergV2BlockNode[];
-  operations?: z.infer<typeof gutenbergV2ScopedOperationSchema>[];
-}): GutenbergV2BlockNode[] {
-  const blocks = [...(plan.blocks ?? [])];
-  for (const operation of plan.operations ?? []) {
+/**
+ * Publishing and unpublishing are their own operation, so a status change
+ * never rides along with a content edit and is always approved on its own.
+ * Content and fields stay exactly as stored. `draft` takes a published post
+ * back to a draft (unpublish).
+ */
+export const GUTENBERG_V2_STATUS_CHANGES = ["publish", "draft"] as const;
+
+const setStatusPlanSchema = z
+  .object({
+    ...planBaseShape,
+    media: z.array(gutenbergV2MediaIntentSchema).max(0),
+    operation: z.literal("set_status"),
+    target: gutenbergV2ExistingTargetSchema,
+    status: z
+      .object({ to: z.enum(GUTENBERG_V2_STATUS_CHANGES) })
+      .strict()
+  })
+  .strict();
+
+function collectPlanBlocks(plan: object): GutenbergV2BlockNode[] {
+  const { blocks: planBlocks, operations } = plan as {
+    blocks?: GutenbergV2BlockNode[];
+    operations?: z.infer<typeof gutenbergV2ScopedOperationSchema>[];
+  };
+  const blocks = [...(planBlocks ?? [])];
+  for (const operation of operations ?? []) {
     if (operation.type === "insert_blocks") {
       blocks.push(...operation.blocks);
     } else if (operation.type === "edit_block") {
@@ -1295,9 +1316,11 @@ function validatePlanStructure(
   plan:
     | z.infer<typeof createDraftPlanSchema>
     | z.infer<typeof replaceContentPlanSchema>
-    | z.infer<typeof applyOperationsPlanSchema>,
+    | z.infer<typeof applyOperationsPlanSchema>
+    | z.infer<typeof setStatusPlanSchema>,
   context: z.RefinementCtx
 ): void {
+  if (plan.operation === "set_status") return;
   if (byteLength(JSON.stringify(plan)) > GUTENBERG_V2_LIMITS.maxPlanBytes) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -1567,7 +1590,8 @@ const parsedGutenbergV2BlockPlanSchema = z
   .discriminatedUnion("operation", [
     createDraftPlanSchema,
     replaceContentPlanSchema,
-    applyOperationsPlanSchema
+    applyOperationsPlanSchema,
+    setStatusPlanSchema
   ])
   .superRefine(validatePlanStructure);
 
@@ -1890,7 +1914,12 @@ export const gutenbergV2CompiledCandidateSchema = z
     candidateId: identifierSchema,
     planId: identifierSchema,
     siteId: identifierSchema,
-    operation: z.enum(["create_draft", "replace_content", "apply_operations"]),
+    operation: z.enum([
+      "create_draft",
+      "replace_content",
+      "apply_operations",
+      "set_status"
+    ]),
     intent: gutenbergV2BlockPlanSchema,
     requestedPostFields: requestedPostFieldsSchema,
     serializedContent: z
@@ -1906,12 +1935,14 @@ export const gutenbergV2CompiledCandidateSchema = z
       .max(GUTENBERG_V2_LIMITS.maxMediaItems),
     mediaManifestHash: sha256Schema,
     validation: gutenbergV2ValidationReportSchema,
+    /** Absent only for a status change, which renders nothing new. */
     reviewArtifact: z
       .object({
         structureDiffRef: identifierSchema,
         previewRefs: z.array(identifierSchema).min(1).max(10)
       })
-      .strict(),
+      .strict()
+      .optional(),
     compiledAt: isoTimestampSchema
   })
   .strict()
@@ -1923,6 +1954,16 @@ export const gutenbergV2CompiledCandidateSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Candidate identity does not match its intent."
+      });
+    }
+    if (
+      candidate.reviewArtifact === undefined &&
+      candidate.operation !== "set_status"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reviewArtifact"],
+        message: "A content candidate needs its review artifacts."
       });
     }
     if (candidate.operation !== candidate.intent.operation) {
@@ -1968,7 +2009,12 @@ export const gutenbergV2ApprovalBindingSchema = z
   .object({
     candidateId: identifierSchema,
     siteId: identifierSchema,
-    operation: z.enum(["create_draft", "replace_content", "apply_operations"]),
+    operation: z.enum([
+      "create_draft",
+      "replace_content",
+      "apply_operations",
+      "set_status"
+    ]),
     intentHash: sha256Schema,
     contentHash: sha256Schema,
     requestedFieldsHash: sha256Schema,
@@ -2181,7 +2227,12 @@ export const gutenbergV2PreparedCommitSchema = z
     approvalId: identifierSchema,
     candidateId: identifierSchema,
     siteId: identifierSchema,
-    operation: z.enum(["create_draft", "replace_content", "apply_operations"]),
+    operation: z.enum([
+      "create_draft",
+      "replace_content",
+      "apply_operations",
+      "set_status"
+    ]),
     postId: positiveIntegerSchema.optional(),
     sourceRevision: identifierSchema.optional(),
     sourceContentHash: sha256Schema.optional(),
@@ -2202,6 +2253,8 @@ export const gutenbergV2PreparedCommitSchema = z
     featuredMediaId: positiveIntegerSchema.optional(),
     /** Hash of the SEO values the commit must leave, when it changes them. */
     serverPreparedSeoHash: sha256Schema.optional(),
+    /** For an unpublish: the URL that was public before the change. */
+    publishedUrl: urlSchema.optional(),
     preparedAt: isoTimestampSchema,
     expiresAt: isoTimestampSchema
   })
@@ -2333,7 +2386,12 @@ export const gutenbergV2EditorCompileResultSchema = z
   .object({
     schemaVersion: z.literal("sitepilot.editor-compile-result/v2"),
     planId: identifierSchema,
-    operation: z.enum(["create_draft", "replace_content", "apply_operations"]),
+    operation: z.enum([
+      "create_draft",
+      "replace_content",
+      "apply_operations",
+      "set_status"
+    ]),
     serializedContent: z
       .string()
       .max(GUTENBERG_V2_LIMITS.maxSerializedContentBytes),
@@ -2364,6 +2422,8 @@ export const gutenbergV2SourceSnapshotSchema = z
     fieldsHash: sha256Schema,
     /** Current SEO values, when the site has a supported SEO plugin. */
     seo: gutenbergV2SeoValuesSchema.optional(),
+    /** The URL the post has, or will have once published. */
+    publicUrl: urlSchema.optional(),
     blockTreeFingerprint: sha256Schema,
     blockIndex: z
       .array(
@@ -2487,7 +2547,9 @@ export const gutenbergV2ReadbackSchema = z
     /** Current post thumbnail attachment ID; 0 when there is none. */
     featuredMediaId: nonNegativeIntegerSchema.optional(),
     seo: gutenbergV2SeoValuesSchema.optional(),
-    seoHash: sha256Schema.optional()
+    seoHash: sha256Schema.optional(),
+    /** The post's current permalink. */
+    permalink: urlSchema.optional()
   })
   .strict();
 

@@ -28,6 +28,7 @@
     "test:e2e:v2-chat": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-chat.ts",
     "test:e2e:v2-acf": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-acf.ts",
     "test:e2e:v2-seo": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-seo.ts",
+    "test:e2e:v2-status": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-status.ts",
     "test:e2e:open-report": "tsx tests/e2e/open-report.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

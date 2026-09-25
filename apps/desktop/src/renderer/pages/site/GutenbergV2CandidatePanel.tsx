@@ -34,6 +34,9 @@ function operationLabel(target: GutenbergV2UiState["target"]): string {
     return `Create a new ${target.postType} draft`;
   }
 
+  if (target.operation === "set_status") {
+    return `${target.status === "publish" ? "Publish" : "Unpublish"} ${target.postType} #${target.postId}`;
+  }
   const label =
     target.operation === "replace_content"
       ? "Replace all content"
@@ -548,14 +551,18 @@ export function GutenbergV2CandidatePanel({
     (artifactsLoaded && hasInvalidArtifact
       ? "A review file could not be displayed. Refresh before deciding."
       : null);
+  // A publish or unpublish renders nothing new, so there are no previews to
+  // wait for; the approval card in the thread says where the post goes live.
+  const statusChange = candidate.target.operation === "set_status";
   const reviewReady =
-    reviewArtifacts.length > 0 &&
-    artifactsLoaded &&
-    artifactError === null &&
-    !hasInvalidArtifact &&
-    previews.every(
-      ({ artifact }) => previewLoadStatus[artifact.id] === "loaded"
-    );
+    statusChange ||
+    (reviewArtifacts.length > 0 &&
+      artifactsLoaded &&
+      artifactError === null &&
+      !hasInvalidArtifact &&
+      previews.every(
+        ({ artifact }) => previewLoadStatus[artifact.id] === "loaded"
+      ));
 
   return (
     <section className="gutenberg-v2-candidate-panel" aria-live="polite">
@@ -588,6 +595,13 @@ export function GutenbergV2CandidatePanel({
         <p className="muted small-print">
           <strong>Excerpt:</strong>{" "}
           {candidate.candidate.requestedPostFields.excerpt}
+        </p>
+      ) : null}
+      {candidate.target.operation === "set_status" ? (
+        <p className="muted small-print">
+          {candidate.target.status === "publish"
+            ? "Approving and applying this publishes the post. Only its status changes; the content stays exactly as stored. SitePilot then checks the post loads for visitors."
+            : "Approving and applying this takes the post back to a draft, so visitors can no longer see it. The content stays exactly as stored."}
         </p>
       ) : null}
       {candidate.candidate?.seoChanges?.length ? (

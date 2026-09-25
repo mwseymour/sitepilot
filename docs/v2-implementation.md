@@ -93,6 +93,15 @@ Authorable blocks outside preserved regions must still pass WordPress's strict v
 - **Verification.** Read-back returns `seo` and `seoHash`. The worker fails verification when any requested field differs, and the content service also requires `seoHash` to match the prepared hash.
 - **Rollback.** The before-state stores the exact meta rows (`seo_meta`, with `null` for absent keys). A rollback restores them only if the post's SEO values still match what was written; otherwise it returns `conflict`.
 
+## Publish and unpublish
+
+`set_status` is its own plan operation (`status.to`: `publish` or `draft`), so a status change never rides along with a content edit. Its plan has no blocks, operations, post fields or media.
+
+- **Candidate.** The content service builds it without the planner or block compiler: `serializedContent` is the stored content, bound by hash, and the validation report covers every preservation dimension because the bytes are unchanged. It has no review artifacts; the desktop enables approval without previews. Allowed transitions are draft/pending → publish and publish → draft, checked in both the service and the plugin.
+- **Prepare and commit.** The plugin requires the stored content byte-for-byte (no sanitizing), checks the transition again under the row lock, and requires `edit_post` plus the post type's `publish_posts` capability. The commit changes only `post_status`. For an unpublish, the prepared commit records `publishedUrl`.
+- **Verification.** Read-back returns `permalink`. `SignedWordPressV2Transport.checkPublicUrl()` loads the URL with no credentials, a cache-busting query, and at most five same-origin redirects. A publish must return 2xx on the same path; an unpublish must not. A failed check triggers the normal conditional rollback, which restores the previous status only if the post still has the one this execution set. A network error keeps the execution retryable in `verifying`.
+- **Desktop.** The operation picker has Publish and Unpublish. `gutenbergV2StatusIntent()` maps short follow-ups ("publish it", "take it down") in a thread that already wrote a post to a `set_status` target; anything longer stays a content request. Success is audited as `post_status_changed`. Content edits of a published post carry a "This post is live" notice.
+
 ## Media and review
 
 Staged media is limited to JPEG, PNG, WebP and GIF images and MP4 and WebM videos. The limits are 10 MB per asset, 20 items, and 25 MB aggregate per binding request, because media travels as base64 inside the signed binding request; larger videos need a streaming upload that is not built yet. Headless browsers usually cannot decode video, so a bound video is verified by checksum, container signature and served content type, and the preview proves the approved bytes are placed in a native video element, rather than playing it. `FileGutenbergV2StagedAssetStore` writes private content-addressed files and rehashes them before preview and binding.

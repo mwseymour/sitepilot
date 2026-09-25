@@ -1,3 +1,4 @@
+import { gutenbergV2StatusIntent } from "./gutenberg-v2-status-intent.js";
 import type { ImageAttachmentPayload } from "@sitepilot/contracts";
 import type {
   ChatThreadId,
@@ -367,8 +368,19 @@ export async function ingestRequestThreadMessage(input: {
       siteId: input.siteId,
       requestIds: newestFirst
     });
-    if (written !== null) {
-      gutenbergV2Target = written;
+    if (written !== null && written.operation !== "create_draft") {
+      // "publish it" / "unpublish it" publishes or unpublishes the thread's
+      // post as its own approved step instead of editing its content.
+      const status = gutenbergV2StatusIntent(trimmed);
+      gutenbergV2Target =
+        status === null
+          ? written
+          : {
+              operation: "set_status",
+              postType: written.postType,
+              postId: written.postId,
+              status
+            };
     }
   }
 

@@ -93,6 +93,7 @@ export const auditEventTypes = [
   "tool_invoked",
   "execution_completed",
   "execution_failed",
+  "post_status_changed",
   "rollback_recorded",
   "config_updated",
   "site_registered",

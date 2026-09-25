@@ -932,6 +932,12 @@ export const gutenbergV2TargetSchema = z.discriminatedUnion("operation", [
     operation: z.literal("apply_operations"),
     postType: z.enum(["post", "page"]),
     postId: z.number().int().positive()
+  }),
+  z.object({
+    operation: z.literal("set_status"),
+    postType: z.enum(["post", "page"]),
+    postId: z.number().int().positive(),
+    status: z.enum(["publish", "draft"])
   })
 ]);
 
@@ -953,7 +959,12 @@ const gutenbergV2ArtifactReferenceSchema = z.object({
 const gutenbergV2CandidateSummarySchema = z.object({
   candidateId: idSchema,
   planId: idSchema,
-  operation: z.enum(["create_draft", "replace_content", "apply_operations"]),
+  operation: z.enum([
+    "create_draft",
+    "replace_content",
+    "apply_operations",
+    "set_status"
+  ]),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   intentHash: z.string().regex(/^[a-f0-9]{64}$/),
   capabilityFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
@@ -982,7 +993,8 @@ const gutenbergV2CandidateSummarySchema = z.object({
     .strict()
     .optional(),
   validation: gutenbergV2ValidationReportSchema,
-  reviewArtifacts: z.array(gutenbergV2ArtifactReferenceSchema).min(1).max(3)
+  /** Empty only for a publish or unpublish, which renders nothing new. */
+  reviewArtifacts: z.array(gutenbergV2ArtifactReferenceSchema).max(3)
 });
 
 export const gutenbergV2RequestStateSchema = z.object({

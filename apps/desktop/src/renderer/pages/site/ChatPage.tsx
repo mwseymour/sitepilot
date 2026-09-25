@@ -79,7 +79,9 @@ const SHOW_V1_WORKFLOW = false;
 type GutenbergV2Operation =
   | "create_draft"
   | "replace_content"
-  | "apply_operations";
+  | "apply_operations"
+  | "publish"
+  | "unpublish";
 
 type ThreadTypeMeta = {
   label: string;
@@ -1102,6 +1104,20 @@ export function ChatPage({
     const postId = Number(gutenbergV2PostId.trim());
     if (!Number.isSafeInteger(postId) || postId <= 0) {
       return null;
+    }
+    if (
+      gutenbergV2Operation === "publish" ||
+      gutenbergV2Operation === "unpublish"
+    ) {
+      return {
+        operation: "set_status" as const,
+        postType: gutenbergV2PostType,
+        postId,
+        status:
+          gutenbergV2Operation === "publish"
+            ? ("publish" as const)
+            : ("draft" as const)
+      };
     }
     return {
       operation: gutenbergV2Operation,
@@ -2328,6 +2344,10 @@ export function ChatPage({
                               </option>
                               <option value="apply_operations">
                                 Apply selected changes
+                              </option>
+                              <option value="publish">Publish</option>
+                              <option value="unpublish">
+                                Unpublish (back to draft)
                               </option>
                             </select>
                           </label>

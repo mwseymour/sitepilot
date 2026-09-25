@@ -41,7 +41,7 @@ namespace {
 			public object $cap;
 
 			public function __construct() {
-				$this->cap = (object) array( 'create_posts' => 'edit_posts' );
+				$this->cap = (object) array( 'create_posts' => 'edit_posts', 'publish_posts' => 'publish_posts' );
 			}
 		}
 	}
@@ -99,9 +99,12 @@ namespace {
 		return serialize( $value );
 	}
 
+	// Capabilities a test has taken away from the current user.
+	$GLOBALS['sitepilot_test_denied_caps'] = array();
+
 	function current_user_can( string $capability, int $post_id = 0 ): bool {
-		unset( $capability, $post_id );
-		return true;
+		unset( $post_id );
+		return ! in_array( $capability, $GLOBALS['sitepilot_test_denied_caps'], true );
 	}
 
 	// Mirrors WordPress: strips tags and %-encoded octets, joins lines and

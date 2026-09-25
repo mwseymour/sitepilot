@@ -1,6 +1,6 @@
 # Gutenberg v2 expansion plan
 
-Status: Phases 0 to 3 implemented on 25 September 2026; Phases 4 and 5 proposed. The [v2 roadmap](./v2-roadmap.md) is the overall list of planned work, including categories and tags, the lookup registry and the MCP server. Scope is the local desktop app and the WordPress plugin. Hosted, Slack and Copilot work is out of scope.
+Status: Phases 0 to 4 implemented on 25 September 2026; Phase 5 proposed. The [v2 roadmap](./v2-roadmap.md) is the overall list of planned work, including categories and tags, the lookup registry and the MCP server. Scope is the local desktop app and the WordPress plugin. Hosted, Slack and Copilot work is out of scope.
 
 ## Delivered on 25 September 2026
 
@@ -21,6 +21,8 @@ Status: Phases 0 to 3 implemented on 25 September 2026; Phases 4 and 5 proposed.
   - Found while testing: ACF's editor script adds `"align":""` to every ACF block when it mounts, so v2 now writes the default align itself. And on sites where WordPress drops the editor iframe (any apiVersion 2 block, as ACF blocks are), the review capture measured a height that grew with every attempt; it now measures the blocks themselves.
 - **Phase 3 (SEO, Yoast):** a shared `Seo_Adapter` maps seven neutral fields to Yoast meta for v1, v2, `get-post` and discovery. `postFields.seo` is approval-bound, stale-checked with a separate `affectedSeoHash`, written in the commit transaction, verified on read-back, and restored exactly on rollback. SEO-only edits use a fields-only `apply_operations`. Verified against Yoast 27.4 on the MAMP site (`npm run test:e2e:v2-seo`), including a stale refusal, a restore and a rollback conflict.
   - Not built: the Open Graph image (it needs media binding), and RankMath/AIOSEO mappings.
+- **Phase 4 (publish and unpublish):** a dedicated `set_status` operation, approved on its own, bound to the post as stored, gated on the publish capability, and verified by loading the URL anonymously; a failed check rolls the status back. Available from the operation picker and as "publish it" / "unpublish it" follow-ups. Verified with `npm run test:e2e:v2-status` (publish → 200, unpublish → not public, refused transition, stale refusal, rollback on a failed URL check).
+  - Decisions taken: unpublish goes to `draft`; scheduling and `private` are not built; edits to live posts still go live on approval, with a "This post is live" notice (option a).
 
 ## Goals
 
@@ -223,6 +225,12 @@ Everything is still created as a draft. Publishing is a separate, explicitly app
   - (a) Keep that; revisions exist.
   - (b) Stage edits to live posts as a pending revision until "publish changes". Recommendation: (a) for now, with the approval card warning "This post is live".
 
+### 4.3 Not built yet
+
+- **Scheduling (M).** Publish at a future date and time (`→ future` with a date), for example "schedule for Friday 9am". Needs a date in the `set_status` plan, the site's timezone, a check that the date is in the future, and verification that the post is `future` and not yet public.
+- **Making a post private (S).** `→ private` as a third status change. Verification is that the URL is not public, as for unpublish.
+- **"publish post 946" with the ID in the message (S).** Needs Phase 5 target resolution. For now, choose Publish or Unpublish in the picker and enter the Post ID; "publish it" already works in a thread that wrote the post.
+
 ## Phase 5: Resolving a request's target from text (S–M)
 
 - Before binding a request's target, resolve the post from the message:
@@ -233,6 +241,7 @@ Everything is still created as a draft. Publishing is a separate, explicitly app
 - Reuse `packages/services/src/post-target-resolution.ts` (currently used only by v1).
 - Binding is safety-critical, so the resolved post is shown back for confirmation before generating. For example: "I'll update #946 'Back button hijacking…' (draft) — continue?". Ambiguous matches list the candidates instead of guessing.
 - The UI's Post ID field stays as an override. Slack will need exactly this.
+- Status requests use the same resolution: "publish post 946", "unpublish the latest page" (see 4.3).
 - Conversations already handle "last created post" (25 September fix) once the site runs the updated plugin.
 
 ## Suggested order and rough size
@@ -247,6 +256,7 @@ Everything is still created as a draft. Publishing is a separate, explicitly app
 | 6 | Phase 3 SEO (Yoast) | M |
 | 7 | Phase 2 ACF (discovery, then authoring, then per-site enablement), ready for your testing | M–L |
 | 8 | Phase 1 batch C (YouTube), then D (uploaded video) | M, then L |
+| 9 | Phase 4.3: scheduling and private posts; "publish post 946" comes with Phase 5 | M |
 
 ACF can start earlier if your test window is soon. Its discovery work (2.1) doesn't depend on Phase 0; only authoring does.
 

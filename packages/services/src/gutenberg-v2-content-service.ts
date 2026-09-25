@@ -92,9 +92,14 @@ export interface GutenbergV2WordPressTransport {
     siteId: string;
     target: Extract<
       GutenbergV2BlockPlan,
-      { operation: "replace_content" | "apply_operations" }
+      { operation: "replace_content" | "apply_operations" | "set_status" }
     >["target"];
   }): Promise<GutenbergV2SourceSnapshot>;
+  /**
+   * Fetches a URL as an anonymous visitor (no cookies or credentials), to
+   * confirm a publish or unpublish took effect publicly.
+   */
+  checkPublicUrl?(url: string): Promise<{ status: number; finalUrl: string }>;
   prepareCommit(
     input: GutenbergV2PrepareCommitRequest
   ): Promise<GutenbergV2PrepareCommitResponse>;
@@ -238,6 +243,7 @@ function planPostId(plan: GutenbergV2BlockPlan): number | undefined {
 }
 
 function planBlocks(plan: GutenbergV2BlockPlan): GutenbergV2BlockNode[] {
+  if (plan.operation === "set_status") return [];
   if (plan.operation !== "apply_operations") return plan.blocks;
   const result: GutenbergV2BlockNode[] = [];
   for (const operation of plan.operations) {
@@ -460,6 +466,21 @@ export class GutenbergV2ContentService {
           ? undefined
           : await this.#readAndCheckSource(plan);
       const candidateId = this.#id();
+      // A status change renders nothing new: it is bound to the post exactly
+      // as stored and never goes through the block compiler.
+      if (plan.operation === "set_status") {
+        const candidate = this.#statusCandidate(
+          plan,
+          source!,
+          capabilities,
+          candidateId
+        );
+        await this.#transition(compiling, "review_ready", {
+          candidateId,
+          candidate
+        });
+        return candidate;
+      }
       const compiled = await this.#dependencies.worker.compile({
         candidateId,
         plan,
@@ -702,13 +723,22 @@ export class GutenbergV2ContentService {
       job = await this.#replaceWithinState(job, {
         createdMediaIds: media.createdMediaIds
       });
-      const finalCompile = await this.#dependencies.worker.compile({
-        candidateId: candidate.candidateId,
-        plan: candidate.intent,
-        capabilities,
-        mediaMapping: media.mapping,
-        ...(source === undefined ? {} : { source })
-      });
+      const statusChange = candidate.intent.operation === "set_status";
+      const finalCompile = statusChange
+        ? {
+            intentHash: candidate.intentHash,
+            serializedContent: candidate.serializedContent,
+            contentHash: candidate.contentHash,
+            capabilityFingerprint: candidate.capabilityFingerprint,
+            validation: candidate.validation
+          }
+        : await this.#dependencies.worker.compile({
+            candidateId: candidate.candidateId,
+            plan: candidate.intent,
+            capabilities,
+            mediaMapping: media.mapping,
+            ...(source === undefined ? {} : { source })
+          });
       if (
         finalCompile.intentHash !== candidate.intentHash ||
         finalCompile.contentHash !==
@@ -737,15 +767,19 @@ export class GutenbergV2ContentService {
         await this.#dependencies.wordpress.prepareCommit(request)
       );
       this.#assertPreparedCommit(job, response, request);
-      const preparedValidation = gutenbergV2ValidationReportSchema.parse(
-        await this.#dependencies.worker.validatePreparedContent({
-          candidate,
-          serializedContent: response.preparedCommit.finalContent,
-          expectedSerializedContent: finalCompile.serializedContent,
-          capabilities,
-          mediaMapping: media.mapping
-        })
-      );
+      const preparedValidation = statusChange
+        ? response.preparedCommit.finalContent === candidate.serializedContent
+          ? candidate.validation
+          : { outcome: "invalid" as const }
+        : gutenbergV2ValidationReportSchema.parse(
+            await this.#dependencies.worker.validatePreparedContent({
+              candidate,
+              serializedContent: response.preparedCommit.finalContent,
+              expectedSerializedContent: finalCompile.serializedContent,
+              capabilities,
+              mediaMapping: media.mapping
+            })
+          );
       if (preparedValidation.outcome !== "valid") {
         throw new GutenbergV2ServiceError(
           "content_changed",
@@ -977,14 +1011,21 @@ export class GutenbergV2ContentService {
 
     let report: GutenbergV2ValidationReport;
     try {
-      report = gutenbergV2ValidationReportSchema.parse(
-        await this.#dependencies.worker.verifyPersistedContent({
-          candidate: job.candidate,
-          readback,
-          capabilities,
-          preparedCommit: job.preparedCommit!
-        })
-      );
+      report =
+        job.candidate.intent.operation === "set_status"
+          ? await this.#statusVerificationReport(
+              job,
+              job.candidate.intent,
+              readback
+            )
+          : gutenbergV2ValidationReportSchema.parse(
+              await this.#dependencies.worker.verifyPersistedContent({
+                candidate: job.candidate,
+                readback,
+                capabilities,
+                preparedCommit: job.preparedCommit!
+              })
+            );
     } catch (error) {
       const serviceError = this.#normalizeServiceError(error);
       if (serviceError.retryable) {
@@ -1129,10 +1170,158 @@ export class GutenbergV2ContentService {
     );
   }
 
+  #statusCandidate(
+    plan: Extract<GutenbergV2BlockPlan, { operation: "set_status" }>,
+    source: GutenbergV2SourceSnapshot,
+    capabilities: GutenbergV2EditorCapabilitySnapshot,
+    candidateId: string
+  ): GutenbergV2CompiledCandidate {
+    const from = source.fields.status;
+    const publish = plan.status.to === "publish";
+    const noun = source.postType === "page" ? "Page" : "Post";
+    // Content is created as a draft; publishing is only from draft or
+    // pending review, and unpublishing only from published.
+    if (publish ? !["draft", "pending"].includes(from) : from !== "publish") {
+      throw new GutenbergV2ServiceError(
+        "schema_invalid",
+        publish
+          ? `${noun} #${source.postId} is ${from === "publish" ? "already published" : `"${from}"`}, so it cannot be published here. Only drafts and posts pending review can be.`
+          : `${noun} #${source.postId} is not published (it is "${from}"), so there is nothing to unpublish.`
+      );
+    }
+    const intentHash = hashGutenbergV2Value(plan);
+    const fields = {};
+    return gutenbergV2CompiledCandidateSchema.parse({
+      schemaVersion: "sitepilot.compiled-candidate/v2",
+      candidateId,
+      planId: plan.planId,
+      siteId: plan.siteId,
+      operation: "set_status",
+      intent: plan,
+      requestedPostFields: fields,
+      serializedContent: source.rawContent,
+      contentHash: hashGutenbergV2Content(source.rawContent),
+      intentHash,
+      requestedFieldsHash: hashGutenbergV2Value(fields),
+      sourceState: {
+        postId: source.postId,
+        revision: source.revision,
+        contentHash: source.contentHash,
+        affectedFieldsHash: hashGutenbergV2Value(source.fields)
+      },
+      capabilityFingerprint: capabilities.fingerprint,
+      mediaManifest: [],
+      mediaManifestHash: hashGutenbergV2Value([]),
+      validation: {
+        outcome: "valid",
+        expectedBlockCount: 0,
+        observedBlockCount: 0,
+        issues: [],
+        contentPreservation: {
+          passed: true,
+          // The content is the stored bytes (its hash is bound and
+          // rechecked at commit), so every dimension is preserved as is.
+          checked: [
+            "text",
+            "inline_markup",
+            "links",
+            "media",
+            "captions",
+            "ordering",
+            "layout",
+            "post_fields"
+          ],
+          intentHash,
+          observedIntentHash: intentHash
+        }
+      },
+      compiledAt: this.#now()
+    });
+  }
+
+  /**
+   * A status change succeeds only when WordPress reports the new status and
+   * the post's URL is (for publish) or is no longer (for unpublish) served
+   * to an anonymous visitor.
+   */
+  async #statusVerificationReport(
+    job: GutenbergV2JobRecord,
+    plan: Extract<GutenbergV2BlockPlan, { operation: "set_status" }>,
+    readback: GutenbergV2Readback
+  ): Promise<GutenbergV2ValidationReport> {
+    const issues: GutenbergV2ValidationIssue[] = [];
+    const to = plan.status.to;
+    if (readback.fields.status !== to) {
+      issues.push(
+        issue(
+          "persisted_content_invalid",
+          "verify",
+          `WordPress reports the post as "${readback.fields.status}", not "${to}".`
+        )
+      );
+    }
+    const url =
+      to === "publish" ? readback.permalink : job.preparedCommit?.publishedUrl;
+    const check = this.#dependencies.wordpress.checkPublicUrl;
+    if (url === undefined || check === undefined) {
+      issues.push(
+        issue(
+          "verification_failed",
+          "verify",
+          "The post's public URL could not be checked."
+        )
+      );
+    } else {
+      let response: { status: number; finalUrl: string };
+      try {
+        response = await check.call(this.#dependencies.wordpress, url);
+      } catch (error) {
+        throw new GutenbergV2ServiceError(
+          "verification_failed",
+          `The public URL ${url} could not be fetched; the status change is recorded and verification can be retried.`,
+          { retryable: true, cause: error }
+        );
+      }
+      const samePage =
+        new URL(response.finalUrl).pathname.replace(/\/+$/, "") ===
+        new URL(url).pathname.replace(/\/+$/, "");
+      const reachable =
+        response.status >= 200 && response.status < 300 && samePage;
+      if (to === "publish" && !reachable) {
+        issues.push(
+          issue(
+            "persisted_content_invalid",
+            "verify",
+            `The post was published but ${url} does not load for visitors (HTTP ${response.status}).`
+          )
+        );
+      }
+      if (to === "draft" && reachable) {
+        issues.push(
+          issue(
+            "persisted_content_invalid",
+            "verify",
+            `The post was unpublished but ${url} still loads for visitors.`
+          )
+        );
+      }
+    }
+    const base = job.candidate!.validation;
+    return gutenbergV2ValidationReportSchema.parse({
+      ...base,
+      outcome: issues.length === 0 ? "valid" : "invalid",
+      issues,
+      contentPreservation: {
+        ...base.contentPreservation,
+        passed: issues.length === 0
+      }
+    });
+  }
+
   async #readAndCheckSource(
     plan: Extract<
       GutenbergV2BlockPlan,
-      { operation: "replace_content" | "apply_operations" }
+      { operation: "replace_content" | "apply_operations" | "set_status" }
     >
   ): Promise<GutenbergV2SourceSnapshot> {
     const source = await this.#dependencies.wordpress.readSource({
@@ -1173,7 +1362,8 @@ export class GutenbergV2ContentService {
           `The target ${field} value does not match its expected source value.`
         );
       }
-      if (plan.postFields?.[field] !== undefined && !expected) {
+      const postFields = "postFields" in plan ? plan.postFields : undefined;
+      if (postFields?.[field] !== undefined && !expected) {
         throw new GutenbergV2ServiceError(
           "stale_source",
           `An update to ${field} requires its expected source hash.`

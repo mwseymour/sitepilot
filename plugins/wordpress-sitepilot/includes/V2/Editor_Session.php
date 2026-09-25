@@ -393,11 +393,25 @@ final class Editor_Session {
 						'fieldsHash'  => hash( 'sha256', Runtime_Fingerprint::canonical_json( array( 'excerpt' => (string) $post->post_excerpt, 'status' => (string) $post->post_status, 'title' => (string) $post->post_title ), true ) ),
 						'blockTreeFingerprint' => hash( 'sha256', Runtime_Fingerprint::canonical_json( parse_blocks( (string) $post->post_content ) ) ),
 						...self::source_seo( $post_id ),
+						'publicUrl'   => self::public_url( $post ),
 					),
 				)
 			) . ';',
 			'before'
 		);
+	}
+
+	/** The URL the post has, or will have once it is published. */
+	private static function public_url( \WP_Post $post ): string {
+		if ( 'publish' === $post->post_status ) {
+			return (string) get_permalink( $post );
+		}
+		$published              = clone $post;
+		$published->post_status = 'publish';
+		if ( '' === (string) $published->post_name ) {
+			$published->post_name = wp_unique_post_slug( sanitize_title( '' !== (string) $post->post_title ? (string) $post->post_title : (string) $post->ID ), (int) $post->ID, 'publish', (string) $post->post_type, (int) $post->post_parent );
+		}
+		return (string) get_permalink( $published );
 	}
 
 	/** @return array<string, mixed> */

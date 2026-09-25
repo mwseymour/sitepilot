@@ -163,6 +163,38 @@ export class SignedWordPressV2Transport
   }
 
   /**
+   * Loads a page of the site as an anonymous visitor: no cookies or
+   * signature, a cache-busting query so page caches don't answer, and at
+   * most five redirects within the site's own origin.
+   */
+  public async checkPublicUrl(
+    url: string
+  ): Promise<{ status: number; finalUrl: string }> {
+    let current = new URL(url);
+    for (let hop = 0; hop <= 5; hop += 1) {
+      if (current.origin !== this.#siteUrl.origin) {
+        return { status: 0, finalUrl: current.toString() };
+      }
+      const probe = new URL(current);
+      probe.searchParams.set("sitepilot_public_check", randomUUID());
+      const response = await this.#fetch(probe, {
+        method: "GET",
+        redirect: "manual",
+        headers: { accept: "text/html", "cache-control": "no-cache" }
+      });
+      await response.arrayBuffer().catch(() => undefined);
+      const location = response.headers.get("location");
+      if (response.status >= 300 && response.status < 400 && location) {
+        current = new URL(location, current);
+        current.searchParams.delete("sitepilot_public_check");
+        continue;
+      }
+      return { status: response.status, finalUrl: current.toString() };
+    }
+    return { status: 0, finalUrl: current.toString() };
+  }
+
+  /**
    * Hands one fixture result to the plugin, which repeats the save, data
    * and render checks and records the block's per-site status.
    */
