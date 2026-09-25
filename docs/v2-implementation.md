@@ -82,6 +82,17 @@ Scoped operations address the source snapshot the planner saw, not the tree afte
 
 Authorable blocks outside preserved regions must still pass WordPress's strict validation. As before, a post that contains an invalid or deprecated-format authorable block cannot be edited until it is resaved in WordPress.
 
+## SEO fields
+
+`SitePilot\Seo\Seo_Adapter` is the one mapping from neutral fields (`title`, `description`, `focusKeyphrase`, `canonical`, `indexing`, `socialTitle`, `socialDescription`) to the active SEO plugin's post meta. Only Yoast SEO is mapped (`_yoast_wpseo_title`, `_metadesc`, `_focuskw`, `_canonical`, `_meta-robots-noindex` as 0/1/2, `_opengraph-title`, `_opengraph-description`). v1 `set-post-seo-meta`, v2 commits, `get-post` and site discovery (`seo.writable`) all use it.
+
+- **Contract.** `postFields.seo` (`gutenbergV2SeoChangesSchema`) lists only the changed fields. Values must already be what WordPress stores (`sanitize_text_field` / `esc_url_raw` leave them unchanged); the server refuses anything else rather than storing a different value than was approved. It is part of `requestedPostFields`, so `requestedFieldsHash` and the approval bind it.
+- **Capability and source.** The editor session adds `seo` (plugin, version, fields) to the capability snapshot and the post's current values to the source snapshot. The planner offers SEO fields only when the capability is present.
+- **Staleness.** A candidate that changes SEO on an existing post records `sourceState.affectedSeoHash` (hash of the current values), which the approval binds. `prepare` and the locked `commit` refuse the write if the post's SEO values changed. `fields_hash` is unchanged, so existing hash pairs still match.
+- **Commit.** Meta is written inside the commit transaction after `wp_update_post`/`wp_insert_post`, and the resulting SEO hash must equal the prepared `serverPreparedSeoHash`. Yoast's own `save_post` indexing is not transactional; verification reads the values back afterwards.
+- **Verification.** Read-back returns `seo` and `seoHash`. The worker fails verification when any requested field differs, and the content service also requires `seoHash` to match the prepared hash.
+- **Rollback.** The before-state stores the exact meta rows (`seo_meta`, with `null` for absent keys). A rollback restores them only if the post's SEO values still match what was written; otherwise it returns `conflict`.
+
 ## Media and review
 
 Staged media is limited to JPEG, PNG, WebP and GIF images and MP4 and WebM videos. The limits are 10 MB per asset, 20 items, and 25 MB aggregate per binding request, because media travels as base64 inside the signed binding request; larger videos need a streaming upload that is not built yet. Headless browsers usually cannot decode video, so a bound video is verified by checksum, container signature and served content type, and the preview proves the approved bytes are placed in a native video element, rather than playing it. `FileGutenbergV2StagedAssetStore` writes private content-addressed files and rehashes them before preview and binding.

@@ -154,6 +154,21 @@ export {
   gutenbergV2BlockFixtureStatusSchema,
   isGutenbergV2AcfBlockName
 } from "./gutenberg-v2-acf.js";
+export {
+  GUTENBERG_V2_SEO_FIELDS,
+  GUTENBERG_V2_SEO_FIELD_LABELS,
+  gutenbergV2SeoAfterChanges,
+  gutenbergV2SeoCapabilitySchema,
+  gutenbergV2SeoChangesSchema,
+  gutenbergV2SeoMismatches,
+  gutenbergV2SeoValuesSchema
+} from "./gutenberg-v2-seo.js";
+export type {
+  GutenbergV2SeoCapability,
+  GutenbergV2SeoChanges,
+  GutenbergV2SeoField,
+  GutenbergV2SeoValues
+} from "./gutenberg-v2-seo.js";
 export type {
   GutenbergV2AcfBlockDefinition,
   GutenbergV2AcfDataOptions,

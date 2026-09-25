@@ -375,6 +375,8 @@ final class Editor_Session {
 					),
 					'serverRuntimeFingerprint' => $runtime['fingerprint'],
 					'blockPolicy'              => Block_Policy::bridge_config(),
+					// The SEO plugin v2 can write here, if any, and its fields.
+					'seo'                      => \SitePilot\Seo\Seo_Adapter::describe(),
 					'source'                   => array(
 						'postId'      => $post_id,
 						'postType'    => (string) $post->post_type,
@@ -390,11 +392,18 @@ final class Editor_Session {
 						),
 						'fieldsHash'  => hash( 'sha256', Runtime_Fingerprint::canonical_json( array( 'excerpt' => (string) $post->post_excerpt, 'status' => (string) $post->post_status, 'title' => (string) $post->post_title ), true ) ),
 						'blockTreeFingerprint' => hash( 'sha256', Runtime_Fingerprint::canonical_json( parse_blocks( (string) $post->post_content ) ) ),
+						...self::source_seo( $post_id ),
 					),
 				)
 			) . ';',
 			'before'
 		);
+	}
+
+	/** @return array<string, mixed> */
+	private static function source_seo( int $post_id ): array {
+		$values = \SitePilot\Seo\Seo_Adapter::read( $post_id );
+		return null === $values ? array() : array( 'seo' => $values );
 	}
 
 	public static function cleanup_scratch( int $post_id, string $execution_id ): void {

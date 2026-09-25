@@ -231,7 +231,11 @@
         pluginFingerprint,
         editorSettingsFingerprint
       },
-      blocks
+      blocks,
+      // The SEO plugin whose fields v2 can write on this site, if any.
+      ...(config.seo && typeof config.seo === "object"
+        ? { seo: config.seo }
+        : {})
     };
     snapshot.fingerprint = await sha256({ ...snapshot, capturedAt: undefined });
     return snapshot;

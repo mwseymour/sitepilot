@@ -10,10 +10,13 @@ import {
   type GutenbergV2PlanningModelClient,
   type GutenbergV2PlanRevision
 } from "@sitepilot/services";
-import type {
-  GutenbergV2CompiledCandidate,
-  GutenbergV2JobRecord,
-  ImageAttachmentPayload
+import {
+  GUTENBERG_V2_SEO_FIELDS,
+  GUTENBERG_V2_SEO_FIELD_LABELS,
+  type GutenbergV2CompiledCandidate,
+  type GutenbergV2JobRecord,
+  type GutenbergV2SeoChanges,
+  type ImageAttachmentPayload
 } from "@sitepilot/contracts";
 import type {
   AuditEntryId,
@@ -108,6 +111,15 @@ const WRITTEN_STATES = new Set([
   "rollback_conflict",
   "manual_intervention_required"
 ]);
+function seoChangeList(seo: GutenbergV2SeoChanges) {
+  return GUTENBERG_V2_SEO_FIELDS.flatMap((field) => {
+    const value = seo[field];
+    return value === undefined
+      ? []
+      : [{ field, label: GUTENBERG_V2_SEO_FIELD_LABELS[field], value }];
+  });
+}
+
 function previousPlanFrom(
   job: GutenbergV2JobRecord | null | undefined
 ): GutenbergV2PlanRevision["previousPlan"] | undefined {
@@ -457,6 +469,11 @@ function toState(mapping: Mapping, job: GutenbergV2JobRecord) {
                 ([field]) => field === "title" || field === "excerpt"
               )
             ),
+            ...(candidate.requestedPostFields.seo === undefined
+              ? {}
+              : {
+                  seoChanges: seoChangeList(candidate.requestedPostFields.seo)
+                }),
             ...(candidate.requestedPostFields.featuredMediaRef === undefined
               ? {}
               : {

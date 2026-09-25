@@ -91,7 +91,7 @@ final class Runtime_Fingerprint {
 		if ( ! is_array( $value ) ) {
 			return $value;
 		}
-		$object_keys = array( 'attributes', 'target', 'postFields', 'expectedFields', 'requestedPostFields', 'sourceState', 'reviewArtifact', 'validation', 'contentPreservation', 'binding', 'source', 'data', 'style', 'layout', 'fields', 'color', 'spacing', 'padding', 'margin' );
+		$object_keys = array( 'attributes', 'target', 'postFields', 'expectedFields', 'requestedPostFields', 'sourceState', 'reviewArtifact', 'validation', 'contentPreservation', 'binding', 'source', 'data', 'style', 'layout', 'fields', 'seo', 'color', 'spacing', 'padding', 'margin' );
 		if ( array() === $value && ( $object_root || ( null !== $key && in_array( $key, $object_keys, true ) ) ) ) {
 			return (object) array();
 		}

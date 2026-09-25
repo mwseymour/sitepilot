@@ -1,8 +1,10 @@
-import type {
-  GutenbergV2CompiledCandidate,
-  GutenbergV2ExecutionResult,
-  GutenbergV2JobRecord,
-  GutenbergV2ValidationIssue
+import {
+  GUTENBERG_V2_SEO_FIELDS,
+  GUTENBERG_V2_SEO_FIELD_LABELS,
+  type GutenbergV2CompiledCandidate,
+  type GutenbergV2ExecutionResult,
+  type GutenbergV2JobRecord,
+  type GutenbergV2ValidationIssue
 } from "@sitepilot/contracts";
 
 /**
@@ -45,6 +47,19 @@ function clip(value: string): string {
   return compact.length > MAX_MARKUP
     ? `${compact.slice(0, MAX_MARKUP)}…`
     : compact;
+}
+
+function seoLines(candidate: GutenbergV2CompiledCandidate): string[] {
+  const seo = candidate.requestedPostFields.seo;
+  if (seo === undefined) return [];
+  return GUTENBERG_V2_SEO_FIELDS.flatMap((field) => {
+    const value = seo[field];
+    return value === undefined
+      ? []
+      : [
+          `${GUTENBERG_V2_SEO_FIELD_LABELS[field]}: ${value === "" ? "cleared (plugin default)" : clip(value)}`
+        ];
+  });
 }
 
 export function formatGutenbergV2Issue(
@@ -143,6 +158,7 @@ export function candidateReadyReport(input: {
       : [
           `Featured image: ${featuredImageLabel(candidate)} (${candidate.requestedPostFields.featuredMediaRef})`
         ]),
+    ...seoLines(candidate),
     `Content: ${changeSummary(candidate)}; destination editor validation ${candidate.validation.outcome} (${candidate.validation.observedBlockCount}/${candidate.validation.expectedBlockCount} blocks).`,
     ...(input.revisionNote === undefined
       ? []
@@ -371,6 +387,16 @@ export function friendlyCandidateReady(input: {
     ...(featured === null
       ? []
       : [`It sets the featured image to “${featured}”.`]),
+    ...(input.candidate.requestedPostFields.seo === undefined
+      ? []
+      : [
+          `It changes the ${GUTENBERG_V2_SEO_FIELDS.filter(
+            (field) =>
+              input.candidate.requestedPostFields.seo?.[field] !== undefined
+          )
+            .map((field) => GUTENBERG_V2_SEO_FIELD_LABELS[field].toLowerCase())
+            .join(", ")}.`
+        ]),
     "Check the preview, then approve it, or reply here with anything you want changed. Nothing is saved until you approve and apply it.",
     ...(input.notices ?? [])
   ].join(" ");

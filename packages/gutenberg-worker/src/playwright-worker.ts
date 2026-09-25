@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  GUTENBERG_V2_SEO_FIELD_LABELS,
   GutenbergV2AcfDataError,
+  gutenbergV2SeoMismatches,
+  type GutenbergV2SeoField,
   gutenbergV2AcfDataFromFields,
   gutenbergV2AcfSampleFields,
   gutenbergV2BlockFixtureResultSchema,
@@ -988,7 +991,13 @@ body *:has(${captureSelector}) {
                 (entry) => entry.ref === featuredRef
               )?.attachmentId,
             actualId: readback.featuredMediaId
-          }
+          },
+      input.candidate.requestedPostFields.seo === undefined
+        ? undefined
+        : gutenbergV2SeoMismatches(
+            input.candidate.requestedPostFields.seo,
+            readback.seo
+          )
     );
   }
 
@@ -1183,9 +1192,11 @@ body *:has(${captureSelector}) {
       excerpt?: string | undefined;
       featuredMediaRef?: string | undefined;
       status?: "draft" | undefined;
+      seo?: unknown;
     },
     actual: { title: string; excerpt: string; status: string },
-    featured?: { expectedId: number | undefined; actualId: number | undefined }
+    featured?: { expectedId: number | undefined; actualId: number | undefined },
+    seoMismatches?: readonly GutenbergV2SeoField[]
   ): GutenbergV2ValidationReport {
     const mismatches: string[] = (
       ["title", "excerpt", "status"] as const
@@ -1199,6 +1210,9 @@ body *:has(${captureSelector}) {
         featured.actualId !== featured.expectedId)
     ) {
       mismatches.push("featured image");
+    }
+    for (const field of seoMismatches ?? []) {
+      mismatches.push(GUTENBERG_V2_SEO_FIELD_LABELS[field]);
     }
     const checked = report.contentPreservation.checked.includes("post_fields")
       ? report.contentPreservation.checked

@@ -2629,8 +2629,10 @@ final class Write_Abilities {
 		}
 
 		$provider  = self::normalize_seo_meta_provider( $input['meta_provider'] ?? '' );
-		$key_title = 'yoast' === $provider ? '_yoast_wpseo_title' : '_sitepilot_seo_title';
-		$key_desc  = 'yoast' === $provider ? '_yoast_wpseo_metadesc' : '_sitepilot_seo_description';
+		$yoast_keys = array( 'title' => '_yoast_wpseo_title', 'description' => '_yoast_wpseo_metadesc' );
+		$yoast_keys = array_merge( $yoast_keys, array_intersect_key( \SitePilot\Seo\Seo_Adapter::meta_keys(), $yoast_keys ) );
+		$key_title  = 'yoast' === $provider ? $yoast_keys['title'] : '_sitepilot_seo_title';
+		$key_desc   = 'yoast' === $provider ? $yoast_keys['description'] : '_sitepilot_seo_description';
 
 		$before = array(
 			$key_title => (string) get_post_meta( $post_id, $key_title, true ),

@@ -9,6 +9,8 @@ declare( strict_types = 1 );
 
 namespace SitePilot\V2;
 
+use SitePilot\Seo\Seo_Adapter;
+
 /**
  * Stores approval-bound preparations and commits them inside an InnoDB
  * transaction. Final editor verification is intentionally outside this class.
@@ -102,6 +104,16 @@ final class Commit_Service {
 		$operation = (string) $candidate['operation'];
 		$post_id   = null;
 		$post_type = 'post';
+		$seo_changes = self::requested_seo( $candidate );
+		if ( null !== $seo_changes ) {
+			$seo_error = Seo_Adapter::validate( $seo_changes );
+			if ( null !== $seo_error ) {
+				return self::error( 'schema_invalid', $seo_error, 422 );
+			}
+			if ( 'create_draft' !== $operation && '' === (string) ( $candidate['sourceState']['affectedSeoHash'] ?? '' ) ) {
+				return self::error( 'schema_invalid', 'An SEO change to an existing post must be bound to its current SEO fields.', 400 );
+			}
+		}
 		if ( 'create_draft' === $operation ) {
 			$post_type = sanitize_key( (string) ( $candidate['intent']['target']['postType'] ?? '' ) );
 			$empty_fields_hash = hash( 'sha256', Runtime_Fingerprint::canonical_json( array(), true ) );
@@ -192,6 +204,7 @@ final class Commit_Service {
 			'serverPreparedContentHash' => hash( 'sha256', $prepared_content ),
 			'serverPreparedFieldsHash' => self::fields_hash( $prepared_fields['title'], $prepared_fields['excerpt'], $prepared_fields['status'] ),
 			...( $featured_media_id > 0 ? array( 'featuredMediaId' => $featured_media_id ) : array() ),
+			...( null !== $seo_changes ? array( 'serverPreparedSeoHash' => Seo_Adapter::hash( array_merge( self::seo_base( $post_id ), $seo_changes ) ) ) : array() ),
 			'preparedAt'                => gmdate( 'c', $now ),
 			'expiresAt'                 => gmdate( 'c', min( $now + self::PREPARED_TTL, strtotime( (string) $approval['expiresAt'] ) ) ),
 		);
@@ -349,8 +362,18 @@ final class Commit_Service {
 				}
 			}
 
+			// SEO meta is written in the same transaction as the post row.
+			$seo_changes = self::requested_seo( $candidate );
+			if ( null !== $seo_changes && ! Seo_Adapter::write( $post_id, $seo_changes ) ) {
+				throw new \RuntimeException( 'conditional_commit_failed' );
+			}
+
 			$row_after = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID = %d", $post_id ), ARRAY_A );
 			if ( ! is_array( $row_after ) ) {
+				throw new \RuntimeException( 'conditional_commit_failed' );
+			}
+			$seo_hash_after = null !== $seo_changes ? Seo_Adapter::current_hash( $post_id ) : '';
+			if ( null !== $seo_changes && ! hash_equals( (string) ( $prepared['serverPreparedSeoHash'] ?? '' ), $seo_hash_after ) ) {
 				throw new \RuntimeException( 'conditional_commit_failed' );
 			}
 			$before_record['postId'] = $post_id;
@@ -360,6 +383,7 @@ final class Commit_Service {
 				'status'      => (string) $row_after['post_status'],
 				'revision'    => self::revision_identifier( $post_id, $row_after ),
 				'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
+				...( '' !== $seo_hash_after ? array( 'seoHash' => $seo_hash_after ) : array() ),
 			);
 			self::update_option_row( $before_key, $before_record );
 			$receipt = array(
@@ -445,6 +469,7 @@ final class Commit_Service {
 			),
 			'fieldsHash'    => self::fields_hash( (string) $post->post_title, (string) $post->post_excerpt, (string) $post->post_status ),
 			'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
+			...self::seo_readback( $post_id ),
 		);
 	}
 
@@ -494,6 +519,8 @@ final class Commit_Service {
 				|| ! hash_equals( $expected_revision, $current_revision )
 				|| ! hash_equals( (string) ( $written['revision'] ?? '' ), $current_revision )
 				|| ( array_key_exists( 'featuredMediaId', $written ) && (int) $written['featuredMediaId'] !== (int) get_post_thumbnail_id( $post_id ) )
+				// SEO fields someone edited after the write are never overwritten.
+				|| ( isset( $written['seoHash'] ) && ! hash_equals( (string) $written['seoHash'], Seo_Adapter::current_hash( $post_id ) ) )
 			) {
 				$wpdb->query( 'ROLLBACK' );
 				return array( 'schemaVersion' => 'sitepilot.recover-response/v2', 'outcome' => 'conflict', 'evidenceRef' => $before_ref );
@@ -532,6 +559,9 @@ final class Commit_Service {
 				if ( (int) get_post_thumbnail_id( $post_id ) !== $previous_thumbnail ) {
 					throw new \RuntimeException( 'rollback_failed' );
 				}
+			}
+			if ( isset( $written['seoHash'] ) && is_array( $before['seo_meta'] ?? null ) && ! Seo_Adapter::restore( $post_id, $before['seo_meta'] ) ) {
+				throw new \RuntimeException( 'rollback_failed' );
 			}
 			$restored_row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID = %d FOR UPDATE", $post_id ), ARRAY_A );
 			if ( ! is_array( $restored_row ) || ! self::row_matches_before( $restored_row, $before ) ) {
@@ -614,6 +644,9 @@ final class Commit_Service {
 		if ( isset( $candidate['sourceState']['revision'] ) ) {
 			$expected['sourceRevision'] = (string) $candidate['sourceState']['revision'];
 		}
+		if ( isset( $candidate['sourceState']['affectedSeoHash'] ) ) {
+			$expected['affectedSeoHash'] = (string) $candidate['sourceState']['affectedSeoHash'];
+		}
 		foreach ( $expected as $key => $value ) {
 			if ( ! isset( $binding[ $key ] ) || ! is_string( $binding[ $key ] ) || ! hash_equals( $value, $binding[ $key ] ) ) {
 				return self::error( 'approval_invalid', "Approval binding field {$key} does not match the candidate.", 409 );
@@ -661,6 +694,9 @@ final class Commit_Service {
 		if ( ! hash_equals( (string) ( $candidate['sourceState']['affectedFieldsHash'] ?? '' ), $current_fields_hash ) ) {
 			return self::error( 'stale_source', 'The source post fields changed before preparation.', 409 );
 		}
+		if ( isset( $candidate['sourceState']['affectedSeoHash'] ) && ! hash_equals( (string) $candidate['sourceState']['affectedSeoHash'], Seo_Adapter::current_hash( $post_id ) ) ) {
+			return self::error( 'stale_source', 'The source SEO fields changed before preparation.', 409 );
+		}
 		$expected = $candidate['intent']['target']['expectedFields'] ?? array();
 		foreach ( array( 'title' => (string) $post->post_title, 'excerpt' => (string) $post->post_excerpt ) as $key => $value ) {
 			if ( isset( $expected[ $key ]['valueHash'] ) && ! hash_equals( (string) $expected[ $key ]['valueHash'], self::value_hash( $value ) ) ) {
@@ -685,6 +721,9 @@ final class Commit_Service {
 			return 'stale_source';
 		}
 		if ( ! hash_equals( (string) ( $candidate['sourceState']['affectedFieldsHash'] ?? '' ), self::fields_hash( (string) $row['post_title'], (string) $row['post_excerpt'], (string) $row['post_status'] ) ) ) {
+			return 'stale_source';
+		}
+		if ( isset( $candidate['sourceState']['affectedSeoHash'] ) && ! hash_equals( (string) $candidate['sourceState']['affectedSeoHash'], Seo_Adapter::current_hash( (int) $row['ID'] ) ) ) {
 			return 'stale_source';
 		}
 		$expected = $candidate['intent']['target']['expectedFields'] ?? array();
@@ -874,7 +913,36 @@ final class Commit_Service {
 			'post_excerpt'  => (string) $row['post_excerpt'],
 			'post_status'   => (string) $row['post_status'],
 			'_thumbnail_id' => isset( $row['ID'] ) ? (int) get_post_thumbnail_id( (int) $row['ID'] ) : 0,
+			'seo_meta'      => isset( $row['ID'] ) && Seo_Adapter::active() ? Seo_Adapter::raw_meta( (int) $row['ID'] ) : null,
 		);
+	}
+
+	/** @param array<string, mixed> $candidate @return array<string, string>|null */
+	private static function requested_seo( array $candidate ): ?array {
+		$seo = $candidate['requestedPostFields']['seo'] ?? null;
+		return is_array( $seo ) && ! empty( $seo ) ? $seo : null;
+	}
+
+	/**
+	 * SEO values before the write: the post's current values, or the
+	 * plugin defaults for a new draft.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function seo_base( ?int $post_id ): array {
+		$current = null !== $post_id ? Seo_Adapter::read( $post_id ) : null;
+		if ( is_array( $current ) ) {
+			return $current;
+		}
+		$base = array_fill_keys( Seo_Adapter::FIELDS, '' );
+		$base['indexing'] = 'default';
+		return $base;
+	}
+
+	/** @return array<string, mixed> */
+	private static function seo_readback( int $post_id ): array {
+		$values = Seo_Adapter::read( $post_id );
+		return null === $values ? array() : array( 'seo' => $values, 'seoHash' => Seo_Adapter::hash( $values ) );
 	}
 
 	/** @param array<string, mixed> $row @param array<string, mixed> $before */

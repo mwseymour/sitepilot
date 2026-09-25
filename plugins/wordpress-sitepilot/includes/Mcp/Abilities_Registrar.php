@@ -260,6 +260,7 @@ final class Abilities_Registrar {
 						'modified_gmt'   => array( 'type' => 'string' ),
 						'permalink'      => array( 'type' => 'string' ),
 						'category_slugs' => array( 'type' => 'array' ),
+						'seo'            => array( 'type' => 'object' ),
 						'error'          => array( 'type' => 'string' ),
 						'total_matches'  => array( 'type' => 'integer' ),
 						'matches'        => array( 'type' => 'array' ),

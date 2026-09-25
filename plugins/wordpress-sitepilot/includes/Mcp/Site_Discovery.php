@@ -274,6 +274,11 @@ final class Site_Discovery {
 				$found['aioseo'] = true;
 			}
 		}
+		// The plugin whose fields SitePilot can write, and which fields.
+		$adapter = \SitePilot\Seo\Seo_Adapter::describe();
+		if ( null !== $adapter ) {
+			$found['writable'] = $adapter;
+		}
 		return $found;
 	}
 }

@@ -434,6 +434,14 @@ function PreviewLightbox({
   );
 }
 
+function indexingLabel(value: string): string {
+  return value === "noindex"
+    ? "hidden from search engines (noindex)"
+    : value === "index"
+      ? "shown to search engines (index)"
+      : "site default";
+}
+
 export function GutenbergV2CandidatePanel({
   candidate,
   busy,
@@ -581,6 +589,23 @@ export function GutenbergV2CandidatePanel({
           <strong>Excerpt:</strong>{" "}
           {candidate.candidate.requestedPostFields.excerpt}
         </p>
+      ) : null}
+      {candidate.candidate?.seoChanges?.length ? (
+        <div className="muted small-print gutenberg-v2-seo-changes">
+          <strong>SEO changes:</strong>
+          <ul>
+            {candidate.candidate.seoChanges.map((change) => (
+              <li key={change.field}>
+                {change.label}:{" "}
+                {change.value === ""
+                  ? "cleared (plugin default)"
+                  : change.field === "indexing"
+                    ? indexingLabel(change.value)
+                    : change.value}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       {candidate.failure ? (
         <p className="workspace-error">{candidate.failure.message}</p>

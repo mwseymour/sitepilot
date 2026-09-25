@@ -209,6 +209,18 @@ final class Post_Query {
 			'modified_gmt'   => (string) $post->post_modified_gmt,
 			'permalink'      => (string) get_permalink( $post ),
 			'category_slugs' => $category_names,
+			// SEO plugin fields (Yoast first), for users who can edit the post.
+			...self::seo_fields( (int) $post->ID ),
 		);
+	}
+
+	/** @return array<string, mixed> */
+	private static function seo_fields( int $post_id ): array {
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return array();
+		}
+		$values = \SitePilot\Seo\Seo_Adapter::read( $post_id );
+		$plugin = \SitePilot\Seo\Seo_Adapter::describe();
+		return null === $values || null === $plugin ? array() : array( 'seo' => array_merge( array( 'plugin' => $plugin['name'] ), $values ) );
 	}
 }

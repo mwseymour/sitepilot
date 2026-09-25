@@ -33,7 +33,8 @@ import {
   type GutenbergV2SourceSnapshot,
   type GutenbergV2ValidationIssue,
   type GutenbergV2ValidationReport,
-  gutenbergV2SupportPolicy
+  gutenbergV2SupportPolicy,
+  gutenbergV2SeoMismatches
 } from "@sitepilot/contracts";
 
 import {
@@ -259,12 +260,32 @@ function walkBlocks(blocks: GutenbergV2BlockNode[]): GutenbergV2BlockNode[] {
 
 function requestedPostFields(
   plan: GutenbergV2BlockPlan
-): Record<string, string> {
+): GutenbergV2CompiledCandidate["requestedPostFields"] {
   if (!("postFields" in plan) || plan.postFields === undefined) return {};
-  return Object.fromEntries(
-    Object.entries(plan.postFields).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string"
-    )
+  const { seo, ...fields } = plan.postFields;
+  return {
+    ...Object.fromEntries(
+      Object.entries(fields).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string"
+      )
+    ),
+    ...(seo === undefined ? {} : { seo })
+  };
+}
+
+// Every requested SEO field reads back as approved, and the whole SEO state
+// is what the server prepared.
+function seoMatches(
+  job: GutenbergV2JobRecord,
+  readback: GutenbergV2Readback
+): boolean {
+  const requested = job.candidate?.requestedPostFields.seo;
+  if (requested === undefined) return true;
+  return (
+    readback.seo !== undefined &&
+    readback.seoHash === hashGutenbergV2Value(readback.seo) &&
+    readback.seoHash === job.preparedCommit?.serverPreparedSeoHash &&
+    gutenbergV2SeoMismatches(requested, readback.seo).length === 0
   );
 }
 
@@ -283,6 +304,9 @@ function approvalBinding(
     contentHash: candidate.contentHash,
     requestedFieldsHash: candidate.requestedFieldsHash,
     affectedFieldsHash: candidate.sourceState.affectedFieldsHash,
+    ...(candidate.sourceState.affectedSeoHash === undefined
+      ? {}
+      : { affectedSeoHash: candidate.sourceState.affectedSeoHash }),
     ...(source
       ? {
           sourceContentHash: source.sourceContentHash,
@@ -476,12 +500,23 @@ export class GutenbergV2ContentService {
         alt: media.alt,
         ...(media.caption === undefined ? {} : { caption: media.caption })
       }));
+      if (fields.seo !== undefined && source && source.seo === undefined) {
+        throw new GutenbergV2ServiceError(
+          "stale_source",
+          "The post's SEO fields could not be read, so they cannot be changed."
+        );
+      }
+      // An SEO change is bound to the SEO values it was planned against, so
+      // a later edit in the SEO plugin makes the candidate stale.
       const sourceState = source
         ? {
             postId: source.postId,
             revision: source.revision,
             contentHash: source.contentHash,
-            affectedFieldsHash: hashGutenbergV2Value(source.fields)
+            affectedFieldsHash: hashGutenbergV2Value(source.fields),
+            ...(fields.seo === undefined || source.seo === undefined
+              ? {}
+              : { affectedSeoHash: hashGutenbergV2Value(source.seo) })
           }
         : { affectedFieldsHash: hashGutenbergV2Value({}) };
       const candidate = gutenbergV2CompiledCandidateSchema.parse({
@@ -977,6 +1012,7 @@ export class GutenbergV2ContentService {
       readback.contentHash === job.preparedCommit?.serverPreparedContentHash &&
       readback.fieldsHash === job.persistedFieldsHash &&
       readback.fieldsHash === job.preparedCommit?.serverPreparedFieldsHash &&
+      seoMatches(job, readback) &&
       report.contentPreservation.checked.includes("post_fields");
     if (report.outcome === "valid" && hashesMatch) {
       const result = this.#executionResult(
@@ -1151,6 +1187,13 @@ export class GutenbergV2ContentService {
     plan: GutenbergV2BlockPlan,
     capabilities: GutenbergV2EditorCapabilitySnapshot
   ): void {
+    const seo = "postFields" in plan ? plan.postFields?.seo : undefined;
+    if (seo !== undefined && capabilities.seo === undefined) {
+      throw new GutenbergV2ServiceError(
+        "schema_invalid",
+        "This site has no supported SEO plugin (Yoast SEO), so SEO fields cannot be changed."
+      );
+    }
     const destination = new Map(
       capabilities.blocks.map((block) => [block.name, block])
     );

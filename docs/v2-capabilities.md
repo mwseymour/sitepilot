@@ -21,7 +21,7 @@ If the post changes in WordPress between review and write, the write is refused.
 | Create draft | Creates a new post or page as a draft, with title, excerpt, featured image and content. |
 | Replace all content | Rewrites the body of an existing post or page. Blocks that v2 cannot author must be kept or deleted on purpose; see below. |
 | Apply selected changes | Inserts, edits, moves or removes individual blocks, and can do several in one request. Everything else in the post stays exactly as stored. |
-| Post fields only | Changes the title, excerpt or featured image without touching the content. |
+| Post fields only | Changes the title, excerpt, featured image or SEO fields without touching the content. |
 
 Existing posts keep their status. An approved edit to a published post updates the live post. WordPress keeps revisions.
 
@@ -53,6 +53,25 @@ Each block accepts a reviewed set of settings, such as alignment, colours, spaci
 - **Requests use the site's own fields.** For example, "a grey container with no padding" becomes the container's real colour and padding choices, with any field left out taking its default. A value that doesn't fit a field is sent back to the planner once to correct, and otherwise fails before review.
 - **Editing an ACF block keeps the field values the request doesn't mention**, and blocks can be inserted inside ACF blocks that hold inner blocks.
 
+## SEO fields
+
+On sites running **Yoast SEO**, a request can set or change a post's SEO fields, on its own or together with content:
+
+| Field | Yoast field |
+| --- | --- |
+| SEO title | SEO title (Yoast variables such as `%%title%% %%sep%% %%sitename%%` are kept as written) |
+| Meta description | Meta description |
+| Focus keyphrase | Focus keyphrase |
+| Canonical URL | Canonical URL |
+| Search indexing | "Allow search engines to show this content": site default, no (noindex) or yes |
+| Social title and description | Facebook / Open Graph title and description |
+
+- **Review** lists each SEO change. Leaving a field empty clears it back to the Yoast default.
+- **Approval covers the SEO fields** like the title and excerpt. If someone changes the post's SEO fields in WordPress after review, the write is refused.
+- **The SEO fields are written in the same database transaction as the post**, then read back and checked. If the check fails, they are rolled back to their exact previous values, unless someone has edited them since.
+- **Only plain text is accepted**: no HTML, line breaks or double spaces, so what you approve is exactly what WordPress stores.
+- Conversations can read a post's SEO fields ("what's the meta description on post 946?").
+
 ## Media
 
 - **Images:** JPEG, PNG, WebP and GIF, attached in the chat or already in the media library.
@@ -78,7 +97,7 @@ Planned work for each gap is in the [v2 roadmap](./v2-roadmap.md).
 
 - **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely, but v2 cannot author them.
 - **Some ACF field types.** ACF image and file fields take existing media-library IDs only, not attached media. Blocks that store their fields in post meta (`usePostMeta`), or that have a required field of a type v2 cannot fill (such as gallery, user or Google Map), stay kept-only.
-- **SEO fields.** Yoast and other SEO fields cannot be edited (Phase 3).
+- **Other SEO plugins.** Only Yoast SEO fields can be edited. RankMath and All in One SEO are detected but not written. The social (Open Graph) image cannot be set yet.
 - **Publishing.** Publish, unpublish and schedule are not available; new content is always a draft (Phase 4).
 - **Choosing the post from the message.** In a Request, "update the last created post" does not pick the post; enter the post ID. Conversations can find it (Phase 5).
 - **Large videos.** Uploads over 10 MB need a streaming upload that is not built yet.

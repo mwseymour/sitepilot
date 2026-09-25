@@ -1,6 +1,6 @@
 # Gutenberg v2 expansion plan
 
-Status: Phases 0, 1 and 2 implemented on 25 September 2026; Phases 3 to 5 proposed. The [v2 roadmap](./v2-roadmap.md) is the overall list of planned work, including categories and tags, the lookup registry and the MCP server. Scope is the local desktop app and the WordPress plugin. Hosted, Slack and Copilot work is out of scope.
+Status: Phases 0 to 3 implemented on 25 September 2026; Phases 4 and 5 proposed. The [v2 roadmap](./v2-roadmap.md) is the overall list of planned work, including categories and tags, the lookup registry and the MCP server. Scope is the local desktop app and the WordPress plugin. Hosted, Slack and Copilot work is out of scope.
 
 ## Delivered on 25 September 2026
 
@@ -19,7 +19,8 @@ Status: Phases 0, 1 and 2 implemented on 25 September 2026; Phases 3 to 5 propos
 - **Phase 2 (ACF):** every ACF block is discovered with all its fields and a schema hash, authored from the site's own field definitions, and enabled per site only after a recorded save-and-reopen fixture passes (Diagnostics → Test ACF blocks). Unpassed, failed or stale blocks stay preserved. v1's hardcoded container defaults are gone. Verified on the playground site: all nine of its ACF blocks pass, and a Container page was created from a plain request and edited in place.
   - Differences from the plan: the server-rendered check uses `render_block()` inside the fixture request rather than `/wp/v2/block-renderer`. Fixtures are keyed by schema hash and ACF version (the SitePilot version is recorded, not compared). Image and file fields take existing library IDs; `mediaRef` binding for ACF fields and `usePostMeta` storage are **not** built.
   - Found while testing: ACF's editor script adds `"align":""` to every ACF block when it mounts, so v2 now writes the default align itself. And on sites where WordPress drops the editor iframe (any apiVersion 2 block, as ACF blocks are), the review capture measured a height that grew with every attempt; it now measures the blocks themselves.
-
+- **Phase 3 (SEO, Yoast):** a shared `Seo_Adapter` maps seven neutral fields to Yoast meta for v1, v2, `get-post` and discovery. `postFields.seo` is approval-bound, stale-checked with a separate `affectedSeoHash`, written in the commit transaction, verified on read-back, and restored exactly on rollback. SEO-only edits use a fields-only `apply_operations`. Verified against Yoast 27.4 on the MAMP site (`npm run test:e2e:v2-seo`), including a stale refusal, a restore and a rollback conflict.
+  - Not built: the Open Graph image (it needs media binding), and RankMath/AIOSEO mappings.
 
 ## Goals
 

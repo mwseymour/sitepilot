@@ -964,6 +964,18 @@ const gutenbergV2CandidateSummarySchema = z.object({
       excerpt: z.string().optional()
     })
     .strict(),
+  /** SEO plugin field changes, with their labels, in review order. */
+  seoChanges: z
+    .array(
+      z
+        .object({
+          field: z.string().min(1),
+          label: z.string().min(1),
+          value: z.string()
+        })
+        .strict()
+    )
+    .optional(),
   /** Set when the candidate sets the post's featured image. */
   featuredImage: z
     .object({ label: z.string().max(2_000) })

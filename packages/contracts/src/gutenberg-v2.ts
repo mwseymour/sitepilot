@@ -6,6 +6,11 @@ import {
   gutenbergV2AcfBlockDefinitionSchema,
   isGutenbergV2AcfBlockName
 } from "./gutenberg-v2-acf.js";
+import {
+  gutenbergV2SeoCapabilitySchema,
+  gutenbergV2SeoChangesSchema,
+  gutenbergV2SeoValuesSchema
+} from "./gutenberg-v2-seo.js";
 
 export const GUTENBERG_V2_SCHEMA_VERSION = "sitepilot.block-plan/v2" as const;
 
@@ -1125,14 +1130,17 @@ const postFieldChangesSchema = z
   .object({
     title: z.string().trim().min(1).max(1_000).optional(),
     excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
-    featuredMediaRef: featuredMediaRefSchema.optional()
+    featuredMediaRef: featuredMediaRefSchema.optional(),
+    /** SEO plugin fields; approved, written, verified and rolled back with the post. */
+    seo: gutenbergV2SeoChangesSchema.optional()
   })
   .strict()
   .refine(
     (value) =>
       value.title !== undefined ||
       value.excerpt !== undefined ||
-      value.featuredMediaRef !== undefined,
+      value.featuredMediaRef !== undefined ||
+      value.seo !== undefined,
     { message: "At least one post field change is required." }
   );
 
@@ -1224,6 +1232,7 @@ const createDraftPlanSchema = z
         title: z.string().trim().min(1).max(1_000),
         excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
         featuredMediaRef: featuredMediaRefSchema.optional(),
+        seo: gutenbergV2SeoChangesSchema.optional(),
         status: z.literal("draft")
       })
       .strict(),
@@ -1837,7 +1846,8 @@ export const gutenbergV2EditorCapabilitySnapshotSchema = z
         editorSettingsFingerprint: sha256Schema
       })
       .strict(),
-    blocks: z.array(gutenbergV2CapabilityBlockSchema).max(2_000)
+    blocks: z.array(gutenbergV2CapabilityBlockSchema).max(2_000),
+    seo: gutenbergV2SeoCapabilitySchema.optional()
   })
   .strict();
 
@@ -1858,7 +1868,9 @@ const sourceStateSchema = z
     postId: positiveIntegerSchema.optional(),
     revision: identifierSchema.optional(),
     contentHash: sha256Schema.optional(),
-    affectedFieldsHash: sha256Schema
+    affectedFieldsHash: sha256Schema,
+    /** Hash of the post's SEO values, when the candidate changes them. */
+    affectedSeoHash: sha256Schema.optional()
   })
   .strict();
 
@@ -1867,6 +1879,7 @@ const requestedPostFieldsSchema = z
     title: z.string().max(1_000).optional(),
     excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
     featuredMediaRef: featuredMediaRefSchema.optional(),
+    seo: gutenbergV2SeoChangesSchema.optional(),
     status: z.literal("draft").optional()
   })
   .strict();
@@ -1962,6 +1975,7 @@ export const gutenbergV2ApprovalBindingSchema = z
     affectedFieldsHash: sha256Schema,
     sourceContentHash: sha256Schema.optional(),
     sourceRevision: identifierSchema.optional(),
+    affectedSeoHash: sha256Schema.optional(),
     capabilityFingerprint: sha256Schema,
     mediaManifestHash: sha256Schema
   })
@@ -2186,6 +2200,8 @@ export const gutenbergV2PreparedCommitSchema = z
     serverPreparedFieldsHash: sha256Schema,
     /** Attachment the commit sets as the post thumbnail, when requested. */
     featuredMediaId: positiveIntegerSchema.optional(),
+    /** Hash of the SEO values the commit must leave, when it changes them. */
+    serverPreparedSeoHash: sha256Schema.optional(),
     preparedAt: isoTimestampSchema,
     expiresAt: isoTimestampSchema
   })
@@ -2346,6 +2362,8 @@ export const gutenbergV2SourceSnapshotSchema = z
       })
       .strict(),
     fieldsHash: sha256Schema,
+    /** Current SEO values, when the site has a supported SEO plugin. */
+    seo: gutenbergV2SeoValuesSchema.optional(),
     blockTreeFingerprint: sha256Schema,
     blockIndex: z
       .array(
@@ -2467,7 +2485,9 @@ export const gutenbergV2ReadbackSchema = z
       .strict(),
     fieldsHash: sha256Schema,
     /** Current post thumbnail attachment ID; 0 when there is none. */
-    featuredMediaId: nonNegativeIntegerSchema.optional()
+    featuredMediaId: nonNegativeIntegerSchema.optional(),
+    seo: gutenbergV2SeoValuesSchema.optional(),
+    seoHash: sha256Schema.optional()
   })
   .strict();
 

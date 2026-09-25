@@ -104,8 +104,12 @@ namespace {
 		return true;
 	}
 
+	// Mirrors WordPress: strips tags and %-encoded octets, joins lines and
+	// collapses whitespace.
 	function sanitize_text_field( string $value ): string {
-		return trim( strip_tags( $value ) );
+		$value = strip_tags( $value );
+		$value = (string) preg_replace( '/%[a-f0-9]{2}/i', '', $value );
+		return trim( (string) preg_replace( '/[\r\n\t ]+/', ' ', $value ) );
 	}
 
 	function sanitize_file_name( string $value ): string {
@@ -276,6 +280,24 @@ namespace {
 		$GLOBALS['sitepilot_test_post_meta'][ $post_id ][ $key ] = $value;
 		$GLOBALS['sitepilot_test_attachment_meta'][ $post_id ][ $key ] = $value;
 	}
+
+	function metadata_exists( string $type, int $object_id, string $key ): bool {
+		unset( $type );
+		return isset( $GLOBALS['sitepilot_test_post_meta'][ $object_id ][ $key ] );
+	}
+
+	function delete_post_meta( int $post_id, string $key ): bool {
+		unset( $GLOBALS['sitepilot_test_post_meta'][ $post_id ][ $key ] );
+		return true;
+	}
+
+	function esc_url_raw( string $url, ?array $protocols = null ): string {
+		unset( $protocols );
+		return preg_match( '#^https?://[^\s"<>]+$#i', $url ) ? $url : '';
+	}
+
+	// Yoast SEO is active in the test runtime.
+	define( 'WPSEO_VERSION', '27.4' );
 
 	function wp_basename( string $path ): string {
 		return basename( $path );
