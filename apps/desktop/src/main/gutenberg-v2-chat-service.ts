@@ -50,7 +50,7 @@ const targetSchema = z.discriminatedUnion("operation", [
     postId: z.number().int().positive()
   })
 ]);
-type GutenbergV2Target = z.infer<typeof targetSchema>;
+export type GutenbergV2Target = z.infer<typeof targetSchema>;
 
 type Mapping = {
   requestId: string;
@@ -515,6 +515,50 @@ async function appendV2Audit(
     metadata,
     createdAt: timestamp,
     updatedAt: timestamp
+  });
+}
+
+export async function continueGutenbergV2AfterFollowUp(input: {
+  siteId: SiteId;
+  requestId: RequestId;
+  note: string;
+  target?: GutenbergV2Target;
+}) {
+  const mapping = readMapping(input.siteId, input.requestId);
+  const target = mapping?.target ?? input.target;
+  if (!target) {
+    return {
+      ok: false as const,
+      code: "gutenberg_v2_target_required",
+      message: "A Gutenberg v2 operation target is required for this request."
+    };
+  }
+  if (mapping) {
+    const current = await getGutenbergV2RequestState({
+      siteId: input.siteId,
+      requestId: input.requestId
+    });
+    if (!current.ok) return current;
+    const candidateId = current.state?.candidate?.candidateId;
+    if (
+      candidateId !== undefined &&
+      (current.state?.state === "review_ready" ||
+        current.state?.state === "approved")
+    ) {
+      const revision = await decideGutenbergV2Candidate({
+        siteId: input.siteId,
+        requestId: input.requestId,
+        candidateId,
+        decision: "revision_requested",
+        note: input.note
+      });
+      if (!revision.ok) return revision;
+    }
+  }
+  return generateGutenbergV2Candidate({
+    siteId: input.siteId,
+    requestId: input.requestId,
+    target
   });
 }
 

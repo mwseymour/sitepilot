@@ -50,6 +50,8 @@ const desktopApi: SitePilotDesktopApi = {
   createChatRequest: (request) =>
     invokeIpc(ipcChannels.createChatRequest, request),
   amendRequest: (request) => invokeIpc(ipcChannels.amendRequest, request),
+  ingestThreadMessage: (request) =>
+    invokeIpc(ipcChannels.ingestThreadMessage, request),
   answerClarification: (request) =>
     invokeIpc(ipcChannels.answerClarification, request),
   buildPlannerContext: (request) =>

@@ -1099,108 +1099,6 @@ export function ChatPage({
     setErr(null);
   }
 
-  async function onSubmitGutenbergV2Prompt(
-    text: string,
-    attachments: ImageAttachmentPayload[]
-  ): Promise<void> {
-    if (!selectedThreadId || gutenbergV2Target === null) {
-      setErr("Choose a native editor operation and complete its target first.");
-      setBusy(false);
-      return;
-    }
-    if (bundle?.request.status === "clarifying") {
-      setErr(
-        "Resolve the clarification before generating a native editor candidate."
-      );
-      setBusy(false);
-      return;
-    }
-
-    const existingRequestId =
-      bundle !== null &&
-      lastRequestId !== null &&
-      bundle.request.id === lastRequestId &&
-      bundle.request.status !== "executing" &&
-      bundle.request.status !== "completed" &&
-      bundle.request.status !== "failed" &&
-      bundle.request.status !== "reverted" &&
-      bundle.request.status !== "archived"
-        ? lastRequestId
-        : null;
-
-    let requestId: string;
-    if (existingRequestId !== null) {
-      const res = await window.sitePilotDesktop.amendRequest({
-        siteId,
-        threadId: selectedThreadId,
-        requestId: existingRequestId,
-        text,
-        ...(attachments.length > 0 ? { attachments } : {})
-      });
-      if (!res.ok) {
-        setBusy(false);
-        setErr(res.message);
-        return;
-      }
-      requestId = existingRequestId;
-      const candidateId = gutenbergV2State?.candidate?.candidateId;
-      if (
-        candidateId !== undefined &&
-        (gutenbergV2State?.state === "review_ready" ||
-          gutenbergV2State?.state === "approved")
-      ) {
-        const revision = await window.sitePilotDesktop.gutenbergV2DecideCandidate(
-          {
-            siteId,
-            requestId,
-            candidateId,
-            decision: "revision_requested",
-            note: text
-          }
-        );
-        if (!revision.ok) {
-          setBusy(false);
-          setErr(revision.message);
-          return;
-        }
-      }
-    } else {
-      const res = await window.sitePilotDesktop.createChatRequest({
-        siteId,
-        threadId: selectedThreadId,
-        userPrompt: text,
-        ...(attachments.length > 0 ? { attachments } : {})
-      });
-      if (!res.ok) {
-        setBusy(false);
-        setErr(res.message);
-        return;
-      }
-      requestId = res.request.id;
-      if (res.request.status === "clarifying") {
-        setBusy(false);
-        setErr(
-          "Answer the clarification before generating a native editor candidate."
-        );
-        setLastRequestId(requestId);
-        await loadMessages(selectedThreadId);
-        await loadThreads();
-        return;
-      }
-    }
-
-    setLastRequestId(requestId);
-    setRequestPrompt("");
-    setPendingAttachments([]);
-    setPlanValidationJson(null);
-    setLastExecHint(null);
-    await generateGutenbergV2Candidate(requestId);
-    setBusy(false);
-    await loadMessages(selectedThreadId);
-    await loadThreads();
-    await loadBundle();
-  }
-
   async function onSubmitPrompt(): Promise<void> {
     if (!selectedThreadId || requestPrompt.trim().length === 0) {
       return;
@@ -1210,11 +1108,6 @@ export function ChatPage({
     const attachments = pendingAttachments;
     setBusy(true);
     setErr(null);
-
-    if (!isConversationMode && requestWorkflow === "gutenberg_v2") {
-      await onSubmitGutenbergV2Prompt(text, attachments);
-      return;
-    }
 
     if (isConversationMode) {
       const res = await window.sitePilotDesktop.postChatMessage({
@@ -1235,98 +1128,47 @@ export function ChatPage({
       return;
     }
 
-    if (bundle?.request.status === "clarifying") {
-      const res = await window.sitePilotDesktop.answerClarification({
-        siteId,
-        threadId: selectedThreadId,
-        requestId: bundle.request.id,
-        answer: text,
-        ...(attachments.length > 0 ? { attachments } : {})
-      });
+    if (requestWorkflow === "gutenberg_v2" && gutenbergV2Target === null) {
+      setErr("Choose a native editor operation and complete its target first.");
       setBusy(false);
-      if (!res.ok) {
-        setErr(res.message);
-        return;
-      }
-      setRequestPrompt("");
-      setPendingAttachments([]);
-      await loadMessages(selectedThreadId);
-      await loadBundle();
       return;
     }
 
-    if (
-      bundle &&
-      (bundle.request.status === "new" ||
-        bundle.request.status === "drafted" ||
-        bundle.request.status === "awaiting_approval" ||
-        bundle.request.status === "approved")
-    ) {
-      const hadPlan = bundle.plan !== null && bundle.plan !== undefined;
-      const res = await window.sitePilotDesktop.amendRequest({
-        siteId,
-        threadId: selectedThreadId,
-        requestId: bundle.request.id,
-        text,
-        ...(attachments.length > 0 ? { attachments } : {})
-      });
-      if (!res.ok) {
-        setBusy(false);
-        setErr(res.message);
-        return;
-      }
-      setLastRequestId(bundle.request.id);
-      setRequestPrompt("");
-      setPendingAttachments([]);
-      setPlanValidationJson(null);
-      setLastExecHint(null);
-      await loadMessages(selectedThreadId);
-      if (hadPlan) {
-        await onGeneratePlan();
-        return;
-      }
-      setBusy(false);
-      await loadBundle();
-      return;
-    }
-
-    if (bundle && bundle.request.status === "executing") {
-      const res = await window.sitePilotDesktop.postChatMessage({
-        siteId,
-        threadId: selectedThreadId,
-        text,
-        ...(attachments.length > 0 ? { attachments } : {})
-      });
-      setBusy(false);
-      if (!res.ok) {
-        setErr(res.message);
-        return;
-      }
-      setRequestPrompt("");
-      setPendingAttachments([]);
-      await loadMessages(selectedThreadId);
-      await loadBundle();
-      return;
-    }
-
-    const res = await window.sitePilotDesktop.createChatRequest({
+    const res = await window.sitePilotDesktop.ingestThreadMessage({
       siteId,
       threadId: selectedThreadId,
-      userPrompt: text,
-      ...(attachments.length > 0 ? { attachments } : {})
+      text,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(requestWorkflow === "gutenberg_v2" && gutenbergV2Target !== null
+        ? { gutenbergV2Target }
+        : {})
     });
     setBusy(false);
+    if (res.request) {
+      setLastRequestId(res.request.id);
+    }
     if (!res.ok) {
       setErr(res.message);
+      await loadMessages(selectedThreadId);
+      await loadThreads();
+      await loadBundle();
       return;
     }
-    setLastRequestId(res.request.id);
-    setPlanValidationJson(null);
-    setLastExecHint(null);
+
     setRequestPrompt("");
     setPendingAttachments([]);
+    if (res.gutenbergV2State !== undefined) {
+      setGutenbergV2State(res.gutenbergV2State);
+    }
+    if (res.validation !== undefined) {
+      setPlanValidationJson(JSON.stringify(res.validation, null, 2));
+    } else if (res.outcome !== "noted") {
+      setPlanValidationJson(null);
+      setLastExecHint(null);
+    }
     await loadMessages(selectedThreadId);
     await loadThreads();
+    await loadBundle();
   }
 
   const handleComposerKeyDown = useCallback(

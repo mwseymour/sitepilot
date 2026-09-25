@@ -17,6 +17,7 @@ import {
 import {
   configureGutenbergV2PlannerFactory,
   configureGutenbergV2ProtocolProbe,
+  continueGutenbergV2AfterFollowUp,
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate,
   generateGutenbergV2Candidate,
@@ -665,6 +666,37 @@ describe("desktop Gutenberg v2 chat boundary", () => {
         })
       ])
     );
+  });
+
+  it("revises a review-ready candidate from a thread follow-up using the bound target", async () => {
+    setup(true);
+    configureGutenbergV2ProtocolProbe(async () => true);
+    configureFakeRuntime();
+    configureDeterministicPlanner();
+    const first = await generateGutenbergV2Candidate({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      target: { operation: "create_draft", postType: "post" }
+    });
+    expect(first).toMatchObject({
+      ok: true,
+      state: { state: "review_ready", target: { operation: "create_draft" } }
+    });
+    const firstExecutionId = (first as { state: { executionId: string } }).state
+      .executionId;
+
+    const continued = await continueGutenbergV2AfterFollowUp({
+      siteId: "site-1" as SiteId,
+      requestId: "request-1" as RequestId,
+      note: "Also add 1 plum."
+    });
+    expect(continued).toMatchObject({
+      ok: true,
+      state: { state: "review_ready", target: { operation: "create_draft" } }
+    });
+    expect(
+      (continued as { state: { executionId: string } }).state.executionId
+    ).not.toBe(firstExecutionId);
   });
 
   it("reuses the durable result on repeated execute and authorizes artifacts", async () => {

@@ -36,6 +36,13 @@ describe("ipc contracts", () => {
         threadId: "thread-1"
       })
     ).toMatchObject({ ok: true, threadId: "thread-1" });
+    expect(
+      ipcContracts[ipcChannels.ingestThreadMessage].request.parse({
+        siteId: "site-1",
+        threadId: "thread-1",
+        text: "Also add 1 plum."
+      }).text
+    ).toBe("Also add 1 plum.");
   });
 
   it("matches the preload bridge API shape", async () => {
@@ -156,6 +163,16 @@ describe("ipc contracts", () => {
         message: "Not used in this contract shape test."
       }),
       createChatRequest: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      amendRequest: async () => ({
+        ok: false,
+        code: "stub",
+        message: "Not used in this contract shape test."
+      }),
+      ingestThreadMessage: async () => ({
         ok: false,
         code: "stub",
         message: "Not used in this contract shape test."

@@ -57,6 +57,7 @@ import {
 } from "./request-visual-analysis-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 import { getRequestBundleForThread } from "./request-bundle-service.js";
+import { ingestRequestThreadMessage } from "./request-ingress-service.js";
 import { getCompatibilityPayload } from "./compatibility-info.js";
 import { executePlanAction } from "./execution-orchestrator-service.js";
 import { buildSiteExportBundle } from "./export-site-service.js";
@@ -321,6 +322,52 @@ export function registerIpcHandlers(): void {
       request: result.request,
       ...(result.clarificationRound !== undefined
         ? { clarificationRound: result.clarificationRound }
+        : {})
+    });
+  });
+
+  ipcMain.handle(ipcChannels.ingestThreadMessage, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.ingestThreadMessage, payload);
+    const result = await ingestRequestThreadMessage({
+      siteId: request.siteId as SiteId,
+      threadId: request.threadId as ChatThreadId,
+      text: request.text,
+      ...(request.attachments !== undefined
+        ? { attachments: request.attachments }
+        : {}),
+      ...(request.gutenbergV2Target !== undefined
+        ? { gutenbergV2Target: request.gutenbergV2Target }
+        : {}),
+      ...(request.alwaysContinue !== undefined
+        ? { alwaysContinue: request.alwaysContinue }
+        : {})
+    });
+    if (!result.ok) {
+      return parseResponse(ipcChannels.ingestThreadMessage, {
+        ok: false,
+        code: result.code,
+        message: result.message,
+        ...(result.request !== undefined
+          ? { request: contractRequestPayload(result.request) }
+          : {})
+      });
+    }
+    return parseResponse(ipcChannels.ingestThreadMessage, {
+      ok: true,
+      outcome: result.outcome,
+      continued: result.continued,
+      ...(result.request !== undefined
+        ? { request: contractRequestPayload(result.request) }
+        : {}),
+      ...(result.clarificationRound !== undefined
+        ? { clarificationRound: result.clarificationRound }
+        : {}),
+      ...(result.gutenbergV2State !== undefined
+        ? { gutenbergV2State: result.gutenbergV2State }
+        : {}),
+      ...(result.plan !== undefined ? { plan: result.plan } : {}),
+      ...(result.validation !== undefined
+        ? { validation: result.validation }
         : {})
     });
   });

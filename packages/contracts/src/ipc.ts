@@ -90,6 +90,7 @@ export const ipcChannels = {
   appendSystemChatMessage: "chat.appendSystemMessage",
   createChatRequest: "chat.createRequest",
   amendRequest: "chat.amendRequest",
+  ingestThreadMessage: "chat.ingestThreadMessage",
   answerClarification: "chat.answerClarification",
   buildPlannerContext: "planner.buildContext",
   analyzeRequestVisualAnalysis: "planner.analyzeRequestVisualAnalysis",
@@ -887,7 +888,7 @@ export const executePlanActionResponseSchema = z.discriminatedUnion("ok", [
   })
 ]);
 
-const gutenbergV2TargetSchema = z.discriminatedUnion("operation", [
+export const gutenbergV2TargetSchema = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("create_draft"),
     postType: z.enum(["post", "page"])
@@ -903,6 +904,15 @@ const gutenbergV2TargetSchema = z.discriminatedUnion("operation", [
     postId: z.number().int().positive()
   })
 ]);
+
+export const ingestThreadMessageRequestSchema = z.object({
+  siteId: idSchema,
+  threadId: idSchema,
+  text: z.string().min(1),
+  attachments: z.array(imageAttachmentSchema).max(8).optional(),
+  gutenbergV2Target: gutenbergV2TargetSchema.optional(),
+  alwaysContinue: z.boolean().optional()
+});
 
 const gutenbergV2ArtifactReferenceSchema = z.object({
   id: z.string().min(1).max(200),
@@ -940,6 +950,25 @@ export const gutenbergV2RequestStateSchema = z.object({
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema
 });
+
+export const ingestThreadMessageResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    outcome: z.enum(["created", "amended", "clarified", "noted"]),
+    request: requestSchema.optional(),
+    clarificationRound: clarificationRoundSchema.optional(),
+    continued: z.boolean(),
+    gutenbergV2State: gutenbergV2RequestStateSchema.optional(),
+    plan: actionPlanSchema.optional(),
+    validation: planValidationOutcomeSchema.optional()
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1),
+    request: requestSchema.optional()
+  })
+]);
 
 const gutenbergV2FailureResponseSchema = z.object({
   ok: z.literal(false),
@@ -1105,6 +1134,10 @@ export const ipcContracts = {
   [ipcChannels.amendRequest]: {
     request: amendRequestRequestSchema,
     response: amendRequestResponseSchema
+  },
+  [ipcChannels.ingestThreadMessage]: {
+    request: ingestThreadMessageRequestSchema,
+    response: ingestThreadMessageResponseSchema
   },
   [ipcChannels.answerClarification]: {
     request: answerClarificationRequestSchema,
@@ -1296,6 +1329,9 @@ export interface SitePilotDesktopApi {
   amendRequest: (
     request: IpcRequest<typeof ipcChannels.amendRequest>
   ) => Promise<IpcResponse<typeof ipcChannels.amendRequest>>;
+  ingestThreadMessage: (
+    request: IpcRequest<typeof ipcChannels.ingestThreadMessage>
+  ) => Promise<IpcResponse<typeof ipcChannels.ingestThreadMessage>>;
   answerClarification: (
     request: IpcRequest<typeof ipcChannels.answerClarification>
   ) => Promise<IpcResponse<typeof ipcChannels.answerClarification>>;

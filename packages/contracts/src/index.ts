@@ -171,6 +171,8 @@ export {
   createChatRequestResponseSchema,
   amendRequestRequestSchema,
   amendRequestResponseSchema,
+  ingestThreadMessageRequestSchema,
+  ingestThreadMessageResponseSchema,
   answerClarificationRequestSchema,
   answerClarificationResponseSchema,
   buildPlannerContextRequestSchema,
