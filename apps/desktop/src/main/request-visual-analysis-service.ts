@@ -198,7 +198,11 @@ function buildUserContent(input: {
         2
       )
     },
-    ...input.attachments.slice(0, MAX_ANALYSIS_IMAGES).map((attachment) => ({
+    // Videos are placed as media only; the vision model reads images.
+    ...input.attachments
+      .filter((attachment) => attachment.mediaType.startsWith("image/"))
+      .slice(0, MAX_ANALYSIS_IMAGES)
+      .map((attachment) => ({
       type: "image_url" as const,
       image_url: {
         url: attachment.dataUrl,

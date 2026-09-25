@@ -106,7 +106,9 @@ const OUTLINE_TEXT_ATTRIBUTES = [
   "citation",
   "alt",
   "caption",
-  "mediaAlt"
+  "mediaAlt",
+  "summary",
+  "url"
 ];
 
 function plainText(value: string): string {
@@ -128,6 +130,15 @@ function blockOutline(blocks: unknown, depth = 0): OutlineEntry[] {
       return [];
     }
     const attributes = recordValue(record.attributes) ?? {};
+    if (record.name === "sitepilot/source-block") {
+      return [
+        {
+          depth,
+          name: "kept",
+          text: `existing block at ${blockPathLabel(attributes.path)}, unchanged`
+        }
+      ];
+    }
     const textAttribute = OUTLINE_TEXT_ATTRIBUTES.find(
       (key) => typeof attributes[key] === "string" && attributes[key] !== ""
     );
@@ -175,11 +186,15 @@ function sourceIndexOutline(side: unknown): OutlineEntry[] {
     if (!item || typeof item.name !== "string" || !Array.isArray(item.path)) {
       return [];
     }
+    const kept =
+      item.role === "preserved"
+        ? ` · kept unchanged${typeof item.summary === "string" && item.summary ? `: ${item.summary}` : ""}`
+        : "";
     return [
       {
         depth: Math.max(0, item.path.length - 1),
         name: item.name.replace(/^core\//, ""),
-        text: blockPathLabel(item.path)
+        text: `${blockPathLabel(item.path)}${kept}`
       }
     ];
   });
@@ -230,8 +245,34 @@ function planOperations(side: unknown): ChangeSummary[] {
         }
       ];
     }
+    if (item.type === "move_block") {
+      const parent = recordValue(item.parent);
+      const where =
+        Array.isArray(parent?.path) && parent.path.length > 0
+          ? ` inside the block at ${blockPathLabel(parent.path)}`
+          : "";
+      const position = typeof item.index === "number" ? item.index + 1 : "?";
+      return [
+        {
+          label: `Move the block at ${blockPathLabel(recordValue(item.target)?.path)} to position ${position}${where}`,
+          blocks: []
+        }
+      ];
+    }
     return [];
   });
+}
+
+/** Source blocks the plan deletes on purpose (removedSourceBlocks). */
+function planRemovals(side: unknown): ChangeSummary[] {
+  const plan = recordValue(recordValue(side)?.plan);
+  if (!plan || !Array.isArray(plan.removedSourceBlocks)) {
+    return [];
+  }
+  return plan.removedSourceBlocks.map((entry) => ({
+    label: `Delete the existing block at ${blockPathLabel(recordValue(entry)?.path)}`,
+    blocks: []
+  }));
 }
 
 function Outline({ entries }: { entries: OutlineEntry[] }): ReactElement {
@@ -277,6 +318,7 @@ function StructureDiff({
   const afterOutline = blockOutline(planBlocks(after));
   const beforeOutline = sourceIndexOutline(before);
   const operations = planOperations(after);
+  const removals = planRemovals(after);
   const afterPlan = recordValue(recordValue(after)?.plan);
   const fieldsOnly =
     Array.isArray(afterPlan?.operations) && afterPlan.operations.length === 0;
@@ -291,6 +333,16 @@ function StructureDiff({
           <summary>Current content ({beforeOutline.length} blocks)</summary>
           <Outline entries={beforeOutline} />
         </details>
+      ) : null}
+      {removals.length > 0 ? (
+        <div className="gutenberg-v2-removals" role="note">
+          <h6>Deleted on purpose</h6>
+          <ul>
+            {removals.map((removal, index) => (
+              <li key={`${index}-${removal.label}`}>{removal.label}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       {fieldsOnly ? (
         <p className="muted small-print">

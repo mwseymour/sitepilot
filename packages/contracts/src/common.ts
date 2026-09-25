@@ -42,11 +42,12 @@ export const localizedTextBlockSchema = z.object({
   technicalDetails: z.string().max(20_000).optional()
 });
 
+// Images, and MP4/WebM videos for Gutenberg v2 video blocks.
 export const imageAttachmentSchema = z.object({
   fileName: z.string().min(1).max(260),
-  mediaType: z.string().regex(/^image\//),
+  mediaType: z.string().regex(/^(?:image\/|video\/(?:mp4|webm)$)/),
   sizeBytes: z.number().int().nonnegative(),
-  dataUrl: z.string().regex(/^data:image\//),
+  dataUrl: z.string().regex(/^data:(?:image\/|video\/(?:mp4|webm);)/),
   /**
    * "media" (default) is placed in the content; "reference" is a layout or
    * content mock-up (e.g. a PDF page) the planner reads but never uploads.

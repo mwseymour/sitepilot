@@ -15,7 +15,7 @@ namespace SitePilot\V2;
  */
 final class Feature {
 
-	public const BRIDGE_VERSION = '2.0.0-alpha.1';
+	public const BRIDGE_VERSION = '2.0.0-alpha.2';
 
 	public static function enabled(): bool {
 		return ! ( defined( 'SITEPILOT_V2_ENABLED' ) && false === SITEPILOT_V2_ENABLED );

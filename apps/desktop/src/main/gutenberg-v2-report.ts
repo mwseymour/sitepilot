@@ -113,7 +113,8 @@ function changeSummary(candidate: GutenbergV2CompiledCandidate): string {
     const labels: Record<string, string> = {
       insert_blocks: "insertion",
       edit_block: "block edit",
-      remove_block: "block removal"
+      remove_block: "block removal",
+      move_block: "block move"
     };
     return [...counts]
       .map(([type, count]) => {

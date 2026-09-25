@@ -833,7 +833,7 @@ final class Write_Abilities {
 		}
 		if ( 'core/heading' === $block_name ) {
 			$tag = self::heading_tag_name( $attrs );
-			return '<' . $tag . '>' . $text . '</' . $tag . '>';
+			return '<' . $tag . ' class="wp-block-heading">' . $text . '</' . $tag . '>';
 		}
 
 		return $text;

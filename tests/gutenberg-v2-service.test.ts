@@ -780,6 +780,235 @@ describe("buildLlmGutenbergV2Plan", () => {
   });
 });
 
+describe("buildLlmGutenbergV2Plan kept source blocks", () => {
+  function source(): GutenbergV2SourceSnapshot {
+    return {
+      schemaVersion: "sitepilot.source-snapshot/v2",
+      siteId: "site-1",
+      postId: 42,
+      postType: "post",
+      revision: "revision-1",
+      rawContent: content,
+      contentHash: hashGutenbergV2Content(content),
+      fields: expectedFields,
+      fieldsHash: hashGutenbergV2Value(expectedFields),
+      blockTreeFingerprint: "5".repeat(64),
+      blockIndex: [
+        { path: [0], name: "core/paragraph", fingerprint: "6".repeat(64) },
+        {
+          path: [1],
+          name: "core/cover",
+          fingerprint: "7".repeat(64),
+          role: "preserved",
+          summary: "Hero"
+        },
+        { path: [2], name: "core/html", fingerprint: "8".repeat(64), role: "preserved" }
+      ]
+    };
+  }
+
+  it("binds moves, kept blocks and explicit removals to source fingerprints", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        operations: [
+          { type: "move_block", targetPath: [1], parentPath: [], index: 0 }
+        ],
+        removedSourcePaths: [[2]]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const moved = await buildLlmGutenbergV2Plan({
+      request: "Move the hero to the top and delete the HTML block.",
+      siteId: "site-1",
+      target: { operation: "apply_operations", source: source() },
+      capabilities: capabilities(),
+      client: { providerId: "p", complete },
+      model: "m"
+    });
+    if (moved.plan.operation !== "apply_operations") throw new Error("plan");
+    expect(moved.plan.operations[0]).toMatchObject({
+      type: "move_block",
+      target: { path: [1], expectedFingerprint: "7".repeat(64) },
+      parent: { path: [], expectedFingerprint: "5".repeat(64) },
+      index: 0
+    });
+    expect(moved.plan.removedSourceBlocks).toEqual([
+      { path: [2], expectedFingerprint: "8".repeat(64) }
+    ]);
+    const prompt = (complete.mock.calls[0] as unknown as [
+      Array<{ content: string }>
+    ])[0][0]!.content;
+    expect(prompt).toContain("sitepilot/source-block");
+    expect(prompt).toContain('role "preserved"');
+
+    const replaced = await buildLlmGutenbergV2Plan({
+      request: "Rewrite the intro, keep the hero.",
+      siteId: "site-1",
+      target: { operation: "replace_content", source: source() },
+      capabilities: capabilities(),
+      client: {
+        providerId: "p",
+        complete: async () => ({
+          text: JSON.stringify({
+            blocks: [
+              {
+                ref: "hero",
+                name: "sitepilot/source-block",
+                attributes: { path: [1], expectedFingerprint: "model" },
+                children: []
+              },
+              {
+                ref: "intro",
+                name: "core/paragraph",
+                attributes: { content: "New intro" },
+                children: []
+              }
+            ],
+            removedSourcePaths: [[2]]
+          }),
+          usage: { inputTokens: 1, outputTokens: 1 }
+        })
+      },
+      model: "m"
+    });
+    if (replaced.plan.operation !== "replace_content") throw new Error("plan");
+    expect(replaced.plan.blocks[0]).toEqual({
+      ref: "hero",
+      name: "sitepilot/source-block",
+      attributes: { path: [1], expectedFingerprint: "7".repeat(64) },
+      children: []
+    });
+  });
+
+  it("repairs a kept block that names an unknown path", async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          blocks: [
+            {
+              ref: "ghost",
+              name: "sitepilot/source-block",
+              attributes: { path: [9] },
+              children: []
+            }
+          ]
+        }),
+        usage: { inputTokens: 1, outputTokens: 1 }
+      })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          blocks: [
+            {
+              ref: "hero",
+              name: "sitepilot/source-block",
+              attributes: { path: [1] },
+              children: []
+            }
+          ],
+          removedSourcePaths: [[2]]
+        }),
+        usage: { inputTokens: 1, outputTokens: 1 }
+      });
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Keep only the hero.",
+      siteId: "site-1",
+      target: { operation: "replace_content", source: source() },
+      capabilities: capabilities(),
+      client: { providerId: "p", complete },
+      model: "m"
+    });
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(result.plan.operation).toBe("replace_content");
+  });
+});
+
+describe("buildLlmGutenbergV2Plan new block types", () => {
+  function withBlocks(names: string[]): GutenbergV2EditorCapabilitySnapshot {
+    const base = capabilities();
+    return {
+      ...base,
+      blocks: [
+        ...base.blocks,
+        ...names.map((name) => ({ ...base.blocks[0]!, name }))
+      ]
+    };
+  }
+
+  it("fills embed provider attributes and a cover overlay deterministically", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        postFields: { title: "Video post" },
+        blocks: [
+          {
+            ref: "video",
+            name: "core/embed",
+            attributes: { url: " https://youtu.be/dQw4w9WgXcQ " },
+            children: []
+          },
+          {
+            ref: "hero",
+            name: "core/cover",
+            attributes: { mediaRef: "hero-image", alt: "" },
+            children: [
+              {
+                ref: "hero-text",
+                name: "core/paragraph",
+                attributes: { content: "Welcome" },
+                children: []
+              }
+            ]
+          },
+          {
+            ref: "clip",
+            name: "core/video",
+            attributes: { mediaRef: "not-supplied" },
+            children: []
+          }
+        ]
+      }),
+      usage: { inputTokens: 1, outputTokens: 1 }
+    }));
+    const result = await buildLlmGutenbergV2Plan({
+      request: "Add the video and a hero banner.",
+      siteId: "site-1",
+      target: { operation: "create_draft", postType: "post" },
+      capabilities: withBlocks(["core/embed", "core/cover", "core/video"]),
+      media: [
+        {
+          ref: "hero-image",
+          source: {
+            kind: "library_attachment",
+            attachmentId: 3,
+            checksum: "9".repeat(64)
+          },
+          alt: "Hero"
+        }
+      ],
+      client: { providerId: "p", complete },
+      model: "m"
+    });
+    if (result.plan.operation !== "create_draft") throw new Error("plan");
+    expect(result.plan.blocks.map((block) => block.name)).toEqual([
+      "core/embed",
+      "core/cover"
+    ]);
+    expect(result.plan.blocks[0]!.attributes).toEqual({
+      url: "https://youtu.be/dQw4w9WgXcQ",
+      providerNameSlug: "youtube",
+      type: "video",
+      responsive: true,
+      className: "wp-embed-aspect-16-9 wp-has-aspect-ratio"
+    });
+    expect(result.plan.blocks[1]!.attributes).toMatchObject({ dimRatio: 50 });
+    const system = (complete.mock.calls[0] as unknown as [
+      Array<{ content: string }>
+    ])[0][0]!.content;
+    expect(system).toContain("core/embed: a YouTube or Vimeo video");
+    expect(system).toContain("core/video: an uploaded or media-library video");
+  });
+});
+
 describe("buildLlmGutenbergV2Plan drafts", () => {
   it("normalizes numeric spacer heights and forwards revision context", async () => {
     const complete = vi.fn(async () => ({

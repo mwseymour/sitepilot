@@ -49,9 +49,14 @@ export {
 } from "./common.js";
 export type { ImageAttachmentPayload } from "./common.js";
 export {
+  GUTENBERG_V2_EMBED_PROVIDERS,
   GUTENBERG_V2_LIMITS,
   GUTENBERG_V2_SCHEMA_VERSION,
+  GUTENBERG_V2_SOURCE_BLOCK,
   GUTENBERG_V2_SUPPORT_MATRIX,
+  GUTENBERG_V2_VIDEO_MEDIA_TYPES,
+  gutenbergV2BlockManifest,
+  gutenbergV2EmbedProvider,
   gutenbergV2ApprovalBindingSchema,
   gutenbergV2ApprovalSchema,
   gutenbergV2BlockNodeSchema,
@@ -128,6 +133,8 @@ export type {
   GutenbergV2RecoverRequest,
   GutenbergV2RecoverResponse,
   GutenbergV2ScopedOperation,
+  GutenbergV2SupportMatrixEntry,
+  GutenbergV2EmbedProvider,
   GutenbergV2SourceSnapshot,
   GutenbergV2SupportedBlockName,
   GutenbergV2ValidationIssue,

@@ -1,0 +1,214 @@
+{
+  "schemaVersion": "sitepilot.block-manifest/v2",
+  "sourceBlock": "sitepilot/source-block",
+  "blocks": [
+    {
+      "name": "core/paragraph",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/heading",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/group",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/columns",
+      "mode": "author",
+      "dynamic": false,
+      "children": [
+        "core/column"
+      ],
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/column",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": "core/columns",
+      "requiresChildren": false
+    },
+    {
+      "name": "core/image",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/list",
+      "mode": "author",
+      "dynamic": false,
+      "children": [
+        "core/list-item"
+      ],
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/list-item",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": "core/list",
+      "requiresChildren": false
+    },
+    {
+      "name": "core/buttons",
+      "mode": "author",
+      "dynamic": false,
+      "children": [
+        "core/button"
+      ],
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/button",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": "core/buttons",
+      "requiresChildren": false
+    },
+    {
+      "name": "core/quote",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/spacer",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/table",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/pullquote",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/media-text",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/separator",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/details",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/code",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/preformatted",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/gallery",
+      "mode": "author",
+      "dynamic": false,
+      "children": [
+        "core/image"
+      ],
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/cover",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/embed",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/video",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "core/latest-posts",
+      "mode": "fixture_required",
+      "dynamic": true,
+      "children": "none",
+      "parent": null,
+      "requiresChildren": false
+    },
+    {
+      "name": "acf/container",
+      "mode": "fixture_required",
+      "dynamic": true,
+      "children": "any",
+      "parent": null,
+      "requiresChildren": false
+    }
+  ]
+}

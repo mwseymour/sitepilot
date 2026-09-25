@@ -17,6 +17,7 @@ import {
   type GutenbergV2ValidationReport
 } from "@sitepilot/contracts";
 import {
+  detectGutenbergV2MediaType,
   hashGutenbergV2Bytes,
   hashGutenbergV2Content,
   hashGutenbergV2PreviewMediaManifest,
@@ -938,6 +939,7 @@ body *:has(${captureSelector}) {
     mapping: GutenbergV2MediaMapping[]
   ): Promise<void> {
     if (mapping.length === 0) return;
+    const images: GutenbergV2MediaMapping[] = [];
     for (const item of mapping) {
       assertOrigin(this.#allowedOrigins, item.url, `Media ${item.ref} URL`);
       let response;
@@ -979,7 +981,23 @@ body *:has(${captureSelector}) {
           false
         );
       }
+      const detected = detectGutenbergV2MediaType(bytes);
+      if (detected?.startsWith("video/")) {
+        // Headless browsers often lack video codecs, so a video is verified by
+        // its checksum, container signature and served type instead of playback.
+        const servedType = String(response.headers()["content-type"] ?? "");
+        if (!servedType.toLowerCase().startsWith("video/")) {
+          throw new GutenbergV2WorkerError(
+            "media_changed",
+            `Bound video ${item.ref} is not served as a video.`,
+            false
+          );
+        }
+        continue;
+      }
+      images.push(item);
     }
+    if (images.length === 0) return;
     const failures = await page.evaluate(
       async (items) => {
         const results = await Promise.all(
@@ -1026,7 +1044,7 @@ body *:has(${captureSelector}) {
         );
         return results.filter((entry): entry is string => entry !== null);
       },
-      mapping.map(({ ref, url }) => ({ ref, url }))
+      images.map(({ ref, url }) => ({ ref, url }))
     );
     if (failures.length > 0) {
       throw new GutenbergV2WorkerError(

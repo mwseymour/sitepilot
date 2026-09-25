@@ -84,7 +84,12 @@ final class Commit_Service {
 		if ( $intent_error instanceof \WP_Error ) {
 			return $intent_error;
 		}
-		$content_error = self::validate_serialized_policy( $content );
+		$source_content = null;
+		if ( 'create_draft' !== (string) $candidate['operation'] ) {
+			$source_post    = get_post( absint( $candidate['sourceState']['postId'] ?? 0 ) );
+			$source_content = $source_post instanceof \WP_Post ? (string) $source_post->post_content : '';
+		}
+		$content_error = self::validate_serialized_policy( $content, $source_content );
 		if ( $content_error instanceof \WP_Error ) {
 			return $content_error;
 		}
@@ -118,7 +123,7 @@ final class Commit_Service {
 		}
 
 		$prepared_content = self::sanitize_content_for_save( $content );
-		$prepared_policy_error = self::validate_serialized_policy( $prepared_content );
+		$prepared_policy_error = self::validate_serialized_policy( $prepared_content, $source_content );
 		if ( $prepared_policy_error instanceof \WP_Error ) {
 			return $prepared_policy_error;
 		}
@@ -704,10 +709,11 @@ final class Commit_Service {
 		if ( 'sitepilot.block-plan/v2' !== ( $intent['schemaVersion'] ?? null ) ) {
 			return self::error( 'schema_invalid', 'The candidate intent schema is invalid.', 400 );
 		}
-		$allowed = array( 'core/paragraph', 'core/heading', 'core/group', 'core/columns', 'core/column', 'core/image', 'core/list', 'core/list-item', 'core/buttons', 'core/button', 'core/quote', 'core/spacer', 'core/table', 'core/pullquote', 'core/media-text' );
+		$allowed = Block_Policy::authorable_blocks();
+		$is_update = 'create_draft' !== ( $intent['operation'] ?? 'create_draft' );
 		$refs = array();
 		$count = 0;
-		$walk = function ( array $nodes, int $depth, ?string $parent ) use ( &$walk, &$refs, &$count, $allowed ): ?\WP_Error {
+		$walk = function ( array $nodes, int $depth, ?string $parent ) use ( &$walk, &$refs, &$count, $allowed, $is_update ): ?\WP_Error {
 			if ( $depth > 12 ) {
 				return self::error( 'invalid_nesting', 'The intent exceeds the v2 nesting limit.', 422 );
 			}
@@ -718,6 +724,18 @@ final class Commit_Service {
 				++$count;
 				$name = (string) ( $node['name'] ?? '' );
 				$ref  = (string) ( $node['ref'] ?? '' );
+				if ( Block_Policy::SOURCE_BLOCK === $name ) {
+					// Kept source blocks are checked byte-for-byte against the
+					// source in validate_serialized_policy().
+					if ( ! $is_update || ! empty( $node['children'] ) || ! isset( $node['attributes']['path'] ) || ! is_array( $node['attributes']['path'] ) ) {
+						return self::error( 'schema_invalid', 'A kept source block reference is invalid.', 400 );
+					}
+					if ( '' === $ref || isset( $refs[ $ref ] ) ) {
+						return self::error( 'schema_invalid', 'Block refs must be non-empty and unique.', 400 );
+					}
+					$refs[ $ref ] = true;
+					continue;
+				}
 				if ( ! in_array( $name, $allowed, true ) ) {
 					return self::error( 'unsupported_v2_block', "Block {$name} is outside the enabled v2 policy.", 422 );
 				}
@@ -726,8 +744,10 @@ final class Commit_Service {
 				}
 				$refs[ $ref ] = true;
 				$children = isset( $node['children'] ) && is_array( $node['children'] ) ? $node['children'] : array();
-				$required_parent = array( 'core/column' => 'core/columns', 'core/list-item' => 'core/list', 'core/button' => 'core/buttons' );
-				if ( isset( $required_parent[ $name ] ) && $required_parent[ $name ] !== $parent ) {
+				$required_parent = Block_Policy::required_parent( $name );
+				// A null parent is an insertion into an existing source block, whose
+				// name the editor bridge checks against the real source tree.
+				if ( null !== $required_parent && null !== $parent && $required_parent !== $parent ) {
 					return self::error( 'invalid_nesting', "Block {$name} has an invalid parent.", 422 );
 				}
 				$error = $walk( $children, $depth + 1, $name );
@@ -737,62 +757,80 @@ final class Commit_Service {
 			}
 			return null;
 		};
-		$roots = array();
 		if ( isset( $intent['blocks'] ) && is_array( $intent['blocks'] ) ) {
-			$roots = $intent['blocks'];
+			$error = $walk( $intent['blocks'], 1, '#root' );
+			if ( $error instanceof \WP_Error ) {
+				return $error;
+			}
 		} elseif ( isset( $intent['operations'] ) && is_array( $intent['operations'] ) ) {
 			foreach ( $intent['operations'] as $operation ) {
-				if ( isset( $operation['blocks'] ) && is_array( $operation['blocks'] ) ) {
-					$roots = array_merge( $roots, $operation['blocks'] );
-				} elseif ( isset( $operation['replacement'] ) && is_array( $operation['replacement'] ) ) {
-					$roots[] = $operation['replacement'];
+				$type    = (string) ( $operation['type'] ?? '' );
+				$is_root = isset( $operation['parent']['path'] ) && is_array( $operation['parent']['path'] ) && array() === $operation['parent']['path'];
+				if ( 'insert_blocks' === $type && isset( $operation['blocks'] ) && is_array( $operation['blocks'] ) ) {
+					$error = $walk( $operation['blocks'], 1, $is_root ? '#root' : null );
+				} elseif ( 'edit_block' === $type && isset( $operation['replacement'] ) && is_array( $operation['replacement'] ) ) {
+					$error = $walk( array( $operation['replacement'] ), 1, null );
+				} elseif ( in_array( $type, array( 'remove_block', 'move_block' ), true ) ) {
+					$error = null;
+				} else {
+					return self::error( 'schema_invalid', 'A scoped operation is invalid.', 400 );
 				}
-			}
-		}
-		$error = $walk( $roots, 1, null );
-		if ( $error instanceof \WP_Error ) {
-			return $error;
-		}
-		return $count > 500 ? self::error( 'request_too_large', 'The intent exceeds the v2 block limit.', 413 ) : null;
-	}
-
-	private static function validate_serialized_policy( string $content ): ?\WP_Error {
-		if ( str_contains( $content, 'https://sitepilot.invalid/staged/' ) ) {
-			return self::error( 'media_changed', 'Private staged media URLs cannot be persisted.', 409 );
-		}
-		$allowed = array( 'core/paragraph', 'core/heading', 'core/group', 'core/columns', 'core/column', 'core/image', 'core/list', 'core/list-item', 'core/buttons', 'core/button', 'core/quote', 'core/spacer', 'core/table', 'core/pullquote', 'core/media-text' );
-		$blocks = parse_blocks( $content );
-		if ( '' !== trim( $content ) && empty( $blocks ) ) {
-			return self::error( 'invalid_block_markup', 'Prepared content did not parse into Gutenberg blocks.', 422 );
-		}
-		$count = 0;
-		$walk = function ( array $nodes, int $depth ) use ( &$walk, &$count, $allowed ): ?\WP_Error {
-			if ( $depth > 12 ) {
-				return self::error( 'invalid_nesting', 'Prepared content exceeds the v2 nesting limit.', 422 );
-			}
-			foreach ( $nodes as $node ) {
-				++$count;
-				$name = is_array( $node ) ? (string) ( $node['blockName'] ?? '' ) : '';
-				if ( '' === $name && is_array( $node ) && '' === trim( (string) ( $node['innerHTML'] ?? '' ) ) && empty( $node['innerBlocks'] ) ) {
-					--$count;
-					continue;
-				}
-				if ( ! in_array( $name, $allowed, true ) ) {
-					$code = in_array( $name, array( '', 'core/missing', 'core/freeform', 'core/html' ), true ) ? 'fallback_block' : 'unsupported_v2_block';
-					return self::error( $code, "Serialized block {$name} is not allowed in v2.", 422 );
-				}
-				$error = $walk( isset( $node['innerBlocks'] ) && is_array( $node['innerBlocks'] ) ? $node['innerBlocks'] : array(), $depth + 1 );
 				if ( $error instanceof \WP_Error ) {
 					return $error;
 				}
 			}
-			return null;
-		};
-		$error = $walk( $blocks, 1 );
-		if ( $error instanceof \WP_Error ) {
-			return $error;
 		}
-		return $count > 500 ? self::error( 'request_too_large', 'Prepared content exceeds the v2 block limit.', 413 ) : null;
+		return $count > 500 ? self::error( 'request_too_large', 'The intent exceeds the v2 block limit.', 413 ) : null;
+	}
+
+	/**
+	 * New drafts may contain only authorable blocks. Updates may also keep
+	 * source blocks v2 cannot author, but only as unchanged byte-for-byte
+	 * copies, each used at most once.
+	 */
+	private static function validate_serialized_policy( string $content, ?string $source_content = null ): ?\WP_Error {
+		if ( str_contains( $content, 'https://sitepilot.invalid/staged/' ) ) {
+			return self::error( 'media_changed', 'Private staged media URLs cannot be persisted.', 409 );
+		}
+		$tree = Block_Policy::tokenize( $content );
+		if ( '' !== trim( $content ) && empty( $tree ) ) {
+			return self::error( 'invalid_block_markup', 'Prepared content did not parse into Gutenberg blocks.', 422 );
+		}
+		$count = 0;
+		$depth_error = null;
+		$walk = function ( array $nodes, int $depth ) use ( &$walk, &$count, &$depth_error ): void {
+			foreach ( $nodes as $node ) {
+				++$count;
+				if ( $depth > 12 ) {
+					$depth_error = self::error( 'invalid_nesting', 'Prepared content exceeds the v2 nesting limit.', 422 );
+					return;
+				}
+				$walk( $node['children'], $depth + 1 );
+			}
+		};
+		$walk( $tree, 1 );
+		if ( $depth_error instanceof \WP_Error ) {
+			return $depth_error;
+		}
+		if ( $count > 500 ) {
+			return self::error( 'request_too_large', 'Prepared content exceeds the v2 block limit.', 413 );
+		}
+		$offending = Block_Policy::find_unpreserved_block( $content, $source_content );
+		if ( null !== $offending ) {
+			$name = (string) ( $offending['name'] ?? '' );
+			if ( null === $source_content ) {
+				$code = in_array( $name, array( '', 'core/missing', 'core/freeform', 'core/html' ), true ) ? 'fallback_block' : 'unsupported_v2_block';
+				return self::error( $code, "Serialized block {$name} is not allowed in v2.", 422 );
+			}
+			return self::error(
+				'content_changed',
+				'' === $name
+					? 'Classic content that v2 cannot author must be kept unchanged.'
+					: "Block {$name} cannot be authored by v2 and must be kept unchanged from the source.",
+				422
+			);
+		}
+		return null;
 	}
 
 	private static function sanitize_content_for_save( string $content ): string {

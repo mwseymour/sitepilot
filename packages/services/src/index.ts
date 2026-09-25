@@ -23,6 +23,7 @@ export {
   DurableGutenbergV2MediaService,
   FileGutenbergV2StagedAssetStore,
   StagedGutenbergV2PreviewMediaResolver,
+  detectGutenbergV2MediaType,
   gutenbergV2MediaBindingId,
   hashGutenbergV2PreviewMediaManifest
 } from "./gutenberg-v2-media.js";

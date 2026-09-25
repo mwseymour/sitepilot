@@ -913,7 +913,7 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertStringContainsString( '<!-- wp:heading --><h2>All executable blocks</h2><!-- /wp:heading -->', $result['after']['post_content'] );
 		$this->assertStringContainsString( '<!-- wp:paragraph --><p>Intro copy</p><!-- /wp:paragraph -->', $result['after']['post_content'] );
 		$this->assertStringContainsString( '<!-- wp:details {"summary":"Expandable details"} -->', $result['after']['post_content'] );
-		$this->assertStringContainsString( '<h2>4</h2>', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<h2 class="wp-block-heading">4</h2>', $result['after']['post_content'] );
 		$this->assertStringNotContainsString( 'Old grouped paragraph', $result['after']['post_content'] );
 	}
 
@@ -936,7 +936,7 @@ final class WriteAbilitiesTest extends TestCase {
 
 		$this->assertTrue( $result['ok'] );
 		$this->assertStringNotContainsString( 'Keep me only when merging', $result['after']['post_content'] );
-		$this->assertStringContainsString( '<h2>1</h2>', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<h2 class="wp-block-heading">1</h2>', $result['after']['post_content'] );
 	}
 
 	public function test_update_post_can_insert_blocks_after_nth_paragraph_in_dry_run(): void {
@@ -970,7 +970,7 @@ final class WriteAbilitiesTest extends TestCase {
 
 		$this->assertTrue( $result['ok'] );
 		$this->assertStringContainsString( '<p>Paragraph 1</p>', $result['after']['post_content'] );
-		$this->assertStringContainsString( '<p>Paragraph 2</p><!-- wp:image {"id":0,"url":"https://example.test/wp-content/uploads/test.jpeg","alt":"test"} -->', $result['after']['post_content'] );
+		$this->assertStringContainsString( '<p>Paragraph 2</p><!-- /wp:paragraph --><!-- wp:image {"id":0,"url":"https://example.test/wp-content/uploads/test.jpeg","alt":"test"} -->', $result['after']['post_content'] );
 		$this->assertStringContainsString( '<p>Paragraph 3</p>', $result['after']['post_content'] );
 	}
 

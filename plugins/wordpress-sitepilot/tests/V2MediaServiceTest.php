@@ -22,6 +22,9 @@ final class V2MediaServiceTest extends TestCase {
 
 		$this->assertTrue( $method->invoke( null, 'image/jpeg', 'image/jpeg' ) );
 		$this->assertFalse( $method->invoke( null, 'image/png', 'application/octet-stream' ) );
-		$this->assertFalse( $method->invoke( null, 'video/mp4', 'video/mp4' ) );
+		$this->assertTrue( $method->invoke( null, 'video/mp4', 'video/mp4' ) );
+		$this->assertTrue( $method->invoke( null, 'video/webm', 'video/webm' ) );
+		$this->assertFalse( $method->invoke( null, 'video/mp4', 'video/quicktime' ) );
+		$this->assertFalse( $method->invoke( null, 'video/quicktime', 'video/quicktime' ) );
 	}
 }

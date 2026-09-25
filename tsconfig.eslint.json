@@ -9,6 +9,7 @@
     "packages/**/*.ts",
     "packages/**/*.tsx",
     "tests/**/*.ts",
+    "scripts/**/*.ts",
     "vitest.config.ts"
   ]
 }

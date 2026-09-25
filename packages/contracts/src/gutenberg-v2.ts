@@ -21,33 +21,141 @@ export const GUTENBERG_V2_LIMITS = {
   maxOperations: 100
 } as const;
 
+/**
+ * The single source of truth for v2 block authoring. The WordPress plugin reads
+ * the generated manifest (`npm run generate:v2-block-manifest`) for its policy
+ * checks and hands it to the editor bridge, so no layer keeps its own list.
+ *
+ * - `children: "none"` forbids child blocks; an array restricts them.
+ * - `parent` is the only allowed direct parent.
+ * - `requiresChildren` rejects an empty container.
+ */
 export const GUTENBERG_V2_SUPPORT_MATRIX = [
-  { name: "core/paragraph", mode: "author", dynamic: false },
-  { name: "core/heading", mode: "author", dynamic: false },
+  { name: "core/paragraph", mode: "author", dynamic: false, children: "none" },
+  { name: "core/heading", mode: "author", dynamic: false, children: "none" },
   { name: "core/group", mode: "author", dynamic: false },
-  { name: "core/columns", mode: "author", dynamic: false },
-  { name: "core/column", mode: "author", dynamic: false },
-  { name: "core/image", mode: "author", dynamic: false },
-  { name: "core/list", mode: "author", dynamic: false },
-  { name: "core/list-item", mode: "author", dynamic: false },
-  { name: "core/buttons", mode: "author", dynamic: false },
-  { name: "core/button", mode: "author", dynamic: false },
+  {
+    name: "core/columns",
+    mode: "author",
+    dynamic: false,
+    children: ["core/column"],
+    requiresChildren: true
+  },
+  { name: "core/column", mode: "author", dynamic: false, parent: "core/columns" },
+  { name: "core/image", mode: "author", dynamic: false, children: "none" },
+  {
+    name: "core/list",
+    mode: "author",
+    dynamic: false,
+    children: ["core/list-item"],
+    requiresChildren: true
+  },
+  {
+    name: "core/list-item",
+    mode: "author",
+    dynamic: false,
+    children: "none",
+    parent: "core/list"
+  },
+  {
+    name: "core/buttons",
+    mode: "author",
+    dynamic: false,
+    children: ["core/button"],
+    requiresChildren: true
+  },
+  {
+    name: "core/button",
+    mode: "author",
+    dynamic: false,
+    children: "none",
+    parent: "core/buttons"
+  },
   { name: "core/quote", mode: "author", dynamic: false },
-  { name: "core/spacer", mode: "author", dynamic: false },
-  { name: "core/table", mode: "author", dynamic: false },
-  { name: "core/pullquote", mode: "author", dynamic: false },
+  { name: "core/spacer", mode: "author", dynamic: false, children: "none" },
+  { name: "core/table", mode: "author", dynamic: false, children: "none" },
+  { name: "core/pullquote", mode: "author", dynamic: false, children: "none" },
   { name: "core/media-text", mode: "author", dynamic: false },
+  { name: "core/separator", mode: "author", dynamic: false, children: "none" },
+  {
+    name: "core/details",
+    mode: "author",
+    dynamic: false,
+    requiresChildren: true
+  },
+  { name: "core/code", mode: "author", dynamic: false, children: "none" },
+  {
+    name: "core/preformatted",
+    mode: "author",
+    dynamic: false,
+    children: "none"
+  },
+  {
+    name: "core/gallery",
+    mode: "author",
+    dynamic: false,
+    children: ["core/image"],
+    requiresChildren: true
+  },
+  {
+    name: "core/cover",
+    mode: "author",
+    dynamic: false,
+    requiresChildren: true
+  },
+  { name: "core/embed", mode: "author", dynamic: false, children: "none" },
+  { name: "core/video", mode: "author", dynamic: false, children: "none" },
   {
     name: "core/latest-posts",
     mode: "fixture_required",
-    dynamic: true
+    dynamic: true,
+    children: "none"
   },
   {
     name: "acf/container",
     mode: "fixture_required",
     dynamic: true
   }
-] as const;
+] as const satisfies readonly GutenbergV2SupportMatrixEntry[];
+
+export type GutenbergV2SupportMatrixEntry = {
+  readonly name: string;
+  readonly mode: "author" | "fixture_required";
+  readonly dynamic: boolean;
+  readonly children?: "none" | readonly string[];
+  readonly parent?: string;
+  readonly requiresChildren?: boolean;
+};
+
+/**
+ * A plan node that keeps one existing source block (and everything inside it)
+ * exactly as stored. It lets a replacement or an edited container keep blocks
+ * that v2 cannot author, such as covers, embeds or plugin blocks.
+ */
+export const GUTENBERG_V2_SOURCE_BLOCK = "sitepilot/source-block" as const;
+
+export function gutenbergV2BlockManifest() {
+  return {
+    schemaVersion: "sitepilot.block-manifest/v2" as const,
+    sourceBlock: GUTENBERG_V2_SOURCE_BLOCK,
+    blocks: GUTENBERG_V2_SUPPORT_MATRIX.map((entry) => {
+      const rules = entry as GutenbergV2SupportMatrixEntry;
+      return {
+        name: rules.name,
+        mode: rules.mode,
+        dynamic: rules.dynamic,
+        children:
+          rules.children === undefined
+            ? "any"
+            : rules.children === "none"
+              ? "none"
+              : [...rules.children],
+        parent: rules.parent ?? null,
+        requiresChildren: rules.requiresChildren === true
+      };
+    })
+  };
+}
 
 export type GutenbergV2SupportedBlockName =
   (typeof GUTENBERG_V2_SUPPORT_MATRIX)[number]["name"];
@@ -113,6 +221,37 @@ function isAllowedLink(value: string): boolean {
       decoded.startsWith("#") ||
       /^https?:\/\//i.test(decoded))
   );
+}
+
+/**
+ * External embeds are limited to reviewed video providers. Each provider's
+ * URL shape is checked so a plan cannot embed an arbitrary third-party page.
+ */
+export const GUTENBERG_V2_EMBED_PROVIDERS = {
+  youtube: [
+    /^https:\/\/(?:www\.|m\.)?youtube\.com\/watch\?(?:[^#\s]*&)?v=[A-Za-z0-9_-]{6,20}(?:[&#][^\s]*)?$/,
+    /^https:\/\/(?:www\.)?youtube\.com\/(?:shorts|live|embed)\/[A-Za-z0-9_-]{6,20}(?:[?#][^\s]*)?$/,
+    /^https:\/\/youtu\.be\/[A-Za-z0-9_-]{6,20}(?:[?#][^\s]*)?$/
+  ],
+  vimeo: [
+    /^https:\/\/(?:www\.)?vimeo\.com\/(?:channels\/[A-Za-z0-9_-]+\/)?\d{3,12}(?:\/[A-Za-z0-9]+)?(?:[?#][^\s]*)?$/,
+    /^https:\/\/player\.vimeo\.com\/video\/\d{3,12}(?:[?#][^\s]*)?$/
+  ]
+} as const;
+
+export type GutenbergV2EmbedProvider = keyof typeof GUTENBERG_V2_EMBED_PROVIDERS;
+
+export function gutenbergV2EmbedProvider(
+  url: string
+): GutenbergV2EmbedProvider | null {
+  for (const [provider, patterns] of Object.entries(
+    GUTENBERG_V2_EMBED_PROVIDERS
+  )) {
+    if (patterns.some((pattern) => pattern.test(url))) {
+      return provider as GutenbergV2EmbedProvider;
+    }
+  }
+  return null;
 }
 
 const richTextSchema = boundedTextSchema.superRefine((value, context) => {
@@ -304,10 +443,15 @@ const acfDataValueSchema = z.union([
 
 export type GutenbergV2BlockNode = {
   ref: string;
-  name: GutenbergV2SupportedBlockName;
+  name: GutenbergV2SupportedBlockName | typeof GUTENBERG_V2_SOURCE_BLOCK;
   attributes: Record<string, unknown>;
   children: GutenbergV2BlockNode[];
 };
+
+const sourceBlockPathSchema = z
+  .array(nonNegativeIntegerSchema)
+  .min(1)
+  .max(GUTENBERG_V2_LIMITS.maxDepth);
 
 const childrenSchema: z.ZodType<GutenbergV2BlockNode[]> = z.lazy(() =>
   z
@@ -315,7 +459,9 @@ const childrenSchema: z.ZodType<GutenbergV2BlockNode[]> = z.lazy(() =>
     .max(GUTENBERG_V2_LIMITS.maxChildrenPerBlock)
 );
 
-function nodeSchema<T extends GutenbergV2SupportedBlockName>(
+function nodeSchema<
+  T extends GutenbergV2SupportedBlockName | typeof GUTENBERG_V2_SOURCE_BLOCK
+>(
   name: T,
   attributes: z.ZodTypeAny
 ): z.ZodDiscriminatedUnionOption<"name"> {
@@ -333,6 +479,19 @@ export const gutenbergV2BlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
   z.lazy(
     () =>
       z.discriminatedUnion("name", [
+        z
+          .object({
+            ref: identifierSchema,
+            name: z.literal(GUTENBERG_V2_SOURCE_BLOCK),
+            attributes: z
+              .object({
+                path: sourceBlockPathSchema,
+                expectedFingerprint: sha256Schema
+              })
+              .strict(),
+            children: z.array(z.never()).max(0)
+          })
+          .strict(),
         nodeSchema(
           "core/paragraph",
           z
@@ -573,6 +732,180 @@ export const gutenbergV2BlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
             .strict()
         ),
         nodeSchema(
+          "core/separator",
+          z
+            .object({
+              align: z.enum(["center", "wide", "full"]).optional(),
+              anchor: anchorSchema.optional(),
+              className: z
+                .enum(["is-style-default", "is-style-wide", "is-style-dots"])
+                .optional()
+            })
+            .strict()
+        ),
+        nodeSchema(
+          "core/details",
+          z
+            .object({
+              summary: richTextSchema,
+              showContent: z.boolean().optional(),
+              ...basePresentationAttributes
+            })
+            .strict()
+        ),
+        nodeSchema(
+          "core/code",
+          z
+            .object({ content: richTextSchema, ...basePresentationAttributes })
+            .strict()
+        ),
+        nodeSchema(
+          "core/preformatted",
+          z
+            .object({ content: richTextSchema, ...basePresentationAttributes })
+            .strict()
+        ),
+        nodeSchema(
+          "core/gallery",
+          z
+            .object({
+              columns: z.number().int().min(1).max(8).optional(),
+              imageCrop: z.boolean().optional(),
+              linkTo: z.enum(["none", "media", "attachment"]).optional(),
+              sizeSlug: z
+                .enum(["thumbnail", "medium", "medium_large", "large", "full"])
+                .optional(),
+              caption: richTextSchema.optional(),
+              align: z
+                .enum(["left", "center", "right", "wide", "full"])
+                .optional(),
+              ...basePresentationAttributes
+            })
+            .strict()
+        ),
+        nodeSchema(
+          "core/cover",
+          z
+            .object({
+              mediaRef: identifierSchema.optional(),
+              id: positiveIntegerSchema.optional(),
+              url: urlSchema.optional(),
+              alt: z.string().max(2_000).optional(),
+              dimRatio: z.number().int().min(0).max(100).multipleOf(10).optional(),
+              customOverlayColor: z
+                .string()
+                .regex(/^#(?:[0-9a-fA-F]{3}){1,2}$/)
+                .optional(),
+              minHeight: z.number().positive().max(10_000).optional(),
+              minHeightUnit: z.enum(["px", "vh", "vw", "em", "rem", "%"]).optional(),
+              contentPosition: z
+                .enum([
+                  "top left",
+                  "top center",
+                  "top right",
+                  "center left",
+                  "center center",
+                  "center right",
+                  "bottom left",
+                  "bottom center",
+                  "bottom right"
+                ])
+                .optional(),
+              focalPoint: z
+                .object({
+                  x: z.number().min(0).max(1),
+                  y: z.number().min(0).max(1)
+                })
+                .strict()
+                .optional(),
+              isDark: z.boolean().optional(),
+              align: z
+                .enum(["left", "center", "right", "wide", "full"])
+                .optional(),
+              ...basePresentationAttributes
+            })
+            .strict()
+            .superRefine((attributes, context) => {
+              if (attributes.mediaRef === undefined && attributes.customOverlayColor === undefined) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["mediaRef"],
+                  message:
+                    "A cover needs a background: a mediaRef image or a customOverlayColor."
+                });
+              }
+              if (attributes.mediaRef === undefined && (attributes.id !== undefined || attributes.url !== undefined)) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["url"],
+                  message: "A cover image is bound through mediaRef only."
+                });
+              }
+            })
+        ),
+        nodeSchema(
+          "core/video",
+          z
+            .object({
+              mediaRef: identifierSchema,
+              caption: richTextSchema.optional(),
+              controls: z.boolean().optional(),
+              autoplay: z.boolean().optional(),
+              loop: z.boolean().optional(),
+              muted: z.boolean().optional(),
+              playsInline: z.boolean().optional(),
+              preload: z.enum(["auto", "metadata", "none"]).optional(),
+              align: z
+                .enum(["left", "center", "right", "wide", "full"])
+                .optional(),
+              anchor: anchorSchema.optional(),
+              className: cssClassNameSchema.optional()
+            })
+            .strict()
+            .superRefine((attributes, context) => {
+              if (attributes.autoplay && !attributes.muted) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["muted"],
+                  message: "Browsers only autoplay muted videos; set muted too."
+                });
+              }
+            })
+        ),
+        nodeSchema(
+          "core/embed",
+          z
+            .object({
+              url: z.string().trim().min(1).max(2_048),
+              providerNameSlug: z.enum(["youtube", "vimeo"]),
+              type: z.literal("video"),
+              responsive: z.literal(true),
+              caption: richTextSchema.optional(),
+              align: z
+                .enum(["left", "center", "right", "wide", "full"])
+                .optional(),
+              anchor: anchorSchema.optional(),
+              className: cssClassNameSchema.optional()
+            })
+            .strict()
+            .superRefine((attributes, context) => {
+              const provider = gutenbergV2EmbedProvider(attributes.url);
+              if (provider === null) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["url"],
+                  message: "Only YouTube and Vimeo video URLs can be embedded."
+                });
+              } else if (provider !== attributes.providerNameSlug) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["providerNameSlug"],
+                  message: `The URL is a ${provider} video.`
+                });
+              }
+            })
+        ),
+        nodeSchema(
           "core/latest-posts",
           z
             .object({
@@ -604,8 +937,12 @@ const stagedMediaTypeSchema = z.enum([
   "image/jpeg",
   "image/png",
   "image/webp",
-  "image/gif"
+  "image/gif",
+  "video/mp4",
+  "video/webm"
 ]);
+
+export const GUTENBERG_V2_VIDEO_MEDIA_TYPES = ["video/mp4", "video/webm"] as const;
 
 export const gutenbergV2MediaIntentSchema = z
   .object({
@@ -685,20 +1022,26 @@ const nodeTargetSchema = z
   })
   .strict();
 
+const parentTargetSchema = z
+  .object({
+    path: z.array(nonNegativeIntegerSchema).max(GUTENBERG_V2_LIMITS.maxDepth),
+    ref: identifierSchema.optional(),
+    expectedFingerprint: sha256Schema
+  })
+  .strict();
+
+/**
+ * Scoped operations address the source snapshot the planner saw: every path,
+ * fingerprint and index refers to the original tree, so several operations in
+ * one plan do not invalidate each other. `index` is a position among the
+ * parent's original children (0 = before the first, length = at the end).
+ */
 export const gutenbergV2ScopedOperationSchema = z.discriminatedUnion("type", [
   z
     .object({
       id: identifierSchema,
       type: z.literal("insert_blocks"),
-      parent: z
-        .object({
-          path: z
-            .array(nonNegativeIntegerSchema)
-            .max(GUTENBERG_V2_LIMITS.maxDepth),
-          ref: identifierSchema.optional(),
-          expectedFingerprint: sha256Schema
-        })
-        .strict(),
+      parent: parentTargetSchema,
       index: nonNegativeIntegerSchema,
       blocks: z
         .array(gutenbergV2BlockNodeSchema)
@@ -720,8 +1063,22 @@ export const gutenbergV2ScopedOperationSchema = z.discriminatedUnion("type", [
       type: z.literal("remove_block"),
       target: nodeTargetSchema
     })
+    .strict(),
+  z
+    .object({
+      id: identifierSchema,
+      type: z.literal("move_block"),
+      target: nodeTargetSchema,
+      parent: parentTargetSchema,
+      index: nonNegativeIntegerSchema
+    })
     .strict()
 ]);
+
+/** Source blocks the operator intends to delete, listed so review shows them. */
+const removedSourceBlocksSchema = z
+  .array(nodeTargetSchema)
+  .max(GUTENBERG_V2_LIMITS.maxBlocks);
 
 const planBaseShape = {
   schemaVersion: z.literal(GUTENBERG_V2_SCHEMA_VERSION),
@@ -758,6 +1115,7 @@ const replaceContentPlanSchema = z
     operation: z.literal("replace_content"),
     target: gutenbergV2ExistingTargetSchema,
     postFields: postFieldChangesSchema.optional(),
+    removedSourceBlocks: removedSourceBlocksSchema.optional(),
     blocks: z
       .array(gutenbergV2BlockNodeSchema)
       .min(1)
@@ -771,6 +1129,7 @@ const applyOperationsPlanSchema = z
     operation: z.literal("apply_operations"),
     target: gutenbergV2ExistingTargetSchema,
     postFields: postFieldChangesSchema.optional(),
+    removedSourceBlocks: removedSourceBlocksSchema.optional(),
     // Empty only for a fields-only change (e.g. setting the featured image);
     // validatePlanStructure enforces that postFields are present then.
     operations: z
@@ -794,6 +1153,10 @@ function collectPlanBlocks(plan: {
   return blocks;
 }
 
+const supportRules = new Map<string, GutenbergV2SupportMatrixEntry>(
+  GUTENBERG_V2_SUPPORT_MATRIX.map((entry) => [entry.name, entry])
+);
+
 function validatePlanStructure(
   plan:
     | z.infer<typeof createDraftPlanSchema>
@@ -809,7 +1172,21 @@ function validatePlanStructure(
   }
 
   const refs = new Set<string>();
+  const keptSourcePaths = new Set<string>();
   const mediaRefs = new Set(plan.media.map((item) => item.ref));
+  const isStagedVideo = (item: (typeof plan.media)[number]) =>
+    item.source.kind === "staged_asset" &&
+    (GUTENBERG_V2_VIDEO_MEDIA_TYPES as readonly string[]).includes(
+      item.source.mediaType
+    );
+  const stagedVideoRefs = new Set(
+    plan.media.filter(isStagedVideo).map((item) => item.ref)
+  );
+  const stagedImageRefs = new Set(
+    plan.media
+      .filter((item) => item.source.kind === "staged_asset" && !isStagedVideo(item))
+      .map((item) => item.ref)
+  );
   const imageMediaRefs = new Set<string>();
   if (mediaRefs.size !== plan.media.length) {
     context.addIssue({
@@ -819,6 +1196,13 @@ function validatePlanStructure(
     });
   }
   const featuredMediaRef = plan.postFields?.featuredMediaRef;
+  if (featuredMediaRef !== undefined && stagedVideoRefs.has(featuredMediaRef)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["postFields", "featuredMediaRef"],
+      message: "A featured image must be an image, not a video."
+    });
+  }
   if (featuredMediaRef !== undefined && !mediaRefs.has(featuredMediaRef)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -881,43 +1265,60 @@ function validatePlanStructure(
       });
     }
 
-    const allowedChildren: Partial<
-      Record<GutenbergV2SupportedBlockName, GutenbergV2SupportedBlockName[]>
-    > = {
-      "core/columns": ["core/column"],
-      "core/list": ["core/list-item"],
-      "core/buttons": ["core/button"]
-    };
-    const mustBeEmpty = new Set<GutenbergV2SupportedBlockName>([
-      "core/paragraph",
-      "core/heading",
-      "core/image",
-      "core/list-item",
-      "core/button",
-      "core/spacer",
-      "core/table",
-      "core/pullquote",
-      "core/latest-posts"
-    ]);
-    if (mustBeEmpty.has(node.name) && node.children.length > 0) {
+    if (node.name === GUTENBERG_V2_SOURCE_BLOCK) {
+      if (plan.operation === "create_draft") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path, "name"],
+          message: "A new draft has no source blocks to keep."
+        });
+      }
+      const key = JSON.stringify(
+        (node.attributes as { path: number[] }).path
+      );
+      if (keptSourcePaths.has(key)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path, "attributes", "path"],
+          message: "A source block can only be kept once."
+        });
+      }
+      keptSourcePaths.add(key);
+      return;
+    }
+    const rules = supportRules.get(node.name);
+    if (rules?.children === "none" && node.children.length > 0) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, "children"],
         message: `${node.name} cannot contain child blocks in v2.`
       });
     }
-    const names = allowedChildren[node.name];
-    if (names && node.children.some((child) => !names.includes(child.name))) {
+    if (
+      Array.isArray(rules?.children) &&
+      node.children.some(
+        (child) =>
+          child.name !== GUTENBERG_V2_SOURCE_BLOCK &&
+          !(rules.children as readonly string[]).includes(child.name)
+      )
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, "children"],
         message: `${node.name} contains an unsupported child type.`
       });
     }
-    if (
-      ["core/columns", "core/list", "core/buttons"].includes(node.name) &&
-      node.children.length === 0
-    ) {
+    for (const [index, child] of node.children.entries()) {
+      const childRules = supportRules.get(child.name);
+      if (childRules?.parent !== undefined && childRules.parent !== node.name) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path, "children", index],
+          message: `${child.name} must be placed inside ${childRules.parent}.`
+        });
+      }
+    }
+    if (rules?.requiresChildren && node.children.length === 0) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, "children"],
@@ -935,6 +1336,19 @@ function validatePlanStructure(
       });
     }
     if (node.name === "core/image" && mediaRef) imageMediaRefs.add(mediaRef);
+    if (mediaRef && mediaRefs.has(mediaRef)) {
+      const video = stagedVideoRefs.has(mediaRef);
+      if (node.name === "core/video" ? !video && stagedImageRefs.has(mediaRef) : video) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path, "attributes", "mediaRef"],
+          message:
+            node.name === "core/video"
+              ? `${mediaRef} is an image; core/video needs a video.`
+              : `${mediaRef} is a video; ${node.name} needs an image.`
+        });
+      }
+    }
     node.children.forEach((child, index) =>
       visit(child, depth + 1, [...path, "children", index])
     );
@@ -943,6 +1357,47 @@ function validatePlanStructure(
   collectPlanBlocks(plan).forEach((block, index) =>
     visit(block, 1, ["blocks", index])
   );
+  if (plan.operation === "apply_operations") {
+    // Root blocks with a required parent cannot be inserted at the root.
+    plan.operations.forEach((operation, index) => {
+      if (operation.type !== "insert_blocks" || operation.parent.path.length)
+        return;
+      operation.blocks.forEach((block, blockIndex) => {
+        const parent = supportRules.get(block.name)?.parent;
+        if (parent !== undefined) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["operations", index, "blocks", blockIndex],
+            message: `${block.name} must be placed inside ${parent}.`
+          });
+        }
+      });
+    });
+    const touched = new Set<string>();
+    plan.operations.forEach((operation, index) => {
+      if (operation.type === "insert_blocks") return;
+      const key = JSON.stringify(operation.target.path);
+      if (touched.has(key)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["operations", index, "target"],
+          message: "Each source block can be edited, moved or removed only once."
+        });
+      }
+      touched.add(key);
+    });
+  } else {
+    plan.blocks.forEach((block, index) => {
+      const parent = supportRules.get(block.name)?.parent;
+      if (parent !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["blocks", index],
+          message: `${block.name} must be placed inside ${parent}.`
+        });
+      }
+    });
+  }
   plan.media.forEach((media, index) => {
     if (media.caption !== undefined && !imageMediaRefs.has(media.ref)) {
       context.addIssue({
@@ -1065,6 +1520,7 @@ export const gutenbergV2ValidationFailureCodeSchema = z.enum([
   "unsupported_v2_block",
   "invalid_block_markup",
   "content_changed",
+  "content_loss",
   "stale_source",
   "runtime_changed",
   "editor_unavailable",
@@ -1424,7 +1880,9 @@ export const gutenbergV2MediaBindingItemSchema = z.discriminatedUnion("kind", [
       byteLength: positiveIntegerSchema.max(
         GUTENBERG_V2_LIMITS.maxMediaAssetBytes
       ),
-      fileName: z.string().regex(/^[a-f0-9]{64}\.(?:jpe?g|png|webp|gif)$/),
+      fileName: z
+        .string()
+        .regex(/^[a-f0-9]{64}\.(?:jpe?g|png|webp|gif|mp4|webm)$/),
       dataBase64: z
         .string()
         .min(1)
@@ -1532,7 +1990,7 @@ export const gutenbergV2EditorPreviewRequestSchema = z
                 Math.ceil(GUTENBERG_V2_LIMITS.maxMediaAssetBytes / 3) * 4 + 64
               )
               .regex(
-                /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/
+                /^data:(?:image\/(?:jpeg|png|webp|gif)|video\/(?:mp4|webm));base64,[A-Za-z0-9+/]+={0,2}$/
               )
           })
           .strict()
@@ -1759,7 +2217,16 @@ export const gutenbergV2SourceSnapshotSchema = z
               .min(1)
               .max(GUTENBERG_V2_LIMITS.maxDepth),
             name: z.string().trim().min(1).max(200),
-            fingerprint: sha256Schema
+            fingerprint: sha256Schema,
+            /**
+             * authorable: v2 can edit it. preserved: v2 keeps it unchanged
+             * (it may be kept, moved or removed as a whole). inside_preserved:
+             * part of a preserved block, so it cannot be targeted.
+             */
+            role: z
+              .enum(["authorable", "preserved", "inside_preserved"])
+              .optional(),
+            summary: z.string().max(200).optional()
           })
           .strict()
       )

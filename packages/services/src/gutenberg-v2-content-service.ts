@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  GUTENBERG_V2_SOURCE_BLOCK,
   GUTENBERG_V2_SUPPORT_MATRIX,
   gutenbergV2ApprovalSchema,
   gutenbergV2BlockPlanSchema,
@@ -1158,6 +1159,9 @@ export class GutenbergV2ContentService {
       capabilities.blocks.map((block) => [block.name, block])
     );
     for (const node of walkBlocks(planBlocks(plan))) {
+      // Kept source blocks are checked byte-for-byte by the bridge and the
+      // WordPress commit policy instead.
+      if (node.name === GUTENBERG_V2_SOURCE_BLOCK) continue;
       const policy = staticSupport.get(node.name);
       const block = destination.get(node.name);
       if (!block?.registered)

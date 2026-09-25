@@ -47,15 +47,32 @@ The lifecycle is `compileCandidate`, operator review, `recordApproval`, then `ex
 
 ## Supported content
 
-The initial authoring matrix contains 15 core authoring types: paragraph, heading, group, columns, column, image, list, list item, buttons, button, quote, spacer, table, pullquote, and media-text. Latest Posts and ACF Container remain outside the current release gate. They are not registered in the MAMP test profile, so this implementation does not claim `author_when_reviewed` support for either block; a future destination-specific fixture must prove it before they can be enabled.
+`GUTENBERG_V2_SUPPORT_MATRIX` in `packages/contracts/src/gutenberg-v2.ts` is the single list of authorable blocks and their structure rules (allowed children, required parent, required children). `npm run generate:v2-block-manifest` writes it to `plugins/wordpress-sitepilot/includes/V2/block-manifest.json`; the plugin's `Block_Policy` reads that file for its commit checks and passes it to the editor bridge, and `tests/gutenberg-v2-preservation-contracts.test.ts` fails if the file drifts.
+
+The authoring matrix contains 23 core types: paragraph, heading, group, columns, column, image, list, list item, buttons, button, quote, spacer, table, pullquote, media-text, separator, details, code, preformatted, gallery, cover, embed and video. Latest Posts and ACF Container remain `fixture_required`. The bridge reports a fixture-gated block as `author_when_reviewed` only when the site's `sitepilot_v2_reviewed_blocks` option lists it; nothing sets that option yet, so neither block is authorable.
 
 Every block object and attribute object is strict. Unknown attributes, unsupported nesting, unsafe rich text, raw wrapper markup, excessive depth or count, and destination normalization loss fail closed. Optional attributes should be omitted unless the operator requested them. In particular, button `width` is valid in the static contract. The native probe records either preservation or a structured `content_changed` result when the destination normalizes it away; the v2 planner still omits it unless a destination fixture proves preservation. Destination round-trip validation remains authoritative.
 
-Scoped update planning uses `SourceSnapshot.blockIndex`, whose entries contain native editor paths and fingerprints. The generator accepts model-selected paths but replaces every model fingerprint with the trusted source index value.
+Block-specific rules:
+
+- `core/embed` accepts only YouTube and Vimeo video URLs (`GUTENBERG_V2_EMBED_PROVIDERS`). The planner sets `providerNameSlug`, `type`, `responsive` and the 16:9 aspect classes from the URL. Before approval, the bridge asks WordPress's oEmbed proxy to resolve each new embed and fails the candidate if the video is private, deleted or wrong. The review preview does not load the provider's player, because the worker blocks third-party origins.
+- `core/cover` needs child content and either a bound image (`mediaRef`) or a solid `customOverlayColor`. The bridge sets `isUserOverlayColor` like the editor does.
+- `core/code` keeps line breaks as characters; `core/preformatted` stores them as `<br>`, which is WordPress's own form for that block.
+- `core/video` binds an uploaded or media-library video through `mediaRef`; `autoplay` requires `muted`.
+
+### Editing existing posts
+
+Updates edit a working tree of the source post. The editor bridge records each block's exact byte range with the same token grammar as WordPress's default block parser. It writes every block the plan does not touch back from those bytes, and only regenerates blocks the plan authors or whose child list changes. The WordPress commit policy (`Block_Policy::find_unpreserved_block`) repeats the check on the server: every block v2 cannot author must be a byte-identical copy of a source block, used at most once.
+
+Blocks v2 cannot author (for example core/html, classic content, reusable blocks, social links, archives, plugin blocks and blocks from inactive plugins) are reported in `SourceSnapshot.blockIndex` with `role: "preserved"`. Their contents are `inside_preserved` and cannot be targeted. A plan may keep a preserved block (`sitepilot/source-block` nodes in `replace_content` or in restated children), move it (`move_block`), or delete it on purpose (`remove_block`, or `removedSourceBlocks`). Any other outcome that would drop one fails with `content_loss`.
+
+Scoped operations address the source snapshot the planner saw, not the tree after earlier operations. Every path, fingerprint and insertion index refers to the original tree, so an edit, an insert, a move and a removal in one plan do not invalidate each other. `edit_block` keeps the source block's attributes that the replacement does not mention (font size, colour presets, typography, metadata, classes); media attributes are rebound when the replacement names a `mediaRef`. When `replacement.children` is empty, the existing children are kept unchanged. The bridge refuses to replace a block that uses block bindings, and to remove or move a block locked against removal or moving.
+
+Authorable blocks outside preserved regions must still pass WordPress's strict validation. As before, a post that contains an invalid or deprecated-format authorable block cannot be edited until it is resaved in WordPress.
 
 ## Media and review
 
-Raster media is limited to JPEG, PNG, WebP, and GIF. The limits are 10 MB per asset, 20 items, and 25 MB aggregate per binding request. `FileGutenbergV2StagedAssetStore` writes private content-addressed files and rehashes them before preview and binding.
+Staged media is limited to JPEG, PNG, WebP and GIF images and MP4 and WebM videos. The limits are 10 MB per asset, 20 items, and 25 MB aggregate per binding request, because media travels as base64 inside the signed binding request; larger videos need a streaming upload that is not built yet. Headless browsers usually cannot decode video, so a bound video is verified by checksum, container signature and served content type, and the preview proves the approved bytes are placed in a native video element, rather than playing it. `FileGutenbergV2StagedAssetStore` writes private content-addressed files and rehashes them before preview and binding.
 
 Before approval, staged bytes render through an in-memory `data:` preview mapping and never enter the WordPress media library. Existing library attachments resolve through the signed read-only branch of the media-bindings route, keep their attachment ID, and are fetched from the configured WordPress origin without redirects before checksum verification. Existing attachment alt text and captions are never mutated; block intent owns those values.
 
@@ -74,7 +91,7 @@ Run focused TypeScript checks with:
 ```sh
 nvm use 22.22.3
 npx tsc -b packages/contracts packages/services packages/plugin-protocol packages/gutenberg-worker --pretty false
-npx vitest run tests/gutenberg-v2-contracts.test.ts tests/gutenberg-v2-service.test.ts tests/gutenberg-worker.test.ts
+npx vitest run tests/gutenberg-v2-contracts.test.ts tests/gutenberg-v2-preservation-contracts.test.ts tests/gutenberg-v2-service.test.ts tests/gutenberg-worker.test.ts
 ```
 
 Changes to this path also require the repository content E2E suite:
@@ -93,6 +110,10 @@ npm run test:e2e:v2
 npm run test:e2e:v2-chat
 ```
 
+The E2E harness exercises whatever plugin copy the MAMP site has installed, not this repository's `plugins/wordpress-sitepilot` directly. Sync the plugin into the site before running the WordPress suites after plugin changes.
+
+While developing one scenario, `SITEPILOT_V2_E2E_ONLY=preservation` or `SITEPILOT_V2_E2E_ONLY=new-blocks` runs only that part of `tests/e2e/v2-gutenberg.ts`; the release gate always runs it in full.
+
 `test:e2e:v2-chat` exercises the real desktop chat boundary against the configured
 MAMP destination. It uses a temporary desktop database and deterministic planner,
 then prints only a redacted artifact summary and the created draft post ID for
@@ -109,7 +130,7 @@ The measured local profile was MAMP with WordPress 7.1.1, PHP 8.2.30, Twenty Twe
 - The contracts, services, protocol, and Gutenberg worker TypeScript project references passed, as did Prettier and the focused v2 lint checks.
 - All 30 focused Gutenberg v2 contract, service, and worker tests passed.
 - The final Node 22 legacy E2E rerun passed all six WordPress scenarios against MAMP.
-- Ten new WordPress v2 PHP tests passed. Four unrelated PHP baseline failures remain in the pre-existing suite.
+- Ten new WordPress v2 PHP tests passed. The four pre-existing v1 write-ability failures were fixed on 25 September 2026; the full plugin PHPUnit suite (47 tests) now passes.
 - The complete native v2 harness passed strict compilation, staged and existing-library media preview and binding, persisted draft creation, exact readback, and normal Gutenberg save/reopen with all blocks valid.
 - The full mixed fixture covers 15 block types across 21 nodes and produced an inspected 1160 x 1712 desktop review image and a 390 x 1672 mobile review image. Both include the pullquote, primary image and caption, media-text image, and media-text body without surrounding editor UI obscuring the content.
 - The native scope and failure gates passed: staged media identities were reused on retry, scoped-update authorization and four negative controls rejected unsafe changes, and destination attribute normalization was detected.
@@ -119,4 +140,14 @@ The final native evidence is recorded in `.sitepilot-test-artifacts/v2-gutenberg
 
 After validation, the local MU test flag was removed with a hash guard. The live protocol then reported `v2.enabled=false` with bridge version `2.0.0-alpha.1`; MAMP was left running for follow-up checks. Production remains gated on destination-specific native editor and persistence fixtures plus explicit boolean enablement.
 
-The full desktop build currently reports six renderer errors that reproduce unchanged from clean `HEAD`; they are outside the additive v2 implementation.
+As of 25 September 2026 the desktop typecheck (`npm run typecheck` in `apps/desktop`) and full desktop build complete without errors.
+
+### 25 September 2026: preservation and new blocks
+
+Against the same MAMP profile, with the plugin synced from this repository and Node 22.22.3:
+
+- `npm run test:e2e:v2` passed. Its preservation scenario applied an edit, an insert, a move and a removal in one plan. core/html, core/archives, social links, an inactive plugin block and an untouched paragraph all stayed byte-identical, and the edited paragraph kept its font size. The scenario also rejected an edit inside a preserved block and two replacements that would drop blocks (`locked_structure`, `content_loss`), and a replacement that kept chosen blocks succeeded.
+- The new-blocks scenario created cover (image and colour), separator, details, code, preformatted, gallery, YouTube embed and uploaded MP4 video blocks (14 nodes). A normal editor save and reopen found all 14 valid and left the bytes unchanged. A scoped code edit kept its line breaks, and an unavailable YouTube URL was rejected before approval.
+- `npm run test:e2e:all` passed all six legacy scenarios. `npm run test:e2e:v2-chat` passed.
+- 306 unit tests and 52 plugin PHPUnit tests passed.
+

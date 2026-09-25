@@ -501,13 +501,13 @@ function decodeAttachments(attachments: ImageAttachmentPayload[] | undefined) {
   if (!attachments || attachments.length === 0) return [];
   return attachments.map((attachment, index) => {
     const match =
-      /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(
+      /^data:(image\/(?:jpeg|png|webp|gif)|video\/(?:mp4|webm));base64,([A-Za-z0-9+/]+={0,2})$/.exec(
         attachment.dataUrl
       );
     if (!match)
       throw new GutenbergV2ServiceError(
         "schema_invalid",
-        `Attachment ${index + 1} is not a supported raster data URL.`
+        `Attachment ${index + 1} is not a supported image or video.`
       );
     // The decoded bytes are authoritative: they are checksummed when staged
     // and size-limited by the media policy. `sizeBytes` is display metadata
@@ -525,7 +525,9 @@ function decodeAttachments(attachments: ImageAttachmentPayload[] | undefined) {
         | "image/jpeg"
         | "image/png"
         | "image/webp"
-        | "image/gif",
+        | "image/gif"
+        | "video/mp4"
+        | "video/webm",
       ref: `attachment-${index + 1}`,
       alt: attachment.fileName.slice(0, 2_000)
     };

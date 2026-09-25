@@ -65,6 +65,9 @@ const SHOW_DRY_RUN_UI = true;
 const MAX_IMAGE_ATTACHMENTS = 8;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
+// Matches the Gutenberg v2 staged media limit for one asset.
+const MAX_VIDEO_BYTES = 10_000_000;
+const VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
 const MAX_IMAGE_DIMENSION = 1280;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -1234,11 +1237,16 @@ export function ChatPage({
     const files = [...fileList];
     for (const file of files) {
       const isPdf = file.type === "application/pdf";
-      if (!isPdf && !file.type.startsWith("image/")) {
-        setErr(`${file.name} is not an image or PDF.`);
+      const isVideo = VIDEO_TYPES.has(file.type);
+      if (!isPdf && !isVideo && !file.type.startsWith("image/")) {
+        setErr(`${file.name} is not an image, MP4/WebM video or PDF.`);
         return;
       }
-      if (file.size > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
+      if (isVideo && file.size > MAX_VIDEO_BYTES) {
+        setErr(`${file.name} is larger than 10 MB, the current video limit.`);
+        return;
+      }
+      if (!isVideo && file.size > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
         setErr(`${file.name} is larger than ${isPdf ? "20" : "8"} MB.`);
         return;
       }
@@ -1259,10 +1267,13 @@ export function ChatPage({
             );
           }
         } else {
+          // Videos are never re-encoded; images may be resized unless the
+          // operator prefers originals.
           attachments.push(
             await fileToImageAttachment(
               file,
-              uiPreferences?.preserveOriginalImageUploads ?? false
+              VIDEO_TYPES.has(file.type) ||
+                (uiPreferences?.preserveOriginalImageUploads ?? false)
             )
           );
         }
@@ -2174,9 +2185,6 @@ export function ChatPage({
                   {threadTypeMeta(selectedThread?.type).label} ·{" "}
                   {threadTypeMeta(selectedThread?.type).description}
                 </p>
-                <p className="muted small-print chat-mode-lede">
-                  {pageCopy.pageLede}
-                </p>
                 <div
                   className="chat-message-filters"
                   aria-label="Message filters"
@@ -2500,7 +2508,7 @@ export function ChatPage({
                   <input
                     ref={attachmentInputRef}
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept="image/*,application/pdf,video/mp4,video/webm"
                     multiple
                     hidden
                     onChange={(event) => {

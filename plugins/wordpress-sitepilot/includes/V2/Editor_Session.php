@@ -374,6 +374,7 @@ final class Editor_Session {
 						'scratch'  => ! empty( $record['scratch'] ),
 					),
 					'serverRuntimeFingerprint' => $runtime['fingerprint'],
+					'blockPolicy'              => Block_Policy::bridge_config(),
 					'source'                   => array(
 						'postId'      => $post_id,
 						'postType'    => (string) $post->post_type,

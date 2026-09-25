@@ -324,31 +324,81 @@ function fallbackConversationPlan(text: string): ConversationPlan {
   };
 }
 
-async function planConversationReply(input: {
-  siteId: SiteId;
-  threadId: ChatThreadId;
-  text: string;
-}): Promise<ConversationPlan> {
-  const externalResearch = parseExternalResearchIntent(input.text.trim());
-  if (externalResearch) {
-    return {
-      mode: "external_page",
-      url: externalResearch.url,
-      createRequest: externalResearch.shouldCreateRequest
-    };
-  }
+type SiteMcpClient = Extract<
+  Awaited<ReturnType<typeof createMcpClientForSite>>,
+  { ok: true }
+>["client"];
 
-  if (looksLikeWriteRequest(input.text)) {
-    return fallbackConversationPlan(input.text);
-  }
+type ToolCallOutcome = {
+  ok: boolean;
+  result: Record<string, unknown>;
+};
 
+const MAX_AGENT_TOOL_CALLS = 4;
+const MAX_TOOL_RESULT_CHARS = 12_000;
+const MAX_POST_CONTENT_CHARS = 6_000;
+
+const TOOL_ARGUMENT_KEYS: Record<ConversationToolName, readonly string[]> = {
+  "sitepilot-find-posts": [
+    "post_type",
+    "status",
+    "slug",
+    "title",
+    "search",
+    "category",
+    "limit",
+    "orderby",
+    "order"
+  ],
+  "sitepilot-get-post": [
+    "post_id",
+    "post_type",
+    "status",
+    "slug",
+    "title",
+    "search",
+    "category"
+  ]
+};
+
+const ORDERBY_ALIASES: Record<string, "date" | "modified" | "title" | "ID" | "rand"> = {
+  date: "date",
+  post_date: "date",
+  created: "date",
+  created_at: "date",
+  published: "date",
+  modified: "modified",
+  post_modified: "modified",
+  updated: "modified",
+  modified_at: "modified",
+  title: "title",
+  post_title: "title",
+  id: "ID",
+  post_id: "ID",
+  rand: "rand",
+  random: "rand"
+};
+
+const CONVERSATION_AGENT_SYSTEM_PROMPT = [
+  "You are SitePilot Conversations mode: a read-only research assistant for one WordPress site.",
+  "Never perform or offer writes, publishing, uploads, approvals, or execution. If the operator wants a change, tell them to start a Request.",
+  "You can look things up with these read-only tools:",
+  '- "sitepilot-find-posts": list/search posts. Arguments (all optional): post_type ("post" | "page" | "any", default "any"), status ("publish" | "draft" | "pending" | "private" | "future" | "any", default "any"), slug, title (exact title match), search (keyword search), category (category slug), limit (1-20, default 10), orderby ("date" = creation date | "modified" | "title" | "ID" | "rand", default "modified"), order ("ASC" | "DESC", default "DESC"). Returns total_matches and matches with post_id, post_type, post_status, post_title, post_name, post_date_gmt, modified_gmt, permalink.',
+  '- "sitepilot-get-post": fetch one post in full. Arguments: post_id, or a unique lookup via slug / title / search plus optional post_type, status, category. Returns post_id, post_title, post_name, post_status, post_excerpt, post_content, post_date_gmt, modified_gmt, permalink, category_slugs. If the lookup is not unique it returns error "post_ambiguous" with matches.',
+  "Use only the argument names listed above; unknown arguments are rejected.",
+  'Respond with exactly one JSON object and nothing else, in one of these shapes: {"action":"tool","tool":"sitepilot-find-posts"|"sitepilot-get-post","arguments":{...}} or {"action":"reply","reply":"..."}.',
+  "After each tool call you will receive its result. Call another tool if you need more data (for example retry with search instead of an exact title, or widen the post_type), otherwise reply.",
+  'Tips: "last/latest/newest post created" means orderby "date" order "DESC" limit 1. "Random" means orderby "rand". To find a post by a title the operator typed, prefer sitepilot-find-posts with search, since exact title matching is strict about punctuation and quotes.',
+  "Answer exactly what was asked, concisely, in plain text. Always include post IDs when you mention specific posts. Do not paste full post content unless the operator asked for the text. Never invent posts, IDs, or values that are not in a tool result; if nothing matched, say so and mention what you searched."
+].join("\n");
+
+async function resolveConversationProvider(
+  siteId: SiteId
+): Promise<ChosenProvider | null> {
   const db = getDatabase();
-  const site = await db.repositories.sites.getById(input.siteId);
+  const site = await db.repositories.sites.getById(siteId);
   if (!site) {
-    return {
-      mode: "reply",
-      reply: "Site not found."
-    };
+    return null;
   }
 
   const storage = getSecureStorage();
@@ -358,20 +408,22 @@ async function planConversationReply(input: {
     namespace: "provider",
     keyId: "anthropic"
   });
-  const chosen = chooseConversationProvider({
+  return chooseConversationProvider({
     preferredProvider: prefs.preferredProvider,
     ...(openaiKey ? { openaiKey } : {}),
     openaiModel: prefs.openaiModel,
     ...(anthropicKey ? { anthropicKey } : {}),
     anthropicModel: prefs.anthropicModel
   });
+}
 
-  if (chosen.kind === "stub") {
-    return fallbackConversationPlan(input.text);
-  }
-
-  const messages = await db.repositories.chatMessages.listByThreadId(input.threadId);
-  const recent = messages.slice(-6).map((message) => {
+async function loadThreadHistory(
+  threadId: ChatThreadId,
+  latestText: string
+): Promise<string[]> {
+  const db = getDatabase();
+  const messages = await db.repositories.chatMessages.listByThreadId(threadId);
+  const history = messages.map((message) => {
     const role =
       typeof message.author === "object" &&
       message.author !== null &&
@@ -380,74 +432,280 @@ async function planConversationReply(input: {
           ? "assistant"
           : "system"
         : "user";
-    return `${role.toUpperCase()}: ${message.body.value}`;
+    return { role, text: message.body.value };
   });
+  // The operator's latest message is usually already stored on the thread.
+  const last = history.at(-1);
+  if (last?.role === "user" && last.text.trim() === latestText.trim()) {
+    history.pop();
+  }
+  return history
+    .filter((entry) => entry.role !== "system")
+    .slice(-8)
+    .map((entry) => `${entry.role.toUpperCase()}: ${entry.text.slice(0, 1_500)}`);
+}
 
-  const prompt: ChatMessage[] = [
-    {
-      role: "system",
-      content:
-        "You are SitePilot Conversations mode. This mode is strictly read-only. Never suggest or perform writes, execution, publishing, uploads, or approvals here; tell the operator to use Requests instead. Return JSON only. Valid shapes: {\"mode\":\"reply\",\"reply\":\"...\"}, {\"mode\":\"tool\",\"toolName\":\"sitepilot-find-posts\"|\"sitepilot-get-post\",\"responseKind\":\"list\"|\"count\"|\"content\"|\"url\"|\"created\"|\"modified\",\"arguments\":{...}}, or {\"mode\":\"multi_count\",\"postTypes\":[\"post\",\"page\"]}. Use sitepilot-find-posts for listing/finding/searching/counting posts. Use sitepilot-get-post for retrieving one post's text/content/url/timestamps by title, slug, or id. For category requests, use the category slug in arguments.category. Prefer post_type \"post\" unless the request clearly says otherwise. For general non-site chat, use mode reply."
-    },
-    {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: `Recent thread context:\n${recent.join("\n")}\n\nLatest operator message:\n${input.text}`
+function isConversationToolName(value: unknown): value is ConversationToolName {
+  return value === "sitepilot-find-posts" || value === "sitepilot-get-post";
+}
+
+export function sanitizeConversationToolArguments(
+  toolName: ConversationToolName,
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  const allowed = TOOL_ARGUMENT_KEYS[toolName];
+  const sanitized: Record<string, unknown> = {};
+  for (const key of allowed) {
+    const value = args[key];
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    if (key === "limit") {
+      const parsed = Number.parseInt(String(value), 10);
+      if (Number.isFinite(parsed)) {
+        sanitized.limit = Math.max(1, Math.min(20, parsed));
+      }
+      continue;
+    }
+    if (key === "post_id") {
+      const parsed = Number.parseInt(String(value), 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        sanitized.post_id = parsed;
+      }
+      continue;
+    }
+    if (key === "orderby") {
+      const orderby = ORDERBY_ALIASES[String(value).trim().toLowerCase()];
+      if (orderby !== undefined) {
+        sanitized.orderby = orderby;
+      }
+      continue;
+    }
+    if (key === "order") {
+      const order = String(value).trim().toUpperCase();
+      if (order === "ASC" || order === "DESC") {
+        sanitized.order = order;
+      }
+      continue;
+    }
+    if (typeof value === "string" || typeof value === "number") {
+      sanitized[key] = String(value);
+    }
+  }
+  return sanitized;
+}
+
+function toolErrorMessage(result: Record<string, unknown>): string | null {
+  if (typeof result.error === "string" && result.ok !== true) {
+    return result.error;
+  }
+  if (typeof result.raw === "string") {
+    return result.raw;
+  }
+  if (result.ok === false) {
+    return "tool_failed";
+  }
+  return null;
+}
+
+async function callConversationTool(
+  mcp: SiteMcpClient,
+  toolName: ConversationToolName,
+  args: Record<string, unknown>
+): Promise<ToolCallOutcome> {
+  const invoke = async (callArgs: Record<string, unknown>) => {
+    const raw = await mcp.callTool(toolName, callArgs);
+    const result = normalizeMcpToolResult(raw);
+    const isError =
+      raw !== null &&
+      typeof raw === "object" &&
+      (raw as { isError?: unknown }).isError === true;
+    return { isError, result };
+  };
+
+  let attempt = await invoke(args);
+  // Older site plugins reject the sorting arguments; retry without them.
+  if (
+    (attempt.isError || typeof attempt.result.raw === "string") &&
+    ("orderby" in args || "order" in args)
+  ) {
+    const { orderby: _orderby, order: _order, ...rest } = args;
+    const retry = await invoke(rest);
+    if (!retry.isError && toolErrorMessage(retry.result) === null) {
+      attempt = {
+        isError: false,
+        result: {
+          ...retry.result,
+          note: "The site plugin does not support sorting yet, so these results are ordered by last modified date."
         }
-      ]
+      };
     }
-  ];
+  }
 
+  if (attempt.isError) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        error: toolErrorMessage(attempt.result) ?? "tool_failed"
+      }
+    };
+  }
+  return { ok: toolErrorMessage(attempt.result) === null, result: attempt.result };
+}
+
+function summarizeToolResultForModel(result: Record<string, unknown>): string {
+  const copy: Record<string, unknown> = { ...result };
+  if (typeof copy.post_content === "string") {
+    const text = stripPostMarkup(copy.post_content);
+    copy.post_content =
+      text.length > MAX_POST_CONTENT_CHARS
+        ? `${text.slice(0, MAX_POST_CONTENT_CHARS)}… [truncated]`
+        : text;
+  }
+  const json = JSON.stringify(copy);
+  return json.length > MAX_TOOL_RESULT_CHARS
+    ? `${json.slice(0, MAX_TOOL_RESULT_CHARS)}… [truncated]`
+    : json;
+}
+
+type AgentStep =
+  | { action: "reply"; reply: string }
+  | { action: "tool"; tool: ConversationToolName; arguments: Record<string, unknown> };
+
+function parseAgentStep(text: string): AgentStep | null {
+  let parsed: Record<string, unknown>;
   try {
-    const result = await chosen.client.complete(prompt, chosen.model);
-    const parsed = JSON.parse(extractJsonObject(result.text)) as Partial<ConversationPlan>;
-    if (parsed.mode === "reply" && typeof parsed.reply === "string") {
-      return { mode: "reply", reply: parsed.reply };
-    }
-    if (
-      parsed.mode === "tool" &&
-      (parsed.toolName === "sitepilot-find-posts" ||
-        parsed.toolName === "sitepilot-get-post") &&
-      (parsed.responseKind === "list" ||
-        parsed.responseKind === "count" ||
-        parsed.responseKind === "content" ||
-        parsed.responseKind === "url" ||
-        parsed.responseKind === "created" ||
-        parsed.responseKind === "modified") &&
+    parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+  } catch {
+    const trimmed = text.trim();
+    // A model that answers in prose instead of JSON has still answered.
+    return trimmed.length > 0 && !trimmed.startsWith("{")
+      ? { action: "reply", reply: trimmed }
+      : null;
+  }
+  if (parsed.action === "reply" && typeof parsed.reply === "string") {
+    return { action: "reply", reply: parsed.reply };
+  }
+  const tool = parsed.tool ?? parsed.toolName;
+  if (parsed.action === "tool" && isConversationToolName(tool)) {
+    const args =
       parsed.arguments !== null &&
       typeof parsed.arguments === "object" &&
       !Array.isArray(parsed.arguments)
-    ) {
-      return {
-        mode: "tool",
-        toolName: parsed.toolName,
-        responseKind: parsed.responseKind,
-        arguments: parsed.arguments as Record<string, unknown>
-      };
+        ? (parsed.arguments as Record<string, unknown>)
+        : {};
+    return { action: "tool", tool, arguments: args };
+  }
+  return null;
+}
+
+async function runConversationAgent(input: {
+  provider: Exclude<ChosenProvider, { kind: "stub" }>;
+  siteId: SiteId;
+  history: string[];
+  text: string;
+}): Promise<string | null> {
+  const messages: ChatMessage[] = [
+    { role: "system", content: CONVERSATION_AGENT_SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: `${
+        input.history.length > 0
+          ? `Earlier in this conversation:\n${input.history.join("\n")}\n\n`
+          : ""
+      }Operator message:\n${input.text}`
     }
-    if (
-      parsed.mode === "multi_count" &&
-      Array.isArray(parsed.postTypes) &&
-      parsed.postTypes.every((value) => value === "post" || value === "page")
-    ) {
-      return {
-        mode: "multi_count",
-        postTypes: parsed.postTypes
-      };
+  ];
+
+  let mcp: SiteMcpClient | null = null;
+  for (let toolCalls = 0; toolCalls <= MAX_AGENT_TOOL_CALLS; toolCalls += 1) {
+    const completion = await input.provider.client.complete(
+      messages,
+      input.provider.model
+    );
+    const step = parseAgentStep(completion.text);
+    if (step === null) {
+      return null;
     }
-  } catch {
-    return fallbackConversationPlan(input.text);
+    if (step.action === "reply") {
+      return step.reply;
+    }
+    if (toolCalls === MAX_AGENT_TOOL_CALLS) {
+      break;
+    }
+
+    if (mcp === null) {
+      const connection = await createMcpClientForSite(input.siteId);
+      if (!connection.ok) {
+        return `Failed to connect to the site MCP server: ${connection.message}`;
+      }
+      mcp = connection.client;
+    }
+
+    const args = sanitizeConversationToolArguments(step.tool, step.arguments);
+    let resultText: string;
+    try {
+      const outcome = await callConversationTool(mcp, step.tool, args);
+      resultText = summarizeToolResultForModel(outcome.result);
+    } catch (error) {
+      resultText = JSON.stringify({
+        ok: false,
+        error: error instanceof Error ? error.message : "tool_call_failed"
+      });
+    }
+
+    messages.push(
+      {
+        role: "assistant",
+        content: JSON.stringify({
+          action: "tool",
+          tool: step.tool,
+          arguments: args
+        })
+      },
+      {
+        role: "user",
+        content: `Result of ${step.tool} ${JSON.stringify(args)}:\n${resultText}\n\nCall another tool if you still need data, otherwise reply to the operator.`
+      }
+    );
   }
 
-  return fallbackConversationPlan(input.text);
+  messages.push({
+    role: "user",
+    content: 'Tool budget exhausted. Reply to the operator now using {"action":"reply","reply":"..."} based on the results above.'
+  });
+  const final = await input.provider.client.complete(messages, input.provider.model);
+  const step = parseAgentStep(final.text);
+  return step?.action === "reply" ? step.reply : null;
+}
+
+function formatMatchLine(match: unknown, index: number): string {
+  if (match === null || typeof match !== "object" || Array.isArray(match)) {
+    return `${index + 1}. Unknown post`;
+  }
+  const record = match as Record<string, unknown>;
+  const title = typeof record.post_title === "string" && record.post_title.length > 0
+    ? record.post_title
+    : "Untitled";
+  const postId = typeof record.post_id === "number" ? `#${record.post_id} · ` : "";
+  const status = typeof record.post_status === "string" ? ` · ${record.post_status}` : "";
+  const created =
+    typeof record.post_date_gmt === "string" && record.post_date_gmt.length > 0
+      ? ` · created ${record.post_date_gmt}`
+      : "";
+  return `${index + 1}. ${postId}${title}${status}${created}`;
 }
 
 function formatFindPostsReply(
   result: Record<string, unknown>,
   responseKind: "list" | "count"
 ): string {
+  const error = toolErrorMessage(result);
+  if (error !== null) {
+    return `The site lookup failed: ${error}`;
+  }
+
   const matches = Array.isArray(result.matches) ? result.matches : [];
   const totalMatches =
     typeof result.total_matches === "number" ? result.total_matches : matches.length;
@@ -460,30 +718,23 @@ function formatFindPostsReply(
     return "No matching posts found.";
   }
 
-  const lines = matches.slice(0, 20).map((match, index) => {
-    if (match === null || typeof match !== "object" || Array.isArray(match)) {
-      return `${index + 1}. Unknown post`;
-    }
-    const record = match as Record<string, unknown>;
-    const title = typeof record.post_title === "string" ? record.post_title : "Untitled";
-    const slug = typeof record.post_name === "string" ? record.post_name : "";
-    const status = typeof record.post_status === "string" ? record.post_status : "";
-    const postId = typeof record.post_id === "number" ? `#${record.post_id}` : "";
-    return `${index + 1}. ${title}${slug ? ` (${slug})` : ""}${status ? ` · ${status}` : ""}${postId ? ` · ${postId}` : ""}`;
-  });
-
-  return `${totalMatches} matching ${totalMatches === 1 ? "item" : "items"}:\n${lines.join("\n")}`;
+  const lines = matches.slice(0, 20).map(formatMatchLine);
+  const header =
+    totalMatches > matches.length
+      ? `Showing ${matches.length} of ${totalMatches} matching items:`
+      : `${totalMatches} matching ${totalMatches === 1 ? "item" : "items"}:`;
+  const note = typeof result.note === "string" ? `\n\n${result.note}` : "";
+  return `${header}\n${lines.join("\n")}${note}`;
 }
 
 function formatGetPostReply(
   result: Record<string, unknown>,
-  responseKind: "content" | "url" | "created" | "modified"
+  responseKind: Exclude<ResponseKind, "list" | "count">
 ): string {
   if (result.ok !== true) {
-    const error =
-      typeof result.error === "string" ? result.error : "Failed to load the post.";
+    const error = toolErrorMessage(result) ?? "Failed to load the post.";
     if (error === "post_ambiguous" && Array.isArray(result.matches)) {
-      return `More than one post matched. Refine the request with a slug or exact title.\n${formatFindPostsReply(result, "list")}`;
+      return `More than one post matched. Refine the request with a slug or exact title.\n${formatFindPostsReply({ ...result, ok: true, error: undefined }, "list")}`;
     }
     if (error === "post_not_found") {
       return "No matching post was found.";
@@ -493,7 +744,8 @@ function formatGetPostReply(
 
   const title =
     typeof result.post_title === "string" ? result.post_title : "Untitled";
-  const slug = typeof result.post_name === "string" ? result.post_name : "";
+  const postId = typeof result.post_id === "number" ? result.post_id : null;
+  const label = `${title}${postId !== null ? ` (#${postId})` : ""}`;
   const status = typeof result.post_status === "string" ? result.post_status : "";
   const content =
     typeof result.post_content === "string" ? stripPostMarkup(result.post_content) : "";
@@ -512,25 +764,31 @@ function formatGetPostReply(
         ? result.modified_gmt
         : "";
 
+  if (responseKind === "id") {
+    return postId !== null
+      ? `"${title}" has post ID ${postId}${status ? ` (${status})` : ""}.`
+      : `"${title}" has no post ID available.`;
+  }
+
   if (responseKind === "url") {
     return permalink.length > 0
-      ? `${title}${slug ? ` (${slug})` : ""} · ${permalink}`
-      : `${title}${slug ? ` (${slug})` : ""} · URL unavailable`;
+      ? `${label} · ${permalink}`
+      : `${label} · URL unavailable`;
   }
 
   if (responseKind === "created") {
     return created.length > 0
-      ? `${title}${slug ? ` (${slug})` : ""} was created at ${created}.`
-      : `${title}${slug ? ` (${slug})` : ""} has no creation timestamp available.`;
+      ? `${label} was created at ${created}.`
+      : `${label} has no creation timestamp available.`;
   }
 
   if (responseKind === "modified") {
     return modified.length > 0
-      ? `${title}${slug ? ` (${slug})` : ""} was last modified at ${modified}.`
-      : `${title}${slug ? ` (${slug})` : ""} has no modified timestamp available.`;
+      ? `${label} was last modified at ${modified}.`
+      : `${label} has no modified timestamp available.`;
   }
 
-  return `${title}${slug ? ` (${slug})` : ""}${status ? ` · ${status}` : ""}\n\n${content.length > 0 ? content : "This post has no text content."}`;
+  return `${label}${status ? ` · ${status}` : ""}\n\n${content.length > 0 ? content : "This post has no text content."}`;
 }
 
 async function countPostTypes(input: {
@@ -561,91 +819,134 @@ async function countPostTypes(input: {
     .join(" · ");
 }
 
+async function runFallbackPlan(input: {
+  siteId: SiteId;
+  text: string;
+  plan: Exclude<ConversationPlan, { mode: "external_page" }>;
+}): Promise<string> {
+  const { plan } = input;
+  if (plan.mode === "reply") {
+    return plan.reply;
+  }
+  if (plan.mode === "multi_count") {
+    return countPostTypes({ siteId: input.siteId, postTypes: plan.postTypes });
+  }
+
+  const mcp = await createMcpClientForSite(input.siteId);
+  if (!mcp.ok) {
+    return `Failed to connect to the site MCP server: ${mcp.message}`;
+  }
+
+  try {
+    const outcome = await callConversationTool(
+      mcp.client,
+      plan.toolName,
+      sanitizeConversationToolArguments(plan.toolName, plan.arguments)
+    );
+    if (plan.toolName === "sitepilot-find-posts") {
+      return formatFindPostsReply(
+        outcome.result,
+        plan.responseKind === "count" ? "count" : "list"
+      );
+    }
+    if (plan.responseKind !== "list" && plan.responseKind !== "count") {
+      return formatGetPostReply(outcome.result, plan.responseKind);
+    }
+    return "That conversation lookup could not be resolved.";
+  } catch (error) {
+    return error instanceof Error ? error.message : "The read-only MCP call failed.";
+  }
+}
+
 export type ConversationReply = {
   text: string;
   requestPrompt?: string;
   requestThreadTitle?: string;
 };
 
-export async function buildConversationReply(input: {
-  siteId: SiteId;
-  threadId: ChatThreadId;
+async function buildExternalPageConversationReply(input: {
   text: string;
+  url: string;
+  createRequest: boolean;
 }): Promise<ConversationReply> {
-  const plan = await planConversationReply(input);
-  if (plan.mode === "reply") {
-    return { text: plan.reply };
-  }
-  if (plan.mode === "external_page") {
-    try {
-      const page = await fetchExternalPageText(plan.url);
-      if (plan.createRequest) {
-        return {
-          text: buildExternalPageReply({
-            page,
-            createdRequestTitle: buildExternalPageRequestTitle(page)
-          }),
-          requestPrompt: buildExternalPageRequestPrompt({
-            operatorText: input.text,
-            page
-          }),
-          requestThreadTitle: buildExternalPageRequestTitle(page)
-        };
-      }
-      return {
-        text: buildExternalPageReply({ page })
-      };
-    } catch (error) {
-      return {
-        text:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch readable text from that page."
-      };
-    }
-  }
-  if (plan.mode === "multi_count") {
-    return {
-      text: await countPostTypes({ siteId: input.siteId, postTypes: plan.postTypes })
-    };
-  }
-
-  const mcp = await createMcpClientForSite(input.siteId);
-  if (!mcp.ok) {
-    return {
-      text: `Failed to connect to the site MCP server: ${mcp.message}`
-    };
-  }
-
   try {
-    const raw = await mcp.client.callTool(plan.toolName, plan.arguments);
-    const result = normalizeMcpToolResult(raw);
-    if (
-      plan.toolName === "sitepilot-find-posts" &&
-      (plan.responseKind === "list" || plan.responseKind === "count")
-    ) {
+    const page = await fetchExternalPageText(input.url);
+    if (input.createRequest) {
       return {
-        text: formatFindPostsReply(result, plan.responseKind)
+        text: buildExternalPageReply({
+          page,
+          createdRequestTitle: buildExternalPageRequestTitle(page)
+        }),
+        requestPrompt: buildExternalPageRequestPrompt({
+          operatorText: input.text,
+          page
+        }),
+        requestThreadTitle: buildExternalPageRequestTitle(page)
       };
     }
-    if (
-      plan.toolName === "sitepilot-get-post" &&
-      (plan.responseKind === "content" ||
-        plan.responseKind === "url" ||
-        plan.responseKind === "created" ||
-        plan.responseKind === "modified")
-    ) {
-      return {
-        text: formatGetPostReply(result, plan.responseKind)
-      };
-    }
-    return { text: "That conversation lookup could not be resolved." };
+    return {
+      text: buildExternalPageReply({ page })
+    };
   } catch (error) {
     return {
       text:
         error instanceof Error
           ? error.message
-          : "The read-only MCP call failed."
+          : "Failed to fetch readable text from that page."
     };
   }
+}
+
+export async function buildConversationReply(input: {
+  siteId: SiteId;
+  threadId: ChatThreadId;
+  text: string;
+}): Promise<ConversationReply> {
+  const text = input.text.trim();
+  const externalResearch = parseExternalResearchIntent(text);
+  if (externalResearch) {
+    return buildExternalPageConversationReply({
+      text: input.text,
+      url: externalResearch.url,
+      createRequest: externalResearch.shouldCreateRequest
+    });
+  }
+
+  const fallbackPlan = fallbackConversationPlan(text);
+  if (looksLikeWriteRequest(text) && fallbackPlan.mode === "reply") {
+    return { text: fallbackPlan.reply };
+  }
+
+  const provider = await resolveConversationProvider(input.siteId);
+  if (provider === null) {
+    return { text: "Site not found." };
+  }
+
+  if (provider.kind !== "stub") {
+    try {
+      const history = await loadThreadHistory(input.threadId, text);
+      const reply = await runConversationAgent({
+        provider,
+        siteId: input.siteId,
+        history,
+        text
+      });
+      if (reply !== null && reply.trim().length > 0) {
+        return { text: reply.trim() };
+      }
+    } catch {
+      // Fall through to the deterministic lookup below.
+    }
+  }
+
+  if (fallbackPlan.mode === "external_page") {
+    return buildExternalPageConversationReply({
+      text: input.text,
+      url: fallbackPlan.url,
+      createRequest: fallbackPlan.createRequest
+    });
+  }
+  return {
+    text: await runFallbackPlan({ siteId: input.siteId, text, plan: fallbackPlan })
+  };
 }

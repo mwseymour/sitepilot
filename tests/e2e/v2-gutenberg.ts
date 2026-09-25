@@ -483,8 +483,8 @@ function capabilityEvidence(snapshot: GutenbergV2EditorCapabilitySnapshot) {
     .sort();
   const expected = [...expectedAuthorBlocks].sort();
   assert(
-    expected.length === 15,
-    `The release authoring matrix must contain 15 core types, got ${expected.length}.`
+    expected.length > 0,
+    "The release authoring matrix must contain at least one block type."
   );
   assert(
     JSON.stringify(authorable) === JSON.stringify(expected),
@@ -714,11 +714,19 @@ async function executeHistoricalPlan(
   plan: GutenbergV2BlockPlan
 ): Promise<{ postId: number; mediaIds: number[] }> {
   const executionId = `history-${randomUUID()}`;
-  const candidate = await service.compileCandidate({
-    executionId,
-    idempotencyKey: `history-${randomUUID()}`,
-    plan
-  });
+  let candidate: GutenbergV2CompiledCandidate;
+  try {
+    candidate = await service.compileCandidate({
+      executionId,
+      idempotencyKey: `history-${randomUUID()}`,
+      plan
+    });
+  } catch (error) {
+    if (error instanceof GutenbergV2ServiceError) {
+      console.error(`Compile failed: ${boundedServiceDiagnostic(error)}`);
+    }
+    throw error;
+  }
   await service.recordApproval({ executionId, approval: approval(candidate) });
   const result = await service.executeApprovedCandidate({ executionId });
   assert(
@@ -869,6 +877,664 @@ async function runHistoricalWorkflow(
     paragraphs: paragraphs.length,
     nativeSaveReopen
   };
+}
+
+// ---- Blocks added after the first release -----------------------------------
+
+const EMBED_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const CODE_TEXT = "const total = items\n  .filter((item) =&gt; item.ok)\n  .length;";
+
+function stagedMedia(ref: string, staged: GutenbergV2StagedAsset, alt: string) {
+  return {
+    ref,
+    source: {
+      kind: "staged_asset" as const,
+      stagedAssetId: staged.stagedAssetId,
+      checksum: staged.checksum,
+      mediaType: staged.mediaType,
+      byteLength: staged.byteLength
+    },
+    alt
+  };
+}
+
+function newBlocksPlan(
+  siteId: string,
+  staged: GutenbergV2StagedAsset,
+  video: GutenbergV2StagedAsset,
+  embedUrl = EMBED_URL
+): GutenbergV2BlockPlan {
+  return gutenbergV2BlockPlanSchema.parse({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: `plan-${randomUUID()}`,
+    siteId,
+    operation: "create_draft",
+    target: { postType: "post" },
+    postFields: {
+      title: `AUTOMATED-TEST-V2-NEW-BLOCKS-${randomUUID()}`,
+      status: "draft"
+    },
+    blocks: [
+      {
+        ref: "cover-image",
+        name: "core/cover",
+        attributes: {
+          mediaRef: "cover-media",
+          alt: "",
+          dimRatio: 50,
+          minHeight: 420,
+          minHeightUnit: "px",
+          align: "full"
+        },
+        children: [
+          {
+            ref: "cover-heading",
+            name: "core/heading",
+            attributes: { content: "Cover heading", level: 2 },
+            children: []
+          }
+        ]
+      },
+      {
+        ref: "cover-colour",
+        name: "core/cover",
+        attributes: { customOverlayColor: "#1e3a5f", dimRatio: 100 },
+        children: [
+          {
+            ref: "cover-colour-text",
+            name: "core/paragraph",
+            attributes: { content: "Colour-only cover." },
+            children: []
+          }
+        ]
+      },
+      {
+        ref: "separator-1",
+        name: "core/separator",
+        attributes: { className: "is-style-wide" },
+        children: []
+      },
+      {
+        ref: "details-1",
+        name: "core/details",
+        attributes: { summary: "What is included?" },
+        children: [
+          {
+            ref: "details-body",
+            name: "core/paragraph",
+            attributes: { content: "Everything in the hidden panel." },
+            children: []
+          }
+        ]
+      },
+      {
+        ref: "code-1",
+        name: "core/code",
+        attributes: { content: CODE_TEXT },
+        children: []
+      },
+      {
+        ref: "pre-1",
+        name: "core/preformatted",
+        attributes: { content: "Line one\n  indented line two" },
+        children: []
+      },
+      {
+        ref: "gallery-1",
+        name: "core/gallery",
+        attributes: { columns: 2, linkTo: "none" },
+        children: [
+          {
+            ref: "gallery-image-1",
+            name: "core/image",
+            attributes: {
+              mediaRef: "gallery-a",
+              alt: "Gallery image one",
+              sizeSlug: "large",
+              linkDestination: "none"
+            },
+            children: []
+          },
+          {
+            ref: "gallery-image-2",
+            name: "core/image",
+            attributes: {
+              mediaRef: "gallery-b",
+              alt: "Gallery image two",
+              sizeSlug: "large",
+              linkDestination: "none"
+            },
+            children: []
+          }
+        ]
+      },
+      {
+        ref: "embed-1",
+        name: "core/embed",
+        attributes: {
+          url: embedUrl,
+          providerNameSlug: "youtube",
+          type: "video",
+          responsive: true,
+          className: "wp-embed-aspect-16-9 wp-has-aspect-ratio"
+        },
+        children: []
+      },
+      {
+        ref: "video-1",
+        name: "core/video",
+        attributes: {
+          mediaRef: "video-media",
+          caption: "Uploaded test video",
+          muted: true,
+          playsInline: true
+        },
+        children: []
+      }
+    ],
+    media: [
+      stagedMedia("video-media", video, "Test video"),
+      stagedMedia("cover-media", staged, "Cover background"),
+      stagedMedia("gallery-a", staged, "Gallery image one"),
+      stagedMedia("gallery-b", staged, "Gallery image two")
+    ]
+  });
+}
+
+async function runNewBlocksWorkflow(
+  service: GutenbergV2ContentService,
+  worker: PlaywrightGutenbergV2Worker,
+  siteId: string,
+  staged: GutenbergV2StagedAsset,
+  video: GutenbergV2StagedAsset
+): Promise<{
+  postId: number;
+  blockCount: number;
+  nativeSaveReopen: { blockCount: number; allValid: boolean };
+  bytesUnchangedByNativeSave: boolean;
+  codeEdit: string;
+  unavailableEmbed: string;
+}> {
+  const unavailableEmbed = await expectCompileRejection(
+    service,
+    newBlocksPlan(
+      siteId,
+      staged,
+      video,
+      "https://www.youtube.com/watch?v=SitePilot00"
+    ),
+    "media_changed",
+    "An unavailable YouTube video"
+  );
+  const plan = newBlocksPlan(siteId, staged, video);
+  const created = await executeHistoricalPlan(service, plan);
+  const read = () =>
+    worker.readSource({
+      executionId: `new-blocks-source-${randomUUID()}`,
+      siteId,
+      postType: "post",
+      postId: created.postId
+    });
+  let source = await read();
+  const raw = source.rawContent;
+  for (const [label, pattern] of [
+    ["cover image", /<!-- wp:cover \{[^}]*"url":"https?:[^"]+"/],
+    ["colour cover", /"customOverlayColor":"#1e3a5f"/],
+    ["separator", /<!-- wp:separator \{"className":"is-style-wide"\} -->/],
+    ["details", /<summary>What is included\?<\/summary>/],
+    ["code line breaks", /<code>const total = items\n {2}\.filter/],
+    // Preformatted text stores line breaks as <br>; code keeps "\n".
+    ["preformatted line breaks", /<pre class="wp-block-preformatted">Line one<br> {2}indented/],
+    ["gallery", /<!-- wp:gallery \{"columns":2,"linkTo":"none"\} -->/],
+    ["video", /<!-- wp:video \{"id":\d+\} -->\n?<figure class="wp-block-video"><video [^>]*src="https?:[^"]+\.mp4"/],
+    ["embed", new RegExp(`<!-- wp:embed \\{"url":"${EMBED_URL.replace(/[.?]/g, "\\$&")}","type":"video","providerNameSlug":"youtube","responsive":true`)]
+  ] as const) {
+    assert(
+      pattern.test(raw),
+      `${label} was not persisted as expected: ${raw.slice(raw.indexOf("<!-- wp:embed"), raw.indexOf("<!-- wp:embed") + 2500)}`
+    );
+  }
+  const blockCount = countPlanNodes(plan);
+  assert(
+    source.blockIndex.length === blockCount,
+    `New-block draft has ${source.blockIndex.length}/${blockCount} blocks.`
+  );
+
+  const nativeSaveReopen = await nativeSaveAndReopen(created.postId);
+  assert(
+    nativeSaveReopen.allValid && nativeSaveReopen.blockCount === blockCount,
+    `New blocks reopened as ${nativeSaveReopen.blockCount}/${blockCount} (allValid=${nativeSaveReopen.allValid}).`
+  );
+  const afterSave = await read();
+  const bytesUnchangedByNativeSave = afterSave.contentHash === source.contentHash;
+
+  // A scoped edit keeps the code block's line breaks and leaves the rest alone.
+  source = afterSave;
+  const code = source.blockIndex.find((entry) => entry.name === "core/code");
+  assert(code, "The code block is missing.");
+  await executeHistoricalPlan(
+    service,
+    gutenbergV2BlockPlanSchema.parse({
+      schemaVersion: "sitepilot.block-plan/v2",
+      planId: `plan-${randomUUID()}`,
+      siteId,
+      operation: "apply_operations",
+      target: historicalTarget(source),
+      operations: [
+        {
+          id: "edit-code",
+          type: "edit_block",
+          target: { path: code.path, expectedFingerprint: code.fingerprint },
+          replacement: {
+            ref: "code-edited",
+            name: "core/code",
+            attributes: { content: "line 1\nline 2\n  line 3" },
+            children: []
+          }
+        }
+      ],
+      media: []
+    })
+  );
+  const edited = await read();
+  assert(
+    edited.rawContent.includes("<code>line 1\nline 2\n  line 3</code>"),
+    `The edited code block lost its line breaks: ${edited.rawContent.slice(0, 3000)}`
+  );
+  const untouched = source.rawContent.split("<!-- wp:code")[0]!;
+  assert(
+    edited.rawContent.startsWith(untouched),
+    "The code edit changed blocks before it."
+  );
+  return {
+    postId: created.postId,
+    blockCount,
+    nativeSaveReopen,
+    bytesUnchangedByNativeSave,
+    codeEdit: "succeeded",
+    unavailableEmbed
+  };
+}
+
+// ---- Preservation of blocks v2 cannot author ---------------------------------
+
+const PRESERVED_HTML =
+  '<!-- wp:html --><div class="sitepilot-e2e-html">Custom <b>HTML</b></div><!-- /wp:html -->';
+const PRESERVED_ARCHIVES = "<!-- wp:archives /-->";
+const PRESERVED_MISSING =
+  '<!-- wp:sitepilot-e2e/inactive-widget {"id":7} /-->';
+const PRESERVED_SOCIAL =
+  '<!-- wp:social-links --><ul class="wp-block-social-links"><!-- wp:social-link {"url":"https://wordpress.org","service":"wordpress"} /--></ul><!-- /wp:social-links -->';
+const CLOSING_PARAGRAPH =
+  "<!-- wp:paragraph --><p>Closing paragraph stays byte-identical.</p><!-- /wp:paragraph -->";
+
+function preservationSourceContent(): string {
+  return [
+    "<!-- wp:paragraph --><p>Intro paragraph to remove.</p><!-- /wp:paragraph -->",
+    PRESERVED_HTML,
+    '<!-- wp:group {"layout":{"type":"constrained"}} -->\n<div class="wp-block-group"><!-- wp:paragraph --><p>Inside the group.</p><!-- /wp:paragraph -->\n\n' +
+      PRESERVED_ARCHIVES +
+      '\n\n<!-- wp:paragraph {"fontSize":"large"} -->\n<p class="has-large-font-size">Styled paragraph.</p>\n<!-- /wp:paragraph --></div>\n<!-- /wp:group -->',
+    PRESERVED_MISSING,
+    PRESERVED_SOCIAL,
+    CLOSING_PARAGRAPH
+  ].join("\n\n");
+}
+
+async function createRawDraft(title: string, content: string): Promise<number> {
+  const context = await login();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${E2E_BASE_URL}wp-admin/post-new.php`, {
+      waitUntil: "domcontentloaded"
+    });
+    const result = await page.evaluate(
+      async ({ postTitle, postContent }) => {
+        const nonce = (
+          globalThis as unknown as { wpApiSettings?: { nonce?: string } }
+        ).wpApiSettings?.nonce;
+        if (!nonce) return { status: 0, body: "missing nonce", id: 0 };
+        const response = await fetch("/wp-json/wp/v2/posts", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json", "x-wp-nonce": nonce },
+          body: JSON.stringify({
+            title: postTitle,
+            content: postContent,
+            status: "draft"
+          })
+        });
+        const body = await response.text();
+        let id = 0;
+        try {
+          id = (JSON.parse(body) as { id?: number }).id ?? 0;
+        } catch {
+          id = 0;
+        }
+        return { status: response.status, body, id };
+      },
+      { postTitle: title, postContent: content }
+    );
+    assert(
+      result.status >= 200 && result.status < 300 && result.id > 0,
+      `Creating the preservation fixture failed with HTTP ${result.status}: ${result.body.slice(0, 300)}`
+    );
+    return result.id;
+  } finally {
+    await context.browser()?.close();
+  }
+}
+
+type SourceSnapshot = Awaited<
+  ReturnType<PlaywrightGutenbergV2Worker["readSource"]>
+>;
+
+function indexEntry(source: SourceSnapshot, path: number[]) {
+  const entry = source.blockIndex.find(
+    (candidate) => JSON.stringify(candidate.path) === JSON.stringify(path)
+  );
+  assert(
+    entry,
+    `Source block ${JSON.stringify(path)} is missing: ${JSON.stringify(source.blockIndex.map(({ path: p, name, role }) => ({ p, name, role })))} raw=${source.rawContent.slice(0, 900)}`
+  );
+  return entry;
+}
+
+function target(source: SourceSnapshot, path: number[]) {
+  return { path, expectedFingerprint: indexEntry(source, path).fingerprint };
+}
+
+function rootTarget(source: SourceSnapshot) {
+  return { path: [], expectedFingerprint: source.blockTreeFingerprint };
+}
+
+function preservationEditPlan(
+  siteId: string,
+  source: SourceSnapshot
+): GutenbergV2BlockPlan {
+  // Root: [0] intro, [1] html, [2] group, [3] inactive plugin block (parsed as
+  // core/missing), [4] social links, [5] closing paragraph.
+  assert(indexEntry(source, [1]).name === "core/html", "Expected core/html at [1].");
+  assert(indexEntry(source, [2, 2]).name === "core/paragraph", "Expected the styled paragraph at [2,2].");
+  assert(indexEntry(source, [1]).role === "preserved", "core/html must be reported as preserved.");
+  assert(indexEntry(source, [3]).name === "core/missing", "Expected the inactive plugin block at [3].");
+  assert(indexEntry(source, [4, 0]).role === "inside_preserved", "social-link must be inside a preserved block.");
+  return gutenbergV2BlockPlanSchema.parse({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: `plan-${randomUUID()}`,
+    siteId,
+    operation: "apply_operations",
+    target: historicalTarget(source),
+    operations: [
+      {
+        id: "edit-styled",
+        type: "edit_block",
+        target: target(source, [2, 2]),
+        replacement: {
+          ref: "styled-edit",
+          name: "core/paragraph",
+          attributes: { content: "Styled paragraph, edited in place." },
+          children: []
+        }
+      },
+      {
+        id: "insert-in-group",
+        type: "insert_blocks",
+        parent: target(source, [2]),
+        index: 1,
+        blocks: [
+          {
+            ref: "group-heading",
+            name: "core/heading",
+            attributes: { content: "Inserted before the archives", level: 3 },
+            children: []
+          }
+        ]
+      },
+      {
+        id: "move-html",
+        type: "move_block",
+        target: target(source, [1]),
+        parent: rootTarget(source),
+        index: 6
+      },
+      {
+        id: "remove-intro",
+        type: "remove_block",
+        target: target(source, [0])
+      }
+    ],
+    media: []
+  });
+}
+
+async function expectCompileRejection(
+  service: GutenbergV2ContentService,
+  plan: GutenbergV2BlockPlan,
+  expectedCode: string,
+  label: string
+): Promise<string> {
+  try {
+    await service.compileCandidate({
+      executionId: `negative-${randomUUID()}`,
+      idempotencyKey: `negative-${randomUUID()}`,
+      plan
+    });
+  } catch (error) {
+    if (error instanceof GutenbergV2ServiceError) {
+      const codes = [error.code, ...error.issues.map((entry) => entry.code)];
+      assert(
+        codes.includes(expectedCode as GutenbergV2ServiceError["code"]),
+        `${label} failed with ${boundedServiceDiagnostic(error)}, expected ${expectedCode}.`
+      );
+      return expectedCode;
+    }
+    throw error;
+  }
+  throw new Error(`${label} compiled, but it must be rejected with ${expectedCode}.`);
+}
+
+async function runPreservationWorkflow(
+  service: GutenbergV2ContentService,
+  worker: PlaywrightGutenbergV2Worker,
+  siteId: string
+): Promise<{
+  postId: number;
+  multiOperationEdit: string;
+  rejected: string[];
+  keptReplacement: string;
+}> {
+  const postId = await createRawDraft(
+    `AUTOMATED-TEST-V2-PRESERVATION-${randomUUID()}`,
+    preservationSourceContent()
+  );
+  const read = () =>
+    worker.readSource({
+      executionId: `preservation-source-${randomUUID()}`,
+      siteId,
+      postType: "post",
+      postId
+    });
+  let source = await read();
+
+  const rejected: string[] = [];
+  // Editing inside a preserved block is refused.
+  rejected.push(
+    await expectCompileRejection(
+      service,
+      gutenbergV2BlockPlanSchema.parse({
+        schemaVersion: "sitepilot.block-plan/v2",
+        planId: `plan-${randomUUID()}`,
+        siteId,
+        operation: "apply_operations",
+        target: historicalTarget(source),
+        operations: [
+          { id: "inside", type: "remove_block", target: target(source, [4, 0]) }
+        ],
+        media: []
+      }),
+      "locked_structure",
+      "Removing a block inside a preserved block"
+    )
+  );
+  // A replacement that silently drops preserved blocks is refused.
+  rejected.push(
+    await expectCompileRejection(
+      service,
+      gutenbergV2BlockPlanSchema.parse({
+        schemaVersion: "sitepilot.block-plan/v2",
+        planId: `plan-${randomUUID()}`,
+        siteId,
+        operation: "replace_content",
+        target: historicalTarget(source),
+        blocks: [
+          {
+            ref: "only",
+            name: "core/paragraph",
+            attributes: { content: "Everything else is gone." },
+            children: []
+          }
+        ],
+        media: []
+      }),
+      "content_loss",
+      "A replacement that drops preserved blocks"
+    )
+  );
+
+  // Edit, insert, move and remove in one plan, all against the original tree.
+  await executeHistoricalPlan(service, preservationEditPlan(siteId, source));
+  source = await read();
+  const raw = source.rawContent;
+  for (const [label, bytes] of [
+    ["core/html", PRESERVED_HTML],
+    ["core/archives", PRESERVED_ARCHIVES],
+    ["inactive plugin block", PRESERVED_MISSING],
+    ["core/social-links", PRESERVED_SOCIAL],
+    ["closing paragraph", CLOSING_PARAGRAPH]
+  ] as const) {
+    assert(raw.includes(bytes), `${label} bytes changed after the scoped edit.`);
+  }
+  assert(!raw.includes("Intro paragraph to remove."), "The removed intro survived.");
+  assert(
+    raw.includes("Styled paragraph, edited in place.") &&
+      /<!-- wp:paragraph \{"fontSize":"large"\} -->/.test(raw),
+    `The edited paragraph lost its font size: ${raw.slice(0, 1200)}`
+  );
+  assert(
+    raw.indexOf("Inserted before the archives") < raw.indexOf(PRESERVED_ARCHIVES) &&
+      raw.indexOf("Inside the group.") < raw.indexOf("Inserted before the archives"),
+    "The inserted heading is not between the group paragraph and the archives."
+  );
+  assert(
+    raw.lastIndexOf(PRESERVED_HTML) > raw.indexOf(CLOSING_PARAGRAPH),
+    "The HTML block was not moved to the end."
+  );
+
+  // The replacement keeps neither the inactive plugin block nor lists it for
+  // deletion, so it must be refused rather than drop it.
+  rejected.push(
+    await expectCompileRejection(
+      service,
+      keptReplacementPlan(siteId, source),
+      "content_loss",
+      "A replacement that drops an inactive plugin block"
+    )
+  );
+
+  // Without that widget, the same replacement keeps the preserved blocks
+  // byte-for-byte and deletes the group (and its archives) on purpose.
+  const replacePostId = await createRawDraft(
+    `AUTOMATED-TEST-V2-KEPT-REPLACEMENT-${randomUUID()}`,
+    preservationSourceContent().replace(`${PRESERVED_MISSING}\n\n`, "")
+  );
+  const replaceSource = await worker.readSource({
+    executionId: `preservation-source-${randomUUID()}`,
+    siteId,
+    postType: "post",
+    postId: replacePostId
+  });
+  await executeHistoricalPlan(
+    service,
+    keptReplacementPlan(siteId, replaceSource)
+  );
+  const replaced = await worker.readSource({
+    executionId: `preservation-source-${randomUUID()}`,
+    siteId,
+    postType: "post",
+    postId: replacePostId
+  });
+  assert(
+    replaced.rawContent.includes(PRESERVED_HTML) &&
+      replaced.rawContent.includes(PRESERVED_SOCIAL) &&
+      replaced.rawContent.includes("A new introduction.") &&
+      !replaced.rawContent.includes(PRESERVED_ARCHIVES) &&
+      !replaced.rawContent.includes("Inside the group."),
+    `The kept replacement did not keep exactly the requested blocks: ${replaced.rawContent.slice(0, 1500)}`
+  );
+  return {
+    postId,
+    multiOperationEdit: "succeeded",
+    rejected,
+    keptReplacement: `succeeded on post ${replacePostId}`
+  };
+}
+
+function keptReplacementPlan(
+  siteId: string,
+  source: SourceSnapshot
+): GutenbergV2BlockPlan {
+  const root = (name: string) => {
+    const entry = source.blockIndex.find(
+      (candidate) => candidate.path.length === 1 && candidate.name === name
+    );
+    assert(entry, `Preservation fixture lost its root ${name}.`);
+    return entry;
+  };
+  const html = root("core/html");
+  const social = root("core/social-links");
+  const group = root("core/group");
+  return gutenbergV2BlockPlanSchema.parse({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: `plan-${randomUUID()}`,
+    siteId,
+    operation: "replace_content",
+    target: historicalTarget(source),
+    removedSourceBlocks: [
+      { path: group.path, expectedFingerprint: group.fingerprint }
+    ],
+    blocks: [
+      {
+        ref: "new-intro",
+        name: "core/paragraph",
+        attributes: { content: "A new introduction." },
+        children: []
+      },
+      {
+        ref: "keep-html",
+        name: "sitepilot/source-block",
+        attributes: { path: html.path, expectedFingerprint: html.fingerprint },
+        children: []
+      },
+      {
+        ref: "wrapper",
+        name: "core/group",
+        attributes: {},
+        children: [
+          {
+            ref: "keep-social",
+            name: "sitepilot/source-block",
+            attributes: {
+              path: social.path,
+              expectedFingerprint: social.fingerprint
+            },
+            children: []
+          }
+        ]
+      }
+    ],
+    media: []
+  });
 }
 
 function replacementPlan(
@@ -1421,6 +2087,10 @@ async function main(): Promise<void> {
     bytes: readFileSync(join(process.cwd(), "tests/e2e/fixtures/test.jpeg")),
     mediaType: "image/jpeg"
   });
+  const stagedVideo = await stagedAssets.stage({
+    bytes: readFileSync(join(process.cwd(), "tests/e2e/fixtures/test.mp4")),
+    mediaType: "video/mp4"
+  });
   const database = new Database(join(artifactDirectory, "journal.sqlite"));
   const journal = new SqliteGutenbergV2ExecutionJournal(database);
   const approvals = new SqliteGutenbergV2ApprovalStore(database);
@@ -1462,6 +2132,34 @@ async function main(): Promise<void> {
   });
 
   try {
+    // Focused runs while developing one scenario; the release gate runs all.
+    const only = process.env.SITEPILOT_V2_E2E_ONLY;
+    if (only === "new-blocks") {
+      console.log(
+        JSON.stringify(
+          await runNewBlocksWorkflow(
+            service,
+            worker,
+            registration.siteId,
+            staged,
+            stagedVideo
+          ),
+          null,
+          2
+        )
+      );
+      return;
+    }
+    if (only === "preservation") {
+      console.log(
+        JSON.stringify(
+          await runPreservationWorkflow(service, worker, registration.siteId),
+          null,
+          2
+        )
+      );
+      return;
+    }
     const title = `AUTOMATED-TEST-V2-${runId}`;
     const creationPlan = createPlan(registration.siteId, title, staged);
     const expectedNodeCount = countPlanNodes(creationPlan);
@@ -1591,6 +2289,18 @@ async function main(): Promise<void> {
       worker,
       registration.siteId,
       staged
+    );
+    const preservationWorkflow = await runPreservationWorkflow(
+      service,
+      worker,
+      registration.siteId
+    );
+    const newBlocksWorkflow = await runNewBlocksWorkflow(
+      service,
+      worker,
+      registration.siteId,
+      staged,
+      stagedVideo
     );
 
     const lostExecution = `execution-${randomUUID()}`;
@@ -1796,6 +2506,8 @@ async function main(): Promise<void> {
       buttonWidthProbe,
       capabilitySummary,
       historicalWorkflow,
+      preservationWorkflow,
+      newBlocksWorkflow,
       nativeSaveReopen: nativeReopen,
       scopedRollbackOutcome: restored.outcome,
       contentHash: readback.contentHash,

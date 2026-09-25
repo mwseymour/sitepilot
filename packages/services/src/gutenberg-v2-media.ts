@@ -30,7 +30,9 @@ const MEDIA_TYPES = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
-  "image/gif": "gif"
+  "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/webm": "webm"
 } as const;
 
 type StagedMediaType = keyof typeof MEDIA_TYPES;
@@ -51,7 +53,9 @@ export interface GutenbergV2StagedAssetStore {
   read(input: GutenbergV2StagedAsset): Promise<Buffer>;
 }
 
-function detectMediaType(bytes: Uint8Array): StagedMediaType | null {
+export function detectGutenbergV2MediaType(
+  bytes: Uint8Array
+): StagedMediaType | null {
   if (
     bytes.length >= 8 &&
     bytes[0] === 0x89 &&
@@ -80,6 +84,22 @@ function detectMediaType(bytes: Uint8Array): StagedMediaType | null {
   if (header.startsWith("RIFF") && header.slice(8, 12) === "WEBP") {
     return "image/webp";
   }
+  // ISO base media (MP4): a box size, then "ftyp" and an MP4-family brand.
+  if (
+    header.slice(4, 8) === "ftyp" &&
+    /^(?:isom|iso[2-6]|mp41|mp42|avc1|dash|M4V )$/.test(header.slice(8, 12))
+  ) {
+    return "video/mp4";
+  }
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x1a &&
+    bytes[1] === 0x45 &&
+    bytes[2] === 0xdf &&
+    bytes[3] === 0xa3
+  ) {
+    return "video/webm";
+  }
   return null;
 }
 
@@ -107,10 +127,10 @@ export class FileGutenbergV2StagedAssetStore implements GutenbergV2StagedAssetSt
         "A staged media asset must contain 1 byte to 10 MB."
       );
     }
-    if (detectMediaType(bytes) !== input.mediaType) {
+    if (detectGutenbergV2MediaType(bytes) !== input.mediaType) {
       throw new GutenbergV2ServiceError(
         "schema_invalid",
-        "The staged media bytes do not match the declared raster image type."
+        "The staged media bytes do not match the declared image or video type."
       );
     }
     const checksum = hashGutenbergV2Bytes(bytes);
@@ -183,7 +203,7 @@ export class FileGutenbergV2StagedAssetStore implements GutenbergV2StagedAssetSt
     if (
       bytes.byteLength !== input.byteLength ||
       hashGutenbergV2Bytes(bytes) !== input.checksum ||
-      detectMediaType(bytes) !== input.mediaType
+      detectGutenbergV2MediaType(bytes) !== input.mediaType
     ) {
       throw new GutenbergV2ServiceError(
         "media_changed",
@@ -263,7 +283,7 @@ export class StagedGutenbergV2PreviewMediaResolver implements GutenbergV2Preview
       if (!extension) {
         throw new GutenbergV2ServiceError(
           "unsupported_v2_block",
-          `Staged media ${media.ref} is not a supported raster image type.`
+          `Staged media ${media.ref} is not a supported image or video type.`
         );
       }
       const bytes = await this.#stagedAssets.read({
@@ -366,7 +386,7 @@ export class DurableGutenbergV2MediaService implements GutenbergV2MediaService {
       if (!extension) {
         throw new GutenbergV2ServiceError(
           "unsupported_v2_block",
-          `Staged media ${media.ref} is not a supported raster image type.`
+          `Staged media ${media.ref} is not a supported image or video type.`
         );
       }
       const asset: GutenbergV2StagedAsset = {

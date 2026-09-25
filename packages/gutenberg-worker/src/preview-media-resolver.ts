@@ -7,6 +7,7 @@ import {
   type GutenbergV2PreviewMediaMapping
 } from "@sitepilot/contracts";
 import {
+  detectGutenbergV2MediaType,
   gutenbergV2MediaBindingId,
   hashGutenbergV2Bytes,
   hashGutenbergV2Content,
@@ -21,7 +22,9 @@ const MEDIA_EXTENSIONS = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
-  "image/gif": "gif"
+  "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/webm": "webm"
 } as const;
 
 type PreviewMediaType = keyof typeof MEDIA_EXTENSIONS;
@@ -34,35 +37,7 @@ export type TrustedGutenbergV2PreviewMediaResolverOptions = {
 };
 
 function mediaTypeForBytes(bytes: Uint8Array): PreviewMediaType | null {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  if (
-    bytes.length >= 3 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8 &&
-    bytes[2] === 0xff
-  ) {
-    return "image/jpeg";
-  }
-  const header = Buffer.from(bytes.subarray(0, 12)).toString("ascii");
-  if (header.startsWith("GIF87a") || header.startsWith("GIF89a")) {
-    return "image/gif";
-  }
-  if (header.startsWith("RIFF") && header.slice(8, 12) === "WEBP") {
-    return "image/webp";
-  }
-  return null;
+  return detectGutenbergV2MediaType(bytes);
 }
 
 async function boundedResponseBytes(response: Response): Promise<Buffer> {
@@ -141,7 +116,7 @@ export class TrustedGutenbergV2PreviewMediaResolver implements GutenbergV2Previe
         if (!extension) {
           throw new GutenbergV2WorkerError(
             "unsupported_v2_block",
-            `Preview media ${media.ref} is not a supported raster image.`,
+            `Preview media ${media.ref} is not a supported image or video.`,
             false
           );
         }
@@ -173,7 +148,10 @@ export class TrustedGutenbergV2PreviewMediaResolver implements GutenbergV2Previe
         const response = await this.#fetch(url, {
           method: "GET",
           redirect: "manual",
-          headers: { accept: "image/jpeg,image/png,image/webp,image/gif" }
+          headers: {
+            accept:
+              "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+          }
         });
         if (response.status >= 300 && response.status < 400) {
           throw new GutenbergV2WorkerError(

@@ -22,6 +22,8 @@ final class Media_Service {
 		'image/png',
 		'image/gif',
 		'image/webp',
+		'video/mp4',
+		'video/webm',
 	);
 
 	public static function register_hooks(): void {
@@ -227,7 +229,7 @@ final class Media_Service {
 				$file_type = wp_check_filetype( $file_name, $allowed );
 				$alt = $raw['alt'] ?? null;
 				$caption = $raw['caption'] ?? null;
-				if ( '' === $staged_id || '' === $file_name || basename( $file_name ) !== $file_name || ! preg_match( '/^[a-f0-9]{64}\.(?:jpe?g|png|webp|gif)$/', $file_name ) || ! is_string( $binary )
+				if ( '' === $staged_id || '' === $file_name || basename( $file_name ) !== $file_name || ! preg_match( '/^[a-f0-9]{64}\.(?:jpe?g|png|webp|gif|mp4|webm)$/', $file_name ) || ! is_string( $binary )
 					|| $byte_length < 1 || $byte_length > self::MAX_ITEM_BYTES || strlen( $binary ) !== $byte_length
 					|| ! in_array( $media_type, self::ALLOWED_MIME_TYPES, true )
 					|| $media_type !== (string) ( $file_type['type'] ?? '' )
@@ -518,7 +520,9 @@ final class Media_Service {
 		if ( ! in_array( $declared, self::ALLOWED_MIME_TYPES, true ) ) {
 			return false;
 		}
+		// finfo reports some valid MP4 files by their ISO base-media family.
 		$aliases = array(
+			'video/mp4' => array( 'video/mp4', 'video/iso.segment', 'application/mp4' ),
 		);
 		return in_array( $detected, $aliases[ $declared ] ?? array( $declared ), true );
 	}

@@ -13,6 +13,6 @@ final class V2FeatureGateTest extends TestCase {
 	}
 
 	public function test_disabled_v2_has_a_versioned_bridge_identity(): void {
-		$this->assertSame( '2.0.0-alpha.1', Feature::BRIDGE_VERSION );
+		$this->assertSame( '2.0.0-alpha.2', Feature::BRIDGE_VERSION );
 	}
 }
