@@ -58,6 +58,12 @@ unrestricted login.
 
 `prepare` applies the current WordPress content sanitizer, verifies candidate
 and approval hashes, and refuses unsupported blocks or non-InnoDB tables.
+Authorable blocks come from `includes/V2/block-manifest.json`, generated from
+the TypeScript support matrix with `npm run generate:v2-block-manifest`; do not
+edit it by hand. For updates, every block v2 cannot author must be a
+byte-identical copy of a block in the source post, used at most once. New drafts
+may contain only authorable blocks. Staged media may be JPEG, PNG, WebP, GIF,
+MP4 or WebM, up to 10 MB per file.
 `commit` locks the source row and durable journal in one transaction, rechecks
 source fields/revision/content and runtime state, then returns a commit receipt
 for pending verification. Final success is determined only by

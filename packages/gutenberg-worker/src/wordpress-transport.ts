@@ -22,7 +22,10 @@ import {
   type GutenbergV2PrepareCommitResponse,
   type GutenbergV2Readback,
   type GutenbergV2RecoverResponse,
-  type GutenbergV2SourceSnapshot
+  type GutenbergV2SourceSnapshot,
+  gutenbergV2BlockFixtureStatusSchema,
+  type GutenbergV2BlockFixtureResult,
+  type GutenbergV2BlockFixtureStatus
 } from "@sitepilot/contracts";
 import { signSitePilotHmacRequest } from "@sitepilot/plugin-protocol";
 import type {
@@ -57,7 +60,8 @@ const endpointNames = {
   reconcile: "reconcile",
   readback: "readback",
   recover: "recover",
-  mediaBindings: "media-bindings"
+  mediaBindings: "media-bindings",
+  blockFixtures: "block-fixtures"
 } as const;
 
 export class SignedWordPressV2Transport
@@ -155,6 +159,29 @@ export class SignedWordPressV2Transport
     this.#assertSite(request.siteId);
     return gutenbergV2MediaBindingsResponseSchema.parse(
       await this.#post(endpointNames.mediaBindings, request)
+    );
+  }
+
+  /**
+   * Hands one fixture result to the plugin, which repeats the save, data
+   * and render checks and records the block's per-site status.
+   */
+  public async recordBlockFixture(
+    result: GutenbergV2BlockFixtureResult
+  ): Promise<GutenbergV2BlockFixtureStatus> {
+    const request = {
+      schemaVersion: "sitepilot.block-fixture/v2",
+      blockName: result.blockName,
+      schemaHash: result.schemaHash,
+      serializedContent: result.serializedContent,
+      reopenedContent: result.reopenedContent,
+      editorIssues: result.issues.map((entry) => ({
+        code: entry.code,
+        message: entry.message
+      }))
+    };
+    return gutenbergV2BlockFixtureStatusSchema.parse(
+      await this.#post(endpointNames.blockFixtures, request)
     );
   }
 

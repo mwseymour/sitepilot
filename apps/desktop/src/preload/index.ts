@@ -28,6 +28,7 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.runSiteDiagnostics, request),
   refreshSiteDiscovery: (request) =>
     invokeIpc(ipcChannels.refreshSiteDiscovery, request),
+  testAcfBlocks: (request) => invokeIpc(ipcChannels.testAcfBlocks, request),
   generateSiteConfigDraft: (request) =>
     invokeIpc(ipcChannels.generateSiteConfigDraft, request),
   getSiteWorkspace: (request) =>

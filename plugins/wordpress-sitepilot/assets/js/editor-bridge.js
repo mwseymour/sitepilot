@@ -10,6 +10,12 @@
   const FIXTURE_REQUIRED_BLOCKS = new Set(policy.fixtureRequiredBlocks || []);
   const REVIEWED_BLOCKS = new Set(policy.reviewedBlocks || []);
   const SOURCE_BLOCK = policy.sourceBlock || "sitepilot/source-block";
+  // ACF blocks on this site with their fields, from the plugin's discovery.
+  const ACF_BLOCKS = new Map(
+    (Array.isArray(policy.acfBlocks) ? policy.acfBlocks : [])
+      .filter((definition) => definition && typeof definition.name === "string")
+      .map((definition) => [definition.name, definition])
+  );
   // Attributes a media binding owns; an edit that re-binds media must not
   // carry the old values across.
   const MEDIA_ATTRIBUTES = {
@@ -190,7 +196,8 @@
           ? type.allowedBlocks
           : [],
         supportsHtml: supports.html !== false,
-        lock: contextLock
+        lock: contextLock,
+        ...(ACF_BLOCKS.has(name) ? { acf: acfDefinition(name) } : {})
       });
     }
 
@@ -228,6 +235,14 @@
     };
     snapshot.fingerprint = await sha256({ ...snapshot, capturedAt: undefined });
     return snapshot;
+  }
+
+  // The planner's view of an ACF block: its fields, without the per-site
+  // fixture bookkeeping.
+  function acfDefinition(name) {
+    const { fixture, ...definition } = ACF_BLOCKS.get(name) || {};
+    void fixture;
+    return definition;
   }
 
   function cleanAttributes(node) {
@@ -359,6 +374,46 @@
     return derived;
   }
 
+  // The accordion's heading level and icon settings are copied onto each
+  // heading, as the editor does when an accordion is configured.
+  function withAccordionContext(node) {
+    if (!node || node.name !== "core/accordion") return node;
+    const settings = node.attributes || {};
+    const headingAttributes = {
+      ...(Number.isInteger(settings.headingLevel)
+        ? { level: settings.headingLevel }
+        : {}),
+      ...(settings.iconPosition !== undefined
+        ? { iconPosition: settings.iconPosition }
+        : {}),
+      ...(settings.showIcon !== undefined ? { showIcon: settings.showIcon } : {})
+    };
+    return {
+      ...node,
+      children: (node.children || []).map((item) =>
+        item && item.name === "core/accordion-item"
+          ? {
+              ...item,
+              children: (item.children || []).map((child) =>
+                child && child.name === "core/accordion-heading"
+                  ? {
+                      ...child,
+                      attributes: {
+                        ...headingAttributes,
+                        ...(child.attributes || {}),
+                        ...(item.attributes && item.attributes.openByDefault
+                          ? { openByDefault: true }
+                          : {})
+                      }
+                    }
+                  : child
+              )
+            }
+          : item
+      )
+    };
+  }
+
   function containsSerializedBlockDelimiter(value) {
     if (typeof value === "string") {
       const decoded = document.createElement("textarea");
@@ -414,6 +469,7 @@
     context = null,
     keptInnerBlocks = null
   ) {
+    node = withAccordionContext(node);
     if (node && node.name === SOURCE_BLOCK) {
       if (!context || typeof context.claimSource !== "function") {
         issues.push(
@@ -1258,6 +1314,16 @@
       typeof requested.style === "object"
     ) {
       attributes.style = deepMerge(source.style, requested.style);
+    }
+    // ACF field values the edit does not restate keep their stored values.
+    if (
+      ACF_BLOCKS.has(node.rich.name) &&
+      source.data &&
+      typeof source.data === "object" &&
+      requested.data &&
+      typeof requested.data === "object"
+    ) {
+      attributes.data = { ...source.data, ...requested.data };
     }
     return { ...replacement, attributes };
   }
@@ -2427,6 +2493,7 @@
         );
       }
     }
+    await settledLayout(imageRoot, blocks);
     return {
       schemaVersion: "sitepilot.editor-preview-result/v2",
       renderedContentHash: await sha256(input.serializedContent),
@@ -2442,6 +2509,47 @@
       ),
       rootSelector: "#sitepilot-v2-preview"
     };
+  }
+
+  function containsAcfBlock(blocks) {
+    return blocks.some(
+      (block) =>
+        ACF_BLOCKS.has(block.name) || containsAcfBlock(block.innerBlocks || [])
+    );
+  }
+
+  // ACF blocks render their preview from the server after they mount, so
+  // the canvas keeps changing size for a moment. Wait (bounded) until it
+  // stops, so the review capture measures the finished layout.
+  async function settledLayout(root, blocks) {
+    if (!containsAcfBlock(blocks)) return;
+    const measure = () => {
+      const target = root && root.body ? root.body : root;
+      return target && typeof target.scrollHeight === "number"
+        ? target.scrollHeight
+        : 0;
+    };
+    const loading = () =>
+      !!(
+        root &&
+        root.querySelector &&
+        root.querySelector(
+          ".acf-block-preview .acf-loading, .acf-block-component .components-spinner, .acf-block-preview:empty"
+        )
+      );
+    const started = Date.now();
+    let last = measure();
+    let stableSince = Date.now();
+    while (Date.now() - started < 10000) {
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+      const current = measure();
+      if (current !== last || loading()) {
+        last = current;
+        stableSince = Date.now();
+      } else if (Date.now() - stableSince >= 1000) {
+        return;
+      }
+    }
   }
 
   async function readSource() {
@@ -2512,6 +2620,189 @@
     return readyPromise;
   }
 
+  function nativeIssues(blocks, path = []) {
+    const found = [];
+    blocks.forEach((block, index) => {
+      const blockPath = [...path, index];
+      if (block.name === "core/missing" || block.name === "core/freeform") {
+        found.push(
+          issue(
+            "fallback_block",
+            "verify",
+            `The saved markup reopened as ${block.name}.`,
+            {
+              blockName: block.name,
+              blockPath
+            }
+          )
+        );
+      } else if (!validationAdapter(block)) {
+        found.push(
+          issue(
+            "invalid_block_markup",
+            "verify",
+            `Block ${block.name} failed Gutenberg validation when reopened.`,
+            {
+              blockName: block.name,
+              blockPath
+            }
+          )
+        );
+      }
+      found.push(...nativeIssues(block.innerBlocks || [], blockPath));
+    });
+    return found;
+  }
+
+  async function settledContent(minimumMs, maximumMs) {
+    const select = window.wp.data.select("core/block-editor");
+    const started = Date.now();
+    let last = window.wp.blocks.serialize(select.getBlocks());
+    let stableSince = Date.now();
+    while (Date.now() - started < maximumMs) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      const current = window.wp.blocks.serialize(select.getBlocks());
+      if (current !== last) {
+        last = current;
+        stableSince = Date.now();
+      } else if (
+        Date.now() - started >= minimumMs &&
+        Date.now() - stableSince >= 1000
+      ) {
+        break;
+      }
+    }
+    return last;
+  }
+
+  // Per-site ACF fixture. Builds the block natively with the given data,
+  // serializes it as a save would, then reopens the saved markup in this
+  // editor so the block's own scripts run on it. The block passes only if
+  // it reopens valid and serializes back to the same bytes. The plugin
+  // repeats the save, data and render checks on the server before
+  // recording the result.
+  async function blockFixture(input) {
+    await discover();
+    const name =
+      input && typeof input.blockName === "string" ? input.blockName : "";
+    const definition = ACF_BLOCKS.get(name);
+    const issues = [];
+    const result = (serializedContent = "", reopenedContent = "") => ({
+      schemaVersion: "sitepilot.block-fixture-result/v2",
+      blockName: name,
+      schemaHash: definition ? definition.schemaHash : "",
+      serializedContent,
+      reopenedContent,
+      issues: issues.slice(0, MAX_ISSUES)
+    });
+    if (!definition || !window.wp.blocks.getBlockType(name)) {
+      issues.push(
+        issue(
+          "unregistered_block",
+          "policy",
+          `${name || "The block"} is not an ACF block registered in this editor.`,
+          {
+            blockName: name
+          }
+        )
+      );
+      return result();
+    }
+    const data =
+      input && input.data && typeof input.data === "object" ? input.data : {};
+    let saved = "";
+    try {
+      const children = definition.innerBlocks
+        ? [
+            window.wp.blocks.createBlock("core/paragraph", {
+              content: "SitePilot block test."
+            })
+          ]
+        : [];
+      const block = window.wp.blocks.createBlock(
+        name,
+        {
+          name,
+          data,
+          align:
+            typeof definition.defaultAlign === "string"
+              ? definition.defaultAlign
+              : "",
+          mode: definition.mode || "preview"
+        },
+        children
+      );
+      saved = window.wp.blocks.serialize([block]);
+    } catch (error) {
+      issues.push(
+        issue(
+          "invalid_block_markup",
+          "compile",
+          error && error.message
+            ? error.message
+            : "The block could not be built.",
+          {
+            blockName: name
+          }
+        )
+      );
+      return result();
+    }
+    let parsed = [];
+    try {
+      parsed = window.wp.blocks.parse(saved);
+    } catch {
+      issues.push(
+        issue(
+          "invalid_block_markup",
+          "verify",
+          "The saved markup could not be parsed.",
+          { blockName: name }
+        )
+      );
+      return result(saved);
+    }
+    issues.push(...nativeIssues(parsed));
+    if (parsed.length !== 1 || parsed[0].name !== name) {
+      issues.push(
+        issue(
+          "unexpected_block",
+          "verify",
+          `The saved markup did not reopen as one ${name} block.`,
+          { blockName: name }
+        )
+      );
+    }
+    if (issues.length) return result(saved);
+    const dispatch = window.wp.data.dispatch("core/block-editor");
+    dispatch.resetBlocks(parsed);
+    const reopened = await settledContent(1500, 8000);
+    const reopenedBlocks = window.wp.data
+      .select("core/block-editor")
+      .getBlocks();
+    issues.push(...nativeIssues(reopenedBlocks));
+    const reopenedData =
+      reopenedBlocks[0] && reopenedBlocks[0].attributes
+        ? reopenedBlocks[0].attributes.data
+        : undefined;
+    if (stableJson(reopenedData || {}) !== stableJson(data)) {
+      issues.push(
+        issue(
+          "content_changed",
+          "verify",
+          `The editor changed ${name} field values when it reopened the block.`,
+          {
+            blockName: name,
+            expected: stableJson(data),
+            actual: stableJson(reopenedData || {})
+          }
+        )
+      );
+    }
+    dispatch.resetBlocks([]);
+    return result(saved, reopened);
+  }
+
   window.sitepilotV2 = Object.freeze({
     schemaVersion: "sitepilot.editor-bridge/v2",
     ready,
@@ -2519,6 +2810,7 @@
     compile,
     verify,
     preview,
-    readSource
+    readSource,
+    blockFixture
   });
 })();

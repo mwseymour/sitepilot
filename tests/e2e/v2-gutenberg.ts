@@ -1021,6 +1021,65 @@ function newBlocksPlan(
         children: []
       },
       {
+        ref: "accordion-1",
+        name: "core/accordion",
+        attributes: { headingLevel: 4, iconPosition: "left" },
+        children: [
+          {
+            ref: "accordion-item-1",
+            name: "core/accordion-item",
+            attributes: { openByDefault: true },
+            children: [
+              {
+                ref: "accordion-heading-1",
+                name: "core/accordion-heading",
+                attributes: { title: "How long does delivery take?" },
+                children: []
+              },
+              {
+                ref: "accordion-panel-1",
+                name: "core/accordion-panel",
+                attributes: {},
+                children: [
+                  {
+                    ref: "accordion-answer-1",
+                    name: "core/paragraph",
+                    attributes: { content: "Usually three to five working days." },
+                    children: []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            ref: "accordion-item-2",
+            name: "core/accordion-item",
+            attributes: {},
+            children: [
+              {
+                ref: "accordion-heading-2",
+                name: "core/accordion-heading",
+                attributes: { title: "Can I return an item?" },
+                children: []
+              },
+              {
+                ref: "accordion-panel-2",
+                name: "core/accordion-panel",
+                attributes: {},
+                children: [
+                  {
+                    ref: "accordion-answer-2",
+                    name: "core/paragraph",
+                    attributes: { content: "Yes, within 30 days." },
+                    children: []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
         ref: "video-1",
         name: "core/video",
         attributes: {
@@ -1087,6 +1146,8 @@ async function runNewBlocksWorkflow(
     ["preformatted line breaks", /<pre class="wp-block-preformatted">Line one<br> {2}indented/],
     ["gallery", /<!-- wp:gallery \{"columns":2,"linkTo":"none"\} -->/],
     ["video", /<!-- wp:video \{"id":\d+\} -->\n?<figure class="wp-block-video"><video [^>]*src="https?:[^"]+\.mp4"/],
+    ["accordion", /<!-- wp:accordion \{(?=[^}]*"headingLevel":4)(?=[^}]*"iconPosition":"left")[^}]*\} -->/],
+    ["accordion heading level", /<h4 class="wp-block-accordion-heading[^"]*has-icon-left/],
     ["embed", new RegExp(`<!-- wp:embed \\{"url":"${EMBED_URL.replace(/[.?]/g, "\\$&")}","type":"video","providerNameSlug":"youtube","responsive":true`)]
   ] as const) {
     assert(

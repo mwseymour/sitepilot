@@ -42,6 +42,7 @@ import {
 import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { getDatabase } from "./app-database.js";
 import { refreshDiscoveryForSite } from "./discovery-service.js";
+import { testAcfBlocksForSite } from "./acf-block-test-service.js";
 import { generateAndPersistSiteConfigDraft } from "./site-config-draft.js";
 import {
   confirmSiteConfigActivation,
@@ -174,6 +175,12 @@ export function registerIpcHandlers(): void {
     const request = parseRequest(ipcChannels.refreshSiteDiscovery, payload);
     const result = await refreshDiscoveryForSite(request.siteId);
     return parseResponse(ipcChannels.refreshSiteDiscovery, result);
+  });
+
+  ipcMain.handle(ipcChannels.testAcfBlocks, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.testAcfBlocks, payload);
+    const result = await testAcfBlocksForSite(request.siteId as SiteId);
+    return parseResponse(ipcChannels.testAcfBlocks, result);
   });
 
   ipcMain.handle(

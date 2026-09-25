@@ -70,6 +70,8 @@ final class Site_Discovery {
 			'taxonomies' => $taxonomies,
 			'nav_menus'  => $menus,
 			'third_party_blocks' => self::collect_third_party_blocks(),
+			// Every ACF block with all of its fields and its per-site fixture status.
+			'acf_blocks' => \SitePilot\V2\Acf_Blocks::described_with_status(),
 			'active_plugins' => $active,
 			'seo'        => self::detect_seo_plugins(),
 			'warnings'   => $warnings,

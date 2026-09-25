@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import { isoTimestampSchema, jsonValueSchema, urlSchema } from "./common.js";
+import {
+  GUTENBERG_V2_ACF_BLOCK_NAME_PATTERN,
+  gutenbergV2AcfBlockDefinitionSchema,
+  isGutenbergV2AcfBlockName
+} from "./gutenberg-v2-acf.js";
 
 export const GUTENBERG_V2_SCHEMA_VERSION = "sitepilot.block-plan/v2" as const;
 
@@ -106,17 +111,58 @@ export const GUTENBERG_V2_SUPPORT_MATRIX = [
   { name: "core/embed", mode: "author", dynamic: false, children: "none" },
   { name: "core/video", mode: "author", dynamic: false, children: "none" },
   {
+    name: "core/accordion",
+    mode: "author",
+    dynamic: false,
+    children: ["core/accordion-item"],
+    requiresChildren: true
+  },
+  {
+    name: "core/accordion-item",
+    mode: "author",
+    dynamic: false,
+    parent: "core/accordion",
+    children: ["core/accordion-heading", "core/accordion-panel"],
+    requiresChildren: true
+  },
+  {
+    name: "core/accordion-heading",
+    mode: "author",
+    dynamic: false,
+    parent: "core/accordion-item",
+    children: "none"
+  },
+  {
+    name: "core/accordion-panel",
+    mode: "author",
+    dynamic: false,
+    parent: "core/accordion-item",
+    requiresChildren: true
+  },
+  {
     name: "core/latest-posts",
     mode: "fixture_required",
     dynamic: true,
     children: "none"
-  },
-  {
-    name: "acf/container",
-    mode: "fixture_required",
-    dynamic: true
   }
 ] as const satisfies readonly GutenbergV2SupportMatrixEntry[];
+
+/**
+ * The support rules for a block name: its matrix entry, or for any ACF block
+ * a per-site fixture gate. ACF blocks are discovered per site, so they are
+ * never listed in the matrix itself.
+ */
+export function gutenbergV2SupportPolicy(
+  name: string
+): GutenbergV2SupportMatrixEntry | undefined {
+  const entry = (
+    GUTENBERG_V2_SUPPORT_MATRIX as readonly GutenbergV2SupportMatrixEntry[]
+  ).find((candidate) => candidate.name === name);
+  if (entry) return entry;
+  return isGutenbergV2AcfBlockName(name)
+    ? { name, mode: "fixture_required", dynamic: true }
+    : undefined;
+}
 
 export type GutenbergV2SupportMatrixEntry = {
   readonly name: string;
@@ -443,7 +489,10 @@ const acfDataValueSchema = z.union([
 
 export type GutenbergV2BlockNode = {
   ref: string;
-  name: GutenbergV2SupportedBlockName | typeof GUTENBERG_V2_SOURCE_BLOCK;
+  name:
+    | GutenbergV2SupportedBlockName
+    | typeof GUTENBERG_V2_SOURCE_BLOCK
+    | `acf/${string}`;
   attributes: Record<string, unknown>;
   children: GutenbergV2BlockNode[];
 };
@@ -475,7 +524,7 @@ function nodeSchema<
     .strict();
 }
 
-export const gutenbergV2BlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
+const gutenbergV2CoreBlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
   z.lazy(
     () =>
       z.discriminatedUnion("name", [
@@ -873,6 +922,42 @@ export const gutenbergV2BlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
             })
         ),
         nodeSchema(
+          "core/accordion",
+          z
+            .object({
+              headingLevel: z.number().int().min(1).max(6).optional(),
+              iconPosition: z.enum(["left", "right"]).optional(),
+              showIcon: z.boolean().optional(),
+              autoclose: z.boolean().optional(),
+              align: z.enum(["wide", "full"]).optional(),
+              ...basePresentationAttributes
+            })
+            .strict()
+        ),
+        nodeSchema(
+          "core/accordion-item",
+          z
+            .object({
+              openByDefault: z.boolean().optional(),
+              ...basePresentationAttributes
+            })
+            .strict()
+        ),
+        nodeSchema(
+          "core/accordion-heading",
+          z
+            .object({
+              title: richTextSchema,
+              anchor: anchorSchema.optional(),
+              className: cssClassNameSchema.optional()
+            })
+            .strict()
+        ),
+        nodeSchema(
+          "core/accordion-panel",
+          z.object({ ...basePresentationAttributes }).strict()
+        ),
+        nodeSchema(
           "core/embed",
           z
             .object({
@@ -919,19 +1004,59 @@ export const gutenbergV2BlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
               ...basePresentationAttributes
             })
             .strict()
-        ),
-        nodeSchema(
-          "acf/container",
-          z
-            .object({
-              data: z.record(acfDataValueSchema),
-              mode: z.enum(["auto", "preview", "edit"]).optional(),
-              ...basePresentationAttributes
-            })
-            .strict()
         )
       ]) as unknown as z.ZodType<GutenbergV2BlockNode>
   );
+
+// Any ACF block, in ACF's stored shape. Its data is checked against the
+// site's field definitions by the planner, the bridge and the plugin.
+const acfBlockNodeSchema = z
+  .object({
+    ref: identifierSchema,
+    name: z.string().regex(GUTENBERG_V2_ACF_BLOCK_NAME_PATTERN),
+    attributes: z
+      .object({
+        name: z.string().regex(GUTENBERG_V2_ACF_BLOCK_NAME_PATTERN),
+        data: z.record(acfDataValueSchema),
+        mode: z.enum(["auto", "preview", "edit"]).optional(),
+        align: z
+          .enum(["", "left", "center", "right", "wide", "full"])
+          .optional(),
+        ...basePresentationAttributes
+      })
+      .strict(),
+    children: childrenSchema
+  })
+  .strict()
+  .superRefine((node, context) => {
+    if (node.attributes.name !== node.name) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["attributes", "name"],
+        message: `attributes.name must be ${node.name}.`
+      });
+    }
+  });
+
+export const gutenbergV2BlockNodeSchema: z.ZodType<GutenbergV2BlockNode> =
+  z.lazy(() =>
+    z.unknown().transform((value, context) => {
+      const schema =
+        typeof value === "object" &&
+        value !== null &&
+        isGutenbergV2AcfBlockName((value as { name?: unknown }).name)
+          ? acfBlockNodeSchema
+          : gutenbergV2CoreBlockNodeSchema;
+      const result = schema.safeParse(value);
+      if (!result.success) {
+        // Fatal, so plan-level checks never walk an invalid node.
+        for (const failure of result.error.issues)
+          context.addIssue({ ...failure, fatal: true });
+        return z.NEVER;
+      }
+      return result.data as GutenbergV2BlockNode;
+    })
+  ) as unknown as z.ZodType<GutenbergV2BlockNode>;
 
 const stagedMediaTypeSchema = z.enum([
   "image/jpeg",
@@ -1318,6 +1443,19 @@ function validatePlanStructure(
         });
       }
     }
+    if (
+      node.name === "core/accordion-item" &&
+      (node.children.length !== 2 ||
+        node.children[0]?.name !== "core/accordion-heading" ||
+        node.children[1]?.name !== "core/accordion-panel")
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...path, "children"],
+        message:
+          "core/accordion-item needs exactly one core/accordion-heading followed by one core/accordion-panel."
+      });
+    }
     if (rules?.requiresChildren && node.children.length === 0) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1674,7 +1812,8 @@ export const gutenbergV2CapabilityBlockSchema = z
     allowedAncestors: z.array(z.string().trim().min(1).max(200)).max(100),
     allowedChildren: z.array(z.string().trim().min(1).max(200)).max(100),
     supportsHtml: z.boolean(),
-    lock: z.enum(["none", "insert", "move", "all"])
+    lock: z.enum(["none", "insert", "move", "all"]),
+    acf: gutenbergV2AcfBlockDefinitionSchema.optional()
   })
   .strict();
 

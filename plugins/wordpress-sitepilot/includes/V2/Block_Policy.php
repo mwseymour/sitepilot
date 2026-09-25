@@ -51,10 +51,18 @@ final class Block_Policy {
 		return $rules;
 	}
 
-	/** @return array<int, string> */
+	/**
+	 * Fixture-gated blocks that passed their native fixture here. ACF blocks
+	 * count only while their fixture record matches the current field schema
+	 * and ACF version, so a listed name alone never enables one.
+	 *
+	 * @return array<int, string>
+	 */
 	public static function reviewed_blocks(): array {
-		$value = function_exists( 'get_option' ) ? get_option( self::REVIEWED_OPTION, array() ) : array();
-		return is_array( $value ) ? array_values( array_filter( array_map( 'strval', $value ) ) ) : array();
+		$value  = function_exists( 'get_option' ) ? get_option( self::REVIEWED_OPTION, array() ) : array();
+		$listed = is_array( $value ) ? array_values( array_filter( array_map( 'strval', $value ) ) ) : array();
+		$listed = array_values( array_filter( $listed, static fn ( string $name ): bool => ! Acf_Blocks::is_acf_block( $name ) ) );
+		return array_values( array_unique( array_merge( $listed, Acf_Blocks::passing_blocks() ) ) );
 	}
 
 	/**
@@ -71,10 +79,15 @@ final class Block_Policy {
 				$names[] = $name;
 			}
 		}
-		return $names;
+		return array_values( array_unique( array_merge( $names, Acf_Blocks::passing_blocks() ) ) );
 	}
 
-	/** @return array<int, string> */
+	/**
+	 * Blocks that need a per-site fixture: the matrix's fixture-gated blocks
+	 * and every ACF block on the site.
+	 *
+	 * @return array<int, string>
+	 */
 	public static function fixture_required_blocks(): array {
 		$names = array();
 		foreach ( self::rules() as $name => $entry ) {
@@ -82,7 +95,7 @@ final class Block_Policy {
 				$names[] = $name;
 			}
 		}
-		return $names;
+		return array_values( array_unique( array_merge( $names, array_keys( Acf_Blocks::definitions() ) ) ) );
 	}
 
 	public static function required_parent( string $name ): ?string {
@@ -107,6 +120,7 @@ final class Block_Policy {
 			'fixtureRequiredBlocks' => self::fixture_required_blocks(),
 			'reviewedBlocks'        => self::reviewed_blocks(),
 			'sourceBlock'           => self::SOURCE_BLOCK,
+			'acfBlocks'             => Acf_Blocks::described_with_status(),
 		);
 	}
 

@@ -195,18 +195,47 @@
       "requiresChildren": false
     },
     {
+      "name": "core/accordion",
+      "mode": "author",
+      "dynamic": false,
+      "children": [
+        "core/accordion-item"
+      ],
+      "parent": null,
+      "requiresChildren": true
+    },
+    {
+      "name": "core/accordion-item",
+      "mode": "author",
+      "dynamic": false,
+      "children": [
+        "core/accordion-heading",
+        "core/accordion-panel"
+      ],
+      "parent": "core/accordion",
+      "requiresChildren": true
+    },
+    {
+      "name": "core/accordion-heading",
+      "mode": "author",
+      "dynamic": false,
+      "children": "none",
+      "parent": "core/accordion-item",
+      "requiresChildren": false
+    },
+    {
+      "name": "core/accordion-panel",
+      "mode": "author",
+      "dynamic": false,
+      "children": "any",
+      "parent": "core/accordion-item",
+      "requiresChildren": true
+    },
+    {
       "name": "core/latest-posts",
       "mode": "fixture_required",
       "dynamic": true,
       "children": "none",
-      "parent": null,
-      "requiresChildren": false
-    },
-    {
-      "name": "acf/container",
-      "mode": "fixture_required",
-      "dynamic": true,
-      "children": "any",
       "parent": null,
       "requiresChildren": false
     }

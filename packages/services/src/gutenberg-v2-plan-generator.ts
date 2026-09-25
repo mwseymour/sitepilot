@@ -2,10 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import {
   GUTENBERG_V2_SOURCE_BLOCK,
+  GutenbergV2AcfDataError,
+  describeGutenbergV2AcfFields,
+  gutenbergV2AcfDataFromFields,
   gutenbergV2BlockPlanSchema,
   gutenbergV2EmbedProvider,
   gutenbergV2EditorCapabilitySnapshotSchema,
   gutenbergV2SourceSnapshotSchema,
+  isGutenbergV2AcfBlockName,
+  type GutenbergV2AcfBlockDefinition,
   type GutenbergV2BlockPlan,
   type GutenbergV2EditorCapabilitySnapshot,
   type GutenbergV2MediaIntent,
@@ -63,11 +68,18 @@ const BLOCK_ATTRIBUTE_GUIDANCE: Readonly<Record<string, string>> = {
     "a banner with content on top: at least one child block (heading, paragraph, buttons). Background is either an image (mediaRef matching supplied media, alt:string, optional focalPoint:{x,y} 0..1) or a solid colour (customOverlayColor:#hex with dimRatio 100). With an image, dimRatio (0..100 in steps of 10, default 50) is the dark overlay strength. Optional minHeight:number with minHeightUnit:px|vh|vw|em|rem|%, contentPosition like \"center center\", align:wide|full; omit id and url",
   "core/video":
     "an uploaded or media-library video: required mediaRef matching a supplied video; optional caption, controls:boolean (default true), autoplay (only together with muted:true), loop, muted, playsInline, preload:auto|metadata|none, align; omit id and src. Use core/embed for YouTube or Vimeo links instead",
+  "core/accordion":
+    "collapsible sections, for example an FAQ: children must be core/accordion-item blocks (at least one); optional headingLevel:integer 1..6 (default 3), iconPosition:left|right, showIcon:boolean, autoclose:boolean (only one section open at a time), align:wide|full",
+  "core/accordion-item":
+    "one section inside core/accordion: exactly two children, a core/accordion-heading then a core/accordion-panel; optional openByDefault:boolean",
+  "core/accordion-heading":
+    "required title:string, the always-visible toggle text (for example the question); use only as the first child of core/accordion-item; no children",
+  "core/accordion-panel":
+    "the hidden content of a section (for example the answer): at least one child block such as core/paragraph or core/list; use only as the second child of core/accordion-item",
   "core/embed":
     "a YouTube or Vimeo video: required url (the normal watch/share URL); optional caption and align:wide|full|center. Only embed a video URL the operator supplied; never guess one",
   "core/latest-posts":
-    "required postsToShow:integer 1..100; optional order, orderBy, displayPostDate, displayFeaturedImage, postLayout, columns",
-  "acf/container": "required data:object; optional mode:auto|preview|edit"
+    "required postsToShow:integer 1..100; optional order, orderBy, displayPostDate, displayFeaturedImage, postLayout, columns"
 };
 
 export interface GutenbergV2PlanningModelClient {
@@ -414,13 +426,46 @@ function authorableBlockNames(
     .sort();
 }
 
+function acfDefinitions(
+  capabilities: GutenbergV2EditorCapabilitySnapshot
+): Map<string, GutenbergV2AcfBlockDefinition> {
+  return new Map(
+    capabilities.blocks.flatMap((block) =>
+      block.acf ? [[block.name, block.acf] as const] : []
+    )
+  );
+}
+
+// ACF blocks are site-specific, so their shape comes from the site's own
+// field definitions rather than from fixed guidance.
+function acfGuidance(definition: GutenbergV2AcfBlockDefinition): string {
+  const align = definition.supports.align;
+  const fields = describeGutenbergV2AcfFields(definition.fields);
+  return [
+    `a site-specific ACF block${definition.title ? ` ("${definition.title}"${definition.description ? `: ${definition.description}` : ""})` : ""}. Attributes are {"fields":{fieldName:value}} plus optional ${
+      align === false
+        ? ""
+        : `align:${Array.isArray(align) ? align.join("|") : "left|center|right|wide|full"}, `
+    }className and anchor; never give data, name or mode. Fields you omit take their defaults. For choice fields give the choice value or its label. true_false is true/false; link is {"title","url","target"?}; repeater is a list of row objects; group is an object; image and file are existing media library IDs only.`,
+    definition.innerBlocks
+      ? `Children: ${definition.allowedBlocks.length > 0 ? `only ${definition.allowedBlocks.join(", ")}` : "any authorable blocks"} (the block's inner content).`
+      : "No children.",
+    fields.length > 0 ? `Fields:\n${fields.join("\n")}` : "It has no fields."
+  ].join(" ");
+}
+
 function systemPrompt(input: BuildLlmGutenbergV2PlanInput): string {
   const blockNames = authorableBlockNames(input.capabilities);
+  const acf = acfDefinitions(input.capabilities);
   const attributeGuidance = blockNames
-    .map(
-      (name) =>
-        `${name}: ${BLOCK_ATTRIBUTE_GUIDANCE[name] ?? "no reviewed authoring shape"}`
-    )
+    .map((name) => {
+      const definition = acf.get(name);
+      return `${name}: ${
+        definition
+          ? acfGuidance(definition)
+          : (BLOCK_ATTRIBUTE_GUIDANCE[name] ?? "no reviewed authoring shape")
+      }`;
+    })
     .join("\n");
   const operationShape =
     input.target.operation === "create_draft"
@@ -714,10 +759,112 @@ function draftMediaRefs(draft: Record<string, unknown>): Set<string> {
   return refs;
 }
 
-function assemblePlan(
+// Friendly ACF field values from the model become ACF's stored block data,
+// checked against the site's field definitions. Mistakes go back to the
+// model through the repair round.
+function withAcfBlockData(
+  nodes: unknown,
+  definitions: ReadonlyMap<string, GutenbergV2AcfBlockDefinition>,
+  issues: string[],
+  partialRoot = false
+): unknown {
+  if (!Array.isArray(nodes)) return nodes;
+  return nodes.map((node) => {
+    if (!isRecord(node)) return node;
+    const children = withAcfBlockData(node.children, definitions, issues);
+    if (!isGutenbergV2AcfBlockName(node.name)) {
+      return node.children === undefined ? node : { ...node, children };
+    }
+    const definition = definitions.get(node.name);
+    if (!definition) {
+      issues.push(`${node.name} is not an ACF block this site can author.`);
+      return node;
+    }
+    const attributes = isRecord(node.attributes) ? node.attributes : {};
+    const { fields, data, name, mode, ...presentation } = attributes;
+    void data;
+    void name;
+    void mode;
+    let stored: Record<string, unknown> = {};
+    try {
+      stored = gutenbergV2AcfDataFromFields(definition, fields ?? {}, {
+        partial: partialRoot
+      });
+    } catch (error) {
+      if (!(error instanceof GutenbergV2AcfDataError)) throw error;
+      issues.push(...error.issues);
+    }
+    return {
+      ...node,
+      attributes: {
+        ...presentation,
+        name: node.name,
+        data: stored,
+        // ACF's editor script sets align on mount; writing it up front keeps
+        // the block byte-identical when it is reopened.
+        align:
+          typeof presentation.align === "string"
+            ? presentation.align
+            : (definition.defaultAlign ?? ""),
+        mode:
+          definition.mode === "edit" || definition.mode === "auto"
+            ? definition.mode
+            : "preview"
+      },
+      ...(node.children === undefined ? {} : { children })
+    };
+  });
+}
+
+function draftWithAcfBlockData(
   input: BuildLlmGutenbergV2PlanInput,
   draft: Record<string, unknown>
+): Record<string, unknown> {
+  const definitions = acfDefinitions(input.capabilities);
+  const issues: string[] = [];
+  const next: Record<string, unknown> = { ...draft };
+  if (draft.blocks !== undefined) {
+    next.blocks = withAcfBlockData(draft.blocks, definitions, issues);
+  }
+  if (Array.isArray(draft.operations)) {
+    next.operations = draft.operations.map((operation) => {
+      if (!isRecord(operation)) return operation;
+      return {
+        ...operation,
+        ...(operation.blocks === undefined
+          ? {}
+          : {
+              blocks: withAcfBlockData(operation.blocks, definitions, issues)
+            }),
+        ...(operation.replacement === undefined
+          ? {}
+          : {
+              replacement: (
+                withAcfBlockData(
+                  [operation.replacement],
+                  definitions,
+                  issues,
+                  true
+                ) as unknown[]
+              )[0]
+            })
+      };
+    });
+  }
+  if (issues.length > 0) {
+    throw new GutenbergV2PlanGenerationError(
+      `The planning model returned ACF field values that do not fit this site: ${issues.slice(0, MAX_REPORTED_ISSUES).join("; ")}`,
+      { issues: issues.slice(0, MAX_REPORTED_ISSUES) }
+    );
+  }
+  return next;
+}
+
+function assemblePlan(
+  input: BuildLlmGutenbergV2PlanInput,
+  rawDraft: Record<string, unknown>
 ): GutenbergV2BlockPlan {
+  const draft = draftWithAcfBlockData(input, rawDraft);
   // Only media the draft actually uses is approved, uploaded and bound;
   // unused attachments never reach the media library.
   const usedRefs = draftMediaRefs(draft);
@@ -793,7 +940,8 @@ const VISIBLE_TEXT_ATTRIBUTES = [
   "text",
   "value",
   "citation",
-  "summary"
+  "summary",
+  "title"
 ];
 
 // Whitespace-only copy survives the schema but WordPress trims it on the

@@ -308,3 +308,57 @@ describe("Gutenberg v2 blocks added after the first release", () => {
     ).toThrow();
   });
 });
+
+describe("Gutenberg v2 accordion", () => {
+  const heading = {
+    ref: "q",
+    name: "core/accordion-heading",
+    attributes: { title: "Question?" },
+    children: []
+  };
+  const panel = {
+    ref: "a",
+    name: "core/accordion-panel",
+    attributes: {},
+    children: [
+      {
+        ref: "answer",
+        name: "core/paragraph",
+        attributes: { content: "Answer." },
+        children: []
+      }
+    ]
+  };
+  const plan = (itemChildren: unknown[]) => ({
+    schemaVersion: "sitepilot.block-plan/v2",
+    planId: "plan-1",
+    siteId: "site-1",
+    operation: "create_draft",
+    target: { postType: "post" },
+    postFields: { title: "FAQ", status: "draft" },
+    blocks: [
+      {
+        ref: "faq",
+        name: "core/accordion",
+        attributes: { headingLevel: 3 },
+        children: [
+          {
+            ref: "item",
+            name: "core/accordion-item",
+            attributes: {},
+            children: itemChildren
+          }
+        ]
+      }
+    ],
+    media: []
+  });
+
+  it("needs one heading followed by one panel in each item", () => {
+    expect(() => gutenbergV2BlockPlanSchema.parse(plan([heading, panel]))).not.toThrow();
+    expect(() => gutenbergV2BlockPlanSchema.parse(plan([panel, heading]))).toThrow(
+      /exactly one core\/accordion-heading followed by one core\/accordion-panel/
+    );
+    expect(() => gutenbergV2BlockPlanSchema.parse(plan([heading]))).toThrow();
+  });
+});

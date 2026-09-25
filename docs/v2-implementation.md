@@ -49,7 +49,18 @@ The lifecycle is `compileCandidate`, operator review, `recordApproval`, then `ex
 
 `GUTENBERG_V2_SUPPORT_MATRIX` in `packages/contracts/src/gutenberg-v2.ts` is the single list of authorable blocks and their structure rules (allowed children, required parent, required children). `npm run generate:v2-block-manifest` writes it to `plugins/wordpress-sitepilot/includes/V2/block-manifest.json`; the plugin's `Block_Policy` reads that file for its commit checks and passes it to the editor bridge, and `tests/gutenberg-v2-preservation-contracts.test.ts` fails if the file drifts.
 
-The authoring matrix contains 23 core types: paragraph, heading, group, columns, column, image, list, list item, buttons, button, quote, spacer, table, pullquote, media-text, separator, details, code, preformatted, gallery, cover, embed and video. Latest Posts and ACF Container remain `fixture_required`. The bridge reports a fixture-gated block as `author_when_reviewed` only when the site's `sitepilot_v2_reviewed_blocks` option lists it; nothing sets that option yet, so neither block is authorable.
+The authoring matrix contains 27 core types: paragraph, heading, group, columns, column, image, list, list item, buttons, button, quote, spacer, table, pullquote, media-text, separator, details, code, preformatted, gallery, cover, embed, video, and accordion with its item, heading and panel. Latest Posts remains `fixture_required` and is enabled only by the site's `sitepilot_v2_reviewed_blocks` option.
+
+ACF blocks are not in the matrix. `gutenbergV2SupportPolicy()` treats every `acf/*` name as `fixture_required`, and the plugin decides per site:
+
+- **Discovery.** `SitePilot\V2\Acf_Blocks` describes every ACF block (block settings, `innerBlocks`, `allowedBlocks`, `usePostMeta`, default align, and every field recursively) with a `schemaHash`. Site discovery returns it as `acf_blocks`, and the editor session hands it to the bridge, which adds it to each ACF block's capability entry as `acf`.
+- **Fixture.** `PlaywrightGutenbergV2Worker.runBlockFixtures()` opens a scratch page editor and calls the bridge's `blockFixture()`: it builds the block with sample values for every field (`gutenbergV2AcfSampleFields`), serializes it, reopens the markup in the editor, waits for ACF's scripts to settle, and compares bytes and field values. `POST /sitepilot/v2/block-fixtures` then repeats the checks on the server: the schema hash is current, the data matches the fields, the markup survives a real save byte-for-byte (a private scratch draft that is deleted straight after), and `render_block()` produces output with no PHP warnings. The result is stored in `sitepilot_v2_block_fixtures`, keyed by block name with its schema hash and ACF version.
+- **Gate.** `Block_Policy` lists an ACF block as authorable only while its record is `passed` and matches the current schema hash and ACF version. The old `sitepilot_v2_reviewed_blocks` option cannot enable an ACF block.
+- **Planning.** The planner prompt describes each authorable ACF block from its definition. The model answers with friendly `fields`; `gutenbergV2AcfDataFromFields()` converts them into ACF's stored data (`{name: value, _name: field_key}`, repeater rows as `name_0_sub`), resolving choice labels and filling defaults. Errors go back to the model in the repair round.
+- **Shape.** ACF plan nodes carry `name`, `data`, `mode` and `align` (ACF's editor script sets `align` on mount, so v2 writes the block's default up front and the block reopens byte-identical).
+- **Commit.** `Commit_Service` checks each authored ACF block's data against the field definitions again (`Acf_Blocks::validate_data`). An `edit_block` keeps stored field values the edit does not restate.
+
+v1's `acf/container` handling now fills data from the live field definitions (`Acf_Blocks::normalize_data`) instead of hardcoded site defaults.
 
 Every block object and attribute object is strict. Unknown attributes, unsupported nesting, unsafe rich text, raw wrapper markup, excessive depth or count, and destination normalization loss fail closed. Optional attributes should be omitted unless the operator requested them. In particular, button `width` is valid in the static contract. The native probe records either preservation or a structured `content_changed` result when the destination normalizes it away; the v2 planner still omits it unless a destination fixture proves preservation. Destination round-trip validation remains authoritative.
 
@@ -59,6 +70,7 @@ Block-specific rules:
 - `core/cover` needs child content and either a bound image (`mediaRef`) or a solid `customOverlayColor`. The bridge sets `isUserOverlayColor` like the editor does.
 - `core/code` keeps line breaks as characters; `core/preformatted` stores them as `<br>`, which is WordPress's own form for that block.
 - `core/video` binds an uploaded or media-library video through `mediaRef`; `autoplay` requires `muted`.
+- `core/accordion` holds `core/accordion-item` blocks, and each item is exactly one `core/accordion-heading` (the toggle title) followed by one `core/accordion-panel` (any content). The bridge copies the accordion's `headingLevel`, `iconPosition` and `showIcon` onto each heading, as the editor does.
 
 ### Editing existing posts
 
@@ -150,4 +162,3 @@ Against the same MAMP profile, with the plugin synced from this repository and N
 - The new-blocks scenario created cover (image and colour), separator, details, code, preformatted, gallery, YouTube embed and uploaded MP4 video blocks (14 nodes). A normal editor save and reopen found all 14 valid and left the bytes unchanged. A scoped code edit kept its line breaks, and an unavailable YouTube URL was rejected before approval.
 - `npm run test:e2e:all` passed all six legacy scenarios. `npm run test:e2e:v2-chat` passed.
 - 306 unit tests and 52 plugin PHPUnit tests passed.
-

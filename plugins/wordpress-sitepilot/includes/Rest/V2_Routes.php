@@ -11,6 +11,7 @@ namespace SitePilot\Rest;
 
 use SitePilot\Registration\Store;
 use SitePilot\Security\Signed_Request_Verifier;
+use SitePilot\V2\Acf_Blocks;
 use SitePilot\V2\Commit_Service;
 use SitePilot\V2\Editor_Session;
 use SitePilot\V2\Feature;
@@ -41,6 +42,8 @@ final class V2_Routes {
 		self::signed_route( '/recover', 'recover', 200 );
 		self::signed_route( '/conditional-support', 'conditional_support', 200 );
 		self::signed_route( '/media-bindings', 'media_bindings', 200 );
+		self::signed_route( '/block-definitions', 'block_definitions', 200 );
+		self::signed_route( '/block-fixtures', 'block_fixtures', 200 );
 	}
 
 	private static function signed_route( string $route, string $method, int $status ): void {
@@ -123,6 +126,45 @@ final class V2_Routes {
 	public static function media_bindings( \WP_REST_Request $request ) {
 		$params = self::json( $request );
 		return $params instanceof \WP_Error ? $params : Media_Service::bind( $params );
+	}
+
+	/**
+	 * ACF blocks on this site with their fields and fixture status.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public static function block_definitions( \WP_REST_Request $request ) {
+		unset( $request );
+		if ( ! Feature::enabled() ) {
+			return Feature::disabled_error();
+		}
+		return array(
+			'schemaVersion' => 'sitepilot.block-definitions/v2',
+			'acfVersion'    => Acf_Blocks::acf_version(),
+			'acfBlocks'     => Acf_Blocks::described_with_status(),
+		);
+	}
+
+	/**
+	 * Records a native save-and-reopen fixture result for one ACF block.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public static function block_fixtures( \WP_REST_Request $request ) {
+		if ( ! Feature::enabled() ) {
+			return Feature::disabled_error();
+		}
+		$params = self::json( $request );
+		if ( $params instanceof \WP_Error ) {
+			return $params;
+		}
+		if ( 'sitepilot.block-fixture/v2' !== ( $params['schemaVersion'] ?? null ) ) {
+			return self::error( 'schema_invalid', 'The block fixture request is invalid.', 400 );
+		}
+		if ( ! current_user_can( 'edit_pages' ) ) {
+			return self::error( 'permission_denied', 'The SitePilot WordPress user cannot create pages, so it cannot run block tests.', 403 );
+		}
+		return Acf_Blocks::record_fixture( $params );
 	}
 
 	/** @return bool|\WP_Error */

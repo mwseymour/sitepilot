@@ -57,6 +57,7 @@ export {
   GUTENBERG_V2_VIDEO_MEDIA_TYPES,
   gutenbergV2BlockManifest,
   gutenbergV2EmbedProvider,
+  gutenbergV2SupportPolicy,
   gutenbergV2ApprovalBindingSchema,
   gutenbergV2ApprovalSchema,
   gutenbergV2BlockNodeSchema,
@@ -141,6 +142,26 @@ export type {
   GutenbergV2ValidationReport
 } from "./gutenberg-v2.js";
 export {
+  GUTENBERG_V2_ACF_BLOCK_NAME_PATTERN,
+  GUTENBERG_V2_ACF_VALUE_TYPES,
+  GutenbergV2AcfDataError,
+  describeGutenbergV2AcfFields,
+  gutenbergV2AcfBlockDefinitionSchema,
+  gutenbergV2AcfChoiceValue,
+  gutenbergV2AcfDataFromFields,
+  gutenbergV2AcfSampleFields,
+  gutenbergV2BlockFixtureResultSchema,
+  gutenbergV2BlockFixtureStatusSchema,
+  isGutenbergV2AcfBlockName
+} from "./gutenberg-v2-acf.js";
+export type {
+  GutenbergV2AcfBlockDefinition,
+  GutenbergV2AcfDataOptions,
+  GutenbergV2AcfFieldDefinition,
+  GutenbergV2BlockFixtureResult,
+  GutenbergV2BlockFixtureStatus
+} from "./gutenberg-v2-acf.js";
+export {
   connectivityDiagnosticsSchema,
   ipcChannels,
   ipcContracts,
@@ -149,6 +170,7 @@ export {
   persistedDiscoverySnapshotSchema,
   providerStatusResponseSchema,
   refreshDiscoveryResponseSchema,
+  testAcfBlocksResponseSchema,
   generateSiteConfigDraftResponseSchema,
   confirmSiteConfigRequestSchema,
   confirmSiteConfigResponseSchema,
@@ -218,6 +240,7 @@ export type {
   PlannerPreferencesPayload,
   ProviderStatusResponse,
   RefreshDiscoveryResponse,
+  TestAcfBlocksResponse,
   GenerateSiteConfigDraftResponse,
   ConfirmSiteConfigResponse,
   GetSiteWorkspaceResponse,

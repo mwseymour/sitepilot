@@ -8,7 +8,7 @@
 
 This specification defines the Gutenberg content workstream for the proposed hosted SitePilot product discussed in [Clarify LLM and Slack architecture](codex://threads/01a0b41b-1683-71d3-b496-ed4ce913e8a2). It is an additive v2 build alongside the current implementation. Existing planning, media, permissions, approval, execution and audit capabilities provide the starting point.
 
-Implementation details and current verification commands are recorded in [Gutenberg v2 implementation](./v2-implementation.md).
+Implementation details and current verification commands are recorded in [Gutenberg v2 implementation](./v2-implementation.md). What v2 does today is summarized in [What Gutenberg v2 can do](./v2-capabilities.md), and planned work, including the MCP server's build order, is in the [v2 roadmap](./v2-roadmap.md).
 
 The wider proposal is a fully hosted service for **one WordPress website**, with Slack as the user interface and GitHub Copilot as the organisation-approved LLM gateway. This document specifies the content engine and its integration contracts. The complete Slack application, Copilot commercial/authentication setup and hosted deployment remain separate workstreams.
 
@@ -50,7 +50,7 @@ The implementation is isolated in these v2 paths and is the default content engi
 | `packages/contracts/src/gutenberg-v2.ts`                                                               | Strict plans, capabilities, candidates, approvals, media, session, commit, read-back, recovery and validation wire contracts.                              |
 | `packages/services/src/gutenberg-v2-*.ts`                                                              | Provider-neutral plan construction, approval-bound orchestration, durable execution state, media staging/binding and recovery.                             |
 | `packages/gutenberg-worker`                                                                            | Isolated Playwright jobs, signed WordPress transport, native compile/verify/preview calls and private review artifacts.                                    |
-| `plugins/wordpress-sitepilot/includes/V2`, `includes/Rest/V2_Routes.php`, `assets/js/editor-bridge.js` | Scoped native editor sessions, runtime discovery, Gutenberg compilation, durable media binding, transactional commit, read-back and conditional recovery.  |
+| `plugins/wordpress-sitepilot/includes/V2`, `includes/Rest/V2_Routes.php`, `assets/js/editor-bridge.js` | Scoped native editor sessions, runtime discovery, Gutenberg compilation, byte-exact preservation of existing blocks, durable media binding, transactional commit, read-back and conditional recovery. `Block_Policy` reads the generated `block-manifest.json`. |
 | `tests/e2e/v2-gutenberg.ts`                                                                            | Destination-native block/media coverage, authenticated read-only enforcement, save/reopen, stale-source conflict, reconciliation and conditional rollback. |
 
 The current PHP `serialize_blocks()` call assembles supplied parsed-block markup. It does not execute static blocks' JavaScript save implementations. Existing checks and canonicalizers remain useful v1 behaviour, but are not the v2 correctness boundary. See [Reliable Gutenberg Block Generation](./reliable-gutenberg-blocks.md) and [Custom Block Support](./custom-block-support.md).
@@ -67,7 +67,9 @@ The first production increment covers:
 
 Start the compiler with paragraphs, headings, groups, columns/column, images, lists/list-item, buttons/button, quotes and spacers. Add the remaining currently supported core types through the same acceptance process, including table, pullquote and media-text. Record the exact enabled set per release; do not advertise complete parity before it passes.
 
-Dynamic blocks and `acf/container` remain fixture-gated. The current MAMP profile does not register `acf/container`, so it provides no authoring evidence for that block. Additional third-party blocks require demonstrated schema, editor-context and render compatibility.
+As of 25 September 2026 the enabled set is 27 core types, including separator, details, code, preformatted, gallery, cover, YouTube/Vimeo embeds, video and the accordion blocks. Existing blocks outside that set are preserved byte-for-byte rather than rejected. The current list is in [What Gutenberg v2 can do](./v2-capabilities.md).
+
+Dynamic blocks and ACF blocks remain fixture-gated. ACF blocks are enabled per site by a recorded save-and-reopen fixture (see [v2 implementation](./v2-implementation.md)); `npm run test:e2e:v2-acf` exercises this against a site that has ACF blocks. The MAMP E2E profile does not register ACF blocks. Other third-party blocks require demonstrated schema, editor-context and render compatibility.
 
 Initial exclusions: arbitrary plugin installation, theme/template editing, changing synced-pattern definitions, changing bound attributes, editing locked structures, automatic repair of unrelated existing invalid content, and unrestricted model-authored HTML. Existing permitted content may be preserved under the rules below. These exclusions do not remove capabilities from v1.
 
@@ -75,18 +77,20 @@ Initial exclusions: arbitrary plugin installation, theme/template editing, chang
 
 ```mermaid
 flowchart TD
-    A[Slack request] --> B[Hosted SitePilot planner via approved Copilot adapter]
+    A[Slack, Claude or Codex via the SitePilot MCP server] --> B[Hosted SitePilot planner via approved Copilot adapter]
     B --> C[Typed v2 plan and support checks]
     C --> D[Hosted browser worker]
     D <--> E[SitePilot editor bridge on destination WordPress]
     E --> F[Destination Gutenberg registry and serializer]
     F --> G[Validated candidate and review artifact]
-    G --> H[Slack approval]
+    G --> H[Human approval in the SitePilot review page or Slack]
     H --> I[Media binding and commit checks]
     I --> J[Existing SitePilot plugin plus v2 write path]
     J --> K[Read back and verify in destination editor]
-    K --> L[Audited result to Slack]
+    K --> L[Audited result to the requesting client]
 ```
+
+Every client reaches the engine through one SitePilot MCP server (section 9.1). Slack is one MCP client; Claude and Codex are others.
 
 ### Hosted browser worker
 
@@ -212,6 +216,39 @@ Prove Copilot authentication, organisation policy, model/vision availability, st
 
 Slack displays concise states: preparing preview, awaiting approval, applying, verifying, completed, or needs attention. Technical block paths and markup differences belong in an attached diagnostic/audit view. Never show success merely because an MCP call or WordPress save returned successfully.
 
+### 9.1 SitePilot MCP server
+
+The hosted app exposes one remote MCP server, and every client uses it: the Slack app, Claude (claude.ai connectors, Claude Desktop, Claude Code) and Codex. The Slack app has no private path into the engine. It is an MCP client with a Slack UI, so the tools, permissions, audit trail and behaviour are the same whichever client started a request.
+
+**Boundary.** The server exposes SitePilot's request workflow, never WordPress. The WordPress plugin's MCP and the signed v2 routes stay internal between the hosted app and the site. No client receives raw content-write, shell, filesystem or unrestricted WordPress tools. Tools call the same entry points the desktop app uses: `ingestThreadMessage` for requests and follow-ups, then the candidate lifecycle above.
+
+**Tools.**
+
+| Tool | Purpose |
+| --- | --- |
+| Read-only lookups | Starting with `find_posts`, `get_post` and `site_capabilities`, and expected to grow. They come from the shared lookup registry, so desktop Conversations, Slack, Claude and Codex always get the same set. Results are marked as untrusted site content. |
+| `create_request` | Starts a request thread from a natural-language request and a target (create a draft, or an existing post ID or resolved lookup). Returns a request ID. |
+| `add_to_request` | A follow-up on an open request: a revision, or extra detail. |
+| `request_status` | State (preparing preview, awaiting approval, applying, verifying, completed, needs attention), a plain-language summary, the change list, and signed links to review screenshots. |
+| `submit_block_plan` | Optional, disabled by default. Submits a strict `sitepilot.block-plan/v2` from the client's own model. It goes through the same compile, validation, review and approval as a planned candidate. |
+
+Compiling takes seconds to minutes, so request tools return an ID immediately. Clients poll `request_status` or use MCP progress notifications. Review screenshots and diagnostics are signed, expiring URLs or MCP resources.
+
+**Lookups will grow.** People will keep asking questions the current lookups can't answer, so the read side is built to extend. Each lookup is a WordPress ability annotated read-only plus a SitePilot allowlist entry, with its tool schema taken from the ability. A flexible `query_content` covers most new questions, and narrow tools cover the rest. Questions no tool can answer are recorded as the backlog. The full plan is in the [v2 roadmap](./v2-roadmap.md#lookup-registry-and-extensible-conversations).
+
+**Approval stays with a person.** No MCP tool approves, executes or publishes. `request_status` returns `awaiting_approval` with a link to SitePilot's review page. In Slack, the same approval appears as buttons on the thread's preview message. Both routes act for the authenticated user and check that user's approver role. The backend creates the approval binding (section 8); a model or client cannot. MCP elicitation may later offer approval inside a client, but only where the client shows it to the user directly, and never as the only route.
+
+**Identity and scopes.**
+- OAuth 2.1, as the MCP authorization specification requires.
+- Each MCP user maps to a SitePilot user and role; the Slack app maps Slack users the same way (the Slack approver mapping in section 12).
+- Scopes separate `read` (lookups), `request` (create and revise requests) and `review` (fetch review artifacts).
+- Every audit entry records the client (Slack, Claude, Codex), the user and the tool.
+- Rate limits apply per user and per site.
+
+**Planning.** By default the hosted planner builds the plan through the approved Copilot adapter, whichever client asked. `submit_block_plan` lets a client's own model plan instead. That can be useful from Claude Code, but a client model may fall outside the organisation's approved-LLM policy, so enable it per organisation only after that policy is confirmed.
+
+**Threads.** An MCP request ID maps to a SitePilot thread, and follow-ups continue the same thread. The Slack app additionally maps a Slack thread to that request ID. Slash commands can start requests; replies in the bot's thread become `add_to_request` calls.
+
 ## 10. Development work packages
 
 | ID     | Deliverable                               | Exit condition                                                                                                                                                                                                                                                         |
@@ -224,8 +261,9 @@ Slack displays concise states: preparing preview, awaiting approval, applying, v
 | V2B-06 | Approval, media and v2 commit             | Review artifacts, approval binding, deterministic media binding, sanitization preparation, conditional/idempotent writes and auditable state transitions work together.                                                                                                |
 | V2B-07 | Persisted verification and recovery       | Fresh-editor read-back, save/reopen E2E, retry reconciliation, conditional rollback and human-edit conflict handling pass.                                                                                                                                             |
 | V2B-08 | Coverage expansion and hosted integration | Complete the agreed core/plugin matrix; connect hosted Slack/Copilot adapters; run the release gate; enable v2 for the single target site.                                                                                                                             |
+| V2B-09 | SitePilot MCP server | Remote MCP server with the section 9.1 tools, OAuth, scopes, audit and rate limits. The Slack app runs as an MCP client. Claude and Codex connect and complete a request that a person approves in the review page. No tool can approve or write directly. |
 
-V2B-01 must pass before committing to the production bridge approach. V2B-02 and V2B-03 can proceed in parallel once the target profile and sample content are available. V2B-04/05 may develop against the agreed contracts; V2B-06/07 require them. The hosted product's Copilot/authentication gate must also pass before V2B-08.
+V2B-01 must pass before committing to the production bridge approach. V2B-02 and V2B-03 can proceed in parallel once the target profile and sample content are available. V2B-04/05 may develop against the agreed contracts; V2B-06/07 require them. The hosted product's Copilot/authentication gate must also pass before V2B-08. The Slack adapter in V2B-08 is built as a client of the V2B-09 MCP server, so V2B-09's request and status tools come first.
 
 The implementation follows the additive layout above: shared services under `packages/services`, versioned schemas under `packages/contracts`, a dedicated browser-worker package, and PHP/JavaScript bridge modules inside `plugins/wordpress-sitepilot`. Broad movement or cleanup of existing v1 services is not required to deliver this workstream.
 
@@ -272,6 +310,7 @@ Remaining rollout gates include:
 - Exact first-release authoring/verification matrix and intentional HTML policy.
 - Private preview/staging, artifact retention, approval expiry and failed-draft/media cleanup policy.
 - Separate Copilot organisation/authentication gate and Slack approver mapping.
+- MCP OAuth provider, user-to-role mapping for Claude and Codex users, and whether `submit_block_plan` is allowed under the organisation's LLM policy.
 - Studio comparison results against matched disposable sites, including missing-block and content-loss controls.
 - Redacted captures of the client's current recurring invalid-block regressions and their expected outcomes.
 - Native save/reopen fixtures for every third-party block proposed for authoring; discovery alone does not enable them.

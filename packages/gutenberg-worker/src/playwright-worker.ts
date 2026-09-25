@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  GutenbergV2AcfDataError,
+  gutenbergV2AcfDataFromFields,
+  gutenbergV2AcfSampleFields,
+  gutenbergV2BlockFixtureResultSchema,
   gutenbergV2BlockPlanSchema,
   gutenbergV2EditorCapabilitySnapshotSchema,
   gutenbergV2EditorCompileResultSchema,
@@ -10,6 +14,7 @@ import {
   gutenbergV2ReadbackSchema,
   gutenbergV2SourceSnapshotSchema,
   gutenbergV2ValidationReportSchema,
+  type GutenbergV2BlockFixtureResult,
   type GutenbergV2BlockPlan,
   type GutenbergV2EditorCapabilitySnapshot,
   type GutenbergV2MediaMapping,
@@ -208,6 +213,84 @@ export class PlaywrightGutenbergV2Worker implements GutenbergV2Worker {
           : { expectedFingerprint: input.expectedFingerprint })
       },
       async (_page, capabilities) => capabilities
+    );
+  }
+
+  /**
+   * Runs the native save-and-reopen fixture for ACF blocks in a scratch
+   * editor on the site. Each block is built with sample values for every
+   * field it can hold; the plugin re-checks and records each result.
+   */
+  public async runBlockFixtures(input: {
+    siteId: string;
+    blockNames?: readonly string[];
+  }): Promise<{
+    capabilities: GutenbergV2EditorCapabilitySnapshot;
+    results: GutenbergV2BlockFixtureResult[];
+  }> {
+    return this.#withEditor(
+      {
+        executionId: `fixture-${randomUUID()}`,
+        siteId: input.siteId,
+        postType: "page"
+      },
+      async (page, capabilities) => {
+        const results: GutenbergV2BlockFixtureResult[] = [];
+        for (const block of capabilities.blocks) {
+          const definition = block.acf;
+          if (
+            !definition ||
+            !definition.authorable ||
+            (input.blockNames !== undefined &&
+              !input.blockNames.includes(block.name))
+          )
+            continue;
+          let data: Record<string, unknown>;
+          try {
+            data = gutenbergV2AcfDataFromFields(
+              definition,
+              gutenbergV2AcfSampleFields(definition, capabilities.siteUrl)
+            );
+          } catch (error) {
+            results.push({
+              schemaVersion: "sitepilot.block-fixture-result/v2",
+              blockName: block.name,
+              schemaHash: definition.schemaHash,
+              serializedContent: "",
+              reopenedContent: "",
+              issues: [
+                {
+                  code: "schema_invalid",
+                  message:
+                    error instanceof GutenbergV2AcfDataError
+                      ? `No test values fit this block: ${error.message}`
+                      : "No test values could be built for this block."
+                }
+              ]
+            });
+            continue;
+          }
+          const raw = await page.evaluate(
+            async (payload) => {
+              const bridge = (
+                globalThis as unknown as {
+                  sitepilotV2?: {
+                    blockFixture?: (value: unknown) => Promise<unknown>;
+                  };
+                }
+              ).sitepilotV2;
+              if (typeof bridge?.blockFixture !== "function")
+                throw new Error(
+                  "sitepilotV2.blockFixture is unavailable; update the SitePilot plugin."
+                );
+              return bridge.blockFixture(payload);
+            },
+            { blockName: block.name, data }
+          );
+          results.push(gutenbergV2BlockFixtureResultSchema.parse(raw));
+        }
+        return { capabilities, results };
+      }
     );
   }
 
@@ -451,6 +534,50 @@ export class PlaywrightGutenbergV2Worker implements GutenbergV2Worker {
           ancestorStyles.push(ancestor.getAttribute("style"));
           ancestor = ancestor.parentElement;
         }
+        // Without an iframe (WordPress drops it when any registered block
+        // uses an older block API, as ACF blocks do) the canvas grows with
+        // the height forced on it, so its scrollHeight never settles.
+        // Measure the content itself: the lowest block below the root's top.
+        // Kept anonymous (read from an array) so bundlers do not wrap it in a
+        // naming helper that does not exist inside the page.
+        const elementContentHeight = [
+          (): number => {
+            const measurable = previewRoot as unknown as {
+              getBoundingClientRect(): { top: number };
+              querySelectorAll(selector: string): {
+                length: number;
+                item(index: number): MeasurableContentElement | null;
+              };
+            };
+            const top = measurable.getBoundingClientRect().top;
+            const nodes = measurable.querySelectorAll(
+              ".editor-post-title, .wp-block-post-title, [data-block]"
+            );
+            let bottom = 0;
+            for (let index = 0; index < nodes.length; index += 1) {
+              const node = nodes.item(index);
+              if (node)
+                bottom = Math.max(
+                  bottom,
+                  node.getBoundingClientRect().bottom - top
+                );
+            }
+            if (bottom <= 0) {
+              return Math.ceil(
+                Math.max(previewRoot.scrollHeight, previewRoot.offsetHeight)
+              );
+            }
+            const padding =
+              Number.parseFloat(
+                (
+                  globalThis as unknown as {
+                    getComputedStyle(value: unknown): { paddingBottom: string };
+                  }
+                ).getComputedStyle(previewRoot).paddingBottom
+              ) || 0;
+            return Math.ceil(bottom + padding);
+          }
+        ][0]!;
         const isIframe = previewRoot.tagName === "IFRAME";
         const iframe = isIframe ? previewRoot : undefined;
         const frameDocument = iframe?.contentDocument;
@@ -521,9 +648,7 @@ ${captureSelector}, ${captureSelector} * {
         );
         let requestedHeight = frameDocument
           ? Math.ceil(initialContentBottom + initialPadding)
-          : Math.ceil(
-              Math.max(previewRoot.scrollHeight, previewRoot.offsetHeight)
-            );
+          : elementContentHeight();
         const initialWidth = Math.ceil(
           previewRoot.getBoundingClientRect().width
         );
@@ -642,9 +767,7 @@ body *:has(${captureSelector}) {
           );
           const nextHeight = frameDocument
             ? Math.ceil(nextContentBottom + nextPadding)
-            : Math.ceil(
-                Math.max(previewRoot.scrollHeight, previewRoot.offsetHeight)
-              );
+            : elementContentHeight();
           const visibleHeight = frameDocument
             ? (iframe?.clientHeight ?? 0)
             : previewRoot.getBoundingClientRect().height;
@@ -687,9 +810,7 @@ body *:has(${captureSelector}) {
         );
         const finalContentHeight = frameDocument
           ? Math.ceil(finalContentBottom + finalPadding)
-          : Math.ceil(
-              Math.max(previewRoot.scrollHeight, previewRoot.offsetHeight)
-            );
+          : elementContentHeight();
         const visibleHeight = frameDocument
           ? (iframe?.clientHeight ?? 0)
           : bounds.height;

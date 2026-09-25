@@ -1,6 +1,9 @@
 import { useState, type ReactElement } from "react";
 
-import type { ConnectivityDiagnosticsResult } from "@sitepilot/contracts";
+import type {
+  ConnectivityDiagnosticsResult,
+  TestAcfBlocksResponse
+} from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import { useAppBusy } from "../../button-loading.js";
@@ -12,6 +15,9 @@ export function DiagnosticsPage(): ReactElement {
   const [diag, setDiag] = useState<ConnectivityDiagnosticsResult | null>(null);
   const [discoveryMsg, setDiscoveryMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [acfResults, setAcfResults] = useState<
+    Extract<TestAcfBlocksResponse, { ok: true }>["results"] | null
+  >(null);
 
   async function runDiagnostics(): Promise<void> {
     setBusy(true);
@@ -47,6 +53,23 @@ export function DiagnosticsPage(): ReactElement {
       }
     } catch {
       setErr("Discovery refresh failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testAcfBlocks(): Promise<void> {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await window.sitePilotDesktop.testAcfBlocks({ siteId });
+      if (!res.ok) {
+        setErr(res.message);
+      } else {
+        setAcfResults(res.results);
+      }
+    } catch {
+      setErr("The ACF block test failed to run.");
     } finally {
       setBusy(false);
     }
@@ -129,6 +152,48 @@ export function DiagnosticsPage(): ReactElement {
           </button>
         </div>
       ) : null}
+      <section className="diagnostics-empty">
+        <div>
+          <h2>ACF blocks</h2>
+          <p className="muted">
+            SitePilot writes an ACF block only after it passes a save-and-reopen
+            test in this site&apos;s editor. Until then, and again after its
+            field group or ACF changes, the block is kept untouched. The test
+            builds each block in a scratch editor and deletes its test draft.
+          </p>
+          {acfResults ? (
+            acfResults.length === 0 ? (
+              <p className="muted">This site has no ACF blocks to test.</p>
+            ) : (
+              <ul className="acf-block-results">
+                {acfResults.map((result) => (
+                  <li key={result.blockName}>
+                    <code>{result.blockName}</code>{" "}
+                    <strong>
+                      {result.status === "passed"
+                        ? "Passed, v2 can write it"
+                        : result.status === "unsupported"
+                          ? "Kept untouched (has fields v2 cannot fill)"
+                          : "Failed, kept untouched"}
+                    </strong>
+                    {result.message ? ` — ${result.message}` : null}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : null}
+        </div>
+        <div className="action-row">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void testAcfBlocks()}
+          >
+            {acfResults ? "Test ACF blocks again" : "Test ACF blocks"}
+          </button>
+        </div>
+      </section>
     </article>
   );
 }

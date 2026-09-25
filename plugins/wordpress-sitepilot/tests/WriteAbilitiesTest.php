@@ -412,8 +412,11 @@ final class WriteAbilitiesTest extends TestCase {
 		$this->assertTrue( $result['ok'] );
 		$content = $result['preview']['post_content'];
 		$this->assertStringContainsString( '<!-- wp:acf/container', $content );
-		$this->assertStringContainsString( '"field_container_colour":"bg-white"', $content );
-		$this->assertStringContainsString( '"colour":"bg-white"', $content );
+		// Defaults come from the live field definitions, stored the way ACF stores them.
+		$this->assertStringContainsString( '"colour":"bg-white","_colour":"field_container_colour"', $content );
+		$this->assertStringContainsString( '"padding_amount":"py-[80px] md:py-[100px]","_padding_amount":"field_container_padding_amount"', $content );
+		$this->assertStringContainsString( '"bottom_border":"1","_bottom_border":"field_container_bottom_border"', $content );
+		$this->assertStringNotContainsString( '"field_container_colour":', $content );
 		$this->assertStringContainsString( '<!-- wp:paragraph -->', $content );
 		$this->assertStringContainsString( '<p>First paragraph.</p>', $content );
 		$this->assertStringContainsString( '<p>Second paragraph.</p>', $content );
@@ -452,8 +455,9 @@ final class WriteAbilitiesTest extends TestCase {
 
 		$this->assertTrue( $result['ok'] );
 		$content = $result['preview']['post_content'];
-		$this->assertStringContainsString( '"field_container_colour":"bg-gray-300"', $content );
 		$this->assertStringContainsString( '"colour":"bg-gray-300"', $content );
+		// The loose top-level attribute moves into the field instead of being stored as well.
+		$this->assertStringNotContainsString( '"color":"grey"', $content );
 	}
 
 	public function test_create_draft_rejects_unloaded_acf_blocks(): void {

@@ -142,18 +142,64 @@ namespace {
 		);
 	}
 
+	$GLOBALS['sitepilot_test_options'] = array();
+
+	function get_option( string $name, mixed $default = false ): mixed {
+		return $GLOBALS['sitepilot_test_options'][ $name ] ?? $default;
+	}
+
+	function update_option( string $name, mixed $value, mixed $autoload = null ): bool {
+		unset( $autoload );
+		$GLOBALS['sitepilot_test_options'][ $name ] = $value;
+		return true;
+	}
+
+	define( 'ACF_VERSION', '6.8.3' );
+
+	function acf_get_block_types(): array {
+		return array(
+			'acf/container' => array(
+				'title'    => 'Container',
+				'mode'     => 'preview',
+				'supports' => array(
+					'align' => true,
+					'jsx'   => true,
+				),
+			),
+		);
+	}
+
 	function acf_get_fields( array $group ): array {
 		unset( $group );
 		return array(
 			array(
-				'key'     => 'field_container_colour',
-				'name'    => 'colour',
-				'label'   => 'Colour',
-				'type'    => 'select',
-				'choices' => array(
+				'key'           => 'field_container_colour',
+				'name'          => 'colour',
+				'label'         => 'Colour',
+				'type'          => 'select',
+				'default_value' => 'white',
+				'choices'       => array(
 					'bg-white'    => 'white',
 					'bg-gray-300' => 'grey',
 				),
+			),
+			array(
+				'key'           => 'field_container_padding_amount',
+				'name'          => 'padding_amount',
+				'label'         => 'Padding Amount',
+				'type'          => 'select',
+				'default_value' => 'normal',
+				'choices'       => array(
+					'py-0'                    => 'none',
+					'py-[80px] md:py-[100px]' => 'normal',
+				),
+			),
+			array(
+				'key'           => 'field_container_bottom_border',
+				'name'          => 'bottom_border',
+				'label'         => 'Bottom Border',
+				'type'          => 'true_false',
+				'default_value' => 1,
 			),
 		);
 	}

@@ -1,5 +1,7 @@
 import type { Buffer } from "node:buffer";
 
+import type { GutenbergV2BlockFixtureStatus } from "@sitepilot/contracts";
+
 import {
   DurableGutenbergV2MediaService,
   type GutenbergV2StagedAssetStore
@@ -100,5 +102,48 @@ export function createSignedGutenbergV2Runtime(
     stagedAssets: options.stagedAssets,
     transport
   });
-  return { worker, transport, media };
+  /**
+   * Tests ACF blocks on the site: runs each block's native save-and-reopen
+   * fixture in a scratch editor, then has the plugin re-check and record it.
+   * A block becomes authorable only when its recorded status is `passed`.
+   */
+  const runBlockFixtures = async (
+    blockNames?: readonly string[]
+  ): Promise<GutenbergV2BlockFixtureStatus[]> => {
+    const capabilities = await worker.discoverCapabilities({
+      siteId: options.siteId,
+      postType: "page"
+    });
+    const names = capabilities.blocks
+      .filter(
+        (block) =>
+          block.acf?.authorable === true &&
+          (blockNames === undefined || blockNames.includes(block.name))
+      )
+      .map((block) => block.name);
+    const statuses: GutenbergV2BlockFixtureStatus[] = capabilities.blocks
+      .filter(
+        (block) =>
+          block.acf !== undefined &&
+          !block.acf.authorable &&
+          (blockNames === undefined || blockNames.includes(block.name))
+      )
+      .map((block) => ({
+        blockName: block.name,
+        status: "unsupported" as const,
+        message: `Needs fields v2 cannot fill: ${(block.acf?.unsupportedFields ?? []).join(", ")}.`
+      }));
+    // One editor job per block keeps each within the worker's job deadline.
+    for (const name of names) {
+      const { results } = await worker.runBlockFixtures({
+        siteId: options.siteId,
+        blockNames: [name]
+      });
+      for (const result of results) {
+        statuses.push(await transport.recordBlockFixture(result));
+      }
+    }
+    return statuses;
+  };
+  return { worker, transport, media, runBlockFixtures };
 }

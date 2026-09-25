@@ -8,6 +8,9 @@ The current best general overview of the whole system is [docs/system-overview.m
 
 Other high-value documents:
 
+- [What Gutenberg v2 can do](./docs/v2-capabilities.md) for the current content engine's operations, blocks, safety rules and gaps
+- [v2 implementation](./docs/v2-implementation.md) for how the v2 engine is built and verified
+- [v2 roadmap](./docs/v2-roadmap.md) for planned v2 work: SEO, publishing, categories and tags, the lookup registry, the MCP server and ACF follow-ups
 - [v2 build](./docs/v2-build.md) for the proposed Gutenberg content engine within the hosted, single-site Slack/Copilot build
 - [v2 expansion plan](./docs/v2-expansion-plan.md) for more core blocks, ACF blocks, SEO fields, publish/unpublish and safe existing-post edits
 - [docs/architecture.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/architecture.md) for the locked architectural shape and boundaries

@@ -713,7 +713,7 @@ final class Commit_Service {
 		$is_update = 'create_draft' !== ( $intent['operation'] ?? 'create_draft' );
 		$refs = array();
 		$count = 0;
-		$walk = function ( array $nodes, int $depth, ?string $parent ) use ( &$walk, &$refs, &$count, $allowed, $is_update ): ?\WP_Error {
+		$walk = function ( array $nodes, int $depth, ?string $parent, bool $partial = false ) use ( &$walk, &$refs, &$count, $allowed, $is_update ): ?\WP_Error {
 			if ( $depth > 12 ) {
 				return self::error( 'invalid_nesting', 'The intent exceeds the v2 nesting limit.', 422 );
 			}
@@ -743,6 +743,13 @@ final class Commit_Service {
 					return self::error( 'schema_invalid', 'Block refs must be non-empty and unique.', 400 );
 				}
 				$refs[ $ref ] = true;
+				if ( Acf_Blocks::is_acf_block( $name ) ) {
+					// An edited block keeps the source values it does not restate.
+					$data_error = Acf_Blocks::validate_data( $name, $node['attributes']['data'] ?? array(), $partial && 1 === $depth );
+					if ( null !== $data_error ) {
+						return self::error( 'schema_invalid', $data_error, 422 );
+					}
+				}
 				$children = isset( $node['children'] ) && is_array( $node['children'] ) ? $node['children'] : array();
 				$required_parent = Block_Policy::required_parent( $name );
 				// A null parent is an insertion into an existing source block, whose
@@ -769,7 +776,7 @@ final class Commit_Service {
 				if ( 'insert_blocks' === $type && isset( $operation['blocks'] ) && is_array( $operation['blocks'] ) ) {
 					$error = $walk( $operation['blocks'], 1, $is_root ? '#root' : null );
 				} elseif ( 'edit_block' === $type && isset( $operation['replacement'] ) && is_array( $operation['replacement'] ) ) {
-					$error = $walk( array( $operation['replacement'] ), 1, null );
+					$error = $walk( array( $operation['replacement'] ), 1, null, true );
 				} elseif ( in_array( $type, array( 'remove_block', 'move_block' ), true ) ) {
 					$error = null;
 				} else {

@@ -9,7 +9,10 @@ import {
   SqliteGutenbergV2ExecutionJournal,
   type GutenbergV2StagedAssetStore
 } from "@sitepilot/services";
-import type { GutenbergV2SourceSnapshot } from "@sitepilot/contracts";
+import type {
+  GutenbergV2BlockFixtureStatus,
+  GutenbergV2SourceSnapshot
+} from "@sitepilot/contracts";
 import {
   FileGutenbergV2ReviewArtifactStore,
   createSignedGutenbergV2Runtime,
@@ -33,6 +36,10 @@ export type GutenbergV2DesktopRuntime = {
     postType: "post" | "page";
     postId: number;
   }): Promise<GutenbergV2SourceSnapshot>;
+  /** Runs and records the per-site save-and-reopen test for ACF blocks. */
+  runBlockFixtures?(
+    blockNames?: readonly string[]
+  ): Promise<GutenbergV2BlockFixtureStatus[]>;
   close(): Promise<void>;
 };
 
@@ -120,6 +127,7 @@ export async function createGutenbergV2DesktopRuntime(
       stagedAssets,
       readReviewArtifact: (reference) => artifacts.read(reference),
       readSource: (input) => signed.worker.readSource(input),
+      runBlockFixtures: (blockNames) => signed.runBlockFixtures(blockNames),
       close: () => signed.worker.close(),
       journal,
       content: new GutenbergV2ContentService({

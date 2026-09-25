@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import {
   GUTENBERG_V2_SOURCE_BLOCK,
-  GUTENBERG_V2_SUPPORT_MATRIX,
   gutenbergV2ApprovalSchema,
   gutenbergV2BlockPlanSchema,
   gutenbergV2CommitReceiptSchema,
@@ -33,7 +32,8 @@ import {
   type GutenbergV2RecoverResponse,
   type GutenbergV2SourceSnapshot,
   type GutenbergV2ValidationIssue,
-  type GutenbergV2ValidationReport
+  type GutenbergV2ValidationReport,
+  gutenbergV2SupportPolicy
 } from "@sitepilot/contracts";
 
 import {
@@ -227,10 +227,6 @@ const ALLOWED_TRANSITIONS: Readonly<
   rollback_conflict: [],
   manual_intervention_required: []
 };
-
-const staticSupport = new Map(
-  GUTENBERG_V2_SUPPORT_MATRIX.map((entry) => [entry.name, entry])
-);
 
 function planPostType(plan: GutenbergV2BlockPlan): "post" | "page" {
   return plan.target.postType;
@@ -1162,7 +1158,7 @@ export class GutenbergV2ContentService {
       // Kept source blocks are checked byte-for-byte by the bridge and the
       // WordPress commit policy instead.
       if (node.name === GUTENBERG_V2_SOURCE_BLOCK) continue;
-      const policy = staticSupport.get(node.name);
+      const policy = gutenbergV2SupportPolicy(node.name);
       const block = destination.get(node.name);
       if (!block?.registered)
         throw new GutenbergV2ServiceError(

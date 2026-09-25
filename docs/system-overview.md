@@ -98,6 +98,8 @@ At a high level, the implemented workflow is:
 7. Approved actions are mapped to plugin MCP tool calls and executed against WordPress.
 8. Results, approvals, and rollback metadata are appended to the audit log.
 
+Content requests now run on the Gutenberg v2 engine by default. It builds each candidate in the site's own block editor, binds approval to the exact result, and verifies the write in a fresh editor. See [What Gutenberg v2 can do](./v2-capabilities.md).
+
 ## Current Desktop Surface Area
 
 The renderer currently includes:
@@ -175,6 +177,7 @@ These are the main current gaps called out by the latest handoff:
 - Locked architecture and boundaries: [docs/architecture.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/architecture.md)
 - Product intent and complete scope: [SPEC.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/SPEC.md)
 - Build sequence and completion history: [docs/task-graph.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/task-graph.md)
-- Gutenberg write contract: [docs/reliable-gutenberg-blocks.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/reliable-gutenberg-blocks.md)
+- Gutenberg v2 capabilities: [docs/v2-capabilities.md](./v2-capabilities.md)
+- Gutenberg v1 write contract: [docs/reliable-gutenberg-blocks.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/reliable-gutenberg-blocks.md)
 - Screenshot analysis workflow: [docs/screenshot-analysis-workflow.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/screenshot-analysis-workflow.md)
 - Plugin setup and routes: [plugins/wordpress-sitepilot/README.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/plugins/wordpress-sitepilot/README.md)

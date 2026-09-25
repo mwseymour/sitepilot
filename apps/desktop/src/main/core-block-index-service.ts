@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   ALL_WORDPRESS_CORE_BLOCK_NAMES,
+  GUTENBERG_V2_SUPPORT_MATRIX,
   coreBlockLabel,
-  isSupportedWordPressCoreBlockName,
   type IndexedCoreBlockEntry,
   type WordPressCoreBlockIndex
 } from "@sitepilot/contracts";
@@ -112,10 +112,43 @@ async function listStyleFiles(blockDir: string, root: string): Promise<string[]>
     .sort((left, right) => left.localeCompare(right));
 }
 
-function blockReason(name: string, executable: boolean): string {
-  return executable
-    ? "Indexed from the local WordPress snapshot and executable because SitePilot already has explicit parsed-block canonicalization for it."
-    : "Indexed from the local WordPress snapshot, but execution remains blocked until SitePilot has explicit parsed-block canonicalization for it. Add it manually in the WordPress post editor for now.";
+// Support follows the Gutenberg v2 engine, which is what requests use.
+const V2_SUPPORT = new Map<string, string>(
+  GUTENBERG_V2_SUPPORT_MATRIX.map((entry) => [entry.name, entry.mode])
+);
+
+function isV2Authorable(name: string): boolean {
+  return V2_SUPPORT.get(name) === "author";
+}
+
+function blockReason(name: string): string {
+  const mode = V2_SUPPORT.get(name);
+  if (mode === "author") {
+    return "Written by the Gutenberg v2 engine: built and checked in the site's own editor before approval.";
+  }
+  if (mode === "fixture_required") {
+    return "Kept unchanged in existing posts. v2 writes it only after this site passes its native block test.";
+  }
+  return "Kept unchanged in existing posts, but v2 does not write it yet. Add it in the WordPress editor for now.";
+}
+
+// Cached indexes predate the current support list, so support is always
+// recomputed when an index is read.
+function withCurrentSupport(index: WordPressCoreBlockIndex): WordPressCoreBlockIndex {
+  const blocks = index.blocks.map((entry) => {
+    const executable = isV2Authorable(entry.name);
+    return {
+      ...entry,
+      executable,
+      status: executable ? ("executable" as const) : ("indexed" as const),
+      reason: blockReason(entry.name)
+    };
+  });
+  return {
+    ...index,
+    executableBlockCount: blocks.filter((entry) => entry.executable).length,
+    blocks
+  };
 }
 
 async function indexSingleBlock(input: {
@@ -150,7 +183,7 @@ async function indexSingleBlock(input: {
     typeof metadata.title === "string" && metadata.title.trim().length > 0
       ? metadata.title.trim()
       : coreBlockLabel(name);
-  const executable = isSupportedWordPressCoreBlockName(name);
+  const executable = isV2Authorable(name);
   const hasRenderPath = renderPath ? await pathExists(renderPath) : false;
   const hasPhpRegistrationPath = await pathExists(phpRegistrationPath);
   const parent = stringArray(metadata.parent);
@@ -166,7 +199,7 @@ async function indexSingleBlock(input: {
     title,
     executable,
     status: executable ? "executable" : "indexed",
-    reason: blockReason(name, executable),
+    reason: blockReason(name),
     metadataPath: relativeToSnapshot(input.root, metadataPath) ?? "block.json",
     canContainInnerBlocks,
     likelyUsesInnerBlocks,
@@ -266,7 +299,7 @@ export async function readCachedWordPressCoreBlockIndex(
   }
   try {
     const raw = await fs.readFile(cachePath, "utf8");
-    return JSON.parse(raw) as WordPressCoreBlockIndex;
+    return withCurrentSupport(JSON.parse(raw) as WordPressCoreBlockIndex);
   } catch {
     return null;
   }

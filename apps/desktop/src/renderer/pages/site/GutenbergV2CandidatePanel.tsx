@@ -108,6 +108,7 @@ const OUTLINE_TEXT_ATTRIBUTES = [
   "caption",
   "mediaAlt",
   "summary",
+  "title",
   "url"
 ];
 

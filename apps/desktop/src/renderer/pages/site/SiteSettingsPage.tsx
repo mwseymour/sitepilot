@@ -664,9 +664,10 @@ export function SiteSettingsPage(): ReactElement | null {
           </p>
           <p className="muted small-print">
             SitePilot indexes the local WordPress snapshot to discover core
-            block metadata, but only executes blocks with explicit parsed-block
-            canonicalization. Everything else stays blocked instead of saving
-            guessed Gutenberg HTML.
+            block metadata. The Gutenberg v2 engine writes the blocks listed as
+            executable, building each one in the site's own editor. Every other
+            block is kept unchanged when SitePilot edits a post that contains
+            it.
           </p>
           <label className="settings-field">
             <span>WordPress core source folder</span>

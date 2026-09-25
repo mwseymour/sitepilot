@@ -77,6 +77,7 @@ export const ipcChannels = {
   registerSite: "site.register",
   runSiteDiagnostics: "site.runDiagnostics",
   refreshSiteDiscovery: "site.refreshDiscovery",
+  testAcfBlocks: "site.testAcfBlocks",
   generateSiteConfigDraft: "site.generateConfigDraft",
   getSiteWorkspace: "site.getWorkspace",
   saveSiteConfig: "site.saveConfig",
@@ -258,6 +259,35 @@ export const refreshDiscoveryResponseSchema = z.discriminatedUnion("ok", [
 export type RefreshDiscoveryResponse = z.infer<
   typeof refreshDiscoveryResponseSchema
 >;
+
+/** Per-site save-and-reopen test results for the site's ACF blocks. */
+export const testAcfBlocksResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    results: z.array(
+      z.object({
+        blockName: z.string().min(1),
+        status: z.enum([
+          "passed",
+          "failed",
+          "stale",
+          "untested",
+          "unsupported",
+          "unregistered"
+        ]),
+        message: z.string().optional(),
+        testedAt: z.string().optional()
+      })
+    )
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type TestAcfBlocksResponse = z.infer<typeof testAcfBlocksResponseSchema>;
 
 export const generateSiteConfigDraftResponseSchema = z.discriminatedUnion(
   "ok",
@@ -1088,6 +1118,10 @@ export const ipcContracts = {
     request: siteIdRequestSchema,
     response: refreshDiscoveryResponseSchema
   },
+  [ipcChannels.testAcfBlocks]: {
+    request: siteIdRequestSchema,
+    response: testAcfBlocksResponseSchema
+  },
   [ipcChannels.generateSiteConfigDraft]: {
     request: siteIdRequestSchema,
     response: generateSiteConfigDraftResponseSchema
@@ -1295,6 +1329,9 @@ export interface SitePilotDesktopApi {
   refreshSiteDiscovery: (
     request: IpcRequest<typeof ipcChannels.refreshSiteDiscovery>
   ) => Promise<IpcResponse<typeof ipcChannels.refreshSiteDiscovery>>;
+  testAcfBlocks: (
+    request: IpcRequest<typeof ipcChannels.testAcfBlocks>
+  ) => Promise<IpcResponse<typeof ipcChannels.testAcfBlocks>>;
   generateSiteConfigDraft: (
     request: IpcRequest<typeof ipcChannels.generateSiteConfigDraft>
   ) => Promise<IpcResponse<typeof ipcChannels.generateSiteConfigDraft>>;
