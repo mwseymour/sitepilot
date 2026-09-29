@@ -369,7 +369,7 @@ async function main(): Promise<void> {
         target: { operation: "create_draft", postType: "page" },
         capabilities,
         client: createOpenAiChatClient(E2E_OPENAI_API_KEY),
-        model: process.env.SITEPILOT_ACF_LLM_MODEL ?? "gpt-4o-mini"
+        model: process.env.SITEPILOT_ACF_LLM_MODEL ?? "gpt-5.4-mini"
       });
       const llm = await execute(service, planned.plan, "llm");
       assert(

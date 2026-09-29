@@ -11,7 +11,8 @@ import {
 } from "@sitepilot/services";
 import type {
   GutenbergV2BlockFixtureStatus,
-  GutenbergV2SourceSnapshot
+  GutenbergV2SourceSnapshot,
+  GutenbergV2ThirdPartyReport
 } from "@sitepilot/contracts";
 import {
   FileGutenbergV2ReviewArtifactStore,
@@ -40,6 +41,8 @@ export type GutenbergV2DesktopRuntime = {
   runBlockFixtures?(
     blockNames?: readonly string[]
   ): Promise<GutenbergV2BlockFixtureStatus[]>;
+  /** Read-only probe and content scan of the site's third-party blocks. */
+  probeThirdPartyBlocks?(): Promise<GutenbergV2ThirdPartyReport>;
   close(): Promise<void>;
 };
 
@@ -128,6 +131,7 @@ export async function createGutenbergV2DesktopRuntime(
       readReviewArtifact: (reference) => artifacts.read(reference),
       readSource: (input) => signed.worker.readSource(input),
       runBlockFixtures: (blockNames) => signed.runBlockFixtures(blockNames),
+      probeThirdPartyBlocks: () => signed.probeThirdPartyBlocks(),
       close: () => signed.worker.close(),
       journal,
       content: new GutenbergV2ContentService({

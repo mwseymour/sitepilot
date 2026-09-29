@@ -29,10 +29,35 @@ final class Server_Registrar {
 	 */
 	public static function register_server( $adapter ): void {
 		if ( ! $adapter instanceof McpAdapter ) {
+			Mcp_Status::record_failure(
+				Mcp_Status::ISSUE_ADAPTER_INCOMPATIBLE,
+				sprintf( 'mcp_adapter_init passed %s instead of %s.', get_debug_type( $adapter ), McpAdapter::class )
+			);
 			return;
 		}
 
-		$result = $adapter->create_server(
+		try {
+			$result = self::create_server( $adapter );
+		} catch ( \Throwable $e ) {
+			// A different adapter version can change create_server()'s signature.
+			Mcp_Status::record_failure( Mcp_Status::ISSUE_ADAPTER_INCOMPATIBLE, get_class( $e ) . ': ' . $e->getMessage() );
+			return;
+		}
+
+		if ( is_wp_error( $result ) ) {
+			Mcp_Status::record_failure( Mcp_Status::ISSUE_REGISTRATION_FAILED, $result->get_error_message() );
+			return;
+		}
+
+		Mcp_Status::record_registered();
+	}
+
+	/**
+	 * @param McpAdapter $adapter Registry.
+	 * @return mixed McpAdapter on success, WP_Error on failure.
+	 */
+	private static function create_server( McpAdapter $adapter ) {
+		return $adapter->create_server(
 			'sitepilot-bridge',
 			'sitepilot',
 			'mcp',
@@ -58,11 +83,5 @@ final class Server_Registrar {
 			array(),
 			array( Mcp_Permission::class, 'check_access' )
 		);
-
-		if ( is_wp_error( $result ) ) {
-			error_log(
-				'[sitepilot] MCP server registration failed: ' . $result->get_error_message()
-			);
-		}
 	}
 }

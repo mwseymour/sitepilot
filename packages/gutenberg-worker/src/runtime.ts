@@ -1,6 +1,10 @@
 import type { Buffer } from "node:buffer";
 
-import type { GutenbergV2BlockFixtureStatus } from "@sitepilot/contracts";
+import {
+  buildGutenbergV2ThirdPartyReport,
+  type GutenbergV2BlockFixtureStatus,
+  type GutenbergV2ThirdPartyReport
+} from "@sitepilot/contracts";
 
 import {
   DurableGutenbergV2MediaService,
@@ -145,5 +149,17 @@ export function createSignedGutenbergV2Runtime(
     }
     return statuses;
   };
-  return { worker, transport, media, runBlockFixtures };
+  /**
+   * Read-only report of the site's third-party blocks: the editor probe
+   * joined with the plugin's scan of how existing content uses them.
+   */
+  const probeThirdPartyBlocks =
+    async (): Promise<GutenbergV2ThirdPartyReport> => {
+      const [probe, usage] = await Promise.all([
+        worker.probeThirdPartyBlocks({ siteId: options.siteId }),
+        transport.readBlockUsage()
+      ]);
+      return buildGutenbergV2ThirdPartyReport(probe, usage);
+    };
+  return { worker, transport, media, runBlockFixtures, probeThirdPartyBlocks };
 }

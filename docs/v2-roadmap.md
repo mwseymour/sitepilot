@@ -133,7 +133,7 @@ ACF blocks are discovered, authored from the site's field definitions, and enabl
 - **Attached media for ACF image and file fields.** Today these fields take existing media-library IDs only. The fix is to bind them through `mediaRef` like core images: upload after approval, then checksum-verify.
 - **`usePostMeta` storage.** Blocks that keep their fields in post meta stay kept-only. Writing them needs the post-meta path from the shared prerequisite above.
 - **More field types.** A block with a required gallery, user, Google Map or similar field stays kept-only until that field type has a reviewed shape.
-- **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely but cannot be authored. The same per-site fixture approach would apply.
+- **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely but cannot be authored. The read-only **Test third-party blocks** diagnostic (probe, placement, settings and content usage) is built; next is a reviewed definition per block, starting with Yoast FAQ, plus the same per-site save-and-reopen test ACF blocks use.
 
 ## Large media uploads
 

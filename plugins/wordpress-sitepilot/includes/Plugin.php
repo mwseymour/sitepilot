@@ -11,6 +11,7 @@ namespace SitePilot;
 
 use SitePilot\Admin\Settings_Page;
 use SitePilot\Mcp\Abilities_Registrar;
+use SitePilot\Mcp\Mcp_Status;
 use SitePilot\Mcp\Write_Abilities;
 use SitePilot\Mcp\Server_Registrar;
 use SitePilot\Security\Signed_Request_Verifier;
@@ -38,6 +39,7 @@ final class Plugin {
 		Editor_Session::register_enforcement_hooks();
 		Commit_Service::register_hooks();
 		Media_Service::register_hooks();
+		Mcp_Status::register_hooks();
 
 		add_action( 'shutdown', array( Signed_Request_Verifier::class, 'reset_request_context' ), 999 );
 

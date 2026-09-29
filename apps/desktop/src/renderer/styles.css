@@ -1677,6 +1677,75 @@ h2 {
   justify-content: flex-end;
 }
 
+.third-party-blocks {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.third-party-blocks-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.third-party-blocks-head h2,
+.third-party-blocks-head p {
+  margin: 0;
+}
+
+.third-party-blocks-head p {
+  max-width: 34rem;
+  margin-top: 0.4rem;
+}
+
+.third-party-table {
+  font-size: 0.84rem;
+}
+
+.third-party-table th {
+  white-space: nowrap;
+}
+
+.third-party-meta {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.third-party-details {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.third-party-details summary {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.third-party-details ul {
+  margin: 0.4rem 0;
+  padding-left: 1.1rem;
+}
+
+.third-party-details pre {
+  max-width: 32rem;
+  max-height: 12rem;
+  overflow: auto;
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-3);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .diag-json {
   border: 1px solid var(--border-soft);
   background: var(--surface-3);
@@ -2018,7 +2087,8 @@ h2 {
 
   .site-card,
   .diagnostics-header,
-  .diagnostics-empty {
+  .diagnostics-empty,
+  .third-party-blocks-head {
     align-items: stretch;
     flex-direction: column;
   }

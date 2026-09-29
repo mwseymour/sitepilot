@@ -12,6 +12,7 @@ namespace SitePilot\Rest;
 use SitePilot\Registration\Store;
 use SitePilot\Security\Signed_Request_Verifier;
 use SitePilot\V2\Acf_Blocks;
+use SitePilot\V2\Block_Usage;
 use SitePilot\V2\Commit_Service;
 use SitePilot\V2\Editor_Session;
 use SitePilot\V2\Feature;
@@ -44,6 +45,7 @@ final class V2_Routes {
 		self::signed_route( '/media-bindings', 'media_bindings', 200 );
 		self::signed_route( '/block-definitions', 'block_definitions', 200 );
 		self::signed_route( '/block-fixtures', 'block_fixtures', 200 );
+		self::signed_route( '/block-usage', 'block_usage', 200 );
 	}
 
 	private static function signed_route( string $route, string $method, int $status ): void {
@@ -165,6 +167,28 @@ final class V2_Routes {
 			return self::error( 'permission_denied', 'The SitePilot WordPress user cannot create pages, so it cannot run block tests.', 403 );
 		}
 		return Acf_Blocks::record_fixture( $params );
+	}
+
+	/**
+	 * Read-only count of third-party blocks in the content this user can edit.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public static function block_usage( \WP_REST_Request $request ) {
+		if ( ! Feature::enabled() ) {
+			return Feature::disabled_error();
+		}
+		$params = self::json( $request );
+		if ( $params instanceof \WP_Error ) {
+			return $params;
+		}
+		if ( 'sitepilot.block-usage-request/v2' !== ( $params['schemaVersion'] ?? null ) ) {
+			return self::error( 'schema_invalid', 'The block usage request is invalid.', 400 );
+		}
+		if ( ! current_user_can( 'edit_posts' ) ) {
+			return self::error( 'permission_denied', 'The SitePilot WordPress user cannot edit posts, so it cannot scan block usage.', 403 );
+		}
+		return Block_Usage::scan();
 	}
 
 	/** @return bool|\WP_Error */

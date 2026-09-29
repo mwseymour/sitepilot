@@ -157,6 +157,22 @@ export {
   isGutenbergV2AcfBlockName
 } from "./gutenberg-v2-acf.js";
 export {
+  GUTENBERG_V2_THIRD_PARTY_PLACEMENTS,
+  GUTENBERG_V2_THIRD_PARTY_PROBE_OUTCOMES,
+  GUTENBERG_V2_THIRD_PARTY_READINESS,
+  buildGutenbergV2ThirdPartyReport,
+  gutenbergV2BlockUsageSchema,
+  gutenbergV2ThirdPartyProbeSchema,
+  gutenbergV2ThirdPartyReportSchema
+} from "./gutenberg-v2-third-party.js";
+export type {
+  GutenbergV2BlockUsage,
+  GutenbergV2ThirdPartyProbe,
+  GutenbergV2ThirdPartyProbeBlock,
+  GutenbergV2ThirdPartyReport,
+  GutenbergV2ThirdPartyReportBlock
+} from "./gutenberg-v2-third-party.js";
+export {
   GUTENBERG_V2_SEO_FIELDS,
   GUTENBERG_V2_SEO_FIELD_LABELS,
   gutenbergV2SeoAfterChanges,
@@ -188,6 +204,7 @@ export {
   providerStatusResponseSchema,
   refreshDiscoveryResponseSchema,
   testAcfBlocksResponseSchema,
+  testThirdPartyBlocksResponseSchema,
   generateSiteConfigDraftResponseSchema,
   confirmSiteConfigRequestSchema,
   confirmSiteConfigResponseSchema,
@@ -267,6 +284,7 @@ export type {
   ProviderStatusResponse,
   RefreshDiscoveryResponse,
   TestAcfBlocksResponse,
+  TestThirdPartyBlocksResponse,
   GenerateSiteConfigDraftResponse,
   ConfirmSiteConfigResponse,
   GetSiteWorkspaceResponse,

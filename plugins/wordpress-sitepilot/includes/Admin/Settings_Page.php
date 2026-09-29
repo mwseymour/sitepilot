@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Admin;
 
+use SitePilot\Mcp\Mcp_Status;
 use SitePilot\Registration\Store;
 use SitePilot\V2\Feature;
 
@@ -52,6 +53,7 @@ final class Settings_Page {
 		echo '<li><label>' . esc_html__( 'MCP (HTTP)', 'sitepilot' ) . '</label> <code>' . esc_html( $mcp_url ) . '</code></li>';
 		echo '<li><label>' . esc_html__( 'Register site (POST)', 'sitepilot' ) . '</label> <code>' . esc_html( $register_url ) . '</code></li>';
 		echo '</ul>';
+		self::render_mcp_status();
 		echo '<h2>' . esc_html__( 'Desktop registration code', 'sitepilot' ) . '</h2>';
 		echo '<p>' . esc_html__( 'Enter this one-time code in the SitePilot desktop app when registering this site (HTTPS only).', 'sitepilot' ) . '</p>';
 		echo '<p><code style="font-size:14px;">' . esc_html( $reg_code ) . '</code></p>';
@@ -60,5 +62,34 @@ final class Settings_Page {
 		echo '<p><strong>' . esc_html( Feature::enabled() ? __( 'Enabled', 'sitepilot' ) : __( 'Disabled by SITEPILOT_V2_ENABLED', 'sitepilot' ) ) . '</strong></p>';
 		echo '<p>' . esc_html__( 'V2 is the default content engine. Define SITEPILOT_V2_ENABLED as false in wp-config.php to turn it off on this site.', 'sitepilot' ) . '</p>';
 		echo '</div>';
+	}
+
+	private static function render_mcp_status(): void {
+		$status = Mcp_Status::current();
+
+		echo '<h2>' . esc_html__( 'MCP server', 'sitepilot' ) . '</h2>';
+
+		if ( true === $status['ok'] ) {
+			echo '<p><strong>' . esc_html__( 'Registered', 'sitepilot' ) . '</strong></p>';
+		} elseif ( null === $status['ok'] ) {
+			echo '<p><strong>' . esc_html__( 'Not checked yet', 'sitepilot' ) . '</strong></p>';
+			echo '<p>' . esc_html__( 'SitePilot checks the MCP server on the next REST request, for example when the desktop app connects.', 'sitepilot' ) . '</p>';
+		} else {
+			echo '<div class="notice notice-error inline"><p><strong>' . esc_html__( 'Not registered', 'sitepilot' ) . '</strong> '
+				. esc_html( Mcp_Status::describe( (string) $status['issue'] ) ) . '</p>';
+			if ( null !== $status['message'] ) {
+				echo '<p>' . esc_html__( 'Details:', 'sitepilot' ) . ' <code>' . esc_html( $status['message'] ) . '</code></p>';
+			}
+			if ( null !== $status['since'] ) {
+				/* translators: %s: date and time. */
+				echo '<p>' . esc_html( sprintf( __( 'First seen %s.', 'sitepilot' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $status['since'] ) ) ) . '</p>';
+			}
+			echo '</div>';
+		}
+
+		$adapter = Mcp_Status::adapter_summary();
+		if ( '' !== $adapter ) {
+			echo '<p>' . esc_html( $adapter ) . '</p>';
+		}
 	}
 }

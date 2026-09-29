@@ -35,6 +35,7 @@ import {
   gutenbergV2ValidationIssueSchema,
   gutenbergV2ValidationReportSchema
 } from "./gutenberg-v2.js";
+import { gutenbergV2ThirdPartyReportSchema } from "./gutenberg-v2-third-party.js";
 
 const indexedCoreBlockEntrySchema = z.object({
   name: z.string().min(1),
@@ -80,6 +81,7 @@ export const ipcChannels = {
   runSiteDiagnostics: "site.runDiagnostics",
   refreshSiteDiscovery: "site.refreshDiscovery",
   testAcfBlocks: "site.testAcfBlocks",
+  testThirdPartyBlocks: "site.testThirdPartyBlocks",
   generateSiteConfigDraft: "site.generateConfigDraft",
   getSiteWorkspace: "site.getWorkspace",
   saveSiteConfig: "site.saveConfig",
@@ -296,6 +298,23 @@ export const testAcfBlocksResponseSchema = z.discriminatedUnion("ok", [
 ]);
 
 export type TestAcfBlocksResponse = z.infer<typeof testAcfBlocksResponseSchema>;
+
+/** Read-only probe and content scan of the site's third-party blocks. */
+export const testThirdPartyBlocksResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    report: gutenbergV2ThirdPartyReportSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type TestThirdPartyBlocksResponse = z.infer<
+  typeof testThirdPartyBlocksResponseSchema
+>;
 
 export const generateSiteConfigDraftResponseSchema = z.discriminatedUnion(
   "ok",
@@ -1248,6 +1267,10 @@ export const ipcContracts = {
     request: siteIdRequestSchema,
     response: testAcfBlocksResponseSchema
   },
+  [ipcChannels.testThirdPartyBlocks]: {
+    request: siteIdRequestSchema,
+    response: testThirdPartyBlocksResponseSchema
+  },
   [ipcChannels.generateSiteConfigDraft]: {
     request: siteIdRequestSchema,
     response: generateSiteConfigDraftResponseSchema
@@ -1482,6 +1505,9 @@ export interface SitePilotDesktopApi {
   testAcfBlocks: (
     request: IpcRequest<typeof ipcChannels.testAcfBlocks>
   ) => Promise<IpcResponse<typeof ipcChannels.testAcfBlocks>>;
+  testThirdPartyBlocks: (
+    request: IpcRequest<typeof ipcChannels.testThirdPartyBlocks>
+  ) => Promise<IpcResponse<typeof ipcChannels.testThirdPartyBlocks>>;
   generateSiteConfigDraft: (
     request: IpcRequest<typeof ipcChannels.generateSiteConfigDraft>
   ) => Promise<IpcResponse<typeof ipcChannels.generateSiteConfigDraft>>;

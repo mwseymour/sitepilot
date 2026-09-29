@@ -24,8 +24,10 @@ import {
   type GutenbergV2RecoverResponse,
   type GutenbergV2SourceSnapshot,
   gutenbergV2BlockFixtureStatusSchema,
+  gutenbergV2BlockUsageSchema,
   type GutenbergV2BlockFixtureResult,
-  type GutenbergV2BlockFixtureStatus
+  type GutenbergV2BlockFixtureStatus,
+  type GutenbergV2BlockUsage
 } from "@sitepilot/contracts";
 import { signSitePilotHmacRequest } from "@sitepilot/plugin-protocol";
 import type {
@@ -61,7 +63,8 @@ const endpointNames = {
   readback: "readback",
   recover: "recover",
   mediaBindings: "media-bindings",
-  blockFixtures: "block-fixtures"
+  blockFixtures: "block-fixtures",
+  blockUsage: "block-usage"
 } as const;
 
 export class SignedWordPressV2Transport
@@ -214,6 +217,15 @@ export class SignedWordPressV2Transport
     };
     return gutenbergV2BlockFixtureStatusSchema.parse(
       await this.#post(endpointNames.blockFixtures, request)
+    );
+  }
+
+  /** Read-only count of third-party blocks in the site's posts and pages. */
+  public async readBlockUsage(): Promise<GutenbergV2BlockUsage> {
+    return gutenbergV2BlockUsageSchema.parse(
+      await this.#post(endpointNames.blockUsage, {
+        schemaVersion: "sitepilot.block-usage-request/v2"
+      })
     );
   }
 

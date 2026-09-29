@@ -338,9 +338,39 @@
     return value;
   }
 
+  // Plans use the text alignment names older WordPress stored as attributes
+  // (textAlign, and align on paragraphs). Newer WordPress moved these to the
+  // typography.textAlign block support, and createBlock drops the old
+  // attribute (or, for paragraphs, reads align as block alignment), so move
+  // the value to where this site's editor expects it.
+  const TEXT_ALIGN_VALUES = new Set(["left", "center", "right"]);
+
+  function withSiteTextAlign(blockName, type, attributes) {
+    if (!type || !(type.supports && type.supports.typography && type.supports.typography.textAlign)) {
+      return attributes;
+    }
+    const key = blockName === "core/paragraph" ? "align" : "textAlign";
+    const value = attributes[key];
+    if (!TEXT_ALIGN_VALUES.has(value)) return attributes;
+    if (key === "textAlign" && type.attributes && type.attributes.textAlign) {
+      return attributes;
+    }
+    const { [key]: _moved, ...rest } = attributes;
+    const style = rest.style && typeof rest.style === "object" ? rest.style : {};
+    const typography =
+      style.typography && typeof style.typography === "object"
+        ? style.typography
+        : {};
+    return {
+      ...rest,
+      style: { ...style, typography: { ...typography, textAlign: value } }
+    };
+  }
+
   function normalizedAttributes(blockName, attributes) {
     const type = window.wp.blocks.getBlockType(blockName);
-    return Object.keys(attributes || {}).reduce((result, key) => {
+    attributes = withSiteTextAlign(blockName, type, attributes || {});
+    return Object.keys(attributes).reduce((result, key) => {
       result[key] = normalizedAttributeValue(
         blockName,
         key,
@@ -2807,6 +2837,309 @@
     return result(saved, reopened);
   }
 
+  // ---- Third-party block probe ---------------------------------------------
+  // Read-only. Reports how each non-core, non-ACF block is placed and whether
+  // this editor builds it cleanly, so a site can see which blocks are worth
+  // supporting. Top-level blocks are built from their defaults, saved to
+  // markup, reopened, and briefly inserted to catch editor code that changes
+  // settings; server-rendered ones are previewed through the block renderer.
+  // The editor's blocks are restored afterwards, and the session cannot save.
+
+  const PROBE_DEADLINE_MS = 75000;
+  const PROBE_PREVIEW_TIMEOUT_MS = 6000;
+  // Settings every block gets from block supports; not part of a definition.
+  const SUPPORT_ATTRIBUTES = new Set([
+    "lock",
+    "metadata",
+    "className",
+    "style",
+    "anchor",
+    "fontSize",
+    "fontFamily",
+    "textColor",
+    "backgroundColor",
+    "gradient",
+    "borderColor",
+    "shadow",
+    "layout"
+  ]);
+
+  function truncated(value, max) {
+    return typeof value === "string" && value.length > max
+      ? `${value.slice(0, max - 1)}…`
+      : value;
+  }
+
+  function probeSettings(type) {
+    return Object.entries(type.attributes || {})
+      .filter(([name]) => !SUPPORT_ATTRIBUTES.has(name))
+      .slice(0, 60)
+      .map(([name, definition]) => {
+        const setting = { name: truncated(name, 120) };
+        if (!definition || typeof definition !== "object") return setting;
+        if (typeof definition.type === "string") {
+          setting.type = truncated(definition.type, 40);
+        } else if (Array.isArray(definition.type)) {
+          setting.type = truncated(definition.type.join("|"), 40);
+        }
+        if (Array.isArray(definition.enum)) {
+          setting.enum = definition.enum
+            .filter(
+              (value) =>
+                value === null ||
+                ["string", "number", "boolean"].includes(typeof value)
+            )
+            .slice(0, 20)
+            .map((value) => truncated(value, 200));
+        }
+        if (definition.default !== undefined) {
+          setting.default = truncated(JSON.stringify(definition.default), 400);
+        }
+        if (typeof definition.source === "string") {
+          setting.source = truncated(definition.source, 40);
+        }
+        return setting;
+      });
+  }
+
+  function serverRendered(type, html) {
+    if (typeof type.save !== "function") return true;
+    const parser = window.wp.blockSerializationDefaultParser;
+    if (parser && typeof parser.parse === "function") {
+      const [parsed] = parser.parse(html);
+      return !!parsed && String(parsed.innerHTML || "").trim() === "";
+    }
+    return /^<!-- wp:\S+(?: [\s\S]*)? \/-->$/.test(html.trim());
+  }
+
+  function changedKeys(name, left, right) {
+    const before = normalizedAttributes(name, left || {});
+    const after = normalizedAttributes(name, right || {});
+    return Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+      .filter((key) => stableJson(before[key]) !== stableJson(after[key]))
+      .sort();
+  }
+
+  async function previewBlock(name, attributes) {
+    const apiFetch = window.wp.apiFetch;
+    const url = window.wp.url;
+    if (typeof apiFetch !== "function" || !url) {
+      return { preview: "not_checked" };
+    }
+    const postId = window.wp.data.select("core/editor").getCurrentPostId();
+    const { lock: _lock, metadata: _metadata, ...sent } = attributes || {};
+    let timer;
+    try {
+      const response = await Promise.race([
+        apiFetch({
+          path: url.addQueryArgs(`/wp/v2/block-renderer/${name}`, {
+            context: "edit",
+            attributes: sent,
+            ...(postId ? { post_id: postId } : {})
+          })
+        }),
+        new Promise((_resolve, reject) => {
+          timer = window.setTimeout(
+            () => reject(new Error("The preview timed out.")),
+            PROBE_PREVIEW_TIMEOUT_MS
+          );
+        })
+      ]);
+      return response && typeof response.rendered === "string"
+        ? { preview: "rendered" }
+        : {
+            preview: "failed",
+            previewMessage: "WordPress returned no rendered markup."
+          };
+    } catch (error) {
+      return {
+        preview: "failed",
+        previewMessage: truncated(
+          (error && (error.message || error.code)) || "The preview failed.",
+          300
+        )
+      };
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  // Built from the block's defaults: a block's `example` values are for the
+  // inserter preview and can be placeholders ("productId": "preview").
+  async function probeBlock(type, deadline) {
+    const name = type.name;
+    let block;
+    let html;
+    try {
+      block = window.wp.blocks.createBlock(name, {});
+      html = window.wp.blocks.serialize([block]);
+    } catch (error) {
+      return {
+        rendering: typeof type.save === "function" ? "saved_markup" : "server",
+        probe: {
+          outcome: "error",
+          message: truncated(
+            (error && error.message) || "The block could not be built.",
+            600
+          ),
+          preview: "not_checked"
+        }
+      };
+    }
+    const rendering = serverRendered(type, html) ? "server" : "saved_markup";
+    if (Date.now() > deadline) {
+      return {
+        rendering,
+        probe: {
+          outcome: "not_tested",
+          message: "The probe's time limit was reached.",
+          preview: "not_checked"
+        }
+      };
+    }
+    let outcome = "builds_cleanly";
+    let message;
+    const parsed = window.wp.blocks.parse(html);
+    if (parsed.length !== 1 || parsed[0].name !== name) {
+      outcome = "changes_on_round_trip";
+      message = `The saved markup reopened as ${parsed.map((entry) => entry.name).join(", ") || "nothing"}.`;
+    } else if (nativeIssues(parsed).length > 0) {
+      outcome = "invalid";
+      message =
+        parsed[0].isValid === false
+          ? "WordPress reported the block's own saved markup as invalid."
+          : "Saving the reopened block again gives different markup.";
+    } else {
+      const changed = changedKeys(name, block.attributes, parsed[0].attributes);
+      if (
+        changed.length > 0 ||
+        (parsed[0].innerBlocks || []).length !== block.innerBlocks.length
+      ) {
+        outcome = "changes_on_round_trip";
+        message = changed.length
+          ? `Reopening changed: ${changed.join(", ")}.`
+          : "Reopening changed the inner blocks.";
+      }
+    }
+    if (outcome === "builds_cleanly") {
+      const dispatch = window.wp.data.dispatch("core/block-editor");
+      const select = window.wp.data.select("core/block-editor");
+      dispatch.resetBlocks([parsed[0]]);
+      let current = select.getBlocks()[0];
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
+        const next = select.getBlocks()[0];
+        const settled =
+          next && current && stableJson(next.attributes) === stableJson(current.attributes);
+        current = next;
+        if (settled && attempt >= 1) break;
+      }
+      const changed = current
+        ? changedKeys(name, parsed[0].attributes, current.attributes)
+        : [];
+      if (!current || current.name !== name) {
+        outcome = "changes_when_edited";
+        message = "The editor replaced the block once it was inserted.";
+      } else if (changed.length > 0) {
+        outcome = "changes_when_edited";
+        message = `The block's editor code sets: ${changed.join(", ")}.`;
+      }
+    }
+    const preview =
+      rendering === "server" && outcome !== "error"
+        ? await previewBlock(name, block.attributes)
+        : { preview: "not_checked" };
+    return {
+      rendering,
+      probe: {
+        outcome,
+        ...(message ? { message: truncated(message, 600) } : {}),
+        ...preview
+      }
+    };
+  }
+
+  async function probeThirdPartyBlocks() {
+    await discover();
+    const started = Date.now();
+    const deadline = started + PROBE_DEADLINE_MS;
+    const settings = getSettings();
+    const select = window.wp.data.select("core/block-editor");
+    const dispatch = window.wp.data.dispatch("core/block-editor");
+    const original = select.getBlocks();
+    const blocks = [];
+    let timedOut = false;
+    try {
+      const types = window.wp.blocks
+        .getBlockTypes()
+        .filter(
+          (type) =>
+            !type.name.startsWith("core/") &&
+            type.name !== SOURCE_BLOCK &&
+            !type.name.startsWith("acf/")
+        )
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .slice(0, 1000);
+      for (const type of types) {
+        const supports = type.supports || {};
+        const parents = [
+          ...(Array.isArray(type.parent) ? type.parent : []),
+          ...(Array.isArray(type.ancestor) ? type.ancestor : [])
+        ].slice(0, 50);
+        const placement = !isAllowed(type.name, settings)
+          ? "not_allowed"
+          : parents.length > 0
+            ? "inside_block"
+            : supports.inserter === false
+              ? "hidden"
+              : "top_level";
+        let rendering = typeof type.save === "function" ? "saved_markup" : "server";
+        let probe = { outcome: "not_tested", preview: "not_checked" };
+        if (placement === "top_level") {
+          if (Date.now() > deadline) {
+            timedOut = true;
+            probe = {
+              outcome: "not_tested",
+              message: "The probe's time limit was reached.",
+              preview: "not_checked"
+            };
+          } else {
+            ({ rendering, probe } = await probeBlock(type, deadline));
+            if (probe.outcome === "not_tested") timedOut = true;
+          }
+        }
+        blocks.push({
+          name: type.name,
+          title: truncated(String(type.title || type.name), 200),
+          ...(typeof type.description === "string" && type.description
+            ? { description: truncated(type.description, 400) }
+            : {}),
+          ...(typeof type.category === "string" && type.category
+            ? { category: truncated(type.category, 100) }
+            : {}),
+          placement,
+          parents,
+          rendering,
+          hasExample: !!type.example,
+          variations: (window.wp.blocks.getBlockVariations(type.name) || [])
+            .length,
+          deprecations: Array.isArray(type.deprecated)
+            ? type.deprecated.length
+            : 0,
+          settings: probeSettings(type),
+          probe
+        });
+      }
+    } finally {
+      dispatch.resetBlocks(original);
+    }
+    return {
+      schemaVersion: "sitepilot.third-party-probe/v2",
+      timedOut,
+      blocks
+    };
+  }
+
   window.sitepilotV2 = Object.freeze({
     schemaVersion: "sitepilot.editor-bridge/v2",
     ready,
@@ -2815,6 +3148,7 @@
     verify,
     preview,
     readSource,
-    blockFixture
+    blockFixture,
+    probeThirdPartyBlocks
   });
 })();

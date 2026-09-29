@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Rest;
 
+use SitePilot\Mcp\Mcp_Status;
 use SitePilot\V2\Feature;
 
 /**
@@ -71,6 +72,7 @@ final class Protocol_Routes {
 				'plugin_version' => SITEPILOT_VERSION,
 				'mcp_namespace'  => 'sitepilot',
 				'mcp_route'      => 'mcp',
+				'mcp'            => Mcp_Status::for_protocol(),
 				'v2'             => array(
 					'enabled'        => Feature::enabled(),
 					'bridge_version' => Feature::BRIDGE_VERSION,

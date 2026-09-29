@@ -29,6 +29,8 @@
     "test:e2e:v2-acf": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-acf.ts",
     "test:e2e:v2-seo": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-seo.ts",
     "test:e2e:v2-status": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-status.ts",
+    "test:e2e:v2-third-party": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-third-party.ts",
+    "test:e2e:v2-long-post": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-long-post.ts",
     "test:e2e:mcp": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-mcp.ts",
     "test:e2e:open-report": "tsx tests/e2e/open-report.ts",
     "test:watch": "vitest",

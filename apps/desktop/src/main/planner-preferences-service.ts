@@ -9,7 +9,7 @@ export type PlannerPreferences = {
 
 const DEFAULTS: PlannerPreferences = {
   preferredProvider: "auto",
-  openaiModel: "gpt-4o-mini",
+  openaiModel: "gpt-5.4-mini",
   anthropicModel: "claude-3-5-haiku-20241022"
 };
 

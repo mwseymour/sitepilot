@@ -223,12 +223,47 @@ A Slack app built with Bolt, running beside `apps/server`. It's an MCP client of
 - The app calls MCP as that user, using per-user tokens from an OAuth flow started from Slack. It never uses one shared bot identity for everyone.
 - Unmapped users get a DM explaining how to connect.
 
-### 7.2 Commands and threads
+### 7.2 Threads and commands
 
-- `/sitepilot ask <question>` → `create_conversation`. The answer posts as a thread, and replies in that thread become `ask` calls.
-- `/sitepilot request <text>` → `create_request`. The bot posts a status message and starts a thread, and replies in that thread become `add_to_request` calls.
-- A mapping table from Slack channel and thread timestamp to SitePilot thread ID.
-- The status message updates in place as the state changes. It shows the six plain states, a short change summary and a review link. Block paths and markup diffs stay in the hosted app.
+**One top-level Slack message is one SitePilot thread. Replies in its Slack thread are follow-ups on it.** A DM with SitePilot is a list of threads, like a chat list in Claude or ChatGPT, not one long conversation.
+
+```
+DM with SitePilot
+├─ "Write a post about our spring pricing"    → Request A
+│    ├─ [status card: Preview ready · Approve / Reject / Request changes]
+│    ├─ you: "make the intro shorter"          → add_to_request on A
+│    └─ SitePilot: new preview
+├─ "Unpublish the old pricing page"           → Request B
+│    └─ [status card: Awaiting approval]
+└─ "Which posts mention the summer sale?"     → Conversation C
+     └─ SitePilot: answer; replies here are ask calls
+```
+
+- **Starting a thread.**
+  - A top-level DM message, or a message that mentions `@SitePilot` in a channel, starts a new thread under that message.
+  - SitePilot decides from the wording whether it's a Request or a Conversation, the same way the desktop does.
+  - `/sitepilot request <text>` and `/sitepilot ask <question>` force one or the other.
+- **Replies.** A reply in a Request's Slack thread becomes `add_to_request`, and a reply in a Conversation's becomes `ask`.
+- **Status card.**
+  - Each Request has one status card, the bot's first reply in the thread. The bot edits it in place (`chat.update`) as the state changes: preparing, needs your reply, awaiting approval, applying, completed, or needs attention.
+  - The card shows a short change summary, the target post, and the approval buttons from 7.3.
+  - Questions, new previews and results are posted as replies under it.
+  - Block paths and markup diffs stay in the hosted app.
+- **Several requests at once.**
+  - Requests run side by side, each in its own thread, and each card updates on its own.
+  - Buttons act only on their own thread's request, so approving one request can never touch another.
+- **Mapping table.** A table maps each Slack channel and top-level message timestamp to a SitePilot thread ID and back. `list_threads` and the hosted app show the same threads, labelled with the source `slack`.
+- **Follow-ups sent at the top level.** Someone may send "now publish it" as a new message instead of replying in the thread.
+  - It starts a new thread, and SitePilot works out what "it" means from that person's recent requests, as the desktop already does within a thread.
+  - The target is always named on the preview card before approval, for example "Publish: Spring pricing (post 1777)", so a wrong guess is caught before anything changes.
+  - When more than one recent request fits, the bot asks, with a button for each.
+- **Channels.** A `@SitePilot` thread in a channel works the same way, and anyone in the channel can see it. Buttons still check the pressing user's role.
+- **Home tab.** The app's Home tab is the chat user's overview:
+  - Waiting for your approval (approvers only);
+  - My open requests;
+  - Recently done.
+
+  Each entry links to its thread.
 
 ### 7.3 The whole workflow in Slack
 

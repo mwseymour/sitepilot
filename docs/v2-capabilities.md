@@ -62,6 +62,17 @@ Each block accepts a reviewed set of settings, such as alignment, colours, spaci
 - **Requests use the site's own fields.** For example, "a grey container with no padding" becomes the container's real colour and padding choices, with any field left out taking its default. A value that doesn't fit a field is sent back to the planner once to correct, and otherwise fails before review.
 - **Editing an ACF block keeps the field values the request doesn't mention**, and blocks can be inserted inside ACF blocks that hold inner blocks.
 
+## Third-party blocks
+
+Plugin blocks other than ACF blocks (for example WooCommerce and Yoast blocks) are kept untouched: v2 keeps, moves or deletes them on purpose, but never writes them. To see which ones are worth supporting on a site, open **Diagnostics** and choose **Test third-party blocks**. The test saves nothing. It:
+
+- **Lists every registered plugin block** with where it can go: anywhere in a post, only inside another block, or hidden from the inserter.
+- **Builds each top-level block in the site's own editor** from its defaults, saves it to markup, reopens it and briefly inserts it, and reports whether it builds cleanly, changes when reopened, has markup that changes when saved again, or has editor code that changes its settings. Blocks rendered by the server are also previewed through WordPress's block renderer.
+- **Counts how the site's posts and pages use each block** (the 2,000 most recently changed that SitePilot's WordPress user can edit), with up to three stored examples of each block's settings.
+- **Shows each block's settings** (names, types, allowed values and defaults) as WordPress registers them.
+
+A block that builds cleanly is shown as ready for a definition; writing it needs a reviewed definition and a per-site test, as for ACF blocks.
+
 ## SEO fields
 
 On sites running **Yoast SEO**, a request can set or change a post's SEO fields, on its own or together with content:
@@ -104,7 +115,7 @@ They never change the site.
 
 Planned work for each gap is in the [v2 roadmap](./v2-roadmap.md).
 
-- **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely, but v2 cannot author them.
+- **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely, but v2 cannot author them yet. **Test third-party blocks** in Diagnostics shows which ones are worth supporting on a site.
 - **Some ACF field types.** ACF image and file fields take existing media-library IDs only, not attached media. Blocks that store their fields in post meta (`usePostMeta`), or that have a required field of a type v2 cannot fill (such as gallery, user or Google Map), stay kept-only.
 - **Other SEO plugins.** Only Yoast SEO fields can be edited. RankMath and All in One SEO are detected but not written. The social (Open Graph) image cannot be set yet.
 - **Scheduling and private posts.** A post can be published or unpublished (back to draft), but not scheduled or made private.

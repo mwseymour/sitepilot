@@ -516,6 +516,14 @@ function pxIfNumber(value: unknown): unknown {
 }
 
 function normalizeSides(value: unknown): unknown {
+  // CSS shorthand ("1.5rem", "0.75rem 1.25rem", ...) names the same sides.
+  if (typeof value === "number") value = `${value}px`;
+  if (typeof value === "string") {
+    const sizes = value.trim().split(/\s+/);
+    if (sizes.length < 1 || sizes.length > 4 || sizes[0] === "") return value;
+    const [top, right = top, bottom = top, left = right] = sizes;
+    return { top, right, bottom, left };
+  }
   if (!isRecord(value)) return value;
   return Object.fromEntries(
     Object.entries(value).map(([side, size]) => [side, pxIfNumber(size)])
@@ -591,6 +599,27 @@ function normalizeAttributes(
   ) {
     next = { ...next, dimRatio: 50 };
   }
+  // Image and media & text name their alt text differently; models mix them.
+  const altKey =
+    name === "core/image" ? "alt" : name === "core/media-text" ? "mediaAlt" : undefined;
+  const otherAltKey = altKey === "alt" ? "mediaAlt" : "alt";
+  if (
+    altKey !== undefined &&
+    next[altKey] === undefined &&
+    typeof next[otherAltKey] === "string"
+  ) {
+    const { [otherAltKey]: alt, ...rest } = next;
+    next = { ...rest, [altKey]: alt };
+  }
+  // A zero minimum height is no minimum height.
+  if (
+    name === "core/cover" &&
+    typeof next.minHeight === "number" &&
+    next.minHeight <= 0
+  ) {
+    const { minHeight: _minHeight, minHeightUnit: _unit, ...rest } = next;
+    next = rest;
+  }
   if (name === "core/spacer" && typeof next.height === "number") {
     next = { ...next, height: `${next.height}px` };
   }
@@ -633,7 +662,22 @@ function normalizeAttributes(
   return next;
 }
 
-function normalizeDraftBlocks(value: unknown): unknown {
+// Block refs only label blocks in diagnostics, so a ref the model repeats is
+// renamed rather than failing the plan.
+function uniqueRef(ref: unknown, seen: Set<string>): unknown {
+  if (typeof ref !== "string") return ref;
+  let unique = ref;
+  for (let suffix = 2; seen.has(unique); suffix += 1) {
+    unique = `${ref}-${suffix}`;
+  }
+  seen.add(unique);
+  return unique;
+}
+
+function normalizeDraftBlocks(
+  value: unknown,
+  seen: Set<string> = new Set()
+): unknown {
   if (!Array.isArray(value)) return value;
   return value.map((node) => {
     if (!isRecord(node)) return node;
@@ -643,30 +687,34 @@ function normalizeDraftBlocks(value: unknown): unknown {
       : attributes;
     return {
       ...node,
+      ref: uniqueRef(node.ref, seen),
       ...(normalizedAttributes === undefined
         ? {}
         : { attributes: normalizedAttributes }),
-      ...(node.children === undefined
-        ? {}
-        : { children: normalizeDraftBlocks(node.children) })
+      // A block written without a child list has no children.
+      children:
+        node.children === undefined
+          ? []
+          : normalizeDraftBlocks(node.children, seen)
     };
   });
 }
 
 function normalizeDraftOperations(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
+  const seen = new Set<string>();
   return value.map((operation) => {
     if (!isRecord(operation)) return operation;
     return {
       ...operation,
       ...(operation.blocks === undefined
         ? {}
-        : { blocks: normalizeDraftBlocks(operation.blocks) }),
+        : { blocks: normalizeDraftBlocks(operation.blocks, seen) }),
       ...(operation.replacement === undefined
         ? {}
         : {
             replacement: (
-              normalizeDraftBlocks([operation.replacement]) as unknown[]
+              normalizeDraftBlocks([operation.replacement], seen) as unknown[]
             )[0]
           })
     };
@@ -960,9 +1008,37 @@ function assemblePlan(
       issues.length === 0
         ? "The planning model returned a Gutenberg v2 plan that failed strict validation."
         : `The planning model returned a Gutenberg v2 plan that failed strict validation: ${issues.join("; ")}`,
-      { cause: error, issues }
+      { cause: error, issues: [...issues, ...attributeHints(error, plan)] }
     );
   }
+}
+
+// An attribute issue alone ("Unrecognized key 'backgroundColor'") does not say
+// what the block accepts, so the repair round restates that block's rules.
+function attributeHints(error: unknown, plan: unknown): string[] {
+  const issues =
+    error !== null &&
+    typeof error === "object" &&
+    Array.isArray((error as { issues?: unknown }).issues)
+      ? ((error as { issues: Array<{ path?: unknown }> }).issues)
+      : [];
+  const names = new Set<string>();
+  for (const issue of issues.slice(0, MAX_REPORTED_ISSUES)) {
+    const path = Array.isArray(issue.path) ? issue.path : [];
+    const at = path.indexOf("attributes");
+    if (at < 1) continue;
+    let node: unknown = plan;
+    for (const key of path.slice(0, at)) {
+      node =
+        isRecord(node) || Array.isArray(node)
+          ? (node as Record<string, unknown>)[String(key)]
+          : undefined;
+    }
+    if (isRecord(node) && typeof node.name === "string") names.add(node.name);
+  }
+  return [...names]
+    .filter((name) => BLOCK_ATTRIBUTE_GUIDANCE[name] !== undefined)
+    .map((name) => `${name} accepts only: ${BLOCK_ATTRIBUTE_GUIDANCE[name]}`);
 }
 
 const VISIBLE_TEXT_ATTRIBUTES = [

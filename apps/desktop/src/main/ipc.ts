@@ -43,6 +43,7 @@ import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { getDatabase } from "./app-database.js";
 import { refreshDiscoveryForSite } from "./discovery-service.js";
 import { testAcfBlocksForSite } from "./acf-block-test-service.js";
+import { testThirdPartyBlocksForSite } from "./third-party-block-test-service.js";
 import { generateAndPersistSiteConfigDraft } from "./site-config-draft.js";
 import {
   confirmSiteConfigActivation,
@@ -191,6 +192,12 @@ export function registerIpcHandlers(): void {
     const request = parseRequest(ipcChannels.testAcfBlocks, payload);
     const result = await testAcfBlocksForSite(request.siteId as SiteId);
     return parseResponse(ipcChannels.testAcfBlocks, result);
+  });
+
+  ipcMain.handle(ipcChannels.testThirdPartyBlocks, async (_event, payload) => {
+    const request = parseRequest(ipcChannels.testThirdPartyBlocks, payload);
+    const result = await testThirdPartyBlocksForSite(request.siteId as SiteId);
+    return parseResponse(ipcChannels.testThirdPartyBlocks, result);
   });
 
   ipcMain.handle(

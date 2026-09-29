@@ -414,7 +414,7 @@ async function main(): Promise<void> {
         target: { operation: "apply_operations", source },
         capabilities,
         client: createOpenAiChatClient(E2E_OPENAI_API_KEY),
-        model: process.env.SITEPILOT_SEO_LLM_MODEL ?? "gpt-4o-mini"
+        model: process.env.SITEPILOT_SEO_LLM_MODEL ?? "gpt-5.4-mini"
       });
       assert(
         planned.plan.operation === "apply_operations" &&

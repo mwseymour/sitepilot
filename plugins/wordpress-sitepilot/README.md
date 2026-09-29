@@ -29,6 +29,8 @@ Then symlink or copy this folder into `wp-content/plugins/sitepilot` and activat
 
 MCP calls require a logged-in user with `read` capability (or stronger). After `initialize`, send the `Mcp-Session-Id` header on subsequent JSON-RPC requests (handled automatically by `@sitepilot/mcp-client`).
 
+If the SitePilot MCP server doesn't register (no Abilities API, no MCP Adapter, a different MCP Adapter loaded first, or the adapter rejecting the server), the plugin records why. Settings → SitePilot shows the reason and the loaded adapter version, the Dashboard and Plugins screens show an admin notice, and the PHP error log gets one line when the state changes. `/protocol` reports `mcp.registered` and `mcp.issue` for that request, without the detail message.
+
 ## Composer packages
 
 - [`wordpress/mcp-adapter`](https://packagist.org/packages/wordpress/mcp-adapter) — official WordPress MCP bridge (HTTP transport).

@@ -152,7 +152,11 @@ function createPlan(
       {
         ref: "heading-1",
         name: "core/heading",
-        attributes: { content: "Native Gutenberg v2", level: 2 },
+        attributes: {
+          content: "Native Gutenberg v2",
+          level: 2,
+          textAlign: "center"
+        },
         children: []
       },
       {
@@ -160,7 +164,8 @@ function createPlan(
         name: "core/paragraph",
         attributes: {
           content:
-            'Fish & Chips, "quoted text", apostrophe\'s byte, emoji 🧭, and 你好.'
+            'Fish & Chips, "quoted text", apostrophe\'s byte, emoji 🧭, and 你好.',
+          align: "right"
         },
         children: []
       },
@@ -288,7 +293,8 @@ function createPlan(
         name: "core/pullquote",
         attributes: {
           value: "Native pullquote text.",
-          citation: "Pullquote citation"
+          citation: "Pullquote citation",
+          textAlign: "center"
         },
         children: []
       },
@@ -2257,6 +2263,18 @@ async function main(): Promise<void> {
         );
       }
       throw error;
+    }
+    // Text alignment must survive on both old (attribute) and new
+    // (typography block support) WordPress.
+    for (const className of [
+      "wp-block-heading has-text-align-center",
+      "has-text-align-right",
+      "wp-block-pullquote has-text-align-center"
+    ]) {
+      assert(
+        candidate.serializedContent.includes(className),
+        `Text alignment was lost: expected "${className}".`
+      );
     }
     const createApproval = approval(candidate);
     await service.recordApproval({

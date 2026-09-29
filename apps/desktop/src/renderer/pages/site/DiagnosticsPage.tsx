@@ -8,6 +8,7 @@ import type {
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import { useAppBusy } from "../../button-loading.js";
 import { formatWhen } from "../../status.js";
+import { ThirdPartyBlocksSection } from "./ThirdPartyBlocksSection.js";
 
 type CheckRow = { label: string; ok: boolean; detail: string };
 
@@ -365,6 +366,7 @@ export function DiagnosticsPage(): ReactElement {
           </button>
         </div>
       </section>
+      <ThirdPartyBlocksSection siteId={siteId} />
     </article>
   );
 }

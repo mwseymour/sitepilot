@@ -8,6 +8,7 @@ import {
   gutenbergV2AcfDataFromFields,
   gutenbergV2AcfSampleFields,
   gutenbergV2BlockFixtureResultSchema,
+  gutenbergV2ThirdPartyProbeSchema,
   gutenbergV2BlockPlanSchema,
   gutenbergV2EditorCapabilitySnapshotSchema,
   gutenbergV2EditorCompileResultSchema,
@@ -22,6 +23,7 @@ import {
   type GutenbergV2EditorCapabilitySnapshot,
   type GutenbergV2MediaMapping,
   type GutenbergV2SourceSnapshot,
+  type GutenbergV2ThirdPartyProbe,
   type GutenbergV2ValidationReport
 } from "@sitepilot/contracts";
 import {
@@ -293,6 +295,38 @@ export class PlaywrightGutenbergV2Worker implements GutenbergV2Worker {
           results.push(gutenbergV2BlockFixtureResultSchema.parse(raw));
         }
         return { capabilities, results };
+      }
+    );
+  }
+
+  /**
+   * Read-only probe of the site's third-party blocks in a scratch editor:
+   * placement, settings, and whether each top-level block builds, reopens
+   * and inserts cleanly. The session cannot save.
+   */
+  public async probeThirdPartyBlocks(input: {
+    siteId: string;
+  }): Promise<GutenbergV2ThirdPartyProbe> {
+    return this.#withEditor(
+      {
+        executionId: `probe-${randomUUID()}`,
+        siteId: input.siteId,
+        postType: "page"
+      },
+      async (page) => {
+        const raw = await page.evaluate(async () => {
+          const bridge = (
+            globalThis as unknown as {
+              sitepilotV2?: { probeThirdPartyBlocks?: () => Promise<unknown> };
+            }
+          ).sitepilotV2;
+          if (typeof bridge?.probeThirdPartyBlocks !== "function")
+            throw new Error(
+              "sitepilotV2.probeThirdPartyBlocks is unavailable; update the SitePilot plugin."
+            );
+          return bridge.probeThirdPartyBlocks();
+        });
+        return gutenbergV2ThirdPartyProbeSchema.parse(raw);
       }
     );
   }
@@ -612,6 +646,39 @@ ${captureSelector}, ${captureSelector} * {
   animation: none !important;
 }`;
         previewRoot.ownerDocument.head?.appendChild(captureStyle);
+        // Viewport units inside the canvas iframe (a cover's min-height:50vh)
+        // follow the iframe, which the capture stretches to the whole post,
+        // so the content grows with every attempt and never settles. Pin them
+        // to the window height a visitor sees; restored after the capture.
+        if (frameDocument) {
+          const viewportHeight = (
+            globalThis as unknown as { innerHeight: number }
+          ).innerHeight;
+          const sized = (
+            frameDocument as unknown as {
+              querySelectorAll(selector: string): {
+                length: number;
+                item(index: number): {
+                  getAttribute(name: string): string | null;
+                  setAttribute(name: string, value: string): void;
+                } | null;
+              };
+            }
+          ).querySelectorAll('[style*="vh"]');
+          for (let index = 0; index < sized.length; index += 1) {
+            const node = sized.item(index);
+            const style = node?.getAttribute("style") ?? "";
+            const pinned = style.replace(
+              /(-?\d*\.?\d+)(?:s|d|l)?vh\b/g,
+              (_match, value: string) =>
+                `${((Number.parseFloat(value) * viewportHeight) / 100).toFixed(2)}px`
+            );
+            if (node && pinned !== style) {
+              node.setAttribute("data-sitepilot-capture-style", style);
+              node.setAttribute("style", pinned);
+            }
+          }
+        }
         await new Promise<void>((resolve) => {
           const browserGlobal = globalThis as unknown as {
             requestAnimationFrame(callback: () => void): number;
@@ -656,6 +723,29 @@ ${captureSelector}, ${captureSelector} * {
           previewRoot.getBoundingClientRect().width
         );
         let stable = false;
+        const attemptHeights: number[] = [requestedHeight];
+        // Anonymous for the same reason as elementContentHeight.
+        const blockHeights = [
+          (): Array<[string, number]> => {
+            const nodes = frameDocument?.querySelectorAll(
+              ".is-root-container > [data-block]"
+            );
+            const result: Array<[string, number]> = [];
+            for (let index = 0; index < (nodes?.length ?? 0); index += 1) {
+              const node = nodes!.item(index) as unknown as {
+                getAttribute(name: string): string | null;
+                getBoundingClientRect(): { height: number };
+              } | null;
+              if (node)
+                result.push([
+                  `${index}:${node.getAttribute("data-type") ?? "?"}`,
+                  Math.round(node.getBoundingClientRect().height)
+                ]);
+            }
+            return result;
+          }
+        ][0]!;
+        const initialBlockHeights = blockHeights();
         for (let attempt = 0; attempt < 3; attempt += 1) {
           if (requestedHeight < 1 || requestedHeight > limits.maxHeight) {
             break;
@@ -780,7 +870,19 @@ body *:has(${captureSelector}) {
             break;
           }
           requestedHeight = nextHeight;
+          attemptHeights.push(nextHeight);
         }
+        const finalBlockHeights = blockHeights();
+        const grownBlocks = finalBlockHeights
+          .map(([key, height], index) => ({
+            key,
+            growth: height - (initialBlockHeights[index]?.[1] ?? 0)
+          }))
+          .filter((entry) => entry.growth !== 0)
+          .sort((left, right) => Math.abs(right.growth) - Math.abs(left.growth))
+          .slice(0, 4)
+          .map((entry) => `${entry.key}${entry.growth > 0 ? "+" : ""}${entry.growth}`)
+          .join(",");
         const bounds = previewRoot.getBoundingClientRect();
         const finalContentNodes = frameDocument?.querySelectorAll(
           ".editor-post-title, .wp-block-post-title, [data-block]"
@@ -846,6 +948,8 @@ body *:has(${captureSelector}) {
           computedFlex: computedStyle.flex,
           isConnected: previewRoot.isConnected,
           contentNodeCount: finalContentNodes?.length ?? 0,
+          attemptHeights: attemptHeights.join(">"),
+          grownBlocks,
           documentScrollHeight: Math.ceil(
             Math.max(
               frameDocument?.body?.scrollHeight ?? 0,
@@ -882,7 +986,7 @@ body *:has(${captureSelector}) {
       ) {
         throw new GutenbergV2WorkerError(
           "verification_failed",
-          `The complete native editor canvas could not be captured for review (kind=${measurement.kind}, accessible=${measurement.accessible}, stable=${measurement.stable}, covered=${measurement.covered}, connected=${measurement.isConnected}, contentNodes=${measurement.contentNodeCount ?? 0}, width=${measurement.width}, maximumViewportWidth=${maximumViewportWidth}, renderedHeight=${measurement.renderedHeight}, contentHeight=${measurement.contentHeight}, documentScrollHeight=${measurement.documentScrollHeight ?? 0}, requestedHeight=${measurement.requestedHeight}, inlineHeight=${measurement.inlineHeight ?? "none"}, computedHeight=${measurement.computedHeight ?? "unknown"}, computedMinHeight=${measurement.computedMinHeight ?? "unknown"}, computedMaxHeight=${measurement.computedMaxHeight ?? "unknown"}, computedFlex=${measurement.computedFlex ?? "unknown"}).`,
+          `The complete native editor canvas could not be captured for review (kind=${measurement.kind}, accessible=${measurement.accessible}, stable=${measurement.stable}, covered=${measurement.covered}, connected=${measurement.isConnected}, contentNodes=${measurement.contentNodeCount ?? 0}, width=${measurement.width}, maximumViewportWidth=${maximumViewportWidth}, renderedHeight=${measurement.renderedHeight}, contentHeight=${measurement.contentHeight}, documentScrollHeight=${measurement.documentScrollHeight ?? 0}, requestedHeight=${measurement.requestedHeight}, inlineHeight=${measurement.inlineHeight ?? "none"}, computedHeight=${measurement.computedHeight ?? "unknown"}, computedMinHeight=${measurement.computedMinHeight ?? "unknown"}, computedMaxHeight=${measurement.computedMaxHeight ?? "unknown"}, computedFlex=${measurement.computedFlex ?? "unknown"}, attempts=${measurement.attemptHeights ?? "none"}, grown=${measurement.grownBlocks || "none"}).`,
           false
         );
       }
@@ -941,6 +1045,27 @@ body *:has(${captureSelector}) {
             previewRoot.ownerDocument
               .getElementById(restoration.captureStyleId)
               ?.remove();
+          const pinned = (
+            element as unknown as {
+              contentDocument?: {
+                querySelectorAll(selector: string): {
+                  length: number;
+                  item(index: number): {
+                    getAttribute(name: string): string | null;
+                    setAttribute(name: string, value: string): void;
+                    removeAttribute(name: string): void;
+                  } | null;
+                };
+              } | null;
+            }
+          ).contentDocument?.querySelectorAll("[data-sitepilot-capture-style]");
+          for (let index = 0; index < (pinned?.length ?? 0); index += 1) {
+            const node = pinned!.item(index);
+            const style = node?.getAttribute("data-sitepilot-capture-style");
+            if (!node || style === null || style === undefined) continue;
+            node.setAttribute("style", style);
+            node.removeAttribute("data-sitepilot-capture-style");
+          }
         },
         {
           ancestorStyles: measurement.ancestorStyles,
