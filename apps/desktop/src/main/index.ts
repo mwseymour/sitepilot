@@ -1,6 +1,10 @@
 import { app, BrowserWindow, screen, shell } from "electron";
 import { registerIpcHandlers } from "./ipc.js";
 import {
+  startMcpServerIfEnabled,
+  stopMcpServer
+} from "./mcp-server-service.js";
+import {
   createMainWindowOptions,
   resolveRendererEntry
 } from "./window-config.js";
@@ -35,12 +39,18 @@ function registerLifecycle(): void {
 
   void app.whenReady().then(async () => {
     await createMainWindow();
+    // A failed start is reported in Settings, not as a launch error.
+    void startMcpServerIfEnabled(app.getVersion()).catch(() => undefined);
 
     app.on("activate", async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         await createMainWindow();
       }
     });
+  });
+
+  app.on("will-quit", () => {
+    void stopMcpServer();
   });
 
   app.on("window-all-closed", () => {

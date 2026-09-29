@@ -13,6 +13,7 @@
     { "path": "./packages/gutenberg-worker" },
     { "path": "./packages/provider-adapters" },
     { "path": "./packages/mcp-client" },
+    { "path": "./packages/mcp-server" },
     { "path": "./packages/plugin-protocol" },
     { "path": "./packages/validation" },
     { "path": "./packages/logging" },

@@ -1,4 +1,9 @@
-import type { AppRole, SiteEnvironment, SiteRole } from "./enums.js";
+import type {
+  AppRole,
+  ClientSource,
+  SiteEnvironment,
+  SiteRole
+} from "./enums.js";
 import type {
   ActionId,
   AuditEntryId,
@@ -16,6 +21,8 @@ export interface ActorRef {
   userProfileId: UserProfileId;
   appRole: AppRole;
   siteRoles: SiteRole[];
+  /** The client the actor used. Absent on records made before sources existed. */
+  source?: ClientSource;
 }
 
 export interface EntityTimestamps {

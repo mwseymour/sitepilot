@@ -11,6 +11,7 @@ import type {
   SiteConnectionStatus,
   SiteEnvironment,
   ThreadType,
+  ClientSource,
   ToolInvocationStatus
 } from "./enums.js";
 import type {
@@ -123,6 +124,8 @@ export interface ChatThread extends EntityTimestamps {
   title: string;
   type: ThreadType;
   archivedAt?: IsoTimestamp;
+  /** The client that started the thread. Absent on older threads. */
+  source?: ClientSource;
 }
 
 export interface ImageAttachment {

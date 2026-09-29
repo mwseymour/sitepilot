@@ -69,6 +69,11 @@ import { executePlanAction } from "./execution-orchestrator-service.js";
 import { buildSiteExportBundle } from "./export-site-service.js";
 import { applySiteImportBundle } from "./import-site-service.js";
 import {
+  getMcpServerState,
+  regenerateMcpServerToken,
+  saveMcpServerSettings
+} from "./mcp-server-service.js";
+import {
   clearProviderSecret,
   clearSiteSigningSecret,
   getSettingsState,
@@ -919,4 +924,35 @@ export function registerIpcHandlers(): void {
     const result = await applySiteImportBundle(req.bundleJson);
     return parseResponse(ipcChannels.importApplySiteBundle, result);
   });
+
+  ipcMain.handle(ipcChannels.mcpServerGetState, async (_event, payload) => {
+    parseRequest(ipcChannels.mcpServerGetState, payload);
+    return parseResponse(ipcChannels.mcpServerGetState, {
+      ok: true,
+      state: await getMcpServerState()
+    });
+  });
+
+  ipcMain.handle(ipcChannels.mcpServerSaveSettings, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.mcpServerSaveSettings, payload);
+    return parseResponse(ipcChannels.mcpServerSaveSettings, {
+      ok: true,
+      state: await saveMcpServerSettings({
+        enabled: req.enabled,
+        port: req.port,
+        siteScope: req.siteScope === "all" ? "all" : [...req.siteScope]
+      })
+    });
+  });
+
+  ipcMain.handle(
+    ipcChannels.mcpServerRegenerateToken,
+    async (_event, payload) => {
+      parseRequest(ipcChannels.mcpServerRegenerateToken, payload);
+      return parseResponse(ipcChannels.mcpServerRegenerateToken, {
+        ok: true,
+        state: await regenerateMcpServerToken()
+      });
+    }
+  );
 }

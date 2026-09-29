@@ -379,5 +379,10 @@ export const sqliteMigrations: SqliteMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_gutenberg_v2_request_executions_site
         ON gutenberg_v2_request_executions(site_id, updated_at)`
     ]
+  },
+  {
+    id: "007_chat_thread_source",
+    description: "Record which client started each chat thread.",
+    statements: [`ALTER TABLE chat_threads ADD COLUMN source TEXT`]
   }
 ];

@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   ChatThread,
   ClarificationRound,
+  ClientSource,
   DiscoverySnapshot,
   ExecutionRun,
   ProviderUsageEvent,
@@ -618,11 +619,12 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
           title: string;
           type: ChatThread["type"];
           archived_at: string | null;
+          source: string | null;
           created_at: string;
           updated_at: string;
         }
       >(
-        `SELECT id, site_id, title, type, archived_at, created_at, updated_at
+        `SELECT id, site_id, title, type, archived_at, source, created_at, updated_at
          FROM chat_threads
          WHERE id = @id`
       )
@@ -638,6 +640,7 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
       title: row.title,
       type: row.type,
       archivedAt: row.archived_at ?? undefined,
+      ...(row.source ? { source: row.source as ClientSource } : {}),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -655,11 +658,12 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
           title: string;
           type: ChatThread["type"];
           archived_at: string | null;
+          source: string | null;
           created_at: string;
           updated_at: string;
         }
       >(
-        `SELECT id, site_id, title, type, archived_at, created_at, updated_at
+        `SELECT id, site_id, title, type, archived_at, source, created_at, updated_at
          FROM chat_threads
          WHERE site_id = @siteId
          ORDER BY updated_at DESC`
@@ -672,6 +676,7 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
       title: row.title,
       type: row.type,
       archivedAt: row.archived_at ?? undefined,
+      ...(row.source ? { source: row.source as ClientSource } : {}),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }));
@@ -681,9 +686,9 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
     upsert(
       this.connection,
       `INSERT INTO chat_threads (
-         id, site_id, title, type, archived_at, created_at, updated_at
+         id, site_id, title, type, archived_at, source, created_at, updated_at
        ) VALUES (
-         @id, @siteId, @title, @type, @archivedAt, @createdAt, @updatedAt
+         @id, @siteId, @title, @type, @archivedAt, @source, @createdAt, @updatedAt
        )
        ON CONFLICT(id) DO UPDATE SET
          site_id = excluded.site_id,
@@ -697,6 +702,7 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
         title: thread.title,
         type: thread.type,
         archivedAt: thread.archivedAt ?? null,
+        source: thread.source ?? null,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt
       }

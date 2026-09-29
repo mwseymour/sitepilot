@@ -122,6 +122,8 @@ The design is in [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server), and the
 6. The Slack app as an MCP client: slash commands that start a Request or a Conversation, a Slack-thread-to-thread mapping, and approval buttons.
 7. `submit_block_plan`, only after the organisation's LLM policy allows client-side planning.
 
+**Requirement: chat users need no app.** People who use SitePilot only through Slack can run the whole workflow there: request, revise, review the preview, approve, apply, publish and see the result. This needs the hosted backend, since Slack can't reach an app on someone's Mac. See [MCP and Slack plan, 7.3](./v2-mcp-plan.md#73-the-whole-workflow-in-slack).
+
 **Requirement: one shared thread history.** The hosted app, Slack, Claude and Codex can all create new Requests and Conversations and continue existing ones. Every thread is stored once in the hosted backend and appears in the hosted app, labelled with the client and user that started it, whichever client that was. A thread can be continued from a different client than the one that started it. The desktop app moves onto the hosted backend as another client, so its threads join the same history (see [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server)).
 
 ## ACF follow-ups

@@ -35,7 +35,7 @@ import {
 } from "@sitepilot/services";
 
 import { getDatabase } from "./app-database.js";
-import { DEFAULT_OPERATOR } from "./chat-service.js";
+import { currentActor } from "./call-context.js";
 import {
   claimV1RequestEngine,
   hasGutenbergV2RequestMapping
@@ -2022,7 +2022,7 @@ export async function executePlanAction(
     requestId: input.requestId,
     actionId: input.actionId,
     eventType: "execution_started",
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata: {
       executionRunId: runId,
       toolName: spec.toolName,
@@ -2063,7 +2063,7 @@ export async function executePlanAction(
       requestId: input.requestId,
       actionId: input.actionId,
       eventType: "execution_failed",
-      actor: DEFAULT_OPERATOR,
+      actor: currentActor(),
       metadata: {
         executionRunId: runId,
         toolName: spec.toolName,
@@ -2121,7 +2121,7 @@ export async function executePlanAction(
       requestId: input.requestId,
       actionId: input.actionId,
       eventType: "execution_failed",
-      actor: DEFAULT_OPERATOR,
+      actor: currentActor(),
       metadata: {
         executionRunId: runId,
         toolName: spec.toolName,
@@ -2184,7 +2184,7 @@ export async function executePlanAction(
     requestId: input.requestId,
     actionId: input.actionId,
     eventType: "tool_invoked",
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata: {
       executionRunId: runId,
       toolName: spec.toolName,
@@ -2200,7 +2200,7 @@ export async function executePlanAction(
     requestId: input.requestId,
     actionId: input.actionId,
     eventType: "execution_completed",
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata: {
       executionRunId: runId,
       toolName: spec.toolName,
@@ -2222,7 +2222,7 @@ export async function executePlanAction(
       requestId: input.requestId,
       actionId: input.actionId,
       eventType: "rollback_recorded",
-      actor: DEFAULT_OPERATOR,
+      actor: currentActor(),
       metadata: {
         executionRunId: runId,
         toolName: spec.toolName,

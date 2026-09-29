@@ -4,6 +4,7 @@ import {
   actionRiskLevels,
   approvalStates,
   auditEventTypes,
+  clientSources,
   requestStatuses,
   siteActivationStatuses,
   siteConnectionStatuses,
@@ -34,6 +35,7 @@ export const siteActivationStatusSchema = z.enum(siteActivationStatuses);
 export const siteConnectionStatusSchema = z.enum(siteConnectionStatuses);
 export const siteEnvironmentSchema = z.enum(siteEnvironments);
 export const threadTypeSchema = z.enum(threadTypes);
+export const clientSourceSchema = z.enum(clientSources);
 export const toolInvocationStatusSchema = z.enum(toolInvocationStatuses);
 
 export const localizedTextBlockSchema = z.object({
@@ -75,7 +77,8 @@ export const actorSchema = z.object({
       "manage_connection",
       "audit_only"
     ])
-  )
+  ),
+  source: clientSourceSchema.optional()
 });
 
 export const systemActorSchema = z.object({

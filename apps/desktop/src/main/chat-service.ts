@@ -5,7 +5,6 @@ import type {
   ImageAttachmentPayload
 } from "@sitepilot/contracts";
 import type {
-  ActorRef,
   AuditEntryId,
   ChatMessage,
   ChatThread,
@@ -15,8 +14,7 @@ import type {
   ClarificationRoundId,
   Request,
   RequestId,
-  SiteId,
-  UserProfileId
+  SiteId
 } from "@sitepilot/domain";
 import {
   analyzeClarification,
@@ -31,15 +29,12 @@ import {
 } from "@sitepilot/provider-adapters";
 
 import { getDatabase } from "./app-database.js";
+import { currentActor, currentCallContext } from "./call-context.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import { buildConversationReply } from "./conversation-service.js";
 import { loadPlannerPreferences } from "./planner-preferences-service.js";
 
-export const DEFAULT_OPERATOR: ActorRef = {
-  userProfileId: "local-operator" as UserProfileId,
-  appRole: "requester",
-  siteRoles: ["request"]
-};
+export { DEFAULT_OPERATOR } from "./call-context.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -246,7 +241,7 @@ async function createRequestRecordForThread(input: {
     id: randomUUID() as RequestId,
     siteId: input.siteId,
     threadId: input.thread.id,
-    requestedBy: DEFAULT_OPERATOR,
+    requestedBy: currentActor(),
     status,
     userPrompt: input.userPrompt,
     ...(input.attachments !== undefined && input.attachments.length > 0
@@ -263,7 +258,7 @@ async function createRequestRecordForThread(input: {
     siteId: input.siteId,
     requestId: request.id,
     eventType: "request_created",
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata: { promptLength: input.userPrompt.length },
     createdAt: ts,
     updatedAt: ts
@@ -273,7 +268,7 @@ async function createRequestRecordForThread(input: {
     id: randomUUID() as ChatMessageId,
     threadId: input.thread.id,
     siteId: input.siteId,
-    author: DEFAULT_OPERATOR,
+    author: currentActor(),
     body: { format: "plain_text", value: input.userPrompt },
     ...(input.attachments !== undefined && input.attachments.length > 0
       ? { attachments: input.attachments }
@@ -506,6 +501,7 @@ export async function createChatThreadForSite(
     siteId,
     title: params.title,
     type: params.type ?? "general_request",
+    source: currentCallContext().source,
     createdAt: t,
     updatedAt: t
   };
@@ -858,7 +854,7 @@ export async function postChatMessage(
     id: randomUUID() as ChatMessageId,
     threadId,
     siteId,
-    author: DEFAULT_OPERATOR,
+    author: currentActor(),
     body: { format: "plain_text", value: text },
     ...(attachments !== undefined && attachments.length > 0
       ? { attachments }
@@ -971,7 +967,7 @@ export async function answerClarificationForRequest(
     threadId,
     siteId,
     requestId,
-    author: DEFAULT_OPERATOR,
+    author: currentActor(),
     body: { format: "plain_text", value: trimmed },
     ...(attachments !== undefined && attachments.length > 0
       ? { attachments }
@@ -992,7 +988,7 @@ export async function answerClarificationForRequest(
     siteId,
     requestId,
     eventType: "clarification_answered",
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata: { answerLength: trimmed.length },
     createdAt: ts,
     updatedAt: ts
@@ -1144,7 +1140,7 @@ export async function amendRequestForThread(
     threadId,
     siteId,
     requestId,
-    author: DEFAULT_OPERATOR,
+    author: currentActor(),
     body: { format: "plain_text", value: trimmed },
     ...(attachments !== undefined && attachments.length > 0
       ? { attachments }

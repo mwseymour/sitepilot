@@ -18,6 +18,7 @@
     "@sitepilot/domain": "0.1.0",
     "@sitepilot/gutenberg-worker": "0.1.0",
     "@sitepilot/mcp-client": "0.1.0",
+    "@sitepilot/mcp-server": "0.1.0",
     "@sitepilot/plugin-protocol": "0.1.0",
     "@sitepilot/provider-adapters": "0.1.0",
     "@sitepilot/repositories": "0.1.0",

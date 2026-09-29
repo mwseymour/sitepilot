@@ -6,6 +6,7 @@ import type {
   UiPreferences
 } from "@sitepilot/contracts";
 import { useAppBusy } from "../button-loading.js";
+import { McpServerSettings } from "./McpServerSettings.js";
 
 export function SettingsPage(): ReactElement {
   const [err, setErr] = useState<string | null>(null);
@@ -335,6 +336,8 @@ export function SettingsPage(): ReactElement {
           </button>
         </section>
       ) : null}
+
+      <McpServerSettings />
     </main>
   );
 }

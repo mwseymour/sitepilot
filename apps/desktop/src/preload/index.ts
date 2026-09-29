@@ -115,7 +115,12 @@ const desktopApi: SitePilotDesktopApi = {
   buildSiteExportBundle: (request) =>
     invokeIpc(ipcChannels.exportBuildSiteBundle, request),
   applySiteImportBundle: (request) =>
-    invokeIpc(ipcChannels.importApplySiteBundle, request)
+    invokeIpc(ipcChannels.importApplySiteBundle, request),
+  getMcpServerState: () => invokeIpc(ipcChannels.mcpServerGetState, {}),
+  saveMcpServerSettings: (request) =>
+    invokeIpc(ipcChannels.mcpServerSaveSettings, request),
+  regenerateMcpServerToken: () =>
+    invokeIpc(ipcChannels.mcpServerRegenerateToken, {})
 };
 
 contextBridge.exposeInMainWorld("sitePilotDesktop", desktopApi);

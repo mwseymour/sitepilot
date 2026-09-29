@@ -12,6 +12,7 @@ import {
   siteEnvironmentSchema,
   systemActorSchema,
   threadTypeSchema,
+  clientSourceSchema,
   urlSchema
 } from "./common.js";
 import { siteRegistrationSchema } from "./protocol.js";
@@ -126,7 +127,10 @@ export const ipcChannels = {
     "settings.chooseWordPressCoreSourcePath",
   getCompatibilityInfo: "app.getCompatibilityInfo",
   exportBuildSiteBundle: "export.buildSiteBundle",
-  importApplySiteBundle: "import.applySiteBundle"
+  importApplySiteBundle: "import.applySiteBundle",
+  mcpServerGetState: "mcpServer.getState",
+  mcpServerSaveSettings: "mcpServer.saveSettings",
+  mcpServerRegenerateToken: "mcpServer.regenerateToken"
 } as const;
 
 export const shellInfoResponseSchema = z.object({
@@ -1136,6 +1140,7 @@ export const siteActivityThreadSchema = z.object({
   threadId: idSchema,
   title: z.string().min(1),
   type: threadTypeSchema,
+  source: clientSourceSchema.optional(),
   updatedAt: isoTimestampSchema,
   requestId: idSchema.optional(),
   requestStatus: requestStatusSchema.optional(),
@@ -1193,6 +1198,26 @@ export type SiteContentMatch = z.infer<typeof siteContentMatchSchema>;
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
+
+export const mcpServerSettingsSchema = z.object({
+  enabled: z.boolean(),
+  port: z.number().int().min(1024).max(65_535),
+  siteScope: z.union([z.literal("all"), z.array(idSchema).max(200)])
+});
+export const mcpServerStateSchema = mcpServerSettingsSchema.extend({
+  running: z.boolean(),
+  url: z.string().nullable(),
+  token: z.string().min(1),
+  error: z.string().nullable()
+});
+export const mcpServerStateResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), state: mcpServerStateSchema }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
 
 export const ipcContracts = {
   [ipcChannels.getShellInfo]: {
@@ -1410,6 +1435,18 @@ export const ipcContracts = {
   [ipcChannels.importApplySiteBundle]: {
     request: importApplySiteBundleRequestSchema,
     response: importApplySiteBundleResponseSchema
+  },
+  [ipcChannels.mcpServerGetState]: {
+    request: z.object({}),
+    response: mcpServerStateResponseSchema
+  },
+  [ipcChannels.mcpServerSaveSettings]: {
+    request: mcpServerSettingsSchema,
+    response: mcpServerStateResponseSchema
+  },
+  [ipcChannels.mcpServerRegenerateToken]: {
+    request: z.object({}),
+    response: mcpServerStateResponseSchema
   }
 } as const;
 
@@ -1592,4 +1629,13 @@ export interface SitePilotDesktopApi {
   applySiteImportBundle: (
     request: IpcRequest<typeof ipcChannels.importApplySiteBundle>
   ) => Promise<IpcResponse<typeof ipcChannels.importApplySiteBundle>>;
+  getMcpServerState: () => Promise<
+    IpcResponse<typeof ipcChannels.mcpServerGetState>
+  >;
+  saveMcpServerSettings: (
+    request: IpcRequest<typeof ipcChannels.mcpServerSaveSettings>
+  ) => Promise<IpcResponse<typeof ipcChannels.mcpServerSaveSettings>>;
+  regenerateMcpServerToken: () => Promise<
+    IpcResponse<typeof ipcChannels.mcpServerRegenerateToken>
+  >;
 }

@@ -3,7 +3,12 @@ import {
   type SiteActivityThread,
   type SiteContentMatch
 } from "@sitepilot/contracts";
-import type { RequestStatus, SiteId, ThreadType } from "@sitepilot/domain";
+import type {
+  ClientSource,
+  RequestStatus,
+  SiteId,
+  ThreadType
+} from "@sitepilot/domain";
 import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import { SqliteGutenbergV2ExecutionJournal } from "@sitepilot/services";
 
@@ -14,6 +19,7 @@ type ActivityRow = {
   threadId: string;
   title: string;
   type: string;
+  source: string | null;
   threadUpdatedAt: string;
   requestId: string | null;
   requestStatus: string | null;
@@ -48,7 +54,7 @@ export async function getSiteActivitySummary(input: {
   try {
     const rows = getDatabase()
       .connection.prepare<{ siteId: string; limit: number }, ActivityRow>(
-        `SELECT t.id AS threadId, t.title, t.type, t.updated_at AS threadUpdatedAt,
+        `SELECT t.id AS threadId, t.title, t.type, t.source, t.updated_at AS threadUpdatedAt,
                 r.id AS requestId, r.status AS requestStatus, r.updated_at AS requestUpdatedAt,
                 e.execution_id AS executionId, e.target_json AS targetJson,
                 e.updated_at AS executionUpdatedAt
@@ -77,6 +83,7 @@ export async function getSiteActivitySummary(input: {
         threadId: row.threadId,
         title: row.title,
         type: row.type as ThreadType,
+        ...(row.source ? { source: row.source as ClientSource } : {}),
         updatedAt: latest(
           row.threadUpdatedAt,
           row.requestUpdatedAt,

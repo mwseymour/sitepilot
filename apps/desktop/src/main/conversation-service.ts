@@ -7,6 +7,10 @@ import {
 } from "@sitepilot/provider-adapters";
 import { extractJsonObject } from "@sitepilot/services";
 import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import {
+  findReadToolByAbility,
+  sanitizeReadToolArguments
+} from "@sitepilot/services/read-tool-registry";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
@@ -34,7 +38,11 @@ type ResponseKind =
   | "created"
   | "modified";
 
-type ConversationToolName = "sitepilot-find-posts" | "sitepilot-get-post";
+const CONVERSATION_TOOL_NAMES = [
+  "sitepilot-find-posts",
+  "sitepilot-get-post"
+] as const;
+type ConversationToolName = (typeof CONVERSATION_TOOL_NAMES)[number];
 
 type ConversationPlan =
   | { mode: "reply"; reply: string }
@@ -338,53 +346,13 @@ const MAX_AGENT_TOOL_CALLS = 4;
 const MAX_TOOL_RESULT_CHARS = 12_000;
 const MAX_POST_CONTENT_CHARS = 6_000;
 
-const TOOL_ARGUMENT_KEYS: Record<ConversationToolName, readonly string[]> = {
-  "sitepilot-find-posts": [
-    "post_type",
-    "status",
-    "slug",
-    "title",
-    "search",
-    "category",
-    "limit",
-    "orderby",
-    "order"
-  ],
-  "sitepilot-get-post": [
-    "post_id",
-    "post_type",
-    "status",
-    "slug",
-    "title",
-    "search",
-    "category"
-  ]
-};
-
-const ORDERBY_ALIASES: Record<string, "date" | "modified" | "title" | "ID" | "rand"> = {
-  date: "date",
-  post_date: "date",
-  created: "date",
-  created_at: "date",
-  published: "date",
-  modified: "modified",
-  post_modified: "modified",
-  updated: "modified",
-  modified_at: "modified",
-  title: "title",
-  post_title: "title",
-  id: "ID",
-  post_id: "ID",
-  rand: "rand",
-  random: "rand"
-};
-
 const CONVERSATION_AGENT_SYSTEM_PROMPT = [
   "You are SitePilot Conversations mode: a read-only research assistant for one WordPress site.",
   "Never perform or offer writes, publishing, uploads, approvals, or execution. If the operator wants a change, tell them to start a Request.",
   "You can look things up with these read-only tools:",
-  '- "sitepilot-find-posts": list/search posts. Arguments (all optional): post_type ("post" | "page" | "any", default "any"), status ("publish" | "draft" | "pending" | "private" | "future" | "any", default "any"), slug, title (exact title match), search (keyword search), category (category slug), limit (1-20, default 10), orderby ("date" = creation date | "modified" | "title" | "ID" | "rand", default "modified"), order ("ASC" | "DESC", default "DESC"). Returns total_matches and matches with post_id, post_type, post_status, post_title, post_name, post_date_gmt, modified_gmt, permalink.',
-  '- "sitepilot-get-post": fetch one post in full. Arguments: post_id, or a unique lookup via slug / title / search plus optional post_type, status, category. Returns post_id, post_title, post_name, post_status, post_excerpt, post_content, post_date_gmt, modified_gmt, permalink, category_slugs. If the lookup is not unique it returns error "post_ambiguous" with matches.',
+  ...CONVERSATION_TOOL_NAMES.map(
+    (name) => findReadToolByAbility(name)?.conversationPromptLine ?? ""
+  ),
   "Use only the argument names listed above; unknown arguments are rejected.",
   'Respond with exactly one JSON object and nothing else, in one of these shapes: {"action":"tool","tool":"sitepilot-find-posts"|"sitepilot-get-post","arguments":{...}} or {"action":"reply","reply":"..."}.',
   "After each tool call you will receive its result. Call another tool if you need more data (for example retry with search instead of an exact title, or widen the post_type), otherwise reply.",
@@ -453,46 +421,8 @@ export function sanitizeConversationToolArguments(
   toolName: ConversationToolName,
   args: Record<string, unknown>
 ): Record<string, unknown> {
-  const allowed = TOOL_ARGUMENT_KEYS[toolName];
-  const sanitized: Record<string, unknown> = {};
-  for (const key of allowed) {
-    const value = args[key];
-    if (value === undefined || value === null || value === "") {
-      continue;
-    }
-    if (key === "limit") {
-      const parsed = Number.parseInt(String(value), 10);
-      if (Number.isFinite(parsed)) {
-        sanitized.limit = Math.max(1, Math.min(20, parsed));
-      }
-      continue;
-    }
-    if (key === "post_id") {
-      const parsed = Number.parseInt(String(value), 10);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        sanitized.post_id = parsed;
-      }
-      continue;
-    }
-    if (key === "orderby") {
-      const orderby = ORDERBY_ALIASES[String(value).trim().toLowerCase()];
-      if (orderby !== undefined) {
-        sanitized.orderby = orderby;
-      }
-      continue;
-    }
-    if (key === "order") {
-      const order = String(value).trim().toUpperCase();
-      if (order === "ASC" || order === "DESC") {
-        sanitized.order = order;
-      }
-      continue;
-    }
-    if (typeof value === "string" || typeof value === "number") {
-      sanitized[key] = String(value);
-    }
-  }
-  return sanitized;
+  const tool = findReadToolByAbility(toolName);
+  return tool ? sanitizeReadToolArguments(tool, args) : {};
 }
 
 function toolErrorMessage(result: Record<string, unknown>): string | null {

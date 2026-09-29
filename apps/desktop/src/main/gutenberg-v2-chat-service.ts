@@ -34,7 +34,7 @@ import { z } from "zod";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
-import { DEFAULT_OPERATOR } from "./chat-service.js";
+import { assertCallerMay, currentActor } from "./call-context.js";
 import {
   candidateReadyReport,
   decisionReport,
@@ -697,7 +697,7 @@ async function appendV2Audit(
     siteId,
     requestId,
     eventType,
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata,
     createdAt: timestamp,
     updatedAt: timestamp
@@ -811,7 +811,7 @@ async function withdrawGutenbergV2Approval(input: {
         decision: "withdrawn",
         target: mapping.target,
         candidateId: input.candidateId,
-        approverId: DEFAULT_OPERATOR.userProfileId,
+        approverId: currentActor().userProfileId,
         note: input.note
       })
     );
@@ -1222,6 +1222,12 @@ export async function decideGutenbergV2Candidate(input: {
   decision: "approved" | "rejected" | "revision_requested";
   note?: string;
 }) {
+  // Asking for a revision is part of the request conversation; approving or
+  // rejecting is a reviewer's decision.
+  if (input.decision !== "revision_requested") {
+    const allowed = assertCallerMay("approve");
+    if (!allowed.ok) return allowed;
+  }
   const enabled = await assertV2Enabled(input.siteId);
   if (!enabled.ok) return enabled;
   const mapping = await requireMapping(input.siteId, input.requestId);
@@ -1249,7 +1255,7 @@ export async function decideGutenbergV2Candidate(input: {
           approval: {
             schemaVersion: "sitepilot.approval/v2",
             approvalId: randomUUID(),
-            approverId: DEFAULT_OPERATOR.userProfileId,
+            approverId: currentActor().userProfileId,
             approvedAt,
             expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
             binding: createGutenbergV2ApprovalBinding(job.candidate)
@@ -1283,7 +1289,7 @@ export async function decideGutenbergV2Candidate(input: {
         decision: input.decision,
         target: mapping.target,
         candidateId: input.candidateId,
-        approverId: DEFAULT_OPERATOR.userProfileId,
+        approverId: currentActor().userProfileId,
         ...(input.note === undefined ? {} : { note: input.note }),
         ...(next.approval?.expiresAt === undefined
           ? {}
@@ -1316,6 +1322,8 @@ export async function executeGutenbergV2Candidate(input: {
   siteId: SiteId;
   requestId: RequestId;
 }) {
+  const allowed = assertCallerMay("approve");
+  if (!allowed.ok) return allowed;
   const enabled = await assertV2Enabled(input.siteId);
   if (!enabled.ok) return enabled;
   const mapping = await requireMapping(input.siteId, input.requestId);

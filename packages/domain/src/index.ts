@@ -13,6 +13,7 @@ export { siteConnectionStatuses } from "./enums.js";
 export { siteEnvironments } from "./enums.js";
 export { siteRoles } from "./enums.js";
 export { threadTypes } from "./enums.js";
+export { clientSources } from "./enums.js";
 export { toolInvocationStatuses } from "./enums.js";
 export type * from "./enums.js";
 export type * from "./value-objects.js";

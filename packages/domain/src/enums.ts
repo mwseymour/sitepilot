@@ -36,6 +36,17 @@ export const threadTypes = [
 ] as const;
 export type ThreadType = (typeof threadTypes)[number];
 
+/** Which client started a thread or sent a message. */
+export const clientSources = [
+  "desktop",
+  "hosted_app",
+  "slack",
+  "claude",
+  "codex",
+  "mcp_other"
+] as const;
+export type ClientSource = (typeof clientSources)[number];
+
 export const requestStatuses = [
   "new",
   "clarifying",
@@ -97,7 +108,8 @@ export const auditEventTypes = [
   "rollback_recorded",
   "config_updated",
   "site_registered",
-  "discovery_refreshed"
+  "discovery_refreshed",
+  "mcp_tool_called"
 ] as const;
 export type AuditEventType = (typeof auditEventTypes)[number];
 

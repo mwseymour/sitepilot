@@ -15,6 +15,7 @@ import {
   siteEnvironmentSchema,
   systemActorSchema,
   threadTypeSchema,
+  clientSourceSchema,
   timestampsSchema,
   toolInvocationStatusSchema,
   urlSchema
@@ -289,6 +290,7 @@ export const chatThreadSchema = z.object({
   title: z.string().min(1),
   type: threadTypeSchema,
   archivedAt: isoTimestampSchema.optional(),
+  source: clientSourceSchema.optional(),
   ...timestampsSchema.shape
 });
 

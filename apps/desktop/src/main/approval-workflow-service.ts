@@ -12,7 +12,7 @@ import type {
 } from "@sitepilot/domain";
 
 import { getDatabase } from "./app-database.js";
-import { DEFAULT_OPERATOR } from "./chat-service.js";
+import { assertCallerMay, currentActor } from "./call-context.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -81,6 +81,8 @@ export async function decideApprovalForSite(input: {
   decision: "approved" | "rejected" | "revision_requested";
   note?: string;
 }): Promise<DecideApprovalResult> {
+  const allowed = assertCallerMay("approve");
+  if (!allowed.ok) return allowed;
   const db = getDatabase();
   const site = await db.repositories.sites.getById(input.siteId);
   if (!site) {
@@ -123,7 +125,7 @@ export async function decideApprovalForSite(input: {
   const decisionRow: ApprovalDecision = {
     id: randomUUID() as ApprovalDecisionId,
     approvalRequestId: approval.id,
-    decidedBy: DEFAULT_OPERATOR,
+    decidedBy: currentActor(),
     decision: newStatus,
     ...(input.note !== undefined ? { note: input.note } : {}),
     createdAt: ts,
@@ -180,7 +182,7 @@ export async function decideApprovalForSite(input: {
     siteId: input.siteId,
     requestId: approval.requestId,
     eventType: "approval_decided",
-    actor: DEFAULT_OPERATOR,
+    actor: currentActor(),
     metadata: {
       approvalRequestId: approval.id,
       decision: newStatus,

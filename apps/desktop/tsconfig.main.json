@@ -12,6 +12,7 @@
     { "path": "../../packages/contracts" },
     { "path": "../../packages/domain" },
     { "path": "../../packages/mcp-client" },
+    { "path": "../../packages/mcp-server" },
     { "path": "../../packages/plugin-protocol" },
     { "path": "../../packages/provider-adapters" },
     { "path": "../../packages/gutenberg-worker" },

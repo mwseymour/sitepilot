@@ -17,6 +17,10 @@
       ],
       "@sitepilot/repositories": ["packages/repositories/src/index.ts"],
       "@sitepilot/services": ["packages/services/src/index.ts"],
+      "@sitepilot/services/read-tool-registry": [
+        "packages/services/src/read-tool-registry.ts"
+      ],
+      "@sitepilot/mcp-server": ["packages/mcp-server/src/index.ts"],
       "@sitepilot/test-utils": ["packages/test-utils/src/index.ts"],
       "@sitepilot/validation": ["packages/validation/src/index.ts"]
     },

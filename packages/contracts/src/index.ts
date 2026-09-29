@@ -43,6 +43,7 @@ export {
   siteEnvironmentSchema,
   systemActorSchema,
   threadTypeSchema,
+  clientSourceSchema,
   timestampsSchema,
   toolInvocationStatusSchema,
   urlSchema
