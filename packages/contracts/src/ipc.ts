@@ -8,6 +8,7 @@ import {
   imageAttachmentSchema,
   isoTimestampSchema,
   jsonValueSchema,
+  requestStatusSchema,
   siteEnvironmentSchema,
   systemActorSchema,
   threadTypeSchema,
@@ -108,6 +109,9 @@ export const ipcChannels = {
   gutenbergV2GetRequestState: "gutenbergV2.getRequestState",
   gutenbergV2ListPendingCandidates: "gutenbergV2.listPendingCandidates",
   gutenbergV2GetReviewArtifact: "gutenbergV2.getReviewArtifact",
+  gutenbergV2GetExecutionProgress: "gutenbergV2.getExecutionProgress",
+  getSiteActivitySummary: "site.getActivitySummary",
+  searchSiteContent: "site.searchContent",
   getProviderStatus: "settings.getProviderStatus",
   settingsGetState: "settings.getState",
   settingsSetProviderSecret: "settings.setProviderSecret",
@@ -1113,6 +1117,79 @@ export const gutenbergV2GetReviewArtifactResponseSchema = z.discriminatedUnion(
   ]
 );
 
+/** Cheap journal-only read used to show live progress while a write runs. */
+export const gutenbergV2GetExecutionProgressRequestSchema = z.object({
+  siteId: idSchema,
+  requestId: idSchema
+});
+export const gutenbergV2GetExecutionProgressResponseSchema =
+  z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      state: gutenbergV2ExecutionStateSchema.nullable(),
+      updatedAt: isoTimestampSchema.nullable()
+    }),
+    gutenbergV2FailureResponseSchema
+  ]);
+
+export const siteActivityThreadSchema = z.object({
+  threadId: idSchema,
+  title: z.string().min(1),
+  type: threadTypeSchema,
+  updatedAt: isoTimestampSchema,
+  requestId: idSchema.optional(),
+  requestStatus: requestStatusSchema.optional(),
+  v2State: gutenbergV2ExecutionStateSchema.optional(),
+  target: gutenbergV2TargetSchema.optional(),
+  approvalExpiresAt: isoTimestampSchema.optional()
+});
+export const getSiteActivitySummaryRequestSchema = z.object({
+  siteId: idSchema,
+  limit: z.number().int().min(1).max(200).optional()
+});
+export const getSiteActivitySummaryResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({
+      ok: z.literal(true),
+      threads: z.array(siteActivityThreadSchema)
+    }),
+    z.object({
+      ok: z.literal(false),
+      code: z.string().min(1),
+      message: z.string().min(1)
+    })
+  ]
+);
+
+export const siteContentMatchSchema = z.object({
+  postId: z.number().int().positive(),
+  postType: z.string().min(1),
+  status: z.string(),
+  title: z.string(),
+  slug: z.string(),
+  permalink: z.string(),
+  modifiedAt: z.string()
+});
+export const searchSiteContentRequestSchema = z.object({
+  siteId: idSchema,
+  query: z.string().max(200)
+});
+export const searchSiteContentResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    matches: z.array(siteContentMatchSchema)
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.string().min(1),
+    message: z.string().min(1)
+  })
+]);
+
+export type SiteActivityThread = z.infer<typeof siteActivityThreadSchema>;
+export type SiteContentMatch = z.infer<typeof siteContentMatchSchema>;
+
 export type ConnectivityDiagnosticsResult = z.infer<
   typeof connectivityDiagnosticsSchema
 >;
@@ -1265,6 +1342,18 @@ export const ipcContracts = {
   [ipcChannels.gutenbergV2GetReviewArtifact]: {
     request: gutenbergV2GetReviewArtifactRequestSchema,
     response: gutenbergV2GetReviewArtifactResponseSchema
+  },
+  [ipcChannels.gutenbergV2GetExecutionProgress]: {
+    request: gutenbergV2GetExecutionProgressRequestSchema,
+    response: gutenbergV2GetExecutionProgressResponseSchema
+  },
+  [ipcChannels.getSiteActivitySummary]: {
+    request: getSiteActivitySummaryRequestSchema,
+    response: getSiteActivitySummaryResponseSchema
+  },
+  [ipcChannels.searchSiteContent]: {
+    request: searchSiteContentRequestSchema,
+    response: searchSiteContentResponseSchema
   },
   [ipcChannels.getProviderStatus]: {
     request: z.object({}),
@@ -1448,6 +1537,15 @@ export interface SitePilotDesktopApi {
   gutenbergV2GetReviewArtifact: (
     request: IpcRequest<typeof ipcChannels.gutenbergV2GetReviewArtifact>
   ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2GetReviewArtifact>>;
+  gutenbergV2GetExecutionProgress: (
+    request: IpcRequest<typeof ipcChannels.gutenbergV2GetExecutionProgress>
+  ) => Promise<IpcResponse<typeof ipcChannels.gutenbergV2GetExecutionProgress>>;
+  getSiteActivitySummary: (
+    request: IpcRequest<typeof ipcChannels.getSiteActivitySummary>
+  ) => Promise<IpcResponse<typeof ipcChannels.getSiteActivitySummary>>;
+  searchSiteContent: (
+    request: IpcRequest<typeof ipcChannels.searchSiteContent>
+  ) => Promise<IpcResponse<typeof ipcChannels.searchSiteContent>>;
   getProviderStatus: () => Promise<ProviderStatusResponse>;
   getSettingsState: (
     request: IpcRequest<typeof ipcChannels.settingsGetState>

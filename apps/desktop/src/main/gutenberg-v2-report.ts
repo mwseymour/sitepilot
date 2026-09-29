@@ -467,7 +467,24 @@ export function friendlyDecision(input: {
   }
 }
 
+/** The WordPress admin edit screen for a post, from the site's base URL. */
+export function wordpressEditUrl(siteUrl: string, postId: number): string {
+  return `${siteUrl.replace(/\/+$/, "")}/wp-admin/post.php?post=${postId}&action=edit`;
+}
+
 export function friendlyExecution(input: {
+  target: GutenbergV2ReportTarget;
+  result: GutenbergV2ExecutionResult;
+  /** When given, the message ends with a link to the post's edit screen. */
+  siteUrl?: string;
+}): string {
+  const text = friendlyExecutionText(input);
+  return input.siteUrl && input.result.postId !== undefined
+    ? `${text}\n\nOpen it in the WordPress editor: ${wordpressEditUrl(input.siteUrl, input.result.postId)}`
+    : text;
+}
+
+function friendlyExecutionText(input: {
   target: GutenbergV2ReportTarget;
   result: GutenbergV2ExecutionResult;
 }): string {

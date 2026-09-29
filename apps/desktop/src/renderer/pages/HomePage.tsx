@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 
 import type { SiteSummary } from "@sitepilot/contracts";
 
+import { activationLabel } from "../site-labels.js";
+import { ThemeToggle } from "../theme/theme.js";
+
 export function HomePage(): ReactElement {
   const [sites, setSites] = useState<SiteSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +46,7 @@ export function HomePage(): ReactElement {
           <Link className="btn btn-secondary btn-small" to="/settings">
             App settings
           </Link>
+          <ThemeToggle className="icon-btn" />
         </div>
       </section>
       {error ? <p className="workspace-error">{error}</p> : null}
@@ -66,11 +70,7 @@ export function HomePage(): ReactElement {
                 <p
                   className={`activation-pill activation-${s.activationStatus}`}
                 >
-                  {s.activationStatus === "active"
-                    ? "Active"
-                    : s.activationStatus === "config_required"
-                      ? "Configuration required"
-                      : "Inactive"}
+                  {activationLabel(s.activationStatus)}
                 </p>
               </div>
               <Link className="btn btn-primary" to={`/site/${s.id}/overview`}>

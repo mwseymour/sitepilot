@@ -167,6 +167,19 @@ describe("status change messages", () => {
       "back to a draft, and SitePilot checked that it no longer loads"
     );
   });
+
+  it("links to the post's WordPress edit screen when the site is known", () => {
+    const result = { postId: 42, state: "succeeded" } as Parameters<
+      typeof friendlyExecution
+    >[0]["result"];
+    const draft = { operation: "create_draft" as const, postType: "post" as const };
+    expect(
+      friendlyExecution({ target: draft, result, siteUrl: "https://example.test/" })
+    ).toContain(
+      "Open it in the WordPress editor: https://example.test/wp-admin/post.php?post=42&action=edit"
+    );
+    expect(friendlyExecution({ target: draft, result })).not.toContain("wp-admin");
+  });
 });
 
 describe("status change request state over IPC", () => {

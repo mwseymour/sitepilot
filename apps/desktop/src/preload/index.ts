@@ -84,6 +84,12 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.gutenbergV2ListPendingCandidates, request),
   gutenbergV2GetReviewArtifact: (request) =>
     invokeIpc(ipcChannels.gutenbergV2GetReviewArtifact, request),
+  gutenbergV2GetExecutionProgress: (request) =>
+    invokeIpc(ipcChannels.gutenbergV2GetExecutionProgress, request),
+  getSiteActivitySummary: (request) =>
+    invokeIpc(ipcChannels.getSiteActivitySummary, request),
+  searchSiteContent: (request) =>
+    invokeIpc(ipcChannels.searchSiteContent, request),
   getProviderStatus: () => invokeIpc(ipcChannels.getProviderStatus, {}),
   getSettingsState: (request = {}) =>
     invokeIpc(ipcChannels.settingsGetState, request),

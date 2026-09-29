@@ -23,3 +23,24 @@ describe("desktop shell scaffolding", () => {
     expect(options.webPreferences.preload).toContain("preload/index.js");
   });
 });
+
+describe("initial window size", () => {
+  it("fills most of the screen within the minimum and maximum", async () => {
+    const { resolveInitialWindowSize } = await import(
+      "../apps/desktop/src/main/window-config.js"
+    );
+
+    expect(resolveInitialWindowSize({ width: 1512, height: 944 })).toEqual({
+      width: 1436,
+      height: 897
+    });
+    expect(resolveInitialWindowSize({ width: 3008, height: 1667 })).toEqual({
+      width: 1920,
+      height: 1200
+    });
+    expect(resolveInitialWindowSize({ width: 1000, height: 700 })).toEqual({
+      width: 1000,
+      height: 700
+    });
+  });
+});

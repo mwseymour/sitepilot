@@ -15,7 +15,7 @@ Status: planned, 25 September 2026. This is the forward-looking list for the Gut
 | Choosing a request's post from the message | [Expansion plan, Phase 5](./v2-expansion-plan.md#phase-5-resolving-a-requests-target-from-text-sm) | S–M |
 | Categories and tags | [Below](#categories-and-tags) | M |
 | Lookup registry and extensible conversations | [Below](#lookup-registry-and-extensible-conversations) | M–L |
-| SitePilot MCP server (Slack, Claude, Codex) | [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server) and [below](#mcp-server) | L |
+| SitePilot MCP server (Slack, Claude, Codex) | [MCP and Slack plan](./v2-mcp-plan.md), [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server) and [below](#mcp-server) | L |
 | Streaming upload for videos over 10 MB | [Below](#large-media-uploads) | M |
 
 **Shared prerequisite.** SEO fields, and categories and tags, both need non-string post fields. Today `requestedPostFields()` in `packages/services/src/gutenberg-v2-content-service.ts` keeps string values only. They also need a staleness hash separate from `fields_hash`. Do that contract work once, for both.
@@ -112,14 +112,17 @@ People will keep finding questions the current lookups can't answer. Adding a lo
 
 ## MCP server
 
-The design is in [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server). The Slack app is built as a client of the server, and Claude and Codex connect to the same server. Order of work:
+The design is in [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server), and the phased implementation plan is in [MCP and Slack plan](./v2-mcp-plan.md). The Slack app is built as a client of the server, and Claude and Codex connect to the same server. Order of work:
 
 1. The lookup registry above, exposed as the read tools.
 2. OAuth 2.1, mapping users to roles, scopes, audit and rate limits.
-3. `create_request`, `add_to_request` and `request_status`, on the existing `ingestThreadMessage` entry point.
-4. The review page and approval links. No tool can approve.
-5. The Slack app as an MCP client: slash commands, a thread-to-request mapping, and approval buttons.
-6. `submit_block_plan`, only after the organisation's LLM policy allows client-side planning.
+3. `create_conversation` and `ask`, on the Conversations service, so every client can start and continue read-only research.
+4. `create_request`, `add_to_request` and `request_status`, on the existing `ingestThreadMessage` entry point.
+5. The review page and approval links. No tool can approve.
+6. The Slack app as an MCP client: slash commands that start a Request or a Conversation, a Slack-thread-to-thread mapping, and approval buttons.
+7. `submit_block_plan`, only after the organisation's LLM policy allows client-side planning.
+
+**Requirement: one shared thread history.** The hosted app, Slack, Claude and Codex can all create new Requests and Conversations and continue existing ones. Every thread is stored once in the hosted backend and appears in the hosted app, labelled with the client and user that started it, whichever client that was. A thread can be continued from a different client than the one that started it. The desktop app moves onto the hosted backend as another client, so its threads join the same history (see [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server)).
 
 ## ACF follow-ups
 

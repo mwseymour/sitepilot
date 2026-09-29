@@ -58,6 +58,11 @@ import {
 } from "./request-visual-analysis-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 import { getRequestBundleForThread } from "./request-bundle-service.js";
+import {
+  getGutenbergV2ExecutionProgress,
+  getSiteActivitySummary,
+  searchSiteContent
+} from "./site-activity-service.js";
 import { ingestRequestThreadMessage } from "./request-ingress-service.js";
 import { getCompatibilityPayload } from "./compatibility-info.js";
 import { executePlanAction } from "./execution-orchestrator-service.js";
@@ -674,6 +679,39 @@ export function registerIpcHandlers(): void {
       return parseResponse(ipcChannels.gutenbergV2ExecuteCandidate, result);
     }
   );
+
+  ipcMain.handle(
+    ipcChannels.gutenbergV2GetExecutionProgress,
+    async (_event, payload) => {
+      const req = parseRequest(
+        ipcChannels.gutenbergV2GetExecutionProgress,
+        payload
+      );
+      const result = await getGutenbergV2ExecutionProgress({
+        siteId: req.siteId as SiteId,
+        requestId: req.requestId
+      });
+      return parseResponse(ipcChannels.gutenbergV2GetExecutionProgress, result);
+    }
+  );
+
+  ipcMain.handle(ipcChannels.getSiteActivitySummary, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.getSiteActivitySummary, payload);
+    const result = await getSiteActivitySummary({
+      siteId: req.siteId as SiteId,
+      ...(req.limit === undefined ? {} : { limit: req.limit })
+    });
+    return parseResponse(ipcChannels.getSiteActivitySummary, result);
+  });
+
+  ipcMain.handle(ipcChannels.searchSiteContent, async (_event, payload) => {
+    const req = parseRequest(ipcChannels.searchSiteContent, payload);
+    const result = await searchSiteContent({
+      siteId: req.siteId as SiteId,
+      query: req.query
+    });
+    return parseResponse(ipcChannels.searchSiteContent, result);
+  });
 
   ipcMain.handle(
     ipcChannels.gutenbergV2GetRequestState,

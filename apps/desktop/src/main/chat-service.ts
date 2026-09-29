@@ -449,10 +449,26 @@ async function buildThreadReply(
     default:
       return {
         requestId: request.id,
-        text:
-          "Note saved. Next: generate a plan from the request panel."
+        text: requestUsesGutenbergV2(request.id)
+          ? "Note saved on this request."
+          : "Note saved. Next: generate a plan from the request panel."
       };
   }
+}
+
+/** v2 requests are built by the native editor path, not a v1 plan. */
+function requestUsesGutenbergV2(requestId: string): boolean {
+  // Some callers (and tests) run with repositories only, no raw connection.
+  const connection = getDatabase().connection as
+    | ReturnType<typeof getDatabase>["connection"]
+    | undefined;
+  if (!connection) return false;
+  const row = connection
+    .prepare<{ requestId: string }, { engine: string | null }>(
+      "SELECT content_engine AS engine FROM requests WHERE id = @requestId"
+    )
+    .get({ requestId });
+  return row?.engine === "gutenberg_v2";
 }
 
 export type ChatThreadsResult =
@@ -1055,8 +1071,9 @@ export async function answerClarificationForRequest(
       author: { kind: "assistant" },
       body: {
         format: "plain_text",
-        value:
-          "Answer recorded. Next: generate a plan from the request panel."
+        value: requestUsesGutenbergV2(requestId)
+          ? "Answer recorded."
+          : "Answer recorded. Next: generate a plan from the request panel."
       },
       createdAt: ts,
       updatedAt: ts
@@ -1213,8 +1230,9 @@ export async function amendRequestForThread(
     author: { kind: "assistant" },
     body: {
       format: "plain_text",
-      value:
-        "Request updated to include that change. Next: generate a plan from the request panel."
+      value: requestUsesGutenbergV2(requestId)
+        ? "Request updated to include that change."
+        : "Request updated to include that change. Next: generate a plan from the request panel."
     },
     createdAt: ts,
     updatedAt: ts

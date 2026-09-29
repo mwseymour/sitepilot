@@ -6,666 +6,86 @@ import {
   useState,
   type ReactElement
 } from "react";
-import { Link } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useNavigate,
+  useSearchParams
+} from "react-router-dom";
 
 import type {
-  ChatMessagePayload,
-  ChatThreadPayload,
+  GutenbergV2ExecutionState,
   ImageAttachmentPayload,
-  SitePilotDesktopApi,
   SitePlannerSettings,
   UiPreferences
 } from "@sitepilot/contracts";
 import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
-import {
-  canResolveActionViaPostLookup,
-  findNumericPostId
-} from "@sitepilot/services/post-target-resolution";
-import {
-  requestNeedsVisualAnalysisReview,
-  requestVisualAnalysisIsCurrent
-} from "@sitepilot/services/request-visual-analysis";
 
+import { modePageCopy, type RequestNextActionId } from "../../chat-workflow.js";
 import {
-  humanRequestStatus,
-  modePageCopy,
-  resolveRequestNextAction,
-  type RequestNextActionId
-} from "../../chat-workflow.js";
-import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
+  notifyActivityChanged,
+  useSiteWorkspace
+} from "../../site-workspace/site-workspace-context.js";
+import type { HomeDraft } from "./OverviewPage.js";
+import { ApplyProgress } from "./chat/ApplyProgress.js";
+import { RequestStepper } from "./chat/RequestStepper.js";
 import {
   GutenbergV2CandidatePanel,
   type GutenbergV2UiState,
   type ReviewArtifact
 } from "./GutenbergV2CandidatePanel.js";
-import { pdfToReferencePages } from "../../pdf-pages.js";
 import { useAppBusy } from "../../button-loading.js";
-
-type ThreadRow = ChatThreadPayload;
-type MessageRow = ChatMessagePayload;
-
-type RequestBundleOk = Extract<
-  Awaited<ReturnType<SitePilotDesktopApi["getRequestBundle"]>>,
-  { ok: true }
->;
-type ExecutePlanActionOk = Extract<
-  Awaited<ReturnType<SitePilotDesktopApi["executePlanAction"]>>,
-  { ok: true }
->;
-
-type DryRunPreview = {
-  actionId: string;
-  actionType: string;
-  toolName?: string;
-  requestInput?: Record<string, unknown>;
-  mcpResult: ExecutePlanActionOk["mcpResult"];
-};
-
-const SHOW_DRY_RUN_UI = true;
-const MAX_IMAGE_ATTACHMENTS = 8;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_PDF_BYTES = 20 * 1024 * 1024;
-// Matches the Gutenberg v2 staged media limit for one asset.
-const MAX_VIDEO_BYTES = 10_000_000;
-const VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
-const MAX_IMAGE_DIMENSION = 1280;
-const IMAGE_JPEG_QUALITY = 0.82;
-
-type ChatMode = "request" | "conversation";
-type RequestWorkflow = "legacy" | "gutenberg_v2";
-
-// The v1 planner remains in the codebase but is no longer offered in the UI.
-const SHOW_V1_WORKFLOW = false;
-type GutenbergV2Operation =
-  | "create_draft"
-  | "replace_content"
-  | "apply_operations"
-  | "publish"
-  | "unpublish";
-
-type ThreadTypeMeta = {
-  label: string;
-  description: string;
-};
-
-type MessageFilter = "all" | "non_system" | "system_only";
-
-type ExpandableTextProps = {
-  text: string;
-  className: string;
-  collapsedClassName: string;
-  expandedClassName?: string;
-  previewThreshold: number;
-};
-
-const THREAD_TITLE_PREVIEW_THRESHOLD = 72;
-const REQUEST_PROMPT_PREVIEW_THRESHOLD = 280;
-
-const THREAD_TYPE_META: Record<string, ThreadTypeMeta> = {
-  conversation: {
-    label: "Conversation",
-    description:
-      "Research and read-only chat. Use it for site lookups or external source intake before creating a Request."
-  },
-  general_request: {
-    label: "Content request",
-    description:
-      "Built in this site’s WordPress editor, reviewed, then applied after approval."
-  },
-  content_creation: {
-    label: "Content creation",
-    description: "Create new draft content."
-  },
-  content_update: {
-    label: "Content update",
-    description: "Revise existing posts or pages."
-  },
-  media_request: {
-    label: "Media request",
-    description: "Image and media-related changes."
-  },
-  seo_request: {
-    label: "SEO request",
-    description: "SEO metadata and search visibility changes."
-  },
-  taxonomy_request: {
-    label: "Taxonomy request",
-    description: "Category, tag, and taxonomy changes."
-  },
-  publish_request: {
-    label: "Publish request",
-    description: "Publishing and go-live tasks."
-  },
-  maintenance_diagnostic: {
-    label: "Maintenance diagnostic",
-    description: "Read-only inspection or maintenance work."
-  },
-  approval_discussion: {
-    label: "Approval discussion",
-    description: "Approval-related review and discussion."
-  }
-};
-
-function roleLabel(m: MessageRow): string {
-  if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
-    return m.author.kind === "assistant" ? "Assistant" : "System";
-  }
-  return "You";
-}
-
-function isSystemMessage(message: MessageRow): boolean {
-  return (
-    typeof message.author === "object" &&
-    message.author !== null &&
-    "kind" in message.author &&
-    message.author.kind === "system"
-  );
-}
-
-function ExpandableText({
-  text,
-  className,
-  collapsedClassName,
-  expandedClassName,
-  previewThreshold
-}: ExpandableTextProps): ReactElement {
-  const [expanded, setExpanded] = useState(false);
-  const trimmedText = text.trim();
-  const isLong = trimmedText.length > previewThreshold;
-
-  return (
-    <div className="chat-expandable-text">
-      <span
-        className={[
-          className,
-          isLong && !expanded ? collapsedClassName : "",
-          expanded && expandedClassName ? expandedClassName : ""
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        {text}
-      </span>
-      {isLong ? (
-        <button
-          type="button"
-          className="chat-inline-toggle"
-          aria-expanded={expanded}
-          onClick={() => {
-            setExpanded((current) => !current);
-          }}
-        >
-          View {expanded ? "less" : "more"}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function roleClassName(m: MessageRow): string {
-  if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
-    return m.author.kind === "assistant"
-      ? "chat-msg-assistant"
-      : "chat-msg-system";
-  }
-  return "chat-msg-user";
-}
-
-function roleIcon(m: MessageRow): string {
-  if (typeof m.author === "object" && m.author !== null && "kind" in m.author) {
-    return m.author.kind === "assistant" ? "AI" : "SYS";
-  }
-  return "YOU";
-}
-
-function clarificationLines(message: MessageRow): {
-  intro: string[];
-  questionLabel?: string;
-  questions: string[];
-} | null {
-  if (
-    typeof message.author !== "object" ||
-    message.author === null ||
-    !("kind" in message.author) ||
-    message.author.kind !== "assistant"
-  ) {
-    return null;
-  }
-
-  const lines = message.body.value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const directLead = lines[0] ?? "";
-  if (
-    directLead === "More detail is needed before planning:" ||
-    directLead === "Thanks. I still need a bit more detail:"
-  ) {
-    const questions = lines.filter((line) => /^\d+\.\s/.test(line));
-    return questions.length > 0 ? { intro: [directLead], questions } : null;
-  }
-
-  const questionLabelIndex = lines.findIndex(
-    (line) => line === "Questions to answer:"
-  );
-  if (questionLabelIndex === -1) {
-    return null;
-  }
-
-  const postQuestionLines = lines.slice(questionLabelIndex + 1);
-  const nextSectionIndex = postQuestionLines.findIndex((line) =>
-    /^[A-Za-z][A-Za-z\s]+:\s*$/.test(line)
-  );
-  const questionLines =
-    nextSectionIndex === -1
-      ? postQuestionLines
-      : postQuestionLines.slice(0, nextSectionIndex);
-  const questions = questionLines.filter((line) => /^\d+\.\s/.test(line));
-
-  return questions.length > 0
-    ? {
-        intro: lines.slice(0, questionLabelIndex),
-        questionLabel: "Questions to answer:",
-        questions
-      }
-    : null;
-}
-
-function renderMessageBody(message: MessageRow): ReactElement {
-  const clarification = clarificationLines(message);
-  if (!clarification) {
-    const technicalDetails = message.body.technicalDetails;
-    if (technicalDetails === undefined) {
-      return <p className="chat-msg-body">{message.body.value}</p>;
-    }
-    // Plain language first; the raw diagnostic report stays one click away.
-    return (
-      <div className="chat-msg-body">
-        <p className="chat-msg-body-lead">{message.body.value}</p>
-        <details className="chat-msg-technical">
-          <summary>Show technical details</summary>
-          <pre>{technicalDetails}</pre>
-        </details>
-      </div>
-    );
-  }
-
-  return (
-    <div className="chat-msg-body chat-msg-body-clarification">
-      {clarification.intro.map((line) => (
-        <p key={line} className="chat-msg-body-lead">
-          {line}
-        </p>
-      ))}
-      {clarification.questionLabel ? (
-        <p className="chat-msg-question-label">
-          <strong>{clarification.questionLabel}</strong>
-        </p>
-      ) : null}
-      <div className="chat-msg-question-list">
-        {clarification.questions.map((question) => (
-          <p key={question} className="chat-msg-question">
-            <strong>{question}</strong>
-          </p>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function formatAttachmentCount(count: number): string {
-  return `${count} image${count === 1 ? "" : "s"}`;
-}
-
-function loadImageElement(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error(`Failed to read ${file.name}.`));
-    };
-    image.src = objectUrl;
-  });
-}
-
-async function fileToImageAttachment(
-  file: File,
-  preserveOriginal: boolean
-): Promise<ImageAttachmentPayload> {
-  if (preserveOriginal) {
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error(`Failed to read ${file.name}.`));
-      };
-      reader.onerror = () => {
-        reject(new Error(`Failed to read ${file.name}.`));
-      };
-      reader.readAsDataURL(file);
-    });
-
-    return {
-      fileName: file.name,
-      mediaType: file.type || "image/jpeg",
-      sizeBytes: file.size,
-      dataUrl
-    };
-  }
-
-  const image = await loadImageElement(file);
-  const scale = Math.min(
-    1,
-    MAX_IMAGE_DIMENSION / Math.max(image.width, image.height)
-  );
-  const width = Math.max(1, Math.round(image.width * scale));
-  const height = Math.max(1, Math.round(image.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error(`Failed to process ${file.name}.`);
-  }
-  context.drawImage(image, 0, 0, width, height);
-  const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
-
-  const base64 = dataUrl.split(",")[1] ?? "";
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  const sizeBytes = (base64.length * 3) / 4 - padding;
-
-  return new Promise((resolve) => {
-    resolve({
-      fileName: file.name,
-      mediaType: "image/jpeg",
-      sizeBytes,
-      dataUrl
-    });
-  });
-}
-
-function threadTypeMeta(type: string | undefined): ThreadTypeMeta {
-  if (type && type in THREAD_TYPE_META) {
-    const meta = THREAD_TYPE_META[type as keyof typeof THREAD_TYPE_META];
-    if (meta) {
-      return meta;
-    }
-  }
-  return {
-    label: "Request",
-    description: "Request thread."
-  };
-}
-
-function actionUnavailableReason(
-  actionType: string,
-  input: Record<string, unknown>
-): string {
-  const normalized = actionType
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[\s/_-]+/g, "_")
-    .toLowerCase();
-
-  const isPostTargetedWrite =
-    normalized === "update_post" ||
-    normalized === "update_post_fields" ||
-    normalized === "update_post_content" ||
-    normalized === "edit_post_fields" ||
-    normalized === "sitepilot_update_post_fields" ||
-    normalized === "set_post_seo_meta" ||
-    normalized === "sitepilot_set_post_seo_meta";
-
-  if (isPostTargetedWrite && findNumericPostId(input) === undefined) {
-    if (canResolveActionViaPostLookup(actionType, input)) {
-      return "target will be resolved via lookup";
-    }
-    return "missing target post id";
-  }
-
-  return "no MCP tool mapping";
-}
-
-function actionCanResolveViaLookup(
-  actionType: string,
-  input: Record<string, unknown>
-): boolean {
-  const normalized = actionType
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[\s/_-]+/g, "_")
-    .toLowerCase();
-
-  return (
-    (normalized === "update_post" ||
-      normalized === "update_post_fields" ||
-      normalized === "update_post_content" ||
-      normalized === "edit_post_fields" ||
-      normalized === "sitepilot_update_post_fields" ||
-      normalized === "set_post_seo_meta" ||
-      normalized === "sitepilot_set_post_seo_meta") &&
-    actionUnavailableReason(actionType, input) ===
-      "target will be resolved via lookup"
-  );
-}
-
-function actionCreatesDraftPost(actionType: string): boolean {
-  const normalized = actionType
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[\s/_-]+/g, "_")
-    .toLowerCase();
-
-  return (
-    normalized === "create_draft_post" ||
-    normalized === "create_draft_content" ||
-    normalized === "create_post_draft" ||
-    normalized === "sitepilot_create_draft_post"
-  );
-}
-
-function actionCanResolveViaPlannedCreate(
-  actionType: string,
-  input: Record<string, unknown>,
-  priorActions: Array<{ type: string }>
-): boolean {
-  const normalized = actionType
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[\s/_-]+/g, "_")
-    .toLowerCase();
-
-  const isPostTargetedWrite =
-    normalized === "update_post" ||
-    normalized === "update_post_fields" ||
-    normalized === "update_post_content" ||
-    normalized === "edit_post_fields" ||
-    normalized === "sitepilot_update_post_fields" ||
-    normalized === "set_post_seo_meta" ||
-    normalized === "sitepilot_set_post_seo_meta";
-
-  if (!isPostTargetedWrite || findNumericPostId(input) !== undefined) {
-    return false;
-  }
-
-  return (
-    priorActions.filter((action) => actionCreatesDraftPost(action.type))
-      .length === 1
-  );
-}
-
-function requestCanExecute(status: string): boolean {
-  return (
-    status === "approved" ||
-    status === "partially_completed" ||
-    status === "completed"
-  );
-}
-
-function requestExecutionControlsLocked(status: string): boolean {
-  return status === "completed";
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function extractBeforeAfter(value: unknown): {
-  before: Record<string, unknown> | null;
-  after: unknown;
-} {
-  const record = recordValue(value);
-  return {
-    before: recordValue(record?.before),
-    after: record?.after ?? null
-  };
-}
-
-type DiffLine = {
-  kind: "context" | "added" | "removed";
-  text: string;
-};
-
-function stringifyDiffValue(value: unknown): string {
-  if (value === undefined) {
-    return "undefined";
-  }
-
-  const serialized = JSON.stringify(value, null, 2);
-  return serialized ?? String(value);
-}
-
-function buildDiffLines(beforeValue: unknown, afterValue: unknown): DiffLine[] {
-  const beforeLines = stringifyDiffValue(beforeValue).split("\n");
-  const afterLines = stringifyDiffValue(afterValue).split("\n");
-  const lineCounts = Array.from({ length: beforeLines.length + 1 }, () =>
-    Array<number>(afterLines.length + 1).fill(0)
-  );
-
-  for (
-    let beforeIndex = beforeLines.length - 1;
-    beforeIndex >= 0;
-    beforeIndex -= 1
-  ) {
-    for (
-      let afterIndex = afterLines.length - 1;
-      afterIndex >= 0;
-      afterIndex -= 1
-    ) {
-      lineCounts[beforeIndex]![afterIndex] =
-        beforeLines[beforeIndex] === afterLines[afterIndex]
-          ? (lineCounts[beforeIndex + 1]?.[afterIndex + 1] ?? 0) + 1
-          : Math.max(
-              lineCounts[beforeIndex + 1]?.[afterIndex] ?? 0,
-              lineCounts[beforeIndex]?.[afterIndex + 1] ?? 0
-            );
-    }
-  }
-
-  const diffLines: DiffLine[] = [];
-  let beforeIndex = 0;
-  let afterIndex = 0;
-
-  while (beforeIndex < beforeLines.length && afterIndex < afterLines.length) {
-    if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
-      diffLines.push({
-        kind: "context",
-        text: `  ${beforeLines[beforeIndex]}`
-      });
-      beforeIndex += 1;
-      afterIndex += 1;
-      continue;
-    }
-
-    const skipBeforeScore = lineCounts[beforeIndex + 1]?.[afterIndex] ?? 0;
-    const skipAfterScore = lineCounts[beforeIndex]?.[afterIndex + 1] ?? 0;
-
-    if (skipBeforeScore >= skipAfterScore) {
-      diffLines.push({
-        kind: "removed",
-        text: `- ${beforeLines[beforeIndex]}`
-      });
-      beforeIndex += 1;
-      continue;
-    }
-
-    diffLines.push({ kind: "added", text: `+ ${afterLines[afterIndex]}` });
-    afterIndex += 1;
-  }
-
-  while (beforeIndex < beforeLines.length) {
-    diffLines.push({ kind: "removed", text: `- ${beforeLines[beforeIndex]}` });
-    beforeIndex += 1;
-  }
-
-  while (afterIndex < afterLines.length) {
-    diffLines.push({ kind: "added", text: `+ ${afterLines[afterIndex]}` });
-    afterIndex += 1;
-  }
-
-  return diffLines;
-}
-
-function parseJsonDebugValue(value: string | null): unknown {
-  if (value === null) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-function summarizeImageAttachment(
-  attachment: ImageAttachmentPayload
-): Record<string, unknown> {
-  return {
-    fileName: attachment.fileName,
-    mediaType: attachment.mediaType,
-    sizeBytes: attachment.sizeBytes
-  };
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.append(textarea);
-  textarea.select();
-  const succeeded = document.execCommand("copy");
-  textarea.remove();
-  if (!succeeded) {
-    throw new Error("Clipboard copy is not available in this environment.");
-  }
-}
+import {
+  MAX_IMAGE_ATTACHMENTS,
+  prepareAttachments,
+  validateAttachmentFiles
+} from "./chat/attachments.js";
+import { Composer } from "./chat/Composer.js";
+import { buildDebugExport, copyTextToClipboard } from "./chat/debug-export.js";
+import { DeveloperPanel } from "./chat/DeveloperPanel.js";
+import { isSystemMessage, threadTypeMeta } from "./chat/message-format.js";
+import { MessageFilterBar, MessageList } from "./chat/MessageList.js";
+import {
+  actionCanResolveViaLookup,
+  actionCanResolveViaPlannedCreate
+} from "./chat/plan-actions.js";
+import { RequestPanel } from "./chat/RequestPanel.js";
+import { composerCopy, deriveRequestView } from "./chat/request-view.js";
+import { ThreadHeader } from "./chat/ThreadHeader.js";
+import {
+  SHOW_V1_WORKFLOW,
+  type ChatMode,
+  type DryRunPreview,
+  type GutenbergV2Operation,
+  type MessageFilter,
+  type MessageRow,
+  type RequestBundleOk,
+  type RequestWorkflow,
+  type ThreadRow
+} from "./chat/types.js";
 
 export function ChatPage({
   mode = "request"
 }: {
   mode?: ChatMode;
 }): ReactElement | null {
-  const { siteId, data, loading } = useSiteWorkspace();
+  const { siteId, data, loading, activity } = useSiteWorkspace();
   const isConversationMode = mode === "conversation";
   const [threads, setThreads] = useState<ThreadRow[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const listPath = `/site/${siteId}/${isConversationMode ? "conversations-list" : "requests"}`;
+  const urlThreadId = searchParams.get("thread");
+  const [applyingSince, setApplyingSince] = useState<number | null>(null);
+  const [liveExecState, setLiveExecState] =
+    useState<GutenbergV2ExecutionState | null>(null);
+  const handledNewKeyRef = useRef<string | null>(null);
+  // Loads that finish after the operator moved to another thread are dropped.
+  const currentThreadRef = useRef<string | null>(null);
+  const currentRequestRef = useRef<string | null>(null);
+  const autoSubmitThreadRef = useRef<string | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [pendingDeleteThreadId, setPendingDeleteThreadId] = useState<
     string | null
@@ -719,7 +139,6 @@ export function ChatPage({
   );
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const debugCopyResetTimerRef = useRef<number | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -730,6 +149,7 @@ export function ChatPage({
       return;
     }
     setErr(null);
+    notifyActivityChanged();
     setThreads(
       res.threads.filter((thread) =>
         isConversationMode
@@ -745,6 +165,7 @@ export function ChatPage({
         siteId,
         threadId
       });
+      if (currentThreadRef.current !== threadId) return;
       if (!res.ok) {
         setErr(res.message);
         return;
@@ -812,8 +233,10 @@ export function ChatPage({
       return;
     }
     if (
-      selectedThreadId === null ||
-      !threads.some((thread) => thread.id === selectedThreadId)
+      searchParams.get("new") !== "1" &&
+      searchParams.get("thread") === null &&
+      (selectedThreadId === null ||
+        !threads.some((thread) => thread.id === selectedThreadId))
     ) {
       setSelectedThreadId(threads[0]?.id ?? null);
     }
@@ -825,6 +248,48 @@ export function ChatPage({
       setEditingThreadTitle("");
     }
   }, [editingThreadId, selectedThreadId, threads]);
+
+  // Once an update exists, the composer shows the operation it was built for.
+  const v2Target = gutenbergV2State?.target;
+  useEffect(() => {
+    if (!v2Target) return;
+    setGutenbergV2PostType(v2Target.postType);
+    if (v2Target.operation === "create_draft") {
+      setGutenbergV2Operation("create_draft");
+      return;
+    }
+    setGutenbergV2PostId(String(v2Target.postId));
+    setGutenbergV2Operation(
+      v2Target.operation === "set_status"
+        ? v2Target.status === "publish"
+          ? "publish"
+          : "unpublish"
+        : v2Target.operation
+    );
+  }, [v2Target]);
+
+  // The sidebar, Home and ⌘K link straight to a thread with ?thread=<id>.
+  useEffect(() => {
+    if (
+      urlThreadId !== null &&
+      urlThreadId !== selectedThreadId &&
+      threads.some((thread) => thread.id === urlThreadId)
+    ) {
+      setSelectedThreadId(urlThreadId);
+    }
+    // Only follow URL changes; selection changes are mirrored below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlThreadId, threads]);
+
+  useEffect(() => {
+    if (selectedThreadId === null || searchParams.get("new") === "1") {
+      return;
+    }
+    if (searchParams.get("thread") !== selectedThreadId) {
+      setSearchParams({ thread: selectedThreadId }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedThreadId]);
 
   useEffect(() => {
     if (editingThreadId === null) {
@@ -841,6 +306,21 @@ export function ChatPage({
       setMessages([]);
     }
   }, [selectedThreadId, loadMessages]);
+
+  currentThreadRef.current = selectedThreadId;
+  currentRequestRef.current = lastRequestId;
+
+  // A different thread never shows the previous thread's request or review.
+  const previousThreadRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (previousThreadRef.current === selectedThreadId) return;
+    const hadThread = previousThreadRef.current !== null;
+    previousThreadRef.current = selectedThreadId;
+    if (!hadThread) return;
+    setBundle(null);
+    setGutenbergV2State(null);
+    setLastRequestId(null);
+  }, [selectedThreadId]);
 
   useEffect(() => {
     setPendingAttachments([]);
@@ -859,11 +339,13 @@ export function ChatPage({
       setBundle(null);
       return;
     }
+    const threadId = selectedThreadId;
     const res = await window.sitePilotDesktop.getRequestBundle({
       siteId,
-      threadId: selectedThreadId,
+      threadId,
       requestId: lastRequestId
     });
+    if (currentThreadRef.current !== threadId) return;
     if (!res.ok) {
       setBundle(null);
       // Switching threads briefly pairs the new thread with the previous
@@ -888,6 +370,7 @@ export function ChatPage({
         siteId,
         requestId
       });
+      if (currentRequestRef.current !== requestId) return;
       if (!res.ok) {
         setErr(res.message);
         setGutenbergV2State(null);
@@ -1034,6 +517,98 @@ export function ChatPage({
     void submitThreadRename();
   }, [editingThreadId, renamingThreadId, submitThreadRename]);
 
+  async function startFreshThread(options: {
+    draft?: HomeDraft;
+    postId?: string | null;
+    postType?: string | null;
+  }): Promise<void> {
+    const { draft } = options;
+    setBusy(true);
+    setErr(null);
+    const fallbackTitle = `${isConversationMode ? "Conversation" : "Request"} ${new Date().toLocaleString()}`;
+    const draftTitle = draft?.text.replace(/\s+/g, " ").trim().slice(0, 60);
+    const res = await window.sitePilotDesktop.createChatThread({
+      siteId,
+      title: draftTitle && draftTitle.length > 0 ? draftTitle : fallbackTitle,
+      type: isConversationMode ? "conversation" : "general_request"
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message);
+      return;
+    }
+    await loadThreads();
+    setLastRequestId(null);
+    setBundle(null);
+    setGutenbergV2State(null);
+    setMessages([]);
+    setSelectedThreadId(res.thread.id);
+    setSearchParams({ thread: res.thread.id }, { replace: true });
+
+    const postType =
+      options.postType === "page" || options.postType === "post"
+        ? options.postType
+        : (draft?.postType ?? null);
+    if (postType) setGutenbergV2PostType(postType);
+    if (options.postId) {
+      setGutenbergV2Operation("apply_operations");
+      setGutenbergV2PostId(options.postId);
+    } else if (draft?.operation) {
+      setGutenbergV2Operation(
+        draft.operation === "set_status" ? "publish" : draft.operation
+      );
+      if (draft.operation !== "create_draft") setGutenbergV2PostId("");
+    }
+    if (draft) {
+      setRequestPrompt(draft.text);
+      // A new draft or a question can go straight away; other operations
+      // still need the post they apply to.
+      if (isConversationMode || draft.operation === "create_draft") {
+        autoSubmitThreadRef.current = res.thread.id;
+      }
+    } else if (!options.postId) {
+      startThreadRename(res.thread);
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      composerTextareaRef.current?.focus();
+    });
+  }
+
+  useEffect(() => {
+    if (
+      searchParams.get("new") !== "1" ||
+      !data ||
+      data.site.activationStatus !== "active" ||
+      handledNewKeyRef.current === location.key
+    ) {
+      return;
+    }
+    handledNewKeyRef.current = location.key;
+    const draft = (location.state as { homeDraft?: HomeDraft } | null)
+      ?.homeDraft;
+    void startFreshThread({
+      ...(draft ? { draft } : {}),
+      postId: searchParams.get("postId"),
+      postType: searchParams.get("postType")
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, data, location.key]);
+
+  useEffect(() => {
+    if (
+      autoSubmitThreadRef.current === null ||
+      autoSubmitThreadRef.current !== selectedThreadId ||
+      requestPrompt.trim().length === 0 ||
+      busy
+    ) {
+      return;
+    }
+    autoSubmitThreadRef.current = null;
+    void onSubmitPrompt();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedThreadId, requestPrompt, busy]);
+
   async function onCreateThread(): Promise<void> {
     setBusy(true);
     setErr(null);
@@ -1058,11 +633,6 @@ export function ChatPage({
   }
 
   async function onDeleteThread(threadId: string): Promise<void> {
-    const nextSelectedThreadId =
-      selectedThreadId === threadId
-        ? (threads.find((thread) => thread.id !== threadId)?.id ?? null)
-        : selectedThreadId;
-
     setDeletingThreadId(threadId);
     setErr(null);
     const res = await window.sitePilotDesktop.deleteChatThread({
@@ -1076,7 +646,9 @@ export function ChatPage({
     }
 
     if (selectedThreadId === threadId) {
-      setSelectedThreadId(nextSelectedThreadId);
+      // Deleting the open thread goes back to the list.
+      navigate(listPath, { replace: true });
+      setSelectedThreadId(null);
       setMessages([]);
       setLastRequestId(null);
       setBundle(null);
@@ -1251,49 +823,17 @@ export function ChatPage({
     }
 
     const files = [...fileList];
-    for (const file of files) {
-      const isPdf = file.type === "application/pdf";
-      const isVideo = VIDEO_TYPES.has(file.type);
-      if (!isPdf && !isVideo && !file.type.startsWith("image/")) {
-        setErr(`${file.name} is not an image, MP4/WebM video or PDF.`);
-        return;
-      }
-      if (isVideo && file.size > MAX_VIDEO_BYTES) {
-        setErr(`${file.name} is larger than 10 MB, the current video limit.`);
-        return;
-      }
-      if (!isVideo && file.size > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
-        setErr(`${file.name} is larger than ${isPdf ? "20" : "8"} MB.`);
-        return;
-      }
+    const validationError = validateAttachmentFiles(files);
+    if (validationError !== null) {
+      setErr(validationError);
+      return;
     }
 
     try {
-      const notes: string[] = [];
-      const attachments: ImageAttachmentPayload[] = [];
-      for (const file of files) {
-        if (file.type === "application/pdf") {
-          // PDFs are layout/content references: each page becomes an image
-          // the planner reads; nothing from them is uploaded to the site.
-          const { pages, totalPages } = await pdfToReferencePages(file);
-          attachments.push(...pages);
-          if (totalPages > pages.length) {
-            notes.push(
-              `${file.name}: only the first ${pages.length} of ${totalPages} pages are used.`
-            );
-          }
-        } else {
-          // Videos are never re-encoded; images may be resized unless the
-          // operator prefers originals.
-          attachments.push(
-            await fileToImageAttachment(
-              file,
-              VIDEO_TYPES.has(file.type) ||
-                (uiPreferences?.preserveOriginalImageUploads ?? false)
-            )
-          );
-        }
-      }
+      const { attachments, notes } = await prepareAttachments(
+        files,
+        uiPreferences?.preserveOriginalImageUploads ?? false
+      );
       if (
         pendingAttachments.length + attachments.length >
         MAX_IMAGE_ATTACHMENTS
@@ -1579,6 +1119,7 @@ export function ChatPage({
         return;
       }
       setGutenbergV2State(res.state);
+      notifyActivityChanged();
       setLastExecHint(
         decision === "approved"
           ? "Candidate approved. Review the execution status before continuing."
@@ -1596,11 +1137,29 @@ export function ChatPage({
     }
     setBusy(true);
     setErr(null);
-    const res = await window.sitePilotDesktop.gutenbergV2ExecuteCandidate({
-      siteId,
-      requestId: lastRequestId
-    });
+    setApplyingSince(Date.now());
+    setLiveExecState("preparing");
+    const requestId = lastRequestId;
+    const poll = window.setInterval(() => {
+      void window.sitePilotDesktop
+        .gutenbergV2GetExecutionProgress({ siteId, requestId })
+        .then((progress) => {
+          if (progress.ok && progress.state) setLiveExecState(progress.state);
+        })
+        .catch(() => undefined);
+    }, 800);
+    const res = await window.sitePilotDesktop
+      .gutenbergV2ExecuteCandidate({
+        siteId,
+        requestId
+      })
+      .finally(() => {
+        window.clearInterval(poll);
+        setApplyingSince(null);
+        setLiveExecState(null);
+      });
     setBusy(false);
+    notifyActivityChanged();
     // The execution report is posted to the thread on success and failure.
     if (selectedThreadId) {
       await loadMessages(selectedThreadId);
@@ -1638,162 +1197,39 @@ export function ChatPage({
     return null;
   }
 
+  // A thread view always names its thread; otherwise show the list.
+  if (searchParams.get("thread") === null && searchParams.get("new") !== "1") {
+    return <Navigate to={listPath} replace />;
+  }
+
   // Plain values, not hooks: this code runs after the component's early
   // `loading`/`!data` returns, where hooks would change the hook count.
-  const composerState = (() => {
-    if (isConversationMode) {
-      return {
-        title: "Conversation",
-        helper:
-          "Research and read-only site chat. Ask questions, look up posts, inspect site content, or paste an external link and ask to turn it into a new Request.",
-        placeholder:
-          "Ask about site content, or paste a link and ask to use it in a new Request…",
-        actionLabel: "Send"
-      };
-    }
-
-    if (!bundle) {
-      return {
-        title: "New request",
-        helper:
-          requestWorkflow === "gutenberg_v2"
-            ? "Describe the change. SitePilot builds it in this site’s WordPress editor and shows you a preview before anything is saved."
-            : "Start with what you want changed on the site. SitePilot will ask follow-up questions if it needs more detail.",
-        placeholder: "Ask SitePilot to create, edit, or analyse something…",
-        actionLabel: "Send"
-      };
-    }
-
-    switch (bundle.request.status) {
-      case "clarifying":
-        return {
-          title: "Answer question",
-          helper:
-            "Reply here to answer the assistant's clarification question and keep the same request moving.",
-          placeholder: "Answer the assistant's question…",
-          actionLabel: "Reply"
-        };
-      case "new":
-      case "drafted":
-        return {
-          title: "Refine request",
-          helper:
-            requestWorkflow === "gutenberg_v2"
-              ? "Reply to change this request. SitePilot rebuilds the candidate for you to review."
-              : "Add detail only if the request is incomplete. When it is ready, generate a plan.",
-          placeholder: "Add more detail to the current request…",
-          actionLabel: "Update request"
-        };
-      case "awaiting_approval":
-        return {
-          title: "Change this request",
-          helper:
-            "Reply here to change the same request. You can attach images. This updates the current request; it does not start a new one.",
-          placeholder: "Describe the change, and attach images if you need to…",
-          actionLabel: "Update request"
-        };
-      case "approved":
-        return {
-          title: "Change this request",
-          helper:
-            requestWorkflow === "gutenberg_v2"
-              ? "Apply the approved update from the candidate panel, or reply here to change it. Replying withdraws the approval."
-              : "Run the plan in the request panel, or reply here to change the same request. You can attach images.",
-          placeholder: "Describe how this request should change…",
-          actionLabel: "Update request"
-        };
-      case "executing":
-        return {
-          title: "Add note",
-          helper:
-            "Execution is running. You can leave notes here while SitePilot processes the request.",
-          placeholder: "Add a note for this request…",
-          actionLabel: "Add note"
-        };
-      default:
-        return {
-          title: "New request",
-          helper:
-            "The last request is closed. Start a new request here in the same request history or create a new request.",
-          placeholder: "Ask SitePilot to do the next thing…",
-          actionLabel: "Send"
-        };
-    }
-  })();
-
-  const canGeneratePlan =
-    !isConversationMode &&
-    selectedThreadId !== null &&
-    bundle !== null &&
-    (bundle.request.status === "new" ||
-      bundle.request.status === "drafted" ||
-      bundle.request.status === "approved" ||
-      bundle.request.status === "awaiting_approval");
-  const visualAnalysisRequired =
-    bundle !== null &&
-    requestNeedsVisualAnalysisReview({
-      userPrompt: bundle.request.userPrompt,
-      attachments: bundle.request.attachments
-    });
-  const visualAnalysisReadyForPlanning =
-    bundle !== null &&
-    (!visualAnalysisRequired ||
-      requestVisualAnalysisIsCurrent(
-        bundle.request.updatedAt,
-        bundle.visualAnalysis
-      ));
-  const visualAnalysisStale =
-    bundle !== null &&
-    bundle.visualAnalysis !== null &&
-    bundle.visualAnalysis.analyzedRequestUpdatedAt < bundle.request.updatedAt;
-  // The v2 candidate panel owns review, approval and execution for its
-  // request; v1's next-step card and analysis controls would duplicate them.
-  const isV2Request =
-    bundle !== null &&
-    gutenbergV2State !== null &&
-    gutenbergV2State.requestId === bundle.request.id;
-  const isV2Workflow = requestWorkflow === "gutenberg_v2" || isV2Request;
-  const canGeneratePlanNow =
-    canGeneratePlan &&
-    visualAnalysisReadyForPlanning &&
-    gutenbergV2State === null;
-  const executionControlsLocked =
-    (bundle !== null &&
-      requestExecutionControlsLocked(bundle.request.status)) ||
-    gutenbergV2State !== null;
+  const composerState = composerCopy({
+    isConversationMode,
+    bundle,
+    requestWorkflow
+  });
+  const {
+    canGeneratePlan,
+    visualAnalysisRequired,
+    visualAnalysisReadyForPlanning,
+    visualAnalysisStale,
+    isV2Workflow,
+    canGeneratePlanNow,
+    executionControlsLocked,
+    requestNextAction,
+    composerWorkflowIsSecondary,
+    showInChatApprove
+  } = deriveRequestView({
+    isConversationMode,
+    selectedThreadId,
+    bundle,
+    gutenbergV2State,
+    requestWorkflow,
+    canRunPlanDirectly,
+    openQuestionCount: openQuestions.length
+  });
   const pageCopy = modePageCopy(mode);
-  const requestNextAction =
-    bundle !== null && !isConversationMode
-      ? resolveRequestNextAction({
-          requestStatus: bundle.request.status,
-          hasPlan: bundle.plan !== null && bundle.plan !== undefined,
-          pendingApproval: bundle.pendingApproval !== null,
-          canRunPlanDirectly,
-          visualAnalysisRequired,
-          visualAnalysisReady:
-            !visualAnalysisRequired ||
-            (bundle.visualAnalysis !== null && !visualAnalysisStale),
-          visualAnalysisNeedsReview:
-            visualAnalysisRequired &&
-            bundle.visualAnalysis !== null &&
-            !visualAnalysisStale &&
-            bundle.visualAnalysis.reviewedAt === undefined,
-          gutenbergV2Enabled: true,
-          requestWorkflow,
-          gutenbergV2State: gutenbergV2State?.state ?? null,
-          openQuestionCount: openQuestions.length,
-          executionLocked:
-            bundle !== null &&
-            requestExecutionControlsLocked(bundle.request.status)
-        })
-      : null;
-  const composerWorkflowIsSecondary =
-    requestNextAction?.primary?.id === "generate_plan" ||
-    requestNextAction?.primary?.id === "approve_plan" ||
-    requestNextAction?.primary?.id === "run_plan";
-  const showInChatApprove =
-    requestNextAction?.primary?.id === "approve_plan" &&
-    bundle?.pendingApproval !== null;
   const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
   const preserveOriginalImageUploads =
     uiPreferences?.preserveOriginalImageUploads ?? false;
@@ -1829,65 +1265,73 @@ export function ChatPage({
     (total, attachment) => total + attachment.sizeBytes,
     0
   );
-  const buildDebugExport = () => ({
-    exportedAt: new Date().toISOString(),
-    siteId,
-    site: {
-      id: data.site.id,
-      name: data.site.name,
-      activationStatus: data.site.activationStatus,
-      workspaceId: data.site.workspaceId,
-      environment: data.site.environment,
-      baseUrl: data.site.baseUrl
-    },
-    uiState: {
-      selectedThreadId,
-      lastRequestId,
-      developerToolsEnabled,
-      preserveOriginalImageUploads,
-      busy,
-      execBusy,
-      activityLabel,
-      execProgressLabel,
-      lastExecHint,
-      error: err
-    },
-    threadList: threads,
-    selectedThread: selectedThread ?? null,
-    messages: messages.map((message) => ({
-      ...message,
-      attachments:
-        message.attachments?.map((attachment) =>
-          summarizeImageAttachment(attachment)
-        ) ?? []
-    })),
-    currentRequestPromptDraft: requestPrompt,
-    pendingAttachments: pendingAttachments.map((attachment) =>
-      summarizeImageAttachment(attachment)
-    ),
-    debugPanels: {
-      feedbackLog: developerMessages,
-      currentRequestPrompt: bundle?.request.userPrompt ?? null,
-      visualAnalysis: bundle?.visualAnalysis ?? null,
-      planValidation: parseJsonDebugValue(planValidationJson),
-      plannedActions: bundle?.plan?.proposedActions ?? null,
-      lastMcpRequest: bundle?.lastExecution?.toolInvocation
-        ? {
-            toolName: bundle.lastExecution.toolInvocation.toolName,
-            input: bundle.lastExecution.toolInvocation.input
-          }
-        : null,
-      lastMcpResponse: bundle?.lastExecution?.toolInvocation?.output ?? null,
-      plannerContext: parseJsonDebugValue(plannerJson),
-      dryRunPreview
-    },
-    bundle,
-    workspaceData: data
-  });
+  const composerRows =
+    !isConversationMode &&
+    (bundle?.request.status === "awaiting_approval" ||
+      bundle?.request.status === "approved" ||
+      gutenbergV2State?.state === "review_ready")
+      ? 3
+      : 2;
+  const showBuildingCandidate =
+    busy &&
+    requestWorkflow === "gutenberg_v2" &&
+    (gutenbergV2State === null || gutenbergV2State.state !== "review_ready");
+  const selectedThreadMeta = threadTypeMeta(selectedThread?.type);
+  const shownTarget = gutenbergV2State?.target ?? null;
+  const headerChips = isConversationMode
+    ? ["Read-only conversation"]
+    : shownTarget
+      ? [
+          shownTarget.operation === "create_draft"
+            ? `New ${shownTarget.postType} draft`
+            : `${shownTarget.postType === "page" ? "Page" : "Post"} #${shownTarget.postId}`,
+          shownTarget.operation === "create_draft"
+            ? "Create draft"
+            : shownTarget.operation === "replace_content"
+              ? "Replace all content"
+              : shownTarget.operation === "apply_operations"
+                ? "Apply selected changes"
+                : shownTarget.status === "publish"
+                  ? "Publish"
+                  : "Unpublish"
+        ]
+      : [selectedThreadMeta.label];
+  const approvalExpiresAt = activity.find(
+    (thread) => thread.requestId === lastRequestId
+  )?.approvalExpiresAt;
 
   const onCopyDebugLog = async (): Promise<void> => {
     try {
-      await copyTextToClipboard(JSON.stringify(buildDebugExport(), null, 2));
+      await copyTextToClipboard(
+        JSON.stringify(
+          buildDebugExport({
+            siteId,
+            data,
+            selectedThreadId,
+            lastRequestId,
+            developerToolsEnabled,
+            preserveOriginalImageUploads,
+            busy,
+            execBusy,
+            activityLabel,
+            execProgressLabel,
+            lastExecHint,
+            err,
+            threads,
+            selectedThread,
+            messages,
+            requestPrompt,
+            pendingAttachments,
+            developerMessages,
+            bundle,
+            planValidationJson,
+            plannerJson,
+            dryRunPreview
+          }),
+          null,
+          2
+        )
+      );
       setDebugCopyLabel("Copied");
     } catch (error) {
       setDebugCopyLabel(
@@ -1928,260 +1372,10 @@ export function ChatPage({
           <span>{activityLabel}</span>
         </div>
       ) : null}
-      <aside className="chat-threads">
-        <div className="chat-threads-header">
-          <div>
-            <h2>{isConversationMode ? "Conversations" : "Requests"}</h2>
-            <p className="muted small-print chat-mode-lede">
-              {pageCopy.pageLede}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary btn-small"
-            disabled={busy}
-            onClick={() => void onCreateThread()}
-          >
-            {isConversationMode ? "New conversation" : "New request"}
-          </button>
-        </div>
-        <ul className="chat-thread-list">
-          {threads.map((t) => (
-            <li key={t.id} className="chat-thread-row">
-              {editingThreadId === t.id ? (
-                <form
-                  className="chat-thread-edit-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void submitThreadRename();
-                  }}
-                >
-                  <input
-                    ref={renameInputRef}
-                    className="chat-thread-edit-input"
-                    value={editingThreadTitle}
-                    disabled={renamingThreadId === t.id}
-                    maxLength={200}
-                    onChange={(event) => {
-                      setEditingThreadTitle(event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelThreadRename();
-                      }
-                    }}
-                  />
-                  <div className="chat-thread-edit-actions">
-                    <button
-                      type="submit"
-                      className="btn btn-primary btn-small"
-                      disabled={renamingThreadId === t.id}
-                    >
-                      {renamingThreadId === t.id ? "Saving…" : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      disabled={renamingThreadId === t.id}
-                      onClick={() => {
-                        cancelThreadRename();
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <>
-                  <div className="chat-thread-row-main">
-                    <button
-                      type="button"
-                      className={
-                        selectedThreadId === t.id
-                          ? "chat-thread-pill is-active"
-                          : "chat-thread-pill"
-                      }
-                      onClick={() => {
-                        setPendingDeleteThreadId(null);
-                        if (editingThreadId !== null) {
-                          cancelThreadRename();
-                        }
-                        setSelectedThreadId(t.id);
-                      }}
-                    >
-                      <span
-                        className={[
-                          "chat-thread-pill-label",
-                          t.title.trim().length >
-                            THREAD_TITLE_PREVIEW_THRESHOLD &&
-                          !expandedThreadIds.has(t.id)
-                            ? "chat-thread-pill-label-collapsed"
-                            : "",
-                          expandedThreadIds.has(t.id)
-                            ? "chat-thread-pill-label-expanded"
-                            : ""
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        {t.title}
-                      </span>
-                    </button>
-                    <div className="chat-thread-row-actions">
-                      <button
-                        type="button"
-                        className="chat-thread-rename"
-                        aria-label={`Rename ${t.title}`}
-                        disabled={
-                          busy ||
-                          deletingThreadId !== null ||
-                          renamingThreadId !== null
-                        }
-                        onClick={() => {
-                          startThreadRename(t);
-                        }}
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                          className="chat-thread-action-icon"
-                        >
-                          <path
-                            d="M4 20h4l10-10a2.12 2.12 0 1 0-4-4L4 16v4Z"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="m13.5 6.5 4 4"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="1.8"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-thread-delete"
-                        aria-label={`Delete ${t.title}`}
-                        disabled={busy || deletingThreadId !== null}
-                        onClick={() => {
-                          if (editingThreadId !== null) {
-                            cancelThreadRename();
-                          }
-                          setPendingDeleteThreadId((current) =>
-                            current === t.id ? null : t.id
-                          );
-                        }}
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                          className="chat-thread-action-icon"
-                        >
-                          <path
-                            d="M4 7h16"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="M10 11v6"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="M14 11v6"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="1.8"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  {t.title.trim().length > THREAD_TITLE_PREVIEW_THRESHOLD ? (
-                    <button
-                      type="button"
-                      className="chat-inline-toggle chat-thread-toggle"
-                      aria-expanded={expandedThreadIds.has(t.id)}
-                      onClick={() => {
-                        setExpandedThreadIds((current) => {
-                          const next = new Set(current);
-                          if (next.has(t.id)) {
-                            next.delete(t.id);
-                          } else {
-                            next.add(t.id);
-                          }
-                          return next;
-                        });
-                      }}
-                    >
-                      View {expandedThreadIds.has(t.id) ? "less" : "more"}
-                    </button>
-                  ) : null}
-                </>
-              )}
-              {pendingDeleteThreadId === t.id ? (
-                <div className="chat-thread-confirm">
-                  <p className="small-print">
-                    Delete this{" "}
-                    {isConversationMode ? "conversation" : "request"} and its
-                    history?
-                  </p>
-                  <div className="chat-thread-confirm-actions">
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-small"
-                      disabled={deletingThreadId !== null}
-                      onClick={() => void onDeleteThread(t.id)}
-                    >
-                      {deletingThreadId === t.id ? "Deleting…" : "Confirm"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      disabled={deletingThreadId !== null}
-                      onClick={() => {
-                        setPendingDeleteThreadId(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </aside>
       <section className="chat-main">
-        {err ? <p className="workspace-error">{err}</p> : null}
+        {err && !selectedThreadId ? (
+          <p className="workspace-error">{err}</p>
+        ) : null}
         {!selectedThreadId ? (
           <p className="muted">
             {pageCopy.emptyState}{" "}
@@ -2191,373 +1385,142 @@ export function ChatPage({
           </p>
         ) : (
           <>
-            <header className="chat-main-header">
-              <div className="chat-main-header-copy">
-                <h2>
-                  {selectedThread?.title ??
-                    (isConversationMode ? "Conversation" : "Request")}
-                </h2>
-                <p className="muted small-print">
-                  {threadTypeMeta(selectedThread?.type).label} ·{" "}
-                  {threadTypeMeta(selectedThread?.type).description}
-                </p>
-                <div
-                  className="chat-message-filters"
-                  aria-label="Message filters"
-                >
-                  <div className="chat-message-filter-group" role="group">
-                    <button
-                      type="button"
-                      className={
-                        messageFilter === "all"
-                          ? "chat-message-filter is-active"
-                          : "chat-message-filter"
-                      }
-                      aria-pressed={messageFilter === "all"}
-                      onClick={() => {
-                        setMessageFilter("all");
-                      }}
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        messageFilter === "non_system"
-                          ? "chat-message-filter is-active"
-                          : "chat-message-filter"
-                      }
-                      aria-pressed={messageFilter === "non_system"}
-                      onClick={() => {
-                        setMessageFilter("non_system");
-                      }}
-                    >
-                      Hide system
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        messageFilter === "system_only"
-                          ? "chat-message-filter is-active"
-                          : "chat-message-filter"
-                      }
-                      aria-pressed={messageFilter === "system_only"}
-                      onClick={() => {
-                        setMessageFilter("system_only");
-                      }}
-                    >
-                      System only
-                    </button>
-                  </div>
-                  {systemMessageCount > 0 ? (
-                    <p className="chat-message-filter-summary muted small-print">
-                      {systemMessageCount} system{" "}
-                      {systemMessageCount === 1 ? "message" : "messages"}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </header>
             <div className="chat-content-grid">
               <div className="chat-primary-column">
+                <ThreadHeader
+                  backTo={listPath}
+                  backLabel={isConversationMode ? "All conversations" : "All requests"}
+                  thread={selectedThread ?? null}
+                  fallbackTitle={isConversationMode ? "Conversation" : "Request"}
+                  itemLabel={isConversationMode ? "conversation" : "request"}
+                  chips={headerChips}
+                  progress={
+                    !isConversationMode ? (
+                      <RequestStepper
+                        requestStatus={bundle?.request.status ?? null}
+                        v2State={
+                          showBuildingCandidate
+                            ? "compiling"
+                            : (gutenbergV2State?.state ?? null)
+                        }
+                        applying={applyingSince !== null}
+                      />
+                    ) : null
+                  }
+                  filter={
+                    systemMessageCount > 0 ? (
+                      <MessageFilterBar
+                        messageFilter={messageFilter}
+                        systemMessageCount={systemMessageCount}
+                        onChange={setMessageFilter}
+                      />
+                    ) : null
+                  }
+                  isEditing={
+                    selectedThread !== undefined &&
+                    editingThreadId === selectedThread.id
+                  }
+                  editingTitle={editingThreadTitle}
+                  renameInputRef={renameInputRef}
+                  renaming={renamingThreadId !== null}
+                  pendingDelete={pendingDeleteThreadId === selectedThreadId}
+                  deleting={deletingThreadId !== null}
+                  busy={busy}
+                  onStartRename={() => {
+                    if (selectedThread) startThreadRename(selectedThread);
+                  }}
+                  onEditingTitleChange={setEditingThreadTitle}
+                  onSubmitRename={() => void submitThreadRename()}
+                  onCancelRename={cancelThreadRename}
+                  onRequestDelete={() => {
+                    if (editingThreadId !== null) cancelThreadRename();
+                    setPendingDeleteThreadId(selectedThreadId);
+                  }}
+                  onConfirmDelete={() => {
+                    if (selectedThreadId) void onDeleteThread(selectedThreadId);
+                  }}
+                  onCancelDelete={() => {
+                    setPendingDeleteThreadId(null);
+                  }}
+                />
+                {err ? <p className="workspace-error chat-error">{err}</p> : null}
                 {hasVisibleMessages ? (
-                  <div ref={messagesRef} className="chat-messages">
-                    {filteredMessages.map((m) => (
-                      <article
-                        key={m.id}
-                        className={`chat-msg ${roleClassName(m)}`}
-                      >
-                        <header className="chat-msg-meta">
-                          <span className="chat-msg-author">
-                            <span className="chat-msg-icon">{roleIcon(m)}</span>
-                            <span>{roleLabel(m)}</span>
-                          </span>
-                          <time dateTime={m.createdAt}>{m.createdAt}</time>
-                        </header>
-                        {renderMessageBody(m)}
-                        {m.attachments && m.attachments.length > 0 ? (
-                          <div className="chat-image-grid">
-                            {m.attachments.map((attachment) => (
-                              <figure
-                                key={`${m.id}-${attachment.fileName}`}
-                                className="chat-image-card"
-                              >
-                                <img
-                                  src={attachment.dataUrl}
-                                  alt={attachment.fileName}
-                                  className="chat-image-preview"
-                                />
-                                <figcaption className="small-print">
-                                  {attachment.fileName}
-                                </figcaption>
-                              </figure>
-                            ))}
-                          </div>
-                        ) : null}
-                      </article>
-                    ))}
+                  <MessageList
+                    messages={filteredMessages}
+                    containerRef={messagesRef}
+                  />
+                ) : (
+                  <div className="chat-messages chat-messages-empty">
+                    <p className="muted">
+                      {isConversationMode
+                        ? "Ask anything about the site’s content. Conversations only read the site."
+                        : "Describe what should change. SitePilot asks if it needs more detail, then builds the update for you to review."}
+                    </p>
                   </div>
-                ) : null}
+                )}
 
-                <div className="chat-composer-card">
-                  <h3>{composerState.title}</h3>
-                  <p className="muted small-print">{composerState.helper}</p>
-                  {!isConversationMode ? (
-                    <fieldset className="chat-v2-controls">
-                      <legend>Content workflow</legend>
-                      {SHOW_V1_WORKFLOW ? (
-                        <label className="settings-field">
-                          <span>Planner</span>
-                          <select
-                            value={requestWorkflow}
-                            disabled={busy || gutenbergV2State !== null}
-                            onChange={(event) => {
-                              workflowInitializedRef.current = true;
-                              setRequestWorkflow(
-                                event.target.value as RequestWorkflow
-                              );
-                            }}
-                          >
-                            <option value="legacy">Standard planner</option>
-                            <option value="gutenberg_v2">
-                              Native editor candidate
-                            </option>
-                          </select>
-                        </label>
-                      ) : null}
-                      {requestWorkflow === "gutenberg_v2" ? (
-                        <div className="chat-v2-target-grid">
-                          <label className="settings-field">
-                            <span>Operation</span>
-                            <select
-                              value={gutenbergV2Operation}
-                              disabled={busy || gutenbergV2State !== null}
-                              onChange={(event) =>
-                                setGutenbergV2Operation(
-                                  event.target.value as GutenbergV2Operation
-                                )
-                              }
-                            >
-                              <option value="create_draft">Create draft</option>
-                              <option value="replace_content">
-                                Replace all content
-                              </option>
-                              <option value="apply_operations">
-                                Apply selected changes
-                              </option>
-                              <option value="publish">Publish</option>
-                              <option value="unpublish">
-                                Unpublish (back to draft)
-                              </option>
-                            </select>
-                          </label>
-                          <label className="settings-field">
-                            <span>Content type</span>
-                            <select
-                              value={gutenbergV2PostType}
-                              disabled={busy || gutenbergV2State !== null}
-                              onChange={(event) =>
-                                setGutenbergV2PostType(
-                                  event.target.value as "post" | "page"
-                                )
-                              }
-                            >
-                              <option value="post">Post</option>
-                              <option value="page">Page</option>
-                            </select>
-                          </label>
-                          {gutenbergV2Operation !== "create_draft" ? (
-                            <label className="settings-field">
-                              <span>Post ID</span>
-                              <input
-                                type="number"
-                                min={1}
-                                step={1}
-                                value={gutenbergV2PostId}
-                                disabled={busy || gutenbergV2State !== null}
-                                placeholder="e.g. 123"
-                                onChange={(event) =>
-                                  setGutenbergV2PostId(event.target.value)
-                                }
-                              />
-                            </label>
-                          ) : null}
-                          <p className="muted small-print">
-                            This path always creates a review candidate and
-                            requires an explicit approval before saving content.
-                          </p>
-                        </div>
-                      ) : null}
-                    </fieldset>
-                  ) : null}
-                  <textarea
-                    ref={composerTextareaRef}
-                    rows={
-                      !isConversationMode &&
-                      (bundle?.request.status === "awaiting_approval" ||
-                        bundle?.request.status === "approved" ||
-                        gutenbergV2State?.state === "review_ready")
-                        ? 8
-                        : 4
-                    }
-                    value={requestPrompt}
-                    placeholder={composerState.placeholder}
-                    onFocus={savePendingThreadRename}
-                    onKeyDown={handleComposerKeyDown}
-                    onChange={(e) => {
-                      setRequestPrompt(e.target.value);
-                    }}
-                  />
-                  {pendingAttachments.length > 0 ? (
-                    <div className="chat-composer-attachments">
-                      <p className="muted small-print">
-                        {formatAttachmentCount(pendingAttachments.length)}{" "}
-                        queued
-                      </p>
-                      <p className="muted small-print">
-                        {preserveOriginalImageUploads
-                          ? isConversationMode
-                            ? "Original image files will be sent at full size."
-                            : "Original image files will be kept at full size for planning and upload."
-                          : "Images are resized before planning so they are sent as compressed references instead of full-size originals."}
-                        {!isConversationMode
-                          ? requestWorkflow === "gutenberg_v2"
-                            ? " “Place in post” images are added to the content; “Layout reference” images and PDF pages are only used to work out what to build."
-                            : " The planner uses up to 3 images per request."
-                          : ""}
-                      </p>
-                      <div className="chat-image-grid">
-                        {pendingAttachments.map((attachment, index) => (
-                          <figure
-                            key={`pending-${attachment.fileName}-${index}`}
-                            className="chat-image-card"
-                          >
-                            <img
-                              src={attachment.dataUrl}
-                              alt={attachment.fileName}
-                              className="chat-image-preview"
-                            />
-                            <figcaption className="small-print">
-                              {attachment.fileName}
-                            </figcaption>
-                            <button
-                              type="button"
-                              className={`chat-attachment-purpose${
-                                attachment.purpose === "reference"
-                                  ? " is-reference"
-                                  : ""
-                              }`}
-                              disabled={busy}
-                              title="Switch between placing this image in the content and using it only as a layout reference"
-                              onClick={() =>
-                                setPendingAttachments((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index
-                                      ? {
-                                          ...item,
-                                          purpose:
-                                            item.purpose === "reference"
-                                              ? "media"
-                                              : "reference"
-                                        }
-                                      : item
-                                  )
-                                )
-                              }
-                            >
-                              {attachment.purpose === "reference"
-                                ? "Layout reference"
-                                : "Place in post"}
-                            </button>
-                            <button
-                              type="button"
-                              className="chat-image-remove"
-                              onClick={() => {
-                                setPendingAttachments((current) =>
-                                  current.filter(
-                                    (_, currentIndex) => currentIndex !== index
-                                  )
-                                );
-                              }}
-                            >
-                              Remove
-                            </button>
-                          </figure>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="action-row">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled={
-                        busy ||
-                        pendingAttachments.length >= MAX_IMAGE_ATTACHMENTS
-                      }
-                      onClick={() => attachmentInputRef.current?.click()}
-                    >
-                      {isConversationMode ? "Add images" : "Add images or PDF"}
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        composerWorkflowIsSecondary
-                          ? "btn btn-secondary"
-                          : "btn btn-primary"
-                      }
-                      disabled={
-                        busy ||
-                        requestPrompt.trim().length === 0 ||
-                        (requestWorkflow === "gutenberg_v2" &&
-                          gutenbergV2Target === null)
-                      }
-                      onClick={() => void onSubmitPrompt()}
-                    >
-                      {composerState.actionLabel}
-                    </button>
-                    {bundle?.pendingApproval && !showInChatApprove ? (
-                      <Link
-                        className="btn btn-secondary"
-                        to={`/site/${siteId}/approvals`}
-                      >
-                        Open approvals
-                      </Link>
-                    ) : null}
-                  </div>
-                  <input
-                    ref={attachmentInputRef}
-                    type="file"
-                    accept="image/*,application/pdf,video/mp4,video/webm"
-                    multiple
-                    hidden
-                    onChange={(event) => {
-                      void onPickAttachments(event.target.files);
-                      event.target.value = "";
-                    }}
-                  />
-                </div>
+                <Composer
+                  siteId={siteId}
+                  copy={composerState}
+                  isConversationMode={isConversationMode}
+                  busy={busy}
+                  showSubmitSpinner={busy && applyingSince === null}
+                  hasGutenbergV2State={gutenbergV2State !== null}
+                  gutenbergV2TargetValid={gutenbergV2Target !== null}
+                  requestWorkflow={requestWorkflow}
+                  onRequestWorkflowChange={(workflow) => {
+                    workflowInitializedRef.current = true;
+                    setRequestWorkflow(workflow);
+                  }}
+                  gutenbergV2Operation={gutenbergV2Operation}
+                  onGutenbergV2OperationChange={setGutenbergV2Operation}
+                  gutenbergV2PostType={gutenbergV2PostType}
+                  onGutenbergV2PostTypeChange={setGutenbergV2PostType}
+                  gutenbergV2PostId={gutenbergV2PostId}
+                  onGutenbergV2PostIdChange={setGutenbergV2PostId}
+                  textareaRef={composerTextareaRef}
+                  textareaRows={composerRows}
+                  requestPrompt={requestPrompt}
+                  onRequestPromptChange={setRequestPrompt}
+                  onTextareaFocus={savePendingThreadRename}
+                  onTextareaKeyDown={handleComposerKeyDown}
+                  pendingAttachments={pendingAttachments}
+                  preserveOriginalImageUploads={preserveOriginalImageUploads}
+                  onPickAttachments={(fileList) =>
+                    void onPickAttachments(fileList)
+                  }
+                  onToggleAttachmentPurpose={(index) =>
+                    setPendingAttachments((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              purpose:
+                                item.purpose === "reference"
+                                  ? "media"
+                                  : "reference"
+                            }
+                          : item
+                      )
+                    )
+                  }
+                  onRemoveAttachment={(index) => {
+                    setPendingAttachments((current) =>
+                      current.filter(
+                        (_, currentIndex) => currentIndex !== index
+                      )
+                    );
+                  }}
+                  submitIsSecondary={composerWorkflowIsSecondary}
+                  onSubmit={() => void onSubmitPrompt()}
+                  showOpenApprovals={
+                    Boolean(bundle?.pendingApproval) && !showInChatApprove
+                  }
+                />
               </div>
 
               {!isConversationMode ? (
                 <aside className="chat-side-column">
-                  {busy &&
-                  requestWorkflow === "gutenberg_v2" &&
-                  (gutenbergV2State === null ||
-                    gutenbergV2State.state !== "review_ready") ? (
-                    <section
-                      className="gutenberg-v2-candidate-panel"
-                      aria-live="polite"
-                    >
-                      <p className="eyebrow">Native editor candidate</p>
-                      <h4>Building the candidate…</h4>
-                      <p className="muted small-print">
-                        Planning the blocks, then compiling and previewing them
-                        in this site’s WordPress editor. Long posts can take a
-                        minute or two.
-                      </p>
-                    </section>
-                  ) : null}
                   {gutenbergV2State ? (
                     <GutenbergV2CandidatePanel
                       candidate={gutenbergV2State}
@@ -2565,609 +1528,163 @@ export function ChatPage({
                       onDecide={onDecideGutenbergV2Candidate}
                       onExecute={onExecuteGutenbergV2Candidate}
                       onLoadArtifact={onLoadGutenbergV2Artifact}
+                      {...(approvalExpiresAt ? { approvalExpiresAt } : {})}
+                      siteUrl={data.site.baseUrl}
+                      top={
+                        <>
+                  {applyingSince !== null ? (
+                    <ApplyProgress
+                      state={liveExecState}
+                      startedAt={applyingSince}
                     />
                   ) : null}
+                  {showBuildingCandidate && applyingSince === null ? (
+                    <section className="review-building" aria-live="polite">
+                      <span className="spinner" aria-hidden="true" />
+                      <div>
+                        <h4>Building the update…</h4>
+                        <p>
+                          Planning the blocks, then building and previewing
+                          them in this site’s WordPress editor. Long posts can
+                          take a minute or two.
+                        </p>
+                      </div>
+                    </section>
+                  ) : null}
+                        </>
+                      }
+                    >
+                      <details className="review-disclosure review-details">
+                        <summary>Request details and attachments</summary>
                   {bundle ? (
-                    <div className="chat-request-panel">
-                      {requestNextAction && !isV2Workflow ? (
-                        <div className="chat-next-action">
-                          <div className="chat-next-action-copy">
-                            <span className="badge">
-                              {requestNextAction.statusLabel}
-                            </span>
-                            <h4>{requestNextAction.title}</h4>
-                            <p className="muted small-print">
-                              {requestNextAction.helper}
-                            </p>
-                          </div>
-                          <div className="action-row chat-next-action-buttons">
-                            {requestNextAction.primary ? (
-                              <button
-                                type="button"
-                                className={
-                                  requestNextAction.primary.id === "reply"
-                                    ? "btn btn-secondary"
-                                    : "btn btn-primary"
-                                }
-                                disabled={
-                                  busy ||
-                                  (requestNextAction.primary.id ===
-                                    "generate_plan" &&
-                                    !canGeneratePlanNow) ||
-                                  (requestNextAction.primary.id ===
-                                    "run_plan" &&
-                                    (!requestCanExecute(
-                                      bundle.request.status
-                                    ) ||
-                                      execBusy))
-                                }
-                                onClick={() =>
-                                  void onRequestNextAction(
-                                    requestNextAction.primary!.id
-                                  )
-                                }
-                              >
-                                {requestNextAction.primary.label}
-                              </button>
-                            ) : null}
-                            {requestNextAction.primary?.id ===
-                            "approve_plan" ? (
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                disabled={busy}
-                                onClick={() =>
-                                  void onDecidePlanApproval("rejected")
-                                }
-                              >
-                                Reject plan
-                              </button>
-                            ) : null}
-                            {requestNextAction.secondary.map((action) => (
-                              <button
-                                key={action.id}
-                                type="button"
-                                className="btn btn-secondary"
-                                disabled={
-                                  busy ||
-                                  (action.id === "generate_plan" &&
-                                    !canGeneratePlanNow)
-                                }
-                                onClick={() =>
-                                  void onRequestNextAction(action.id)
-                                }
-                              >
-                                {action.label}
-                              </button>
-                            ))}
-                            {requestNextAction.primary?.id === "run_plan" &&
-                            SHOW_DRY_RUN_UI &&
-                            !executionControlsLocked ? (
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                disabled={execBusy || busy}
-                                onClick={() => void onRunPlan(true)}
-                              >
-                                {execBusy &&
-                                execProgressLabel === "Running dry-run…"
-                                  ? "Running dry-run…"
-                                  : "Dry-run plan"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
-                      <h3>Current request</h3>
-                      <ExpandableText
-                        text={bundle.request.userPrompt}
-                        className="chat-request-current"
-                        collapsedClassName="chat-request-current-collapsed"
-                        previewThreshold={REQUEST_PROMPT_PREVIEW_THRESHOLD}
-                      />
-                      {bundle.request.attachments &&
-                      bundle.request.attachments.length > 0 ? (
-                        <div className="chat-request-attachments">
-                          <p className="muted small-print">
-                            Attached{" "}
-                            {formatAttachmentCount(
-                              bundle.request.attachments.length
-                            )}
-                          </p>
-                          <div className="chat-image-grid">
-                            {bundle.request.attachments.map((attachment) => (
-                              <figure
-                                key={`request-${attachment.fileName}-${attachment.sizeBytes}`}
-                                className="chat-image-card"
-                              >
-                                <img
-                                  src={attachment.dataUrl}
-                                  alt={attachment.fileName}
-                                  className="chat-image-preview"
-                                />
-                                <figcaption className="small-print">
-                                  {attachment.fileName}
-                                </figcaption>
-                              </figure>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                      {!isV2Workflow ? (
-                        <div className="chat-request-meta">
-                          <h4>Request status</h4>
-                          <p className="small-print">
-                            <span className="badge">
-                              {humanRequestStatus(bundle.request.status)}
-                            </span>
-                            {bundle.pendingApproval ? (
-                              <>
-                                {" "}
-                                <span className="badge badge-warn">
-                                  Pending approval
-                                </span>
-                              </>
-                            ) : null}
-                          </p>
-                        </div>
-                      ) : null}
-                      {visualAnalysisRequired && !isV2Workflow ? (
-                        <div className="chat-bundle-panel">
-                          <h4>Reference analysis</h4>
-                          <p className="muted small-print">
-                            {bundle.visualAnalysis === null
-                              ? "This request looks like a screenshot/mockup build. Analyze the uploaded reference before planning."
-                              : visualAnalysisStale
-                                ? "The request changed after the last screenshot analysis. Re-run analysis, review it, then generate the plan."
-                                : bundle.visualAnalysis.reviewedAt === undefined
-                                  ? "Review the generated screenshot manifest, then approve it for planning."
-                                  : "Reviewed screenshot manifest is ready for planning."}
-                          </p>
-                          <p className="small-print">
-                            <span className="badge">
-                              {bundle.visualAnalysis === null
-                                ? "missing"
-                                : visualAnalysisStale
-                                  ? "stale"
-                                  : bundle.visualAnalysis.reviewedAt ===
-                                      undefined
-                                    ? "generated"
-                                    : "reviewed"}
-                            </span>
-                          </p>
-                          {bundle.visualAnalysis ? (
-                            <>
-                              <p className="small-print">
-                                <strong>
-                                  {bundle.visualAnalysis.pageType}
-                                </strong>{" "}
-                                · {bundle.visualAnalysis.layoutPattern}
-                              </p>
-                              <p className="small-print">
-                                {bundle.visualAnalysis.summary}
-                              </p>
-                              <div className="chat-planner-panel">
-                                <h5>Regions</h5>
-                                <ul className="chat-action-list">
-                                  {bundle.visualAnalysis.regions.map(
-                                    (region) => (
-                                      <li
-                                        key={region.id}
-                                        className="chat-action-row"
-                                      >
-                                        <div>
-                                          <strong>{region.label}</strong>
-                                          <div className="muted small-print">
-                                            {region.kind} · {region.layout} ·{" "}
-                                            {region.position} · confidence{" "}
-                                            {Math.round(
-                                              region.confidence * 100
-                                            )}
-                                            %
-                                          </div>
-                                          <div className="small-print">
-                                            {region.contentSummary}
-                                          </div>
-                                          <div className="muted small-print">
-                                            Blocks:{" "}
-                                            {region.suggestedBlocks.join(", ")}
-                                          </div>
-                                        </div>
-                                      </li>
-                                    )
-                                  )}
-                                </ul>
-                              </div>
-                              {bundle.visualAnalysis.mappingWarnings.length >
-                              0 ? (
-                                <div className="chat-planner-panel">
-                                  <h5>Mapping warnings</h5>
-                                  <ul className="small-print">
-                                    {bundle.visualAnalysis.mappingWarnings.map(
-                                      (warning) => (
-                                        <li key={warning}>{warning}</li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
-                              ) : null}
-                            </>
-                          ) : null}
-                          <div className="action-row">
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              disabled={busy}
-                              onClick={() =>
-                                void onAnalyzeRequestVisualAnalysis()
-                              }
-                            >
-                              {bundle.visualAnalysis === null ||
-                              visualAnalysisStale
-                                ? "Analyze reference"
-                                : "Re-analyze reference"}
-                            </button>
-                            {bundle.visualAnalysis !== null &&
-                            !visualAnalysisStale ? (
-                              <button
-                                type="button"
-                                className="btn btn-primary"
-                                disabled={busy}
-                                onClick={() =>
-                                  void onReviewRequestVisualAnalysis()
-                                }
-                              >
-                                {bundle.visualAnalysis.reviewedAt === undefined
-                                  ? "Approve analysis"
-                                  : "Re-approve analysis"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
-                      {canGeneratePlan &&
-                      !canGeneratePlanNow &&
-                      !isV2Workflow ? (
-                        <p className="muted small-print">
-                          Generate plan stays locked until the reference
-                          analysis is current and approved.
-                        </p>
-                      ) : null}
-                      {bundle.plan ? (
-                        <div className="chat-plan-next-steps">
-                          <div
-                            className="chat-plan-next-steps-meta"
-                            aria-label="Plan summary"
-                          >
-                            <span className="badge">
-                              {bundle.plan.proposedActions.length} actions
-                            </span>
-                            {openQuestions.length > 0 ? (
-                              <span className="badge badge-warn">
-                                {openQuestions.length} open question
-                                {openQuestions.length === 1 ? "" : "s"}
-                              </span>
-                            ) : (
-                              <span className="badge">Ready for review</span>
-                            )}
-                          </div>
-                          {openQuestions.length > 0 ? (
-                            <div className="chat-plan-next-steps-section">
-                              <h5>Questions to answer</h5>
-                              <ol className="chat-plan-question-list">
-                                {openQuestions.map((question) => (
-                                  <li key={question}>{question}</li>
-                                ))}
-                              </ol>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {bundle.lastExecution ? (
-                        <p className="muted small-print">
-                          Last run: <code>{bundle.lastExecution.status}</code> ·{" "}
-                          <code className="break-all">
-                            {bundle.lastExecution.idempotencyKey}
-                          </code>
-                        </p>
-                      ) : null}
-                      {dryRunPreview ? (
-                        <div className="chat-bundle-panel">
-                          {(() => {
-                            const { before, after } = extractBeforeAfter(
-                              dryRunPreview.mcpResult
-                            );
-                            const diffLines = buildDiffLines(before, after);
-
-                            return (
-                              <>
-                                <div className="chat-plan-runbar">
-                                  <div>
-                                    <h4>Dry-run Preview</h4>
-                                    <p className="muted small-print">
-                                      {dryRunPreview.actionType}
-                                      {dryRunPreview.toolName
-                                        ? ` → ${dryRunPreview.toolName}`
-                                        : ""}
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary btn-small"
-                                    onClick={() => setDryRunPreview(null)}
-                                  >
-                                    Clear
-                                  </button>
-                                </div>
-                                {dryRunPreview.requestInput ? (
-                                  <>
-                                    <h5>Planned MCP request</h5>
-                                    <pre className="diag-json">
-                                      {JSON.stringify(
-                                        dryRunPreview.requestInput,
-                                        null,
-                                        2
-                                      )}
-                                    </pre>
-                                  </>
-                                ) : null}
-                                <h5>Diff</h5>
-                                <pre
-                                  className="chat-diff-view"
-                                  aria-label="Dry-run diff"
-                                >
-                                  {diffLines.map((line, index) => (
-                                    <span
-                                      key={`${line.kind}-${index}-${line.text}`}
-                                      className={`chat-diff-line chat-diff-line-${line.kind}`}
-                                    >
-                                      {line.text}
-                                    </span>
-                                  ))}
-                                </pre>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      ) : null}
-                      {!bundle.plan && !isV2Workflow ? (
-                        <p className="muted small-print">
-                          No plan yet. Keep refining the request, then generate
-                          a plan.
-                        </p>
-                      ) : null}
-                    </div>
+                    <RequestPanel
+                      bundle={bundle}
+                      requestNextAction={requestNextAction}
+                      isV2Workflow={isV2Workflow}
+                      busy={busy}
+                      execBusy={execBusy}
+                      execProgressLabel={execProgressLabel}
+                      canGeneratePlan={canGeneratePlan}
+                      canGeneratePlanNow={canGeneratePlanNow}
+                      executionControlsLocked={executionControlsLocked}
+                      visualAnalysisRequired={visualAnalysisRequired}
+                      visualAnalysisStale={visualAnalysisStale}
+                      openQuestions={openQuestions}
+                      dryRunPreview={dryRunPreview}
+                      onNextAction={(id) => void onRequestNextAction(id)}
+                      onRejectPlan={() => void onDecidePlanApproval("rejected")}
+                      onDryRunPlan={() => void onRunPlan(true)}
+                      onAnalyzeReference={() =>
+                        void onAnalyzeRequestVisualAnalysis()
+                      }
+                      onReviewReference={() =>
+                        void onReviewRequestVisualAnalysis()
+                      }
+                      onClearDryRun={() => setDryRunPreview(null)}
+                    />
                   ) : null}
 
                   {developerToolsEnabled ? (
-                    <details className="chat-debug-panel">
-                      <summary>Developer tools</summary>
-                      <div className="chat-debug-actions">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-small"
-                          disabled={busy || execBusy}
-                          onClick={() => void onCopyDebugLog()}
-                        >
-                          {debugCopyLabel}
-                        </button>
-                        <span className="muted small-print">
-                          Copies chat history, request state, plan data, and
-                          last execution details as JSON.
-                        </span>
-                      </div>
-                      {developerMessages.length > 0 ? (
-                        <div className="chat-planner-panel">
-                          <h3>Feedback log</h3>
-                          <ul className="small-print">
-                            {developerMessages.map((message) => (
-                              <li key={message}>{message}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      {bundle?.plan ? (
-                        <div className="chat-bundle-panel">
-                          <h4>Planned actions</h4>
-                          <ul className="chat-action-list">
-                            {bundle.plan.proposedActions.map(
-                              (action, planIndex) => {
-                                const planActions =
-                                  bundle.plan?.proposedActions ?? [];
-                                const actionIndex = planActions.findIndex(
-                                  (candidate) => candidate.id === action.id
-                                );
-                                const priorActions =
-                                  actionIndex > 0
-                                    ? planActions.slice(0, actionIndex)
-                                    : [];
-                                const spec = actionToMcpToolCall(
-                                  action.type,
-                                  action.input,
-                                  true
-                                );
-                                const remote =
-                                  spec !== null ||
-                                  actionCanResolveViaLookup(
-                                    action.type,
-                                    action.input
-                                  ) ||
-                                  actionCanResolveViaPlannedCreate(
-                                    action.type,
-                                    action.input,
-                                    priorActions
-                                  );
-                                return (
-                                  <li
-                                    key={action.id}
-                                    className="chat-action-row"
-                                  >
-                                    <div className="chat-action-main">
-                                      <div className="chat-action-step">
-                                        Step {planIndex + 1}
-                                      </div>
-                                      <div className="chat-action-copy">
-                                        <strong>{action.type}</strong>
-                                        {remote ? (
-                                          <span className="muted small-print">
-                                            {spec?.toolName ??
-                                              (actionCanResolveViaLookup(
-                                                action.type,
-                                                action.input
-                                              )
-                                                ? "target via lookup"
-                                                : "target via planned create")}
-                                          </span>
-                                        ) : (
-                                          <span className="muted small-print">
-                                            {actionUnavailableReason(
-                                              action.type,
-                                              action.input
-                                            )}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="chat-action-buttons">
-                                      {remote ? (
-                                        <>
-                                          {SHOW_DRY_RUN_UI &&
-                                          !executionControlsLocked ? (
-                                            <button
-                                              type="button"
-                                              className="btn btn-secondary btn-small"
-                                              disabled={execBusy || busy}
-                                              onClick={() =>
-                                                void onExecuteAction(
-                                                  action.id,
-                                                  true
-                                                )
-                                              }
-                                            >
-                                              Dry-run
-                                            </button>
-                                          ) : null}
-                                          {!executionControlsLocked ? (
-                                            <button
-                                              type="button"
-                                              className="btn btn-primary btn-small"
-                                              disabled={
-                                                execBusy ||
-                                                busy ||
-                                                !requestCanExecute(
-                                                  bundle.request.status
-                                                )
-                                              }
-                                              onClick={() =>
-                                                void onExecuteAction(
-                                                  action.id,
-                                                  false
-                                                )
-                                              }
-                                            >
-                                              Execute
-                                            </button>
-                                          ) : null}
-                                        </>
-                                      ) : null}
-                                    </div>
-                                  </li>
-                                );
-                              }
-                            )}
-                          </ul>
-                          {executionControlsLocked ? (
-                            <p className="muted small-print">
-                              This plan has already run. Generate a new action
-                              plan to enable execution again.
-                            </p>
-                          ) : !requestCanExecute(bundle.request.status) ? (
-                            <p className="muted small-print">
-                              Execute stays disabled until the request is ready
-                              to run.
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {bundle ? (
-                        <div className="chat-planner-panel">
-                          <h3>Current request prompt</h3>
-                          <pre className="diag-json">
-                            {bundle.request.userPrompt}
-                          </pre>
-                        </div>
-                      ) : null}
-                      {pendingAttachments.length > 0 ? (
-                        <div className="chat-planner-panel">
-                          <h3>Pending image context</h3>
-                          <p className="small-print">
-                            {formatAttachmentCount(pendingAttachments.length)} ·{" "}
-                            {Math.round(pendingAttachmentBytes / 1024)} KB after
-                            compression · planner limit 3 images
-                          </p>
-                        </div>
-                      ) : null}
-                      {planValidationJson ? (
-                        <div className="chat-planner-panel">
-                          <h3>Plan validation</h3>
-                          <pre className="diag-json">{planValidationJson}</pre>
-                        </div>
-                      ) : null}
-                      {bundle?.plan ? (
-                        <div className="chat-planner-panel">
-                          <h3>Planned action input</h3>
-                          <pre className="diag-json">
-                            {JSON.stringify(
-                              bundle.plan.proposedActions,
-                              null,
-                              2
-                            )}
-                          </pre>
-                        </div>
-                      ) : null}
-                      {bundle?.lastExecution?.toolInvocation ? (
-                        <div className="chat-planner-panel">
-                          <h3>Last MCP request</h3>
-                          <p className="muted small-print">
-                            Tool: {bundle.lastExecution.toolInvocation.toolName}
-                          </p>
-                          <pre className="diag-json">
-                            {JSON.stringify(
-                              bundle.lastExecution.toolInvocation.input,
-                              null,
-                              2
-                            )}
-                          </pre>
-                        </div>
-                      ) : null}
-                      {bundle?.lastExecution?.toolInvocation?.output ? (
-                        <div className="chat-planner-panel">
-                          <h3>Last MCP response</h3>
-                          <pre className="diag-json">
-                            {JSON.stringify(
-                              bundle.lastExecution.toolInvocation.output,
-                              null,
-                              2
-                            )}
-                          </pre>
-                        </div>
-                      ) : null}
-                      <div className="chat-planner-panel">
-                        <h3>Planner context</h3>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-small"
-                          disabled={busy}
-                          onClick={() => void onBuildPlannerContext()}
-                        >
-                          Build planner context
-                        </button>
-                        {plannerJson ? (
-                          <pre className="diag-json">{plannerJson}</pre>
-                        ) : null}
-                      </div>
-                    </details>
+                    <DeveloperPanel
+                      bundle={bundle}
+                      busy={busy}
+                      execBusy={execBusy}
+                      executionControlsLocked={executionControlsLocked}
+                      debugCopyLabel={debugCopyLabel}
+                      developerMessages={developerMessages}
+                      pendingAttachmentCount={pendingAttachments.length}
+                      pendingAttachmentBytes={pendingAttachmentBytes}
+                      planValidationJson={planValidationJson}
+                      plannerJson={plannerJson}
+                      onCopyDebugLog={() => void onCopyDebugLog()}
+                      onExecuteAction={(actionId, dryRun) =>
+                        void onExecuteAction(actionId, dryRun)
+                      }
+                      onBuildPlannerContext={() => void onBuildPlannerContext()}
+                    />
                   ) : null}
+                      </details>
+                    </GutenbergV2CandidatePanel>
+                  ) : (
+                    <div className="chat-side-scroll">
+                      {applyingSince === null && !showBuildingCandidate ? (
+                        <section className="review-placeholder">
+                          <h3>Review</h3>
+                          <p>
+                            Once SitePilot has built the update, its preview,
+                            changes and the Approve button appear here.
+                            Nothing is saved to the site before you approve.
+                          </p>
+                        </section>
+                      ) : null}
+                  {applyingSince !== null ? (
+                    <ApplyProgress
+                      state={liveExecState}
+                      startedAt={applyingSince}
+                    />
+                  ) : null}
+                  {showBuildingCandidate && applyingSince === null ? (
+                    <section className="review-building" aria-live="polite">
+                      <span className="spinner" aria-hidden="true" />
+                      <div>
+                        <h4>Building the update…</h4>
+                        <p>
+                          Planning the blocks, then building and previewing
+                          them in this site’s WordPress editor. Long posts can
+                          take a minute or two.
+                        </p>
+                      </div>
+                    </section>
+                  ) : null}
+                  {bundle ? (
+                    <RequestPanel
+                      bundle={bundle}
+                      requestNextAction={requestNextAction}
+                      isV2Workflow={isV2Workflow}
+                      busy={busy}
+                      execBusy={execBusy}
+                      execProgressLabel={execProgressLabel}
+                      canGeneratePlan={canGeneratePlan}
+                      canGeneratePlanNow={canGeneratePlanNow}
+                      executionControlsLocked={executionControlsLocked}
+                      visualAnalysisRequired={visualAnalysisRequired}
+                      visualAnalysisStale={visualAnalysisStale}
+                      openQuestions={openQuestions}
+                      dryRunPreview={dryRunPreview}
+                      onNextAction={(id) => void onRequestNextAction(id)}
+                      onRejectPlan={() => void onDecidePlanApproval("rejected")}
+                      onDryRunPlan={() => void onRunPlan(true)}
+                      onAnalyzeReference={() =>
+                        void onAnalyzeRequestVisualAnalysis()
+                      }
+                      onReviewReference={() =>
+                        void onReviewRequestVisualAnalysis()
+                      }
+                      onClearDryRun={() => setDryRunPreview(null)}
+                    />
+                  ) : null}
+
+                  {developerToolsEnabled ? (
+                    <DeveloperPanel
+                      bundle={bundle}
+                      busy={busy}
+                      execBusy={execBusy}
+                      executionControlsLocked={executionControlsLocked}
+                      debugCopyLabel={debugCopyLabel}
+                      developerMessages={developerMessages}
+                      pendingAttachmentCount={pendingAttachments.length}
+                      pendingAttachmentBytes={pendingAttachmentBytes}
+                      planValidationJson={planValidationJson}
+                      plannerJson={plannerJson}
+                      onCopyDebugLog={() => void onCopyDebugLog()}
+                      onExecuteAction={(actionId, dryRun) =>
+                        void onExecuteAction(actionId, dryRun)
+                      }
+                      onBuildPlannerContext={() => void onBuildPlannerContext()}
+                    />
+                  ) : null}
+                    </div>
+                  )}
                 </aside>
               ) : null}
             </div>

@@ -106,7 +106,7 @@ export function AuditPage(): ReactElement | null {
         range, execution outcome, and rollback snapshots (T31).
       </p>
       <p className="small-print">
-        <Link to={`/site/${siteId}/chat`}>Open chat</Link>
+        <Link to={`/site/${siteId}/requests`}>Open requests</Link>
         {" · "}
         <Link to={`/site/${siteId}/settings`}>Site settings (export)</Link>
       </p>
@@ -238,8 +238,8 @@ export function AuditPage(): ReactElement | null {
                   {e.requestId ? (
                     <Link
                       className="small-print"
-                      to={`/site/${siteId}/chat`}
-                      title="Open chat for follow-up"
+                      to={`/site/${siteId}/requests`}
+                      title="Open requests"
                     >
                       {e.requestId}
                     </Link>

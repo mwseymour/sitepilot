@@ -1,7 +1,21 @@
-import { useEffect, useState, type ReactElement } from "react";
-import { Link, NavLink, Outlet, useParams } from "react-router-dom";
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams
+} from "react-router-dom";
+
+import type { SiteSummary } from "@sitepilot/contracts";
 
 import { modePageCopy } from "../chat-workflow.js";
+import { activationLabel } from "../site-labels.js";
+import { chatPathFor, formatWhen, targetLabel, threadStatus } from "../status.js";
+import { ThemeToggle } from "../theme/theme.js";
+import { CommandPalette } from "./CommandPalette.js";
 import {
   SiteWorkspaceProvider,
   useSiteWorkspace
@@ -74,9 +88,130 @@ function renderNavIcon(kind: string): ReactElement {
   }
 }
 
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0]![0]! + words[1]![0]! : name.slice(0, 2);
+  return letters.toUpperCase();
+}
+
+const ENVIRONMENT_LABEL: Record<SiteSummary["environment"], string> = {
+  production: "Production",
+  staging: "Staging",
+  development: "Development"
+};
+
+function SiteSwitcher({
+  currentSiteId,
+  name,
+  environment
+}: {
+  currentSiteId: string;
+  name: string;
+  environment: SiteSummary["environment"] | null;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const [sites, setSites] = useState<SiteSummary[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void window.sitePilotDesktop.listSites().then((res) => {
+      setSites(res.sites);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: MouseEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="rail-switcher" ref={rootRef}>
+      <button
+        type="button"
+        className="rail-switcher-button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((current) => !current);
+        }}
+      >
+        <span className="rail-monogram" aria-hidden="true">
+          {initials(name)}
+        </span>
+        <span className="rail-switcher-copy">
+          <span className="rail-switcher-name">{name}</span>
+          <span className="rail-switcher-meta">
+            {environment ? ENVIRONMENT_LABEL[environment] : "Site"}
+          </span>
+        </span>
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="rail-icon">
+          <path d="M8 9l4-4 4 4M8 15l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="rail-menu" role="menu">
+          {sites.map((site) => (
+            <Link
+              key={site.id}
+              role="menuitem"
+              className={`rail-menu-item${site.id === currentSiteId ? " is-current" : ""}`}
+              to={`/site/${site.id}/overview`}
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
+              <span className="rail-monogram is-small" aria-hidden="true">
+                {initials(site.name)}
+              </span>
+              <span className="rail-switcher-copy">
+                <span className="rail-switcher-name">{site.name}</span>
+                <span className="rail-switcher-meta">
+                  {ENVIRONMENT_LABEL[site.environment]} ·{" "}
+                  {site.baseUrl.replace(/^https?:\/\//, "")}
+                </span>
+              </span>
+            </Link>
+          ))}
+          <div className="rail-menu-divider" />
+          <Link role="menuitem" className="rail-menu-item" to="/">
+            All sites
+          </Link>
+          <Link role="menuitem" className="rail-menu-item" to="/sites/new">
+            Add a site
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SiteWorkspaceChrome(): ReactElement {
-  const { siteId, data, error, loading } = useSiteWorkspace();
+  const { siteId, data, error, loading, activity, paletteOpen, setPaletteOpen } =
+    useSiteWorkspace();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeThreadId = searchParams.get("thread");
+  // Thread views fill the window; list pages scroll like other pages.
+  const path = location.pathname;
+  const chatMode = /\/conversations(-list)?$/.test(path)
+    ? "conversation"
+    : /\/(chat|requests)$/.test(path)
+      ? "request"
+      : null;
+  const onThreadView = /\/(chat|conversations)$/.test(path);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("sitepilot-workspace-sidebar");
@@ -90,38 +225,77 @@ function SiteWorkspaceChrome(): ReactElement {
     );
   }, [sidebarCollapsed]);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(!paletteOpen);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [paletteOpen, setPaletteOpen]);
+
+  const reviewCount = activity.filter(
+    (thread) =>
+      thread.v2State === "review_ready" || thread.v2State === "approved"
+  ).length;
+
   const links: {
     to: string;
     label: string;
     icon: string;
     navHint?: string;
+    badge?: number;
   }[] = [
-    { to: `overview`, label: "Overview", icon: "overview" },
+    { to: `overview`, label: "Home", icon: "overview" },
     {
-      to: `chat`,
+      to: `requests`,
       label: "Requests",
       icon: "requests",
       navHint: modePageCopy("request").navHint
     },
     {
-      to: `conversations`,
+      to: `conversations-list`,
       label: "Conversations",
       icon: "conversations",
       navHint: modePageCopy("conversation").navHint
     },
+    {
+      to: `approvals`,
+      label: "Approvals",
+      icon: "approvals",
+      ...(reviewCount > 0 ? { badge: reviewCount } : {})
+    },
     { to: `config`, label: "Discovery check", icon: "checklist" },
-    { to: `approvals`, label: "Approvals", icon: "approvals" },
-    { to: `audit`, label: "Audit", icon: "audit" },
     { to: `diagnostics`, label: "Diagnostics", icon: "diagnostics" },
+    { to: `audit`, label: "Audit", icon: "audit" },
     { to: `settings`, label: "Settings", icon: "config" }
   ];
+
+  const recent = activity
+    .filter((thread) => thread.type !== "conversation")
+    .slice(0, 6);
+  const newPath =
+    chatMode === "conversation"
+      ? `/site/${siteId}/conversations?new=1`
+      : `/site/${siteId}/chat?new=1`;
+  const newLabel = chatMode === "conversation" ? "New conversation" : "New request";
+  const siteName = loading ? "Loading…" : (data?.site.name ?? "Site");
 
   return (
     <div
       className={`workspace-grid${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}
     >
-      <aside className="workspace-side">
-        <div className="workspace-side-top">
+      <aside className="workspace-side rail">
+        <div className="rail-top">
+          <SiteSwitcher
+            currentSiteId={siteId}
+            name={siteName}
+            environment={data?.site.environment ?? null}
+          />
           <button
             type="button"
             className="workspace-sidebar-toggle"
@@ -135,62 +309,136 @@ function SiteWorkspaceChrome(): ReactElement {
               aria-hidden="true"
               className={`workspace-toggle-icon${sidebarCollapsed ? " is-collapsed" : ""}`}
             >
-              <path
-                d="m14 6-6 6 6 6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              <path d="m14 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
-        <Link className="workspace-back" to="/">
-          All sites
-        </Link>
-        <p className="eyebrow workspace-eyebrow">Site workspace</p>
-        <h2 className="workspace-title">
-          {loading ? "Loading…" : (data?.site.name ?? "Site")}
-        </h2>
         {error ? <p className="workspace-error">{error}</p> : null}
-        {!loading && data ? (
-          <p
-            className={`activation-pill activation-${data.site.activationStatus}`}
-          >
-            {data.site.activationStatus === "active"
-              ? "Active"
-              : data.site.activationStatus === "config_required"
-                ? "Configuration required"
-                : "Inactive"}
-          </p>
-        ) : null}
+
+        <button
+          type="button"
+          className="rail-search"
+          onClick={() => {
+            setPaletteOpen(true);
+          }}
+          title="Search posts, requests and sites (⌘K)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="rail-icon">
+            <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <span className="rail-search-label">Search</span>
+          <kbd className="rail-kbd">⌘K</kbd>
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-primary rail-new"
+          onClick={() => {
+            navigate(newPath);
+          }}
+          title={newLabel}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="rail-icon">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span className="rail-new-label">{newLabel}</span>
+        </button>
+
         <nav className="workspace-nav" aria-label="Workspace">
           {links.map((l) => (
             <NavLink
               key={l.to}
               to={`/site/${siteId}/${l.to}`}
               className={({ isActive }) =>
-                `workspace-link${isActive ? " is-active" : ""}`
+                `workspace-link${isActive || (l.to === "requests" && chatMode === "request" && onThreadView) || (l.to === "conversations-list" && chatMode === "conversation" && onThreadView) ? " is-active" : ""}`
               }
-              title={sidebarCollapsed ? l.label : undefined}
+              title={sidebarCollapsed ? l.label : l.navHint}
             >
               <span className="workspace-link-content">
                 {renderNavIcon(l.icon)}
                 <span className="workspace-link-copy">
                   <span className="workspace-link-label">{l.label}</span>
-                  {l.navHint ? (
-                    <span className="workspace-link-hint">{l.navHint}</span>
-                  ) : null}
                 </span>
+                {l.badge ? (
+                  <span className="rail-badge" aria-label={`${l.badge} waiting`}>
+                    {l.badge}
+                  </span>
+                ) : null}
               </span>
             </NavLink>
           ))}
         </nav>
+
+        {recent.length > 0 ? (
+          <section className="rail-recent" aria-labelledby="rail-recent-heading">
+            <h2 id="rail-recent-heading" className="rail-section-title">
+              Recent requests
+            </h2>
+            {recent.map((thread) => {
+              const status = threadStatus(thread);
+              const target = targetLabel(thread);
+              return (
+                <Link
+                  key={thread.threadId}
+                  to={chatPathFor(siteId, thread)}
+                  className={`rail-thread${thread.threadId === activeThreadId ? " is-active" : ""}`}
+                  aria-current={thread.threadId === activeThreadId ? "page" : undefined}
+                >
+                  {thread.type === "conversation" ? null : (
+                    <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
+                  )}
+                  <span className="rail-thread-copy">
+                    <span className="rail-thread-title">{thread.title}</span>
+                    <span className="rail-thread-meta">
+                      {thread.type === "conversation"
+                        ? formatWhen(thread.updatedAt)
+                        : `${target ? `${target} · ` : ""}${status.label}`}
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
+          </section>
+        ) : null}
+
+        <div className="rail-footer">
+          {!loading && data ? (
+            <span className="rail-connection">
+              <span
+                className={`status-dot tone-${data.site.activationStatus === "active" ? "done" : data.site.activationStatus === "config_required" ? "waiting" : "neutral"}`}
+                aria-hidden="true"
+              />
+              <span className="rail-connection-label">
+                {activationLabel(data.site.activationStatus)}
+              </span>
+            </span>
+          ) : (
+            <span />
+          )}
+          <span className="rail-footer-actions">
+            <ThemeToggle className="icon-btn" />
+            <Link className="icon-btn" to="/settings" aria-label="App settings" title="App settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <circle cx="16" cy="6" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="10" cy="12" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="18" cy="18" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </Link>
+          </span>
+        </div>
       </aside>
-      <section className="workspace-main">
+      <section className={`workspace-main${onThreadView ? " is-flush" : ""}`}>
         <Outlet />
       </section>
+      {paletteOpen ? (
+        <CommandPalette
+          onClose={() => {
+            setPaletteOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

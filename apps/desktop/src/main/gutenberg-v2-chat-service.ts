@@ -1348,9 +1348,13 @@ export async function executeGutenbergV2Candidate(input: {
         .get(mapping.executionId)
         .catch(() => null)
     });
+    const site = await getDatabase()
+      .repositories.sites.getById(input.siteId)
+      .catch(() => null);
     const executionFriendly = friendlyExecution({
       target: mapping.target,
-      result
+      result,
+      ...(site ? { siteUrl: site.baseUrl } : {})
     });
     await appendV2LifecycleMessage(
       input.siteId,

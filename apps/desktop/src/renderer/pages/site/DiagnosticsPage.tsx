@@ -7,6 +7,174 @@ import type {
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import { useAppBusy } from "../../button-loading.js";
+import { formatWhen } from "../../status.js";
+
+type CheckRow = { label: string; ok: boolean; detail: string };
+
+function diagnosticRows(diag: ConnectivityDiagnosticsResult): CheckRow[] {
+  const { health, protocolMetadata, authentication, mcpTools, pluginVersion } =
+    diag.checks;
+  const latency = (ms?: number): string => (ms === undefined ? "" : ` · ${ms} ms`);
+  return [
+    {
+      label: "Site reachable",
+      ok: health.ok,
+      detail:
+        health.message ??
+        (health.ok
+          ? `Responded${health.httpStatus ? ` with ${health.httpStatus}` : ""}${latency(health.latencyMs)}`
+          : "The site didn’t respond")
+    },
+    {
+      label: "Plugin protocol",
+      ok: protocolMetadata.ok && protocolMetadata.compatibilityOk !== false,
+      detail:
+        protocolMetadata.compatibilityReason ??
+        protocolMetadata.message ??
+        [
+          protocolMetadata.protocolVersion
+            ? `Protocol ${protocolMetadata.protocolVersion}`
+            : null,
+          protocolMetadata.compatibilityOk ? "compatible with this app" : null
+        ]
+          .filter(Boolean)
+          .join(" · ")
+    },
+    {
+      label: "Signed requests",
+      ok: authentication.ok,
+      detail:
+        authentication.message ??
+        (authentication.ok
+          ? "The site accepts this app’s signed requests"
+          : "The site rejected this app’s signature")
+    },
+    {
+      label: "Site tools",
+      ok: mcpTools.ok,
+      detail:
+        mcpTools.message ??
+        `${mcpTools.toolNames.length} ${mcpTools.toolNames.length === 1 ? "tool" : "tools"} available`
+    },
+    {
+      label: "Plugin version",
+      ok: pluginVersion.ok,
+      detail:
+        pluginVersion.message ??
+        (pluginVersion.version ? `SitePilot plugin ${pluginVersion.version}` : "Unknown")
+    }
+  ];
+}
+
+function DiagnosticsResult({
+  diag
+}: {
+  diag: ConnectivityDiagnosticsResult;
+}): ReactElement {
+  const rows = diagnosticRows(diag);
+  const failing = rows.filter((row) => !row.ok).length;
+  return (
+    <section className="diagnostics-result card">
+      <div className="diagnostics-result-top">
+        <span
+          className={`status-pill tone-${diag.overallOk ? "done" : "attention"}`}
+        >
+          {diag.overallOk
+            ? "All checks passed"
+            : `${failing} ${failing === 1 ? "check needs" : "checks need"} attention`}
+        </span>
+        <span className="muted small-print">
+          Checked {formatWhen(diag.checkedAt)}
+        </span>
+      </div>
+      <ul className="health-list diagnostics-checks">
+        {rows.map((row) => (
+          <li key={row.label}>
+            <span
+              className={`status-dot tone-${row.ok ? "done" : "attention"}`}
+              aria-hidden="true"
+            />
+            <span>
+              <strong>
+                {row.label}
+                <span className="visually-hidden">
+                  {row.ok ? ": passed" : ": needs attention"}
+                </span>
+              </strong>
+              <span className="muted">{row.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <details className="review-disclosure">
+        <summary>Raw diagnostics report</summary>
+        <pre>{JSON.stringify(diag, null, 2)}</pre>
+      </details>
+    </section>
+  );
+}
+
+// Mirrors docs/v2-capabilities.md; update both together.
+const WRITABLE_BLOCKS: Array<{ group: string; blocks: string }> = [
+  {
+    group: "Text",
+    blocks: "Paragraph, heading, list, quote, pullquote, code, preformatted, details"
+  },
+  {
+    group: "Layout",
+    blocks: "Group, columns, separator, spacer, cover, accordion"
+  },
+  { group: "Media", blocks: "Image, gallery, media and text, video" },
+  { group: "Embeds", blocks: "YouTube and Vimeo" },
+  { group: "Other", blocks: "Buttons, table" }
+];
+
+function CapabilitiesSection({
+  metaProvider
+}: {
+  metaProvider: "sitepilot" | "yoast" | null;
+}): ReactElement {
+  return (
+    <section className="diagnostics-empty capabilities">
+      <div>
+        <h2>What SitePilot can change on this site</h2>
+        <dl className="capability-list">
+          {WRITABLE_BLOCKS.map((row) => (
+            <div key={row.group}>
+              <dt>{row.group}</dt>
+              <dd>{row.blocks}</dd>
+            </div>
+          ))}
+          <div>
+            <dt>ACF blocks</dt>
+            <dd>Only blocks that pass the ACF test below</dd>
+          </div>
+          <div>
+            <dt>SEO</dt>
+            <dd>
+              {metaProvider === "yoast"
+                ? "Yoast SEO title, meta description, focus keyphrase, canonical, indexing, social title and description"
+                : "Needs Yoast SEO; this site’s discovery check doesn’t use it"}
+            </dd>
+          </div>
+          <div>
+            <dt>Post fields</dt>
+            <dd>Title, excerpt, featured image, publish and unpublish</dd>
+          </div>
+        </dl>
+        <p className="muted small-print">
+          <strong>Kept exactly as it is:</strong> custom HTML, classic content,
+          reusable blocks and other plugin blocks. SitePilot can move or delete
+          these on purpose, but never edits them.
+        </p>
+        <p className="muted small-print">
+          <strong>Not yet:</strong> categories and tags, scheduling, private
+          posts, custom post types, slug, author and date.
+        </p>
+      </div>
+    </section>
+  );
+}
 
 export function DiagnosticsPage(): ReactElement {
   const { siteId, data, reload } = useSiteWorkspace();
@@ -102,7 +270,7 @@ export function DiagnosticsPage(): ReactElement {
       {err ? <p className="workspace-error">{err}</p> : null}
       {discoveryMsg ? <p className="success-note">{discoveryMsg}</p> : null}
       {diag ? (
-        <pre className="diag-json">{JSON.stringify(diag, null, 2)}</pre>
+        <DiagnosticsResult diag={diag} />
       ) : (
         <section className="diagnostics-empty">
           <div>
@@ -152,6 +320,9 @@ export function DiagnosticsPage(): ReactElement {
           </button>
         </div>
       ) : null}
+      <CapabilitiesSection
+        metaProvider={data?.siteConfig?.sections.seoPolicy.metaProvider ?? null}
+      />
       <section className="diagnostics-empty">
         <div>
           <h2>ACF blocks</h2>

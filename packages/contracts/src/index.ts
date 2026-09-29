@@ -244,7 +244,16 @@ export {
   gutenbergV2ListPendingCandidatesRequestSchema,
   gutenbergV2ListPendingCandidatesResponseSchema,
   gutenbergV2GetReviewArtifactRequestSchema,
-  gutenbergV2GetReviewArtifactResponseSchema
+  gutenbergV2GetReviewArtifactResponseSchema,
+  gutenbergV2GetExecutionProgressRequestSchema,
+  gutenbergV2GetExecutionProgressResponseSchema,
+  getSiteActivitySummaryRequestSchema,
+  getSiteActivitySummaryResponseSchema,
+  searchSiteContentRequestSchema,
+  searchSiteContentResponseSchema,
+  siteActivityThreadSchema,
+  siteContentMatchSchema,
+  gutenbergV2TargetSchema
 } from "./ipc.js";
 export type {
   ApprovalSummary,
@@ -264,6 +273,8 @@ export type {
   RegisterSiteResponse,
   ShellInfoResponse,
   SiteSummary,
+  SiteActivityThread,
+  SiteContentMatch,
   SiteListResponse,
   SitePilotDesktopApi
 } from "./ipc.js";

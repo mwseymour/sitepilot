@@ -227,6 +227,8 @@ The hosted app exposes one remote MCP server, and every client uses it: the Slac
 | Tool | Purpose |
 | --- | --- |
 | Read-only lookups | Starting with `find_posts`, `get_post` and `site_capabilities`, and expected to grow. They come from the shared lookup registry, so desktop Conversations, Slack, Claude and Codex always get the same set. Results are marked as untrusted site content. |
+| `create_conversation` | Starts a Conversation thread (read-only research) with a first question. Returns a thread ID and the answer. |
+| `ask` | A follow-up question in an existing Conversation thread. Answers use the read-only lookups and never change the site. |
 | `create_request` | Starts a request thread from a natural-language request and a target (create a draft, or an existing post ID or resolved lookup). Returns a request ID. |
 | `add_to_request` | A follow-up on an open request: a revision, or extra detail. |
 | `request_status` | State (preparing preview, awaiting approval, applying, verifying, completed, needs attention), a plain-language summary, the change list, and signed links to review screenshots. |
@@ -248,6 +250,12 @@ Compiling takes seconds to minutes, so request tools return an ID immediately. C
 **Planning.** By default the hosted planner builds the plan through the approved Copilot adapter, whichever client asked. `submit_block_plan` lets a client's own model plan instead. That can be useful from Claude Code, but a client model may fall outside the organisation's approved-LLM policy, so enable it per organisation only after that policy is confirmed.
 
 **Threads.** An MCP request ID maps to a SitePilot thread, and follow-ups continue the same thread. The Slack app additionally maps a Slack thread to that request ID. Slash commands can start requests; replies in the bot's thread become `add_to_request` calls.
+
+**One shared thread history (requirement).** Every client can start both kinds of thread: the hosted app, Slack, Claude and Codex can each create a new Request (a change to the site) or a new Conversation (read-only research), and continue either.
+- Every thread, whichever client started or continued it, is stored once in the hosted backend and appears in the hosted app's Requests and Conversations lists. Opening the hosted app shows work that began in Slack, Claude or Codex.
+- Each thread and message records its source (hosted app, Slack, Claude, Codex, desktop) and the user, and the lists can filter by source.
+- A thread started in one client can be continued in another. For example, a request started in Claude Code can be reviewed and approved in the hosted app, or continued from its Slack thread.
+- The desktop app becomes another client of the hosted backend, so its threads join the same history instead of staying in its local database. Until then, desktop threads are local to that machine.
 
 ## 10. Development work packages
 

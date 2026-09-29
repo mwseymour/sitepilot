@@ -217,7 +217,7 @@ export function ApprovalsPage(): ReactElement | null {
         <p className="success-note">
           {message}{" "}
           {lastThreadId ? (
-            <Link to={`/site/${siteId}/chat`}>Open chat</Link>
+            <Link to={`/site/${siteId}/requests`}>Open requests</Link>
           ) : null}
         </p>
       ) : null}

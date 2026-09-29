@@ -9,7 +9,10 @@ import {
   type ReactNode
 } from "react";
 
-import type { GetSiteWorkspaceResponse } from "@sitepilot/contracts";
+import type {
+  GetSiteWorkspaceResponse,
+  SiteActivityThread
+} from "@sitepilot/contracts";
 
 type OkWorkspace = Extract<GetSiteWorkspaceResponse, { ok: true }>;
 
@@ -19,6 +22,11 @@ export type SiteWorkspaceContextValue = {
   error: string | null;
   loading: boolean;
   reload: () => Promise<void>;
+  /** Recent threads with their latest request state (sidebar and Home). */
+  activity: SiteActivityThread[];
+  reloadActivity: () => Promise<void>;
+  paletteOpen: boolean;
+  setPaletteOpen: (open: boolean) => void;
 };
 
 const SiteWorkspaceContext = createContext<SiteWorkspaceContextValue | null>(
@@ -53,15 +61,47 @@ export function SiteWorkspaceProvider({
     void reload();
   }, [reload]);
 
+  const [activity, setActivity] = useState<SiteActivityThread[]>([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  const reloadActivity = useCallback(async () => {
+    const res = await window.sitePilotDesktop
+      .getSiteActivitySummary({ siteId, limit: 200 })
+      .catch(() => null);
+    if (res?.ok) setActivity(res.threads);
+  }, [siteId]);
+
+  // Keep statuses and approval countdowns fresh without a manual refresh.
+  useEffect(() => {
+    void reloadActivity();
+    const interval = window.setInterval(() => {
+      void reloadActivity();
+    }, 20_000);
+    const onFocus = (): void => {
+      void reloadActivity();
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("sitepilot:activity-changed", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("sitepilot:activity-changed", onFocus);
+    };
+  }, [reloadActivity]);
+
   const value = useMemo(
     (): SiteWorkspaceContextValue => ({
       siteId,
       data,
       error,
       loading,
-      reload
+      reload,
+      activity,
+      reloadActivity,
+      paletteOpen,
+      setPaletteOpen
     }),
-    [siteId, data, error, loading, reload]
+    [siteId, data, error, loading, reload, activity, reloadActivity, paletteOpen]
   );
 
   return (
@@ -79,4 +119,9 @@ export function useSiteWorkspace(): SiteWorkspaceContextValue {
     );
   }
   return ctx;
+}
+
+/** Lets any page ask the sidebar and Home to refresh request statuses. */
+export function notifyActivityChanged(): void {
+  window.dispatchEvent(new Event("sitepilot:activity-changed"));
 }

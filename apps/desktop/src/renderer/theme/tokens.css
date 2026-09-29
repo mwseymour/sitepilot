@@ -1,0 +1,148 @@
+/*
+ * SitePilot design tokens.
+ *
+ * This is the only file that holds raw colour values. Every other stylesheet
+ * uses these variables, so changing a colour here changes it everywhere.
+ * Light is the default theme; dark applies when <html data-theme="dark">.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Type */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    system-ui, sans-serif;
+  --font-display: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Surfaces */
+  --surface-0: #f4f2ee; /* app background */
+  --surface-1: #ffffff; /* cards and panels */
+  --surface-2: #faf9f6; /* subtle fills inside cards */
+  --surface-3: #efede8; /* sunken controls, segmented tracks */
+  --surface-raised: #ffffff;
+  --surface-sidebar: #ece9e3;
+  --scrim: rgb(28 27 25 / 36%);
+
+  /* Lines */
+  --border-soft: #e2ded6;
+  --border-strong: #ccc7bd;
+
+  /* Text */
+  --text-primary: #1c1b19;
+  --text-soft: #48453f;
+  --text-muted: #6b675f;
+
+  /* Brand accent */
+  --accent: #0e6a61;
+  --accent-strong: #0a534c;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e1efec;
+  --accent-text: #0b5a52;
+  --focus-ring: color-mix(in srgb, var(--accent) 55%, transparent);
+
+  /* Status: text colour and soft background pairs */
+  --success: #256640;
+  --success-soft: #e3f1e8;
+  --warning: #7a4d00;
+  --warning-soft: #f9edd5;
+  --warning-dot: #c98a12;
+  --danger: #8a2e24;
+  --danger-soft: #f7e4e1;
+  --info: #22488a;
+  --info-soft: #e5ecf7;
+  --info-dot: #2b59a3;
+  --rollback: #8a410f;
+  --rollback-soft: #f8e8da;
+  --neutral: #48453f;
+  --neutral-soft: #efede8;
+
+  /* Chat roles */
+  --chat-user-accent: var(--text-muted);
+  --chat-user-bg: #e6e2da;
+  --chat-assistant-accent: var(--accent);
+  --chat-assistant-bg: var(--surface-1);
+  --chat-system-accent: var(--text-muted);
+  --chat-system-bg: transparent;
+
+  /* Site activation pills */
+  --status-inactive-bg: var(--neutral-soft);
+  --status-inactive-text: var(--neutral);
+  --status-config-bg: var(--warning-soft);
+  --status-config-text: var(--warning);
+  --status-active-bg: var(--success-soft);
+  --status-active-text: var(--success);
+
+  /* Code and raw data blocks */
+  --code-bg: #f7f5f1;
+  --code-border: var(--border-soft);
+  --code-text: #2c2a26;
+  --code-muted: var(--text-muted);
+
+  /* Elevation */
+  --shadow-soft: 0 1px 2px rgb(28 27 25 / 5%), 0 6px 18px rgb(28 27 25 / 5%);
+  --shadow-raised: 0 24px 64px rgb(28 27 25 / 22%),
+    0 0 0 1px rgb(28 27 25 / 6%);
+  --highlight-inset: inset 0 1px 0 rgb(255 255 255 / 28%);
+
+  --scrollbar-thumb: rgb(28 27 25 / 22%);
+  --scrollbar-track: transparent;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-0: #111214;
+  --surface-1: #17191c;
+  --surface-2: #1b1e21;
+  --surface-3: #0d0e10;
+  --surface-raised: #1e2125;
+  --surface-sidebar: #0d0e10;
+  --scrim: rgb(0 0 0 / 55%);
+
+  --border-soft: #2a2e33;
+  --border-strong: #3a3f46;
+
+  --text-primary: #eceae5;
+  --text-soft: #c9c5bd;
+  --text-muted: #a8a49c;
+
+  --accent: #6fc7bb;
+  --accent-strong: #8ad6cb;
+  --accent-contrast: #07231f;
+  --accent-soft: #16302c;
+  --accent-text: #8ad6cb;
+
+  --success: #8fd4a8;
+  --success-soft: #173326;
+  --warning: #e4b45c;
+  --warning-soft: #382f1d;
+  --warning-dot: #e4b45c;
+  --danger: #f09488;
+  --danger-soft: #3a1f1c;
+  --info: #8eb2f0;
+  --info-soft: #1c2940;
+  --info-dot: #8eb2f0;
+  --rollback: #e79a67;
+  --rollback-soft: #3a2616;
+  --neutral: #c9c5bd;
+  --neutral-soft: #24272b;
+
+  --chat-user-bg: #24272b;
+
+  --code-bg: #0d0e10;
+  --code-text: #e2e0da;
+
+  --shadow-soft: 0 10px 28px rgb(0 0 0 / 20%);
+  --shadow-raised: 0 24px 64px rgb(0 0 0 / 45%), 0 0 0 1px rgb(255 255 255 / 6%);
+  --highlight-inset: inset 0 1px 0 rgb(255 255 255 / 6%);
+
+  --scrollbar-thumb: rgb(255 255 255 / 22%);
+}

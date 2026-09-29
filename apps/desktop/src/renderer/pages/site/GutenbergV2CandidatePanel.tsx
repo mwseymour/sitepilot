@@ -1,6 +1,8 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 
 import type { ipcChannels, IpcResponse } from "@sitepilot/contracts";
+
+import { formatWhen, minutesUntil, v2StateStatus } from "../../status.js";
 
 type RequestStateResponse = IpcResponse<
   typeof ipcChannels.gutenbergV2GetRequestState
@@ -18,6 +20,14 @@ export type ReviewArtifact = Extract<
 >["artifact"];
 
 type Props = {
+  /** The site's base URL: shown in the preview bar and used for editor links. */
+  siteUrl?: string;
+  /** Live progress or status shown above the review. */
+  top?: ReactNode;
+  /** Request details, shown folded at the end of the review. */
+  children?: ReactNode;
+  /** When the approval stops being valid, if the update is approved. */
+  approvalExpiresAt?: string;
   candidate: GutenbergV2UiState;
   busy: boolean;
   onDecide: (
@@ -46,6 +56,8 @@ function operationLabel(target: GutenbergV2UiState["target"]): string {
 
 function stateLabel(state: string): string {
   const labels: Record<string, string> = {
+    planned: "Planning the update",
+    compiling: "Building the update",
     review_ready: "Ready for review",
     approved: "Approved",
     preparing: "Preparing the update",
@@ -53,6 +65,7 @@ function stateLabel(state: string): string {
     verifying: "Verifying the saved content",
     succeeded: "Completed and verified",
     rejected: "Rejected",
+    stale_approval: "Page changed since review",
     pre_write_failed: "Could not save the update",
     post_write_verification_failed: "Verification needs attention",
     rolled_back: "Rolled back safely",
@@ -63,6 +76,9 @@ function stateLabel(state: string): string {
 }
 
 function terminalFailureGuidance(state: string): string | null {
+  if (state === "stale_approval") {
+    return "The page was edited in WordPress after you approved, so nothing was written. Reply in the thread to rebuild the update from the latest version.";
+  }
   if (state === "pre_write_failed") {
     return "The update was not saved. Review the failure before starting a new candidate.";
   }
@@ -204,7 +220,82 @@ function sourceIndexOutline(side: unknown): OutlineEntry[] {
   });
 }
 
-type ChangeSummary = { label: string; blocks: OutlineEntry[] };
+type ChangeKind = "insert" | "edit" | "remove" | "move";
+
+type ChangeSummary = {
+  kind: ChangeKind;
+  label: string;
+  blocks: OutlineEntry[];
+};
+
+const CHANGE_MARK: Record<ChangeKind, { glyph: string; label: string }> = {
+  insert: { glyph: "+", label: "Added" },
+  edit: { glyph: "~", label: "Edited" },
+  move: { glyph: "↕", label: "Moved" },
+  remove: { glyph: "−", label: "Removed" }
+};
+
+function ChangeRow({ change }: { change: ChangeSummary }): ReactElement {
+  const mark = CHANGE_MARK[change.kind];
+  return (
+    <li className="review-change">
+      <span
+        className={`review-change-mark is-${change.kind}`}
+        aria-label={mark.label}
+        title={mark.label}
+      >
+        {mark.glyph}
+      </span>
+      <div className="review-change-body">
+        <p className="review-change-label">{change.label}</p>
+        {change.blocks.length > 0 ? <BlockList entries={change.blocks} /> : null}
+      </div>
+    </li>
+  );
+}
+
+const BLOCK_WORDS: Record<string, string> = {
+  "media-text": "media and text block",
+  "embed": "embed",
+  "core-embed/youtube": "YouTube embed",
+  "core-embed/vimeo": "Vimeo embed"
+};
+
+function blockWord(name: string): string {
+  const short = name.replace(/^core\//, "");
+  return BLOCK_WORDS[short] ?? short.replace(/-/g, " ");
+}
+
+function withArticle(word: string): string {
+  return /^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`;
+}
+
+/** "a gallery with 5 images", "3 blocks", "a heading and a paragraph". */
+function describeBlocks(blocks: unknown): string {
+  if (!Array.isArray(blocks) || blocks.length === 0) return "content";
+  const records = blocks
+    .map((block) => recordValue(block))
+    .filter((block): block is Record<string, unknown> => block !== null);
+  if (records.length === 1) {
+    const only = records[0]!;
+    const word = blockWord(String(only.name ?? "block"));
+    const children = Array.isArray(only.children) ? only.children : [];
+    const childNames = new Set(
+      children.map((child) => String(recordValue(child)?.name ?? ""))
+    );
+    if (children.length > 0 && childNames.size === 1) {
+      const childWord = blockWord([...childNames][0]!);
+      return `${withArticle(word)} with ${children.length} ${childWord}${children.length === 1 ? "" : "s"}`;
+    }
+    return withArticle(word);
+  }
+  if (records.length === 2) {
+    return records
+      .map((block) => withArticle(blockWord(String(block.name ?? "block"))))
+      .join(" and ");
+  }
+  return `${records.length} blocks`;
+}
 
 /** Human-readable scoped operations from an apply_operations plan. */
 function planOperations(side: unknown): ChangeSummary[] {
@@ -225,10 +316,10 @@ function planOperations(side: unknown): ChangeSummary[] {
         Array.isArray(parent?.path) && parent.path.length > 0
           ? ` inside the block at ${blockPathLabel(parent.path)}`
           : "";
-      const count = Array.isArray(item.blocks) ? item.blocks.length : 0;
       return [
         {
-          label: `Insert ${count} ${count === 1 ? "block" : "blocks"} at position ${position}${where}`,
+          kind: "insert",
+          label: `Added ${describeBlocks(item.blocks)} at position ${position}${where}`,
           blocks
         }
       ];
@@ -236,7 +327,8 @@ function planOperations(side: unknown): ChangeSummary[] {
     if (item.type === "edit_block") {
       return [
         {
-          label: `Replace the block at ${blockPathLabel(recordValue(item.target)?.path)}`,
+          kind: "edit",
+          label: `Changed the ${blockWord(String(recordValue(item.replacement)?.name ?? "block"))} at ${blockPathLabel(recordValue(item.target)?.path)}`,
           blocks: blockOutline([item.replacement])
         }
       ];
@@ -244,7 +336,8 @@ function planOperations(side: unknown): ChangeSummary[] {
     if (item.type === "remove_block") {
       return [
         {
-          label: `Remove the block at ${blockPathLabel(recordValue(item.target)?.path)}`,
+          kind: "remove",
+          label: `Removed the block at ${blockPathLabel(recordValue(item.target)?.path)}`,
           blocks: []
         }
       ];
@@ -258,7 +351,8 @@ function planOperations(side: unknown): ChangeSummary[] {
       const position = typeof item.index === "number" ? item.index + 1 : "?";
       return [
         {
-          label: `Move the block at ${blockPathLabel(recordValue(item.target)?.path)} to position ${position}${where}`,
+          kind: "move",
+          label: `Moved the block at ${blockPathLabel(recordValue(item.target)?.path)} to position ${position}${where}`,
           blocks: []
         }
       ];
@@ -274,30 +368,37 @@ function planRemovals(side: unknown): ChangeSummary[] {
     return [];
   }
   return plan.removedSourceBlocks.map((entry) => ({
-    label: `Delete the existing block at ${blockPathLabel(recordValue(entry)?.path)}`,
+    kind: "remove" as const,
+    label: `Removed the block at ${blockPathLabel(recordValue(entry)?.path)}`,
     blocks: []
   }));
 }
 
-function Outline({ entries }: { entries: OutlineEntry[] }): ReactElement {
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+/** Blocks as a tidy list: a small type tag, then the block's text. */
+function BlockList({ entries }: { entries: OutlineEntry[] }): ReactElement {
   return (
-    <ol className="gutenberg-v2-outline">
+    <ul className="review-blocks">
       {entries.map((entry, index) => (
         <li
           key={`${index}-${entry.name}`}
-          style={{ paddingLeft: `${entry.depth * 1.1}rem` }}
+          className={entry.depth > 0 ? "is-nested" : undefined}
+          style={entry.depth > 1 ? { paddingLeft: `${(entry.depth - 1) * 1}rem` } : undefined}
         >
-          <span className="gutenberg-v2-outline-name">{entry.name}</span>
-          {entry.text ? (
-            <span className="gutenberg-v2-outline-text">
-              {entry.text.length > 90
+          <span className="review-block-type">{entry.name.replace(/-/g, " ")}</span>
+          <span className="review-block-text">
+            {entry.text
+              ? entry.text.length > 90
                 ? `${entry.text.slice(0, 90)}…`
-                : entry.text}
-            </span>
-          ) : null}
+                : entry.text
+              : "—"}
+          </span>
         </li>
       ))}
-    </ol>
+    </ul>
   );
 }
 
@@ -328,62 +429,44 @@ function StructureDiff({
     Array.isArray(afterPlan?.operations) && afterPlan.operations.length === 0;
 
   return (
-    <div
-      className="gutenberg-v2-structure-diff"
-      aria-label="Structure comparison"
-    >
-      {beforeOutline.length > 0 ? (
-        <details>
-          <summary>Current content ({beforeOutline.length} blocks)</summary>
-          <Outline entries={beforeOutline} />
-        </details>
-      ) : null}
-      {removals.length > 0 ? (
-        <div className="gutenberg-v2-removals" role="note">
-          <h6>Deleted on purpose</h6>
-          <ul>
-            {removals.map((removal, index) => (
-              <li key={`${index}-${removal.label}`}>{removal.label}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    <div className="review-structure" aria-label="Structure comparison">
       {fieldsOnly ? (
         <p className="muted small-print">
-          No content changes. Only the post settings shown above change.
+          No content changes. Only the post fields below change.
         </p>
-      ) : operations.length > 0 ? (
-        <>
-          <h6>
-            Changes ({operations.length}{" "}
-            {operations.length === 1 ? "change" : "changes"})
-          </h6>
-          <ol className="gutenberg-v2-changes">
-            {operations.map((operation, index) => (
-              <li key={`${index}-${operation.label}`}>
-                <p className="gutenberg-v2-change-label">{operation.label}</p>
-                {operation.blocks.length > 0 ? (
-                  <Outline entries={operation.blocks} />
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </>
+      ) : operations.length > 0 || removals.length > 0 ? (
+        <ol className="review-change-list">
+          {operations.map((operation, index) => (
+            <ChangeRow key={`op-${index}`} change={operation} />
+          ))}
+          {removals.map((removal, index) => (
+            <ChangeRow
+              key={`rm-${index}`}
+              change={{ ...removal, label: `${removal.label}, on purpose` }}
+            />
+          ))}
+        </ol>
       ) : (
         <>
-          <h6>
-            {beforeOutline.length > 0 ? "Proposed content" : "New content"} (
-            {afterOutline.length} blocks)
-          </h6>
+          <p className="review-structure-lead">
+            {beforeOutline.length > 0 ? "Proposed content" : "New content"} ·{" "}
+            {plural(afterOutline.length, "block")}
+          </p>
           {afterOutline.length > 0 ? (
-            <Outline entries={afterOutline} />
+            <BlockList entries={afterOutline} />
           ) : (
             <p className="muted small-print">No block outline was supplied.</p>
           )}
         </>
       )}
-      <details>
-        <summary>Raw structure data</summary>
+      {beforeOutline.length > 0 ? (
+        <details className="review-disclosure">
+          <summary>Current content · {plural(beforeOutline.length, "block")}</summary>
+          <BlockList entries={beforeOutline} />
+        </details>
+      ) : null}
+      <details className="review-raw">
+        <summary>Show raw structure data</summary>
         <pre>{JSON.stringify(value, null, 2)}</pre>
       </details>
     </div>
@@ -450,7 +533,11 @@ export function GutenbergV2CandidatePanel({
   busy,
   onDecide,
   onExecute,
-  onLoadArtifact
+  onLoadArtifact,
+  approvalExpiresAt,
+  siteUrl,
+  top,
+  children
 }: Props): ReactElement {
   const [enlarged, setEnlarged] = useState<{
     source: string;
@@ -464,6 +551,7 @@ export function GutenbergV2CandidatePanel({
   // Rejecting records a required reason so admins (and Slack) see why.
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [viewport, setViewport] = useState<"desktop" | "mobile">("desktop");
   const [previewLoadStatus, setPreviewLoadStatus] = useState<
     Record<string, "loaded" | "failed">
   >({});
@@ -564,200 +652,243 @@ export function GutenbergV2CandidatePanel({
         ({ artifact }) => previewLoadStatus[artifact.id] === "loaded"
       ));
 
+  const status = v2StateStatus(candidate.state, {
+    ...(approvalExpiresAt ? { approvalExpiresAt } : {}),
+    publishing: statusChange
+  });
+  const fields = candidate.candidate?.requestedPostFields;
+  const seoChanges = candidate.candidate?.seoChanges ?? [];
+  const hasFieldChanges =
+    Boolean(fields?.title) ||
+    Boolean(fields?.excerpt) ||
+    Boolean(candidate.candidate?.featuredImage) ||
+    seoChanges.length > 0;
+  const validationValid = candidate.candidate?.validation.outcome === "valid";
+  const shownPreview =
+    previews.find(({ reference }) => (reference.viewport ?? "desktop") === viewport) ??
+    previews[0];
+  const hasMobile = previews.some(({ reference }) => reference.viewport === "mobile");
+  const expiresIn = approvalExpiresAt ? minutesUntil(approvalExpiresAt) : null;
+
   return (
-    <section className="gutenberg-v2-candidate-panel" aria-live="polite">
-      <header className="gutenberg-v2-candidate-header">
-        <div>
-          <p className="eyebrow">Native editor candidate</p>
-          <h4>{operationLabel(candidate.target)}</h4>
-          <p className="muted small-print">
-            Status:{" "}
-            <span className="badge" role="status" aria-label="Candidate status">
-              {stateLabel(candidate.state)}
-            </span>
+    <section className="review-panel" aria-live="polite" aria-label="Review">
+      <header className="review-header">
+        <div className="review-header-copy">
+          <h3>Review</h3>
+          <p>
+            {operationLabel(candidate.target)} · built{" "}
+            {formatWhen(candidate.updatedAt)}
           </p>
         </div>
+        <span
+          className={`status-pill tone-${status.tone}`}
+          role="status"
+          aria-label="Candidate status"
+        >
+          {stateLabel(candidate.state)}
+        </span>
       </header>
 
-      {candidate.candidate?.requestedPostFields.title ? (
-        <p className="gutenberg-v2-title">
-          <strong>Title:</strong>{" "}
-          {candidate.candidate.requestedPostFields.title}
-        </p>
-      ) : null}
-      {candidate.candidate?.featuredImage ? (
-        <p className="muted small-print">
-          <strong>Featured image:</strong>{" "}
-          {candidate.candidate.featuredImage.label}
-        </p>
-      ) : null}
-      {candidate.candidate?.requestedPostFields.excerpt ? (
-        <p className="muted small-print">
-          <strong>Excerpt:</strong>{" "}
-          {candidate.candidate.requestedPostFields.excerpt}
-        </p>
-      ) : null}
-      {candidate.target.operation === "set_status" ? (
-        <p className="muted small-print">
-          {candidate.target.status === "publish"
-            ? "Approving and applying this publishes the post. Only its status changes; the content stays exactly as stored. SitePilot then checks the post loads for visitors."
-            : "Approving and applying this takes the post back to a draft, so visitors can no longer see it. The content stays exactly as stored."}
-        </p>
-      ) : null}
-      {candidate.candidate?.seoChanges?.length ? (
-        <div className="muted small-print gutenberg-v2-seo-changes">
-          <strong>SEO changes:</strong>
-          <ul>
-            {candidate.candidate.seoChanges.map((change) => (
-              <li key={change.field}>
-                {change.label}:{" "}
-                {change.value === ""
-                  ? "cleared (plugin default)"
-                  : change.field === "indexing"
-                    ? indexingLabel(change.value)
-                    : change.value}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {candidate.failure ? (
-        <p className="workspace-error">{candidate.failure.message}</p>
-      ) : null}
-      {terminalFailureGuidance(candidate.state) ? (
-        <p className="muted small-print">
-          {terminalFailureGuidance(candidate.state)}
-        </p>
-      ) : null}
-      {candidate.candidate &&
-      candidate.candidate.validation.outcome !== "valid" ? (
-        <div className="gutenberg-v2-validation">
-          <h5>Candidate checks need attention</h5>
-          <ul className="small-print">
-            {candidate.candidate.validation.issues.map((issue) => (
-              <li key={`${issue.code}-${issue.message}`}>{issue.message}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {reviewArtifacts.length > 0 ? (
-        <div className="gutenberg-v2-review">
-          <h5>Review before approval</h5>
-          <p className="muted small-print">
-            Compare the compiled structure and responsive previews from this
-            connected WordPress site’s editor. Approval is required before
-            anything is saved. To change the update, reply in the thread — you
-            can attach images there.
+      <div className="review-body">
+        {top}
+        {candidate.failure ? (
+          <p className="review-alert is-danger">{candidate.failure.message}</p>
+        ) : null}
+        {terminalFailureGuidance(candidate.state) ? (
+          <p className="review-alert">{terminalFailureGuidance(candidate.state)}</p>
+        ) : null}
+        {candidate.candidate && !validationValid ? (
+          <div className="review-alert is-danger">
+            <strong>Checks need attention</strong>
+            <ul>
+              {candidate.candidate.validation.issues.map((issue) => (
+                <li key={`${issue.code}-${issue.message}`}>{issue.message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {statusChange && candidate.target.operation === "set_status" ? (
+          <p className="review-alert is-info">
+            {candidate.target.status === "publish"
+              ? "Applying this publishes the post. Only its status changes; the content stays exactly as stored. SitePilot then checks the post loads for visitors."
+              : "Applying this takes the post back to a draft, so visitors can no longer see it. The content stays exactly as stored."}
           </p>
-          {artifactFailure ? (
-            <>
-              <p className="workspace-error">{artifactFailure}</p>
-              <button
-                type="button"
-                className="btn btn-secondary btn-small"
-                disabled={busy}
-                onClick={() => setArtifactLoadAttempt((attempt) => attempt + 1)}
-              >
-                Retry loading review
-              </button>
-            </>
-          ) : null}
-          {structureDiff ? <StructureDiff artifact={structureDiff} /> : null}
-          {previews.length > 0 ? (
-            <div className="gutenberg-v2-preview-grid">
-              {previews.map(({ artifact: preview, reference }) => {
-                const source = safePreviewSource(preview);
-                const label =
-                  reference.viewport === "mobile"
-                    ? "Mobile preview"
-                    : "Desktop preview";
-                return source ? (
-                  <figure
-                    key={preview.id}
-                    className={`gutenberg-v2-preview gutenberg-v2-preview-${reference.viewport ?? "desktop"}`}
-                  >
-                    <button
-                      type="button"
-                      className="gutenberg-v2-preview-open"
-                      title="Open full size"
-                      onClick={() => setEnlarged({ source, label })}
-                    >
-                      <img
-                        src={source}
-                        alt={`${label} of candidate content`}
-                        onLoad={() =>
-                          setPreviewLoadStatus((current) => ({
-                            ...current,
-                            [preview.id]: "loaded"
-                          }))
-                        }
-                        onError={() =>
-                          setPreviewLoadStatus((current) => ({
-                            ...current,
-                            [preview.id]: "failed"
-                          }))
-                        }
-                      />
-                    </button>
-                    <figcaption className="small-print">
-                      {label} from this site’s WordPress editor. Click to
-                      enlarge.
-                    </figcaption>
-                  </figure>
-                ) : null;
-              })}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {candidate.result ? (
-        <div className="gutenberg-v2-result">
-          <h5>Execution result</h5>
-          <p className="small-print">
-            {candidate.result.verification?.outcome === "valid"
-              ? "Verified against the destination."
-              : "Execution is not yet verified."}
-            {candidate.result.postId
-              ? ` Post #${candidate.result.postId}.`
-              : ""}
-          </p>
-        </div>
-      ) : null}
-
-      {isAwaitingDecision && candidate.candidate ? (
-        <div className="gutenberg-v2-decision">
-          <p className="muted small-print">
-            Approve this update, or reply in the thread to change it. The thread
-            accepts images and updates the same request.
-          </p>
-          <div className="action-row">
+        ) : null}
+        {artifactFailure ? (
+          <div className="review-alert is-danger">
+            <span>{artifactFailure}</span>
             <button
               type="button"
-              className="btn btn-primary"
-              disabled={
-                busy ||
-                !reviewReady ||
-                candidate.candidate.validation.outcome !== "valid"
-              }
-              onClick={() =>
-                void onDecide(candidate.candidate!.candidateId, "approved")
-              }
+              className="btn btn-secondary btn-small"
+              disabled={busy}
+              onClick={() => setArtifactLoadAttempt((attempt) => attempt + 1)}
             >
-              Approve this update
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy || !reviewReady || rejecting}
-              onClick={() => setRejecting(true)}
-            >
-              Reject
+              Retry loading review
             </button>
           </div>
+        ) : null}
+
+        {previews.length > 0 ? (
+          <section className="review-section">
+            <div className="review-section-head">
+              <h4>Preview</h4>
+              {hasMobile ? (
+                <div className="segmented is-small" role="group" aria-label="Preview size">
+                  <button
+                    type="button"
+                    aria-pressed={viewport === "desktop"}
+                    onClick={() => setViewport("desktop")}
+                  >
+                    Desktop
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={viewport === "mobile"}
+                    onClick={() => setViewport("mobile")}
+                  >
+                    Mobile
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {previews.map(({ artifact: preview, reference }) => {
+              const source = safePreviewSource(preview);
+              const label =
+                reference.viewport === "mobile" ? "Mobile preview" : "Desktop preview";
+              // Every preview stays mounted so it loads before approval is allowed.
+              return source ? (
+                <figure
+                  key={preview.id}
+                  className={`review-preview is-${reference.viewport ?? "desktop"}`}
+                  hidden={shownPreview?.artifact.id !== preview.id}
+                >
+                  <div className="review-preview-bar" aria-hidden="true">
+                    <span className="review-preview-dots" />
+                    <span>
+                      {siteUrl?.replace(/^https?:\/\//, "").replace(/\/+$/, "") ?? "Your site"}
+                      {candidate.target.operation === "create_draft"
+                        ? " · new draft"
+                        : ` · ${candidate.target.postType} #${candidate.target.postId}`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="review-preview-open"
+                    title="Open full size"
+                    onClick={() => setEnlarged({ source, label })}
+                  >
+                    <img
+                      src={source}
+                      alt={`${label} of candidate content`}
+                      onLoad={() =>
+                        setPreviewLoadStatus((current) => ({
+                          ...current,
+                          [preview.id]: "loaded"
+                        }))
+                      }
+                      onError={() =>
+                        setPreviewLoadStatus((current) => ({
+                          ...current,
+                          [preview.id]: "failed"
+                        }))
+                      }
+                    />
+                  </button>
+                  <figcaption>
+                    {label} from this site’s WordPress editor. Click to enlarge.
+                  </figcaption>
+                </figure>
+              ) : null;
+            })}
+          </section>
+        ) : null}
+
+        {structureDiff ? (
+          <section className="review-section">
+            <div className="review-section-head">
+              <h4>Changes to the content</h4>
+            </div>
+            <StructureDiff artifact={structureDiff} />
+          </section>
+        ) : null}
+
+        {hasFieldChanges ? (
+          <section className="review-section">
+            <div className="review-section-head">
+              <h4>Fields and SEO</h4>
+            </div>
+            <dl className="review-fields">
+              {fields?.title ? (
+                <div>
+                  <dt>Title</dt>
+                  <dd>{fields.title}</dd>
+                </div>
+              ) : null}
+              {candidate.candidate?.featuredImage ? (
+                <div>
+                  <dt>Featured image</dt>
+                  <dd>{candidate.candidate.featuredImage.label}</dd>
+                </div>
+              ) : null}
+              {fields?.excerpt ? (
+                <div>
+                  <dt>Excerpt</dt>
+                  <dd>{fields.excerpt}</dd>
+                </div>
+              ) : null}
+              {seoChanges.map((change) => (
+                <div key={change.field}>
+                  <dt>{change.label}</dt>
+                  <dd>
+                    {change.value === ""
+                      ? "Cleared (plugin default)"
+                      : change.field === "indexing"
+                        ? indexingLabel(change.value)
+                        : change.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ) : null}
+
+        {candidate.result ? (
+          <section className="review-section">
+            <div className="review-section-head">
+              <h4>Result</h4>
+            </div>
+            <p className="review-result">
+              {candidate.result.verification?.outcome === "valid"
+                ? "✓ Saved and verified against the site."
+                : "Saved, but not verified yet."}
+              {candidate.result.postId ? ` Post #${candidate.result.postId}.` : ""}
+            </p>
+            {siteUrl && candidate.result.postId ? (
+              <a
+                className="btn btn-secondary btn-small review-result-link"
+                href={`${siteUrl.replace(/\/+$/, "")}/wp-admin/post.php?post=${candidate.result.postId}&action=edit`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in the WordPress editor ↗
+              </a>
+            ) : null}
+          </section>
+        ) : null}
+        {children}
+      </div>
+
+      {isAwaitingDecision && candidate.candidate ? (
+        <footer className="review-footer">
+          <p className={`review-checks${validationValid && reviewReady ? " is-ok" : ""}`}>
+            {!validationValid
+              ? "Some checks need attention before this can be approved."
+              : reviewReady
+                ? "✓ All checks passed. Nothing else on the page changes."
+                : "Loading the review files…"}
+          </p>
           {rejecting ? (
-            <div className="gutenberg-v2-reject">
+            <div className="review-reject">
               <label className="settings-field">
                 <span>Reason for rejecting</span>
                 <textarea
@@ -769,10 +900,21 @@ export function GutenbergV2CandidatePanel({
                   onChange={(event) => setRejectReason(event.target.value)}
                 />
               </label>
-              <div className="action-row">
+              <div className="review-actions">
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setRejecting(false);
+                    setRejectReason("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger review-actions-main"
                   disabled={busy || rejectReason.trim().length === 0}
                   onClick={() =>
                     void onDecide(
@@ -787,36 +929,66 @@ export function GutenbergV2CandidatePanel({
                 >
                   Confirm rejection
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setRejecting(false);
-                    setRejectReason("");
-                  }}
-                >
-                  Cancel
-                </button>
               </div>
             </div>
-          ) : null}
-        </div>
+          ) : (
+            <div className="review-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy || !reviewReady}
+                onClick={() => setRejecting(true)}
+              >
+                Reject…
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary review-actions-main"
+                disabled={busy || !reviewReady || !validationValid}
+                onClick={() =>
+                  void onDecide(candidate.candidate!.candidateId, "approved")
+                }
+              >
+                Approve this update
+              </button>
+            </div>
+          )}
+          <p className="review-small">
+            Approving doesn’t change the site. You apply it as a separate step,
+            within 30 minutes. To change the update instead, reply in the thread.
+          </p>
+        </footer>
       ) : null}
+
       {canExecute ? (
-        <div className="action-row">
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void onExecute()}
-          >
+        <footer className="review-footer">
+          <p className="review-checks is-ok">
             {candidate.state === "approved"
-              ? "Apply this update to the site"
-              : "Continue execution"}
-          </button>
-        </div>
+              ? "✓ Approved. Nothing on the site changes until you apply it."
+              : "The last apply didn’t finish. Continuing is safe."}
+          </p>
+          <div className="review-actions">
+            <button
+              type="button"
+              className="btn btn-primary review-actions-main"
+              disabled={busy || (expiresIn !== null && expiresIn <= 0)}
+              onClick={() => void onExecute()}
+            >
+              {candidate.state === "approved"
+                ? "Apply this update to the site"
+                : "Continue applying"}
+            </button>
+          </div>
+          {candidate.state === "approved" && expiresIn !== null ? (
+            <p className="review-small">
+              {expiresIn > 0
+                ? `Approval valid for ${expiresIn} more min. If the page is edited in WordPress first, SitePilot stops and asks again.`
+                : "This approval has expired. Reply in the thread to rebuild it."}
+            </p>
+          ) : null}
+        </footer>
       ) : null}
+
       {enlarged ? (
         <PreviewLightbox
           source={enlarged.source}
