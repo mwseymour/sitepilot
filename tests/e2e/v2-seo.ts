@@ -8,9 +8,9 @@
  * 4. Rolls a committed SEO change back to the exact previous meta.
  * 5. Refuses that rollback when the SEO fields were edited after the write.
  *
- * Needs SITEPILOT_E2E_BASE_URL, SITEPILOT_E2E_ADMIN_USERNAME,
- * SITEPILOT_E2E_REGISTRATION_CODE and SITEPILOT_E2E_WP_PATH (the site's
- * WordPress directory, for `wp` CLI checks). SITEPILOT_SEO_LLM=1 (with an
+ * Needs SITEPILOT_E2E_BASE_URL, SITEPILOT_E2E_ADMIN_USERNAME and
+ * SITEPILOT_E2E_WP_PATH (the site's WordPress directory, for `wp` CLI checks
+ * and a fresh registration code). SITEPILOT_SEO_LLM=1 (with an
  * OpenAI key) also plans an SEO change from a plain request.
  */
 import Database from "better-sqlite3";
@@ -44,9 +44,9 @@ import {
   E2E_ARTIFACTS_ROOT,
   E2E_BASE_URL,
   E2E_OPENAI_API_KEY,
-  E2E_REGISTRATION_CODE,
   E2E_WP_PATH
 } from "./config.js";
+import { currentRegistrationCode } from "./registration.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -90,7 +90,7 @@ async function register() {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
-      registrationCode: E2E_REGISTRATION_CODE,
+      registrationCode: await currentRegistrationCode(),
       siteId,
       workspaceId: "sitepilot-v2-seo-e2e",
       trustedAppOrigin: "https://sitepilot.desktop",

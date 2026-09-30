@@ -6,7 +6,14 @@ The MCP tools only read: `find-posts`, `get-post`, `site-discovery` and `ping`. 
 
 ## Changes
 
-- **0.2.0:** Removed the v1 write abilities (`create-draft-post`, `update-post-fields`, `set-post-seo-meta`, `set-post-featured-image` and `upload-media-asset`) and the unused `site-summary` ability. SitePilot no longer calls them. Update every site, because older versions still expose them.
+- **0.2.0:**
+  - Removed the v1 write abilities (`create-draft-post`, `update-post-fields`, `set-post-seo-meta`, `set-post-featured-image` and `upload-media-asset`) and the unused `site-summary` ability. SitePilot no longer calls them. Update every site, because older versions still expose them.
+  - A registration code works once. A new one appears on Settings → SitePilot after each registration, behind "Show code", with a Reset button.
+  - Registering never replaces an existing site ID, and needs the WordPress username SitePilot acts as. Signed calls get exactly that user's capabilities, with no fallback to an administrator.
+  - The plugin MCP route only accepts SitePilot-signed requests; a browser login or application password isn't enough.
+  - Lookups only return drafts, pending and private posts to users who can edit them.
+  - Request nonces are recorded atomically, so parallel replays can't both pass.
+  - Settings → SitePilot lists registered clients, with a Revoke button.
 
 ## Requirements
 

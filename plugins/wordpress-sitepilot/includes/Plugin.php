@@ -13,6 +13,7 @@ use SitePilot\Admin\Settings_Page;
 use SitePilot\Mcp\Abilities_Registrar;
 use SitePilot\Mcp\Mcp_Status;
 use SitePilot\Mcp\Server_Registrar;
+use SitePilot\Security\Nonce_Ledger;
 use SitePilot\Security\Signed_Request_Verifier;
 use SitePilot\Rest\Protocol_Routes;
 use SitePilot\Rest\Registration_Routes;
@@ -41,6 +42,7 @@ final class Plugin {
 		Mcp_Status::register_hooks();
 
 		add_action( 'shutdown', array( Signed_Request_Verifier::class, 'reset_request_context' ), 999 );
+		Nonce_Ledger::register_hooks();
 
 		if ( class_exists( \WP\MCP\Core\McpAdapter::class ) ) {
 			\WP\MCP\Core\McpAdapter::instance();

@@ -36,9 +36,9 @@ import {
   E2E_ADMIN_USERNAME,
   E2E_ARTIFACTS_ROOT,
   E2E_BASE_URL,
-  E2E_OPENAI_API_KEY,
-  E2E_REGISTRATION_CODE
+  E2E_OPENAI_API_KEY
 } from "./config.js";
+import { currentRegistrationCode } from "./registration.js";
 import { createFileSecureStorage } from "./file-secure-storage.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -153,7 +153,7 @@ async function main(): Promise<void> {
       wordpressUsername: E2E_ADMIN_USERNAME,
       workspaceId: "workspace-1",
       environment: "development",
-      registrationCode: E2E_REGISTRATION_CODE
+      registrationCode: await currentRegistrationCode()
     });
     if (!("site" in registration)) {
       throw new Error(

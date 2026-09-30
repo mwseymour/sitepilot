@@ -21,6 +21,10 @@ final class Post_Query {
 	private static function build_query_args( array $input ): array {
 		$post_type = isset( $input['post_type'] ) ? sanitize_key( (string) $input['post_type'] ) : 'any';
 		$status    = isset( $input['status'] ) ? sanitize_key( (string) $input['status'] ) : 'any';
+		// Drafts, pending and private posts are only listed for users who can edit posts.
+		if ( ! current_user_can( 'edit_posts' ) ) {
+			$status = 'publish';
+		}
 		$slug      = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
 		$title     = isset( $input['title'] ) ? sanitize_text_field( (string) $input['title'] ) : '';
 		$search    = isset( $input['search'] ) ? sanitize_text_field( (string) $input['search'] ) : '';
@@ -102,7 +106,7 @@ final class Post_Query {
 
 		$matches = array();
 		foreach ( $query->posts as $post ) {
-			if ( ! $post instanceof \WP_Post ) {
+			if ( ! $post instanceof \WP_Post || ! self::can_see( $post ) ) {
 				continue;
 			}
 
@@ -134,7 +138,7 @@ final class Post_Query {
 		$post_id = isset( $input['post_id'] ) ? (int) $input['post_id'] : 0;
 		if ( $post_id > 0 ) {
 			$post = get_post( $post_id );
-			if ( ! $post instanceof \WP_Post ) {
+			if ( ! $post instanceof \WP_Post || ! self::can_see( $post ) ) {
 				return array(
 					'ok'    => false,
 					'error' => 'post_not_found',
@@ -178,6 +182,11 @@ final class Post_Query {
 		}
 
 		return self::format_post_result( $post );
+	}
+
+	/** A published post, or one the current user can edit. */
+	private static function can_see( \WP_Post $post ): bool {
+		return 'publish' === $post->post_status || current_user_can( 'edit_post', (int) $post->ID );
 	}
 
 	/**

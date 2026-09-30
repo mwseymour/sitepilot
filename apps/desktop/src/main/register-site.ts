@@ -51,7 +51,8 @@ export type RegisterSiteRequest = {
   baseUrl: string;
   registrationCode: string;
   siteName: string;
-  wordpressUsername?: string;
+  /** The WordPress user SitePilot acts as. Plugin 0.2.0 and later require it. */
+  wordpressUsername: string;
   workspaceId?: string;
   environment?: Site["environment"];
   trustedAppOrigin?: string;
@@ -109,9 +110,7 @@ export async function registerSiteWithWordPress(
       workspaceId,
       trustedAppOrigin,
       clientIdentifier,
-      ...(request.wordpressUsername !== undefined
-        ? { wordpressUsername: request.wordpressUsername }
-        : {}),
+      wordpressUsername: request.wordpressUsername,
       protocolVersion: SITEPILOT_PROTOCOL_VERSION,
       siteName: request.siteName,
       siteBaseUrl: base,

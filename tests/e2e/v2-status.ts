@@ -8,8 +8,8 @@
  * 5. Refuses an approved publish after the post changed in WordPress.
  * 6. Rolls a publish back to draft when its URL does not load.
  *
- * Needs SITEPILOT_E2E_BASE_URL, SITEPILOT_E2E_ADMIN_USERNAME,
- * SITEPILOT_E2E_REGISTRATION_CODE and SITEPILOT_E2E_WP_PATH.
+ * Needs SITEPILOT_E2E_BASE_URL, SITEPILOT_E2E_ADMIN_USERNAME and
+ * SITEPILOT_E2E_WP_PATH. It reads a fresh registration code with wp-cli.
  */
 import Database from "better-sqlite3";
 import { execFileSync } from "node:child_process";
@@ -39,9 +39,9 @@ import {
   E2E_ADMIN_USERNAME,
   E2E_ARTIFACTS_ROOT,
   E2E_BASE_URL,
-  E2E_REGISTRATION_CODE,
   E2E_WP_PATH
 } from "./config.js";
+import { currentRegistrationCode } from "./registration.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -74,7 +74,7 @@ async function register() {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
-      registrationCode: E2E_REGISTRATION_CODE,
+      registrationCode: await currentRegistrationCode(),
       siteId,
       workspaceId: "sitepilot-v2-status-e2e",
       trustedAppOrigin: "https://sitepilot.desktop",

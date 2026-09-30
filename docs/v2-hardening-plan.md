@@ -1,6 +1,6 @@
 # SitePilot hardening plan
 
-Status: proposed on 29 September 2026. Nothing here is implemented yet. Work starts on 30 September 2026.
+Status: in progress on branch `sitepilot_v2_hardening`. Phase 1 (removing v1) and Phase 2 (trust fixes) were done on 30 September 2026; see [Progress](#progress).
 
 Source: a read-only review of the WPVibe plugin (`vibe-ai` 1.19.2, SeedProd), followed by research into how SitePilot handles the same concerns today. This plan covers:
 
@@ -9,6 +9,14 @@ Source: a read-only review of the WPVibe plugin (`vibe-ai` 1.19.2, SeedProd), fo
 - five ideas taken from the WPVibe review.
 
 We are reimplementing the ideas, not copying WPVibe's code. WPVibe is GPL-2.0-or-later, so if any of its code is ever copied, keep its copyright notices.
+
+## Progress
+
+| Phase | State (30 September 2026) |
+| --- | --- |
+| 1. Remove v1 | Done. The E2E suites run the v2 scripts, v1 code is deleted from the desktop, packages and plugin (plugin 0.2.0), open v1 requests are archived by migration 008, and the v1 docs are in `docs/archive/v1/`. Also fixed: deleting a thread that ran a v2 request failed with a foreign-key error. |
+| 2. Trust fixes | Done: T1, T3, T5, T6 and T8, with a regression test for T2. One change from the design below: a registration for an existing site ID is refused outright rather than treated as a rotation. Phase 7 registers approval keys through its own signed route instead. |
+| 3–7 | Not started. |
 
 ## Goals
 
@@ -223,7 +231,7 @@ Do this on its own branch, and commit after each step, so any step can be revert
 ### 2.1 Registration and identity (T1, T3)
 
 - **T1, the code.** Consume the code on a successful registration and generate a new one. Show the code on the settings page only after an admin clicks "Show code", and add a "Reset code" button.
-- **T1, takeovers.** Refuse a `siteId` that already exists unless the request is signed with that site's current secret. That turns re-registration into a rotation, not a takeover.
+- **T1, takeovers.** Refuse a `siteId` that already exists. The desktop picks a new random site ID for every registration, so nothing legitimate reuses one. (Phase 7 adds its own signed route for registering an approval key, rather than re-registering.)
 - **T3.** Require a mapped WordPress user at registration, and refuse signed calls for a site without one. Drop the fallback to the first administrator.
 - **Client list.** List registered clients on the settings page, with a Revoke button.
 
@@ -406,10 +414,10 @@ The desktop-only setup gets benefits 1, 4 and 5 below straight away. Benefits 2 
   - that the proof hasn't expired;
   - that the `approvalId` is used by one execution only (`add_option`).
 - **Status changes.** A publish or unpublish candidate gets its own proof.
-- **Registering the key.** The desktop generates its approval key on first use. It registers the public key automatically, with a request signed by the site's current secret, when a site advertises `approval_proof_v1`. This uses Phase 2.1's signed rotation.
+- **Registering the key.** The desktop generates its approval key on first use. It registers the public key automatically when a site advertises `approval_proof_v1`, through a new signed route (`/sitepilot/v2/approval-key`) that only the registered client can call.
 - **Enforcement.** Once a site has an approval key registered, the plugin requires a proof on every v2 write from that site. Sites on older plugins keep working without proofs until they update. The settings page shows whether proofs are required.
 - **The plugin's own record.** It stores `approverId`, `approvalId` and the key ID with the commit receipt.
-- **Rotation.** Keys carry an ID. Registration rotation replaces them.
+- **Rotation.** Keys carry an ID. The same signed route replaces a key, and revoking the client on the settings page removes it.
 
 **Exit:**
 - PHPUnit: a made-up approval, a changed binding, an expired proof and a reused `approvalId` are all refused.
@@ -422,7 +430,7 @@ The desktop-only setup gets benefits 1, 4 and 5 below straight away. Benefits 2 
 2. Phase 3 alongside them. After Phase 1 it only covers page research, so it's small.
 3. Phase 4 next. Phases 5 and 6 use its codes.
 4. Phases 5 and 6 in parallel.
-5. Phase 7 after Phase 2, which it needs for signed key registration. It uses Phase 4's `approval_required` codes if they're ready, and can start before they are.
+5. Phase 7 after Phase 2, whose mapped-user and signature rules its key route relies on. It uses Phase 4's `approval_required` codes if they're ready, and can start before they are.
 
 ## Testing
 

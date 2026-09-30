@@ -16,7 +16,6 @@ use SitePilot\Registration\Store;
  */
 final class Signed_Request_Verifier {
 
-	private const NONCE_TTL_SECONDS = 300;
 
 	/**
 	 * Site id header from the last successful MCP signature verification (request-scoped).
@@ -132,11 +131,9 @@ final class Signed_Request_Verifier {
 			return false;
 		}
 
-		$nonce_key = 'sitepilot_np_' . md5( $nonce );
-		if ( get_transient( $nonce_key ) ) {
+		if ( ! Nonce_Ledger::claim( $nonce ) ) {
 			return false;
 		}
-		set_transient( $nonce_key, 1, self::NONCE_TTL_SECONDS );
 
 		self::$authenticated_site_id = $site_id;
 

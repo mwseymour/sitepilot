@@ -1,6 +1,6 @@
 <?php
 /**
- * MCP HTTP transport permission: logged-in users or SitePilot signed requests.
+ * MCP HTTP transport permission: SitePilot signed requests only.
  *
  * @package SitePilot
  */
@@ -9,16 +9,19 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Mcp;
 
+use SitePilot\Registration\Store;
 use SitePilot\Security\Signed_Request_Verifier;
-use SitePilot\V2\Editor_Session;
 
 /**
- * Allows browser sessions (read capability) or HMAC-authenticated desktop clients.
+ * Allows HMAC-signed requests from a registered SitePilot client, run as the
+ * WordPress user that client was registered with. A browser login or an
+ * application password is not enough: local Claude and Codex clients go
+ * through SitePilot's own MCP server instead.
  */
 final class Mcp_Permission {
 
 	/**
-	 * Stable user id for signed desktop MCP requests during this request lifecycle.
+	 * The mapped user for this request, once its signature has been verified.
 	 *
 	 * @var int
 	 */
@@ -31,20 +34,21 @@ final class Mcp_Permission {
 		if ( ! $request instanceof \WP_REST_Request ) {
 			return false;
 		}
-		if ( is_user_logged_in() && Editor_Session::current() !== null ) {
-			return false;
-		}
 
-		if ( is_user_logged_in() && current_user_can( 'read' ) ) {
-			return true;
+		// The adapter can check more than once per request. The signature's
+		// nonce is single use, so later checks reuse the verified user.
+		if ( self::$trusted_user_id > 0 ) {
+			return get_current_user_id() === self::$trusted_user_id && current_user_can( 'read' );
 		}
 
 		if ( ! Signed_Request_Verifier::verify_mcp_request( $request ) ) {
 			return false;
 		}
 
-		$user_id = self::resolve_trusted_user_id();
-		if ( $user_id < 1 ) {
+		$site    = Store::get_site( Signed_Request_Verifier::get_authenticated_site_id() );
+		$user_id = is_array( $site ) ? (int) ( $site['user_id'] ?? 0 ) : 0;
+		// A registration without a mapped user never falls back to an administrator.
+		if ( $user_id < 1 || ! get_user_by( 'id', $user_id ) instanceof \WP_User ) {
 			return false;
 		}
 
@@ -54,45 +58,10 @@ final class Mcp_Permission {
 		return current_user_can( 'read' );
 	}
 
-	private static function resolve_trusted_user_id(): int {
-		if ( self::$trusted_user_id > 0 ) {
-			return self::$trusted_user_id;
-		}
-
-		$site_id = Signed_Request_Verifier::get_authenticated_site_id();
-		if ( $site_id !== '' ) {
-			$site = \SitePilot\Registration\Store::get_site( $site_id );
-			if ( is_array( $site ) && ! empty( $site['user_id'] ) ) {
-				return (int) $site['user_id'];
-			}
-		}
-
-		$admins = get_users(
-			array(
-				'role'   => 'administrator',
-				'number' => 1,
-				'fields' => 'ID',
-				'orderby' => 'ID',
-				'order'   => 'ASC',
-			)
-		);
-		if ( is_array( $admins ) && ! empty( $admins ) ) {
-			return (int) $admins[0];
-		}
-
-		$readers = get_users(
-			array(
-				'capability' => 'read',
-				'number'     => 1,
-				'fields'     => 'ID',
-				'orderby'    => 'ID',
-				'order'      => 'ASC',
-			)
-		);
-		if ( is_array( $readers ) && ! empty( $readers ) ) {
-			return (int) $readers[0];
-		}
-
-		return 0;
+	/**
+	 * Clears the per-request user. For tests.
+	 */
+	public static function reset_request_state(): void {
+		self::$trusted_user_id = 0;
 	}
 }

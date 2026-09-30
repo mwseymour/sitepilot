@@ -2,17 +2,38 @@
 declare( strict_types = 1 );
 
 namespace SitePilot\Registration {
+	/**
+	 * Test double. Tests that set $GLOBALS['sitepilot_test_sites'] get a real
+	 * in-memory store; otherwise every non-empty site ID is registered.
+	 */
 	final class Store {
 		public static function get_site( string $site_id ): ?array {
+			if ( isset( $GLOBALS['sitepilot_test_sites'] ) ) {
+				return $GLOBALS['sitepilot_test_sites'][ $site_id ] ?? null;
+			}
 			return $site_id === '' ? null : array( 'id' => $site_id );
+		}
+
+		public static function save_site( string $site_id, array $record ): void {
+			$GLOBALS['sitepilot_test_sites'][ $site_id ] = $record;
 		}
 	}
 }
 
 namespace SitePilot\Security {
+	/**
+	 * Test double. $GLOBALS['sitepilot_test_signed'] decides whether a request
+	 * verifies, and each verification is counted.
+	 */
 	final class Signed_Request_Verifier {
 		public static function get_authenticated_site_id(): string {
-			return 'site-1';
+			return $GLOBALS['sitepilot_test_site_id'] ?? 'site-1';
+		}
+
+		public static function verify_mcp_request( $request ): bool {
+			unset( $request );
+			$GLOBALS['sitepilot_test_verifications'] = ( $GLOBALS['sitepilot_test_verifications'] ?? 0 ) + 1;
+			return (bool) ( $GLOBALS['sitepilot_test_signed'] ?? false );
 		}
 	}
 }
@@ -26,12 +47,18 @@ namespace {
 			public string $post_title;
 			public string $post_content;
 			public string $post_excerpt;
+			public string $post_status = 'publish';
+			public string $post_type = 'post';
+			public string $post_name = '';
+			public string $post_date_gmt = '';
+			public string $post_modified_gmt = '';
 
-			public function __construct( int $id, string $title, string $content, string $excerpt = '' ) {
+			public function __construct( int $id, string $title, string $content, string $excerpt = '', string $status = 'publish' ) {
 				$this->ID           = $id;
 				$this->post_title   = $title;
 				$this->post_content = $content;
 				$this->post_excerpt = $excerpt;
+				$this->post_status  = $status;
 			}
 		}
 	}
@@ -48,14 +75,23 @@ namespace {
 
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
-			private string $message;
-
-			public function __construct( string $message ) {
-				$this->message = $message;
-			}
+			/**
+			 * Accepts (message) as older tests use it, or WordPress's (code,
+			 * message, data). get_error_message() returns the first argument,
+			 * which older tests compare against error codes.
+			 */
+			public function __construct( private string $code, private string $text = '', private mixed $data = null ) {}
 
 			public function get_error_message(): string {
-				return $this->message;
+				return $this->code;
+			}
+
+			public function get_error_code(): string {
+				return $this->code;
+			}
+
+			public function get_error_data(): mixed {
+				return $this->data;
 			}
 		}
 	}
@@ -225,6 +261,82 @@ namespace {
 
 	function absint( mixed $value ): int {
 		return abs( (int) $value );
+	}
+
+	if ( ! class_exists( 'WP_User' ) ) {
+		class WP_User {
+			public function __construct( public int $ID, public string $user_login = '' ) {}
+		}
+	}
+
+	if ( ! class_exists( 'WP_REST_Request' ) ) {
+		class WP_REST_Request {
+			/** @param array<string, mixed> $json */
+			public function __construct( private array $json = array() ) {}
+
+			/** @return array<string, mixed> */
+			public function get_json_params(): array {
+				return $this->json;
+			}
+		}
+	}
+
+	// Users by ID and login, and the current user.
+	$GLOBALS['sitepilot_test_users']        = array();
+	$GLOBALS['sitepilot_test_current_user'] = 0;
+
+	function get_user_by( string $field, int|string $value ): WP_User|false {
+		foreach ( $GLOBALS['sitepilot_test_users'] as $user ) {
+			if ( ( 'id' === $field && $user->ID === (int) $value ) || ( 'login' === $field && $user->user_login === $value ) ) {
+				return $user;
+			}
+		}
+		return false;
+	}
+
+	function user_can( WP_User $user, string $capability ): bool {
+		unset( $user );
+		return ! in_array( $capability, $GLOBALS['sitepilot_test_denied_caps'], true );
+	}
+
+	function wp_set_current_user( int $user_id ): void {
+		$GLOBALS['sitepilot_test_current_user'] = $user_id;
+	}
+
+	function get_current_user_id(): int {
+		return $GLOBALS['sitepilot_test_current_user'];
+	}
+
+	function wp_generate_password( int $length = 12, bool $special = true, bool $extra = false ): string {
+		unset( $special, $extra );
+		return substr( bin2hex( random_bytes( $length ) ), 0, $length );
+	}
+
+	function wp_cache_delete( string $key, string $group = '' ): bool {
+		unset( $key, $group );
+		return true;
+	}
+
+	function add_option( string $name, mixed $value = '', string $deprecated = '', mixed $autoload = null ): bool {
+		unset( $deprecated, $autoload );
+		if ( array_key_exists( $name, $GLOBALS['sitepilot_test_options'] ) ) {
+			return false;
+		}
+		$GLOBALS['sitepilot_test_options'][ $name ] = $value;
+		return true;
+	}
+
+	function get_the_title( WP_Post|int $post ): string {
+		return $post instanceof WP_Post ? $post->post_title : '';
+	}
+
+	function get_permalink( WP_Post|int $post ): string {
+		return 'https://example.test/?p=' . ( $post instanceof WP_Post ? $post->ID : $post );
+	}
+
+	function get_the_category( int $post_id ): array {
+		unset( $post_id );
+		return array();
 	}
 
 	function get_post( int $post_id ): ?WP_Post {

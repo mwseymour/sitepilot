@@ -26,9 +26,7 @@ export function AddSitePage(): ReactElement {
       registrationCode: registrationCode.trim(),
       siteName: siteName.trim(),
       environment,
-      ...(wordpressUsername.trim().length > 0
-        ? { wordpressUsername: wordpressUsername.trim() }
-        : {})
+      wordpressUsername: wordpressUsername.trim()
     });
 
     setBusy(false);
@@ -106,10 +104,12 @@ export function AddSitePage(): ReactElement {
               </select>
             </label>
             <label className="field">
-              <span>WordPress username (optional)</span>
+              <span>WordPress username</span>
               <input
                 type="text"
-                placeholder="Used for MCP requests when required"
+                required
+                autoComplete="off"
+                placeholder="The user SitePilot acts as. It gets exactly this user’s permissions."
                 value={wordpressUsername}
                 onChange={(event) => {
                   setWordpressUsername(event.target.value);

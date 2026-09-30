@@ -32,8 +32,8 @@ require_once SITEPILOT_PLUGIN_DIR . 'includes/Plugin.php';
 register_activation_hook(
 	SITEPILOT_PLUGIN_FILE,
 	static function (): void {
-		if ( class_exists( \SitePilot\Registration\Store::class ) ) {
-			\SitePilot\Registration\Store::ensure_registration_code();
+		if ( class_exists( \SitePilot\Registration\Registration_Code::class ) ) {
+			\SitePilot\Registration\Registration_Code::current();
 		}
 	}
 );

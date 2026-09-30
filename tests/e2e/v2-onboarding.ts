@@ -23,9 +23,11 @@ import { generateAndPersistSiteConfigDraft } from "../../apps/desktop/src/main/s
 import { fetchSiteUrl } from "../../apps/desktop/src/main/site-fetch.js";
 import { confirmSiteConfigActivation } from "../../apps/desktop/src/main/site-workspace-service.js";
 
-import { E2E_BASE_URL } from "./config.js";
+import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
+
+import { E2E_ADMIN_USERNAME, E2E_BASE_URL } from "./config.js";
 import { createFileSecureStorage } from "./file-secure-storage.js";
-import { registerE2ESite } from "./registration.js";
+import { currentRegistrationCode } from "./registration.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -72,12 +74,33 @@ async function main(): Promise<void> {
     // Seed the normal desktop workspace before registration writes its site rows.
     getDatabase();
 
-    const registration = await registerE2ESite("SitePilot onboarding E2E");
+    const register = (registrationCode: string) =>
+      registerSiteWithWordPress({
+        baseUrl: E2E_BASE_URL,
+        siteName: "SitePilot onboarding E2E",
+        wordpressUsername: E2E_ADMIN_USERNAME,
+        workspaceId: "workspace-1",
+        environment: "development",
+        registrationCode
+      });
+    const codeBefore = await currentRegistrationCode();
+    const registration = await register(codeBefore);
     if (!registration.ok) {
       throw new Error(
         `Registration failed (${registration.code}): ${registration.message}`
       );
     }
+    // Hardening T1: each code works once.
+    const codeAfter = await currentRegistrationCode();
+    assert(
+      codeAfter !== codeBefore,
+      "Registering did not replace the registration code."
+    );
+    const reused = await register(codeBefore);
+    assert(
+      !reused.ok && /invalid registration code/i.test(reused.message),
+      `A used registration code registered another client: ${JSON.stringify(reused)}`
+    );
     const siteId = registration.site.id as SiteId;
     const registered = await database.repositories.sites.getById(siteId);
     assert(registered, "Registration did not persist the site.");
@@ -140,6 +163,20 @@ async function main(): Promise<void> {
     assert(
       exposedWriteTools.length === 0,
       `The plugin MCP server still exposes v1 write tools: ${exposedWriteTools.join(", ")}. Is the site's plugin copy up to date?`
+    );
+
+    // Hardening T8: the plugin MCP route only accepts SitePilot-signed requests.
+    const unsigned = await fetchSiteUrl(
+      `${E2E_BASE_URL}wp-json/sitepilot/mcp`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
+      }
+    );
+    assert(
+      unsigned.status === 401 || unsigned.status === 403,
+      `An unsigned MCP request got HTTP ${unsigned.status}.`
     );
 
     const protocolResponse = await fetchSiteUrl(

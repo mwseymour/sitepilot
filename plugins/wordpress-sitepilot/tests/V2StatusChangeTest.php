@@ -32,6 +32,22 @@ final class V2StatusChangeTest extends TestCase {
 		$this->assertTrue( $this->call( 'can_write', 'apply_operations', 'post', 12 ) );
 	}
 
+	public function test_signed_calls_get_only_the_mapped_users_capabilities(): void {
+		// Regression check for hardening T2: nothing on the v2 write path
+		// trusts a signed site over the mapped user's own capabilities.
+		foreach ( array(
+			array( 'create_draft', null, 'edit_posts' ),
+			array( 'replace_content', 12, 'edit_post' ),
+			array( 'apply_operations', 12, 'edit_post' ),
+			array( 'set_status', 12, 'publish_posts' ),
+		) as [ $operation, $post_id, $capability ] ) {
+			$GLOBALS['sitepilot_test_denied_caps'] = array();
+			$this->assertTrue( $this->call( 'can_write', $operation, 'post', $post_id ), $operation );
+			$GLOBALS['sitepilot_test_denied_caps'] = array( $capability );
+			$this->assertFalse( $this->call( 'can_write', $operation, 'post', $post_id ), "{$operation} without {$capability}" );
+		}
+	}
+
 	public function test_only_publish_and_draft_are_accepted_targets(): void {
 		$this->assertSame( 'publish', $this->call( 'requested_status', array( 'intent' => array( 'status' => array( 'to' => 'publish' ) ) ) ) );
 		$this->assertSame( 'draft', $this->call( 'requested_status', array( 'intent' => array( 'status' => array( 'to' => 'draft' ) ) ) ) );

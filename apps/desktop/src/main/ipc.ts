@@ -442,11 +442,9 @@ export function registerIpcHandlers(): void {
     const forward: Parameters<typeof registerSiteWithWordPress>[0] = {
       baseUrl: request.baseUrl,
       registrationCode: request.registrationCode,
-      siteName: request.siteName
+      siteName: request.siteName,
+      wordpressUsername: request.wordpressUsername
     };
-    if (request.wordpressUsername !== undefined) {
-      forward.wordpressUsername = request.wordpressUsername;
-    }
     if (request.workspaceId !== undefined) {
       forward.workspaceId = request.workspaceId;
     }

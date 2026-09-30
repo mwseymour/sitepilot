@@ -7,8 +7,9 @@
  * 3. Edits an existing container page: changes its fields and inserts a
  *    block inside it, keeping everything else byte-for-byte.
  *
- * Needs SITEPILOT_E2E_BASE_URL, SITEPILOT_E2E_ADMIN_USERNAME and
- * SITEPILOT_E2E_REGISTRATION_CODE for the ACF site. Set
+ * Needs SITEPILOT_E2E_BASE_URL and SITEPILOT_E2E_ADMIN_USERNAME for the ACF
+ * site, plus its SITEPILOT_E2E_WP_PATH (or admin password) so it can read a
+ * fresh registration code. Set
  * SITEPILOT_ACF_SOURCE_POST_ID to a draft page whose content is one
  * `acf/container` block to run step 3. Set SITEPILOT_ACF_LLM=1 (with an
  * OpenAI key) to also plan a container page from a plain request.
@@ -43,9 +44,9 @@ import {
   E2E_ADMIN_USERNAME,
   E2E_ARTIFACTS_ROOT,
   E2E_BASE_URL,
-  E2E_OPENAI_API_KEY,
-  E2E_REGISTRATION_CODE
+  E2E_OPENAI_API_KEY
 } from "./config.js";
+import { currentRegistrationCode } from "./registration.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -74,7 +75,7 @@ async function register(): Promise<{
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
-      registrationCode: E2E_REGISTRATION_CODE,
+      registrationCode: await currentRegistrationCode(),
       siteId,
       workspaceId: "sitepilot-v2-acf-e2e",
       trustedAppOrigin: "https://sitepilot.desktop",

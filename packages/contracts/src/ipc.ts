@@ -163,7 +163,8 @@ export const registerSiteRequestSchema = z.object({
   baseUrl: z.string().url(),
   registrationCode: z.string().min(1),
   siteName: z.string().min(1),
-  wordpressUsername: z.string().min(1).optional(),
+  /** The WordPress user SitePilot acts as. Plugin 0.2.0 and later require it. */
+  wordpressUsername: z.string().min(1),
   workspaceId: z.string().min(1).optional(),
   environment: siteEnvironmentSchema.optional(),
   trustedAppOrigin: urlSchema.optional()
