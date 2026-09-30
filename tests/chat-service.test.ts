@@ -244,13 +244,17 @@ describe("chat service request revision", () => {
     expect(db.repositories.chatMessages.save).not.toHaveBeenCalled();
   });
 
-  it("creates a new request thread when a conversation turn returns research handoff content", async () => {
+  it("starts a v2 draft request in a new thread when a conversation turn returns research handoff content", async () => {
     vi.doMock("../apps/desktop/src/main/conversation-service.js", () => ({
       buildConversationReply: vi.fn(async () => ({
         text: 'Fetched Example page and created a new request thread: Research: Example page.',
         requestPrompt: "Use this external page as source material.",
         requestThreadTitle: "Research: Example page"
       }))
+    }));
+    const ingestRequestThreadMessage = vi.fn(async () => ({ ok: true }));
+    vi.doMock("../apps/desktop/src/main/request-ingress-service.js", () => ({
+      ingestRequestThreadMessage
     }));
 
     const conversationThread = {
@@ -277,10 +281,16 @@ describe("chat service request revision", () => {
         type: "general_request"
       })
     );
-    expect(db.repositories.requests.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userPrompt: "Use this external page as source material."
-      })
+    await vi.waitFor(() =>
+      expect(ingestRequestThreadMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          siteId: site.id,
+          text: "Use this external page as source material.",
+          gutenbergV2Target: { operation: "create_draft", postType: "post" }
+        })
+      )
     );
+    // The v1 "generate a plan" path is never used.
+    expect(db.repositories.requests.save).not.toHaveBeenCalled();
   });
 });

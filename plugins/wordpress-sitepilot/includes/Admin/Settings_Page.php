@@ -58,9 +58,9 @@ final class Settings_Page {
 		echo '<p>' . esc_html__( 'Enter this one-time code in the SitePilot desktop app when registering this site (HTTPS only).', 'sitepilot' ) . '</p>';
 		echo '<p><code style="font-size:14px;">' . esc_html( $reg_code ) . '</code></p>';
 		echo '<p>' . esc_html__( 'SitePilot protocol version:', 'sitepilot' ) . ' <strong>' . esc_html( SITEPILOT_PROTOCOL_VERSION ) . '</strong></p>';
-		echo '<h2>' . esc_html__( 'Gutenberg v2 content engine', 'sitepilot' ) . '</h2>';
-		echo '<p><strong>' . esc_html( Feature::enabled() ? __( 'Enabled', 'sitepilot' ) : __( 'Disabled by SITEPILOT_V2_ENABLED', 'sitepilot' ) ) . '</strong></p>';
-		echo '<p>' . esc_html__( 'V2 is the default content engine. Define SITEPILOT_V2_ENABLED as false in wp-config.php to turn it off on this site.', 'sitepilot' ) . '</p>';
+		echo '<h2>' . esc_html__( 'Content changes', 'sitepilot' ) . '</h2>';
+		echo '<p><strong>' . esc_html( Feature::enabled() ? __( 'On: SitePilot can change content on this site', 'sitepilot' ) : __( 'Off: SITEPILOT_V2_ENABLED is false, so SitePilot can’t change content on this site', 'sitepilot' ) ) . '</strong></p>';
+		echo '<p>' . esc_html__( 'To stop SitePilot changing content on this site, define SITEPILOT_V2_ENABLED as false in wp-config.php. Lookups still work.', 'sitepilot' ) . '</p>';
 		echo '</div>';
 	}
 

@@ -287,6 +287,9 @@ async function choosePlanner(siteId: SiteId): ReturnType<PlannerFactory> {
   );
 }
 
+const V2_DISABLED_MESSAGE =
+  "This site has turned off SitePilot changes: its wp-config.php sets SITEPILOT_V2_ENABLED to false.";
+
 async function assertV2Enabled(
   siteId: SiteId
 ): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
@@ -299,16 +302,12 @@ async function assertV2Enabled(
       message: "Site must be active before Gutenberg v2 can be used."
     };
   }
-  // v2 is the default content engine. The per-site desktop setting is
-  // retired; the destination plugin's protocol flag is the only gate.
+  // v2 is the only content engine. The destination plugin's protocol flag
+  // (SITEPILOT_V2_ENABLED) is the site's switch for SitePilot writes.
   if (protocolProbeForTests) {
     return (await protocolProbeForTests(site.baseUrl))
       ? { ok: true }
-      : {
-          ok: false,
-          code: "gutenberg_v2_destination_disabled",
-          message: "The destination has not enabled Gutenberg v2."
-        };
+      : { ok: false, code: "gutenberg_v2_destination_disabled", message: V2_DISABLED_MESSAGE };
   }
   try {
     const response = await fetchSiteUrl(
@@ -316,18 +315,21 @@ async function assertV2Enabled(
       { signal: AbortSignal.timeout(15_000) }
     );
     const body = protocolSchema.safeParse(await response.json());
-    if (!response.ok || !body.success || !body.data.v2.enabled) {
+    if (response.ok && body.success && !body.data.v2.enabled) {
+      return { ok: false, code: "gutenberg_v2_destination_disabled", message: V2_DISABLED_MESSAGE };
+    }
+    if (!response.ok || !body.success) {
       return {
         ok: false,
-        code: "gutenberg_v2_destination_disabled",
-        message: "The destination has not enabled Gutenberg v2."
+        code: "gutenberg_v2_probe_failed",
+        message: `Could not check whether this site accepts SitePilot changes (HTTP ${response.status}).`
       };
     }
   } catch {
     return {
       ok: false,
       code: "gutenberg_v2_probe_failed",
-      message: "Could not confirm that the destination enables Gutenberg v2."
+      message: "Could not check whether this site accepts SitePilot changes."
     };
   }
   return { ok: true };

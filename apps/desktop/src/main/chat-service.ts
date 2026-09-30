@@ -343,6 +343,48 @@ async function createRequestRecordForThread(input: {
   return { ok: true, request };
 }
 
+/**
+ * Starts a v2 new-draft request from a Conversation's research handoff, the
+ * same way the MCP server's create_request does. It runs in the background so
+ * the Conversation reply returns at once. Planning stops at review, so nothing
+ * is written until someone approves. A failure is posted in the new thread.
+ */
+function startResearchDraftRequest(
+  siteId: SiteId,
+  thread: ChatThread,
+  requestPrompt: string
+): void {
+  const postFailure = async (message: string): Promise<void> => {
+    const ts = nowIso();
+    await getDatabase().repositories.chatMessages.save({
+      id: randomUUID() as ChatMessageId,
+      threadId: thread.id,
+      siteId,
+      author: { kind: "assistant" },
+      body: {
+        format: "plain_text",
+        value: `I couldn't start this request: ${message}`
+      },
+      createdAt: ts,
+      updatedAt: ts
+    });
+  };
+  // Imported here because request-ingress-service imports this module.
+  void import("./request-ingress-service.js")
+    .then(({ ingestRequestThreadMessage }) =>
+      ingestRequestThreadMessage({
+        siteId,
+        threadId: thread.id,
+        text: requestPrompt,
+        gutenbergV2Target: { operation: "create_draft", postType: "post" }
+      })
+    )
+    .then((result) => (result.ok ? undefined : postFailure(result.message)))
+    .catch((error: unknown) =>
+      postFailure(error instanceof Error ? error.message : String(error))
+    );
+}
+
 async function buildThreadReply(
   siteId: SiteId,
   threadId: ChatThreadId,
@@ -362,16 +404,11 @@ async function buildThreadReply(
           text: `${reply.text}\n\nI could not create the new request thread: ${requestThreadResult.message}`
         };
       }
-      const createdRequest = await createRequestRecordForThread({
+      startResearchDraftRequest(
         siteId,
-        thread: requestThreadResult.thread,
-        userPrompt: reply.requestPrompt
-      });
-      if (!createdRequest.ok) {
-        return {
-          text: `${reply.text}\n\nI could not create the new request: ${createdRequest.message}`
-        };
-      }
+        requestThreadResult.thread,
+        reply.requestPrompt
+      );
     }
     return {
       text: reply.text
@@ -680,6 +717,22 @@ export async function deleteChatThreadForSite(
       db.connection
         .prepare(
           `DELETE FROM rollback_records
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM request_visual_analyses
+           WHERE request_id IN (
+             SELECT id FROM requests WHERE thread_id = @threadId
+           )`
+        )
+        .run({ threadId });
+      db.connection
+        .prepare(
+          `DELETE FROM gutenberg_v2_request_executions
            WHERE request_id IN (
              SELECT id FROM requests WHERE thread_id = @threadId
            )`

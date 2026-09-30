@@ -10,8 +10,9 @@ declare( strict_types = 1 );
 namespace SitePilot\V2;
 
 /**
- * The v2 native editor runtime is the default content engine. A site can opt
- * out by defining SITEPILOT_V2_ENABLED as the boolean false.
+ * The v2 native editor runtime is SitePilot's only content engine. A site stops
+ * SitePilot changing content by defining SITEPILOT_V2_ENABLED as the boolean
+ * false. Lookups still work.
  */
 final class Feature {
 
@@ -24,7 +25,7 @@ final class Feature {
 	public static function disabled_error(): \WP_Error {
 		return new \WP_Error(
 			'sitepilot_v2_disabled',
-			__( 'SitePilot v2 is disabled on this site (SITEPILOT_V2_ENABLED is false).', 'sitepilot' ),
+			__( 'SitePilot changes are turned off on this site (SITEPILOT_V2_ENABLED is false).', 'sitepilot' ),
 			array( 'status' => 503 )
 		);
 	}

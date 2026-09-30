@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: SitePilot v2 local E2E gate
- * Description: Enables the disabled-by-default v2 bridge only on the exact local E2E host.
+ * Description: Keeps SitePilot content changes on for the exact local E2E host, unless wp-config.php already sets SITEPILOT_V2_ENABLED.
  */
 
 declare( strict_types = 1 );

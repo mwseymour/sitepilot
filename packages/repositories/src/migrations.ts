@@ -4,6 +4,16 @@ export interface SqliteMigration {
   statements: string[];
 }
 
+/**
+ * Open requests owned by the removed v1 engine: claimed as v1, or made before
+ * engines were recorded and carrying a v1 plan or run.
+ */
+const OPEN_V1_REQUESTS = `status IN ('new', 'clarifying', 'drafted', 'awaiting_approval', 'approved', 'executing')
+  AND (
+    content_engine = 'v1'
+    OR (content_engine IS NULL AND (latest_plan_id IS NOT NULL OR latest_execution_run_id IS NOT NULL))
+  )`;
+
 export const sqliteMigrations: SqliteMigration[] = [
   {
     id: "001_initial_core_schema",
@@ -384,5 +394,26 @@ export const sqliteMigrations: SqliteMigration[] = [
     id: "007_chat_thread_source",
     description: "Record which client started each chat thread.",
     statements: [`ALTER TABLE chat_threads ADD COLUMN source TEXT`]
+  },
+  {
+    id: "008_archive_open_v1_requests",
+    description:
+      "Archive open requests made with the removed v1 engine, with a note in each thread.",
+    statements: [
+      `INSERT INTO chat_messages (
+         id, thread_id, site_id, author_json, body_json, attachments_json,
+         request_id, created_at, updated_at
+       )
+       SELECT lower(hex(randomblob(16))), thread_id, site_id,
+         '{"kind":"assistant"}',
+         '{"format":"plain_text","value":"SitePilot no longer runs the older engine this request was made with, so it has been archived. Start a new request to make this change."}',
+         '[]', id,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       FROM requests
+       WHERE ${OPEN_V1_REQUESTS}`,
+      `UPDATE requests
+       SET status = 'archived', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE ${OPEN_V1_REQUESTS}`
+    ]
   }
 ];

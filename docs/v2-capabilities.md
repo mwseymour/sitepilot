@@ -2,7 +2,7 @@
 
 Current as of 25 September 2026. This is the short, operator-facing reference for the v2 content engine in the local desktop app. For how it is built, see [v2 implementation](./v2-implementation.md). For what comes next, see the [v2 expansion plan](./v2-expansion-plan.md).
 
-v2 is the default content engine. A site turns it off by defining `SITEPILOT_V2_ENABLED` as `false` in `wp-config.php`.
+v2 is SitePilot's only content engine. A site stops SitePilot changing content by defining `SITEPILOT_V2_ENABLED` as `false` in `wp-config.php`. Lookups still work.
 
 ## How a request runs
 
