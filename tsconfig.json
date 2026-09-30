@@ -6,6 +6,7 @@
   "files": [],
   "references": [
     { "path": "./apps/desktop" },
+    { "path": "./apps/server" },
     { "path": "./packages/domain" },
     { "path": "./packages/contracts" },
     { "path": "./packages/repositories" },

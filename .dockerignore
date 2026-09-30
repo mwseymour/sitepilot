@@ -1,0 +1,18 @@
+# Never send local secrets or build output into an image.
+.git
+.env
+.env.*
+.sitepilot-e2e.local.json
+.sitepilot-test-artifacts
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+apps/desktop/out
+automated-test
+coverage
+docs
+plugins
+tests
+wordpress-core
+.cursor
+**/.DS_Store
