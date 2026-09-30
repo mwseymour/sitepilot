@@ -73,13 +73,13 @@ Record answers in `v2-build.md` section 12 as they are made.
 
 | Decision | Blocks | Notes |
 | --- | --- | --- |
-| Hosting location, database and network route to the WordPress site | Phase 5 | **Hosting and database decided on 30 September 2026:** the services run on Railway, and the data sits separately in Supabase (Postgres and Storage). See build spec section 12. The network route is still open: the worker needs a fixed outgoing IP that the site's firewall allows. |
+| Hosting location, database and network route to the WordPress site | Phase 5 | **Hosting and database decided on 30 September 2026:** the services and the hosted web app run on Railway, and the data sits separately in Supabase (Postgres and Storage). See build spec section 12. The network route is still open. A fixed outgoing IP isn't needed by default, because every call to the plugin is signed. It's only needed if the site limits `wp-admin` to listed IPs or its firewall blocks cloud traffic. Testing runs on Railway's Hobby plan without one. If a client needs one at launch, move to Pro (see build spec section 12). |
 | WordPress browser authentication for the hosted worker (V2B-01) | Phase 5 | Owned by the v2 build. The hosted worker can't compile without it. |
 | Copilot provider spike | Phase 5 planning in production | Until it passes, the hosted planner can't run under the approved-LLM policy. The local stage keeps using the desktop's configured provider. |
-| OAuth provider (the organisation's IdP, or a SitePilot-issued authorization server) | Phase 6 | The MCP authorization spec needs OAuth 2.1 with PKCE and protected-resource metadata. |
-| How Claude and Codex users map to SitePilot users and roles | Phase 6 | Probably by IdP email or subject, onto `user_profiles`. |
-| Slack workspace, app ownership and approver mapping | Phase 7 | Also decide whether requesters in Slack must also exist as SitePilot users. |
-| How roles are assigned to chat users | Phase 7 | Chat users may never open an app, so someone needs a way to make them requesters or approvers. Recommendation: map IdP or Slack user groups to roles, with an owner-only `/sitepilot roles` command as a fallback. |
+| OAuth provider (the organisation's IdP, or a SitePilot-issued authorization server) | Phase 6 | **Decided on 30 September 2026:** `apps/server` issues its own OAuth 2.1 tokens, and its login step is Sign in with WordPress through the plugin. No SSO or external IdP. See [6.1](#61-sign-in-with-wordpress). |
+| How Claude and Codex users map to SitePilot users and roles | Phase 6 | **Decided on 30 September 2026:** by the WordPress user they sign in as, linked by ID onto `user_profiles`. |
+| Slack workspace, app ownership and approver mapping | Phase 7 | **Approver mapping decided on 30 September 2026:** Slack users link by signing in with WordPress, and get their role from WordPress like everyone else. Requesters must link too. Still open: which workspace, and who owns the app. |
+| How roles are assigned to chat users | Phase 7 | **Decided on 30 September 2026:** from WordPress capabilities. People who can publish on the site can approve, and other users can request. The hosted app's admin area can override a role. |
 | Whether Approve also applies | Phase 5 | The desktop approves and applies in two clicks. For chat users, the recommendation is that Approve applies at once, and publishing stays a separate approved step. |
 | Whether `submit_block_plan` is allowed | Phase 9 | Depends on the organisation's LLM policy. |
 | Retention for review artifacts, lookup gaps and audit | Phase 5 | Also the lifetime of signed review links. |
@@ -194,7 +194,7 @@ Blocked on the Phase 0 hosting, WordPress-authentication and Copilot decisions. 
 - **Server app:** `apps/server`, a Node service on Railway that runs the same services with a server runtime context. The Playwright worker and the Slack app run as separate Railway services beside it, and secrets live in Railway.
 - **Storage:** implement the repository interfaces for Postgres on Supabase. Only the backend connects to it. Replace the file-based v2 journal and staged assets with database rows and Supabase Storage, and serve review artifacts through signed links. Durable jobs survive restarts, as section 8 of the build spec requires.
 - **Planner:** the Copilot adapter in `packages/provider-adapters`, used for every client. There's no fallback to direct OpenAI or Anthropic calls in this deployment.
-- **Hosted app (web):** Requests and Conversations lists across all sources, the review page (diff, desktop and mobile previews, change list), and approve, reject and request revision. Approval uses the same backend call as the desktop, as the signed-in user.
+- **Hosted app (web):** served by `apps/server` on Railway, on the same domain as the API. Requests and Conversations lists across all sources, the review page (diff, desktop and mobile previews, change list), and approve, reject and request revision. Approval uses the same backend call as the desktop, as the signed-in user.
 - **Signed review links** with an expiry, for `request_status` and Slack.
 - **Apply without an operator.** Once a request is approved, the backend applies it as a durable job on the hosted worker. Chat users never need an app open for that, and nor does anyone else.
 
@@ -204,12 +204,24 @@ Blocked on the Phase 0 hosting, WordPress-authentication and Copilot decisions. 
 
 Serve `packages/mcp-server` from `apps/server` over Streamable HTTP.
 
-- OAuth 2.1 with PKCE, protected-resource metadata and dynamic client registration or pre-registered clients, per the MCP authorization spec, using the provider chosen in Phase 0.
+- OAuth 2.1 with PKCE, protected-resource metadata and dynamic client registration or pre-registered clients, per the MCP authorization spec. `apps/server` is the authorization server, built on the MCP SDK's server auth helpers. Its login step is Sign in with WordPress (6.1).
 - Scopes: `read` for lookups and `list_threads`, `request` for creating and revising requests, and `review` for fetching review artifacts.
-- The token's subject maps to a SitePilot user and role. Unmapped users get a clear error, not a default role.
+- The token's subject is the linked WordPress user, and their role comes from WordPress (6.1). Unmapped users get a clear error, not a default role.
 - Rate limits per user and per site.
 - `source` comes from the registered OAuth client, not from anything the client says about itself.
 - Connect and test from claude.ai (as a custom connector), Claude Desktop, Claude Code and Codex.
+
+### 6.1 Sign in with WordPress
+
+Decided on 30 September 2026. There's no SSO or external identity provider. The site's own WordPress login proves who someone is, so it inherits any 2FA or SSO the site already has.
+
+1. The person starts from the hosted app's login, the Slack app's Connect button, or the OAuth login page that Claude or Codex opens.
+2. `apps/server` sends them to a SitePilot connect page on their WordPress site, with a one-use `state`. They log in to WordPress as usual.
+3. The plugin sends back a signed, one-use, short-lived confirmation of the WordPress user: their ID, email and capabilities. It's signed with the key the site already shares with SitePilot, and it only goes to the `apps/server` callback registered for that site.
+4. `apps/server` links that WordPress user to the Slack, Claude or Codex identity by ID (Slack workspace and user ID, or OAuth client and token), never by email. A matching email only pre-fills the link. Email alone isn't enough, because of Slack Connect and guest accounts, emails a WordPress admin sets without the owner confirming, and reused addresses. It also isn't enough for requesters, since lookups return drafts and private posts.
+5. Roles come from WordPress capabilities. People who can publish on the site can approve, and other users can request.
+
+The hosted app's admin area lists each person with their WordPress user, linked Slack, Claude and Codex accounts, and role. An admin can override a role, unlink an account and revoke tokens. The site's WordPress administrators are the admins, and they prove it with the same login.
 
 **Exit:** each Claude surface and Codex can sign in, run a lookup and start a request that a named approver approves in the hosted app. The audit shows the right client and user, and a `requester` can't fetch another user's private review.
 
@@ -219,7 +231,7 @@ A Slack app built with Bolt, running beside `apps/server`. It's an MCP client of
 
 ### 7.1 Identity
 
-- Map each Slack user to a SitePilot user, through the IdP (Sign in with Slack or SSO) or an admin mapping screen in the hosted app.
+- Each Slack user links once: a Connect button sends them to sign in with WordPress ([6.1](#61-sign-in-with-wordpress)). A matching email only pre-fills the link. Admins can see and undo links in the hosted app's admin area.
 - The app calls MCP as that user, using per-user tokens from an OAuth flow started from Slack. It never uses one shared bot identity for everyone.
 - Unmapped users get a DM explaining how to connect.
 

@@ -242,7 +242,7 @@ Compiling takes seconds to minutes, so request tools return an ID immediately. C
 
 **Identity and scopes.**
 - OAuth 2.1, as the MCP authorization specification requires.
-- Each MCP user maps to a SitePilot user and role; the Slack app maps Slack users the same way (the Slack approver mapping in section 12).
+- Each MCP user maps to a SitePilot user and role by signing in with WordPress, and the Slack app maps Slack users the same way (section 12).
 - Scopes separate `read` (lookups), `request` (create and revise requests) and `review` (fetch review artifacts).
 - Every audit entry records the client (Slack, Claude, Codex), the user and the tool.
 - Rate limits apply per user and per site.
@@ -311,18 +311,21 @@ Ship behind an explicit v2 capability/feature flag. Start with comparison mode t
 
 Decisions made so far:
 
-- **Hosting (30 September 2026).** The hosted services run on Railway: `apps/server`, the browser worker and the Slack app. The data sits separately in Supabase: Postgres for the repositories and durable jobs, and Storage for review artifacts and staged media. Only the backend connects to Supabase. The web app and clients go through `apps/server`, which creates approval bindings. Signing keys stay in Railway's secrets, not in the database. Put both in European regions close to each other.
+- **Hosting (30 September 2026).** The hosted services run on Railway: `apps/server`, the browser worker, the Slack app and the hosted web app. `apps/server` serves the web app on the same domain as its API, so sign-in needs no cross-site cookies. Vercel isn't used, and the web app can move there later without changing the backend. The data sits separately in Supabase: Postgres for the repositories and durable jobs, and Storage for review artifacts and staged media. Only the backend connects to Supabase. The web app and clients go through `apps/server`, which creates approval bindings. Signing keys stay in Railway's secrets, not in the database. Put both in European regions close to each other.
+  - Testing runs on Railway's Hobby plan without a fixed outgoing IP. If a client site needs one at launch, move to Pro and turn on [static outbound IPs](https://docs.railway.com/networking/static-outbound-ips) for each service that calls the site, such as `apps/server` and the worker.
+  - Railway gives each service three IPv4 addresses, and the client must allow all of them. They may be shared with other Railway customers, so they don't prove a request came from SitePilot. The request signatures do that. They change if the service moves region, so fix the region before giving clients the addresses.
+- **Sign-in (30 September 2026).** No SSO or external identity provider. People sign in with WordPress through the plugin. The hosted app, the Slack app and the Claude and Codex OAuth login all use the site's normal WordPress login. The plugin returns a signed, one-use confirmation of the WordPress user, and `apps/server` links it to the person's Slack, Claude and Codex identities by ID, never by email alone. `apps/server` issues its own OAuth 2.1 tokens for remote MCP. Roles come from WordPress capabilities, and the hosted app's admin area can override them. See [MCP plan, 6.1](./v2-mcp-plan.md#61-sign-in-with-wordpress).
 
 Remaining rollout gates include:
 
 - The actual website, WordPress/Gutenberg versions, theme, active plugins, post types and required third-party blocks.
 - Examples and expected outcomes for the recurring failures.
-- The hosted worker's network route to the site, such as a fixed outgoing IP from Railway that the site's firewall allows, and WordPress browser authentication.
+- The hosted worker's network route to the site, and WordPress browser authentication. A fixed outgoing IP is only needed if the site limits `wp-admin` to listed IPs or its firewall blocks cloud traffic.
 - Conditional commit support in the target hosting/database environment.
 - Exact first-release authoring/verification matrix and intentional HTML policy.
 - Private preview/staging, artifact retention, approval expiry and failed-draft/media cleanup policy.
-- Separate Copilot organisation/authentication gate and Slack approver mapping.
-- MCP OAuth provider, user-to-role mapping for Claude and Codex users, and whether `submit_block_plan` is allowed under the organisation's LLM policy.
+- Separate Copilot organisation/authentication gate, and which Slack workspace the app is installed in and who owns it.
+- Whether `submit_block_plan` is allowed under the organisation's LLM policy.
 - Studio comparison results against matched disposable sites, including missing-block and content-loss controls.
 - Redacted captures of the client's current recurring invalid-block regressions and their expected outcomes.
 - Native save/reopen fixtures for every third-party block proposed for authoring; discovery alone does not enable them.
