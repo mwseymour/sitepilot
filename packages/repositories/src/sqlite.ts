@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 
 import type { RepositoryRegistry } from "./interfaces.js";
 import { sqliteMigrations, type SqliteMigration } from "./migrations.js";
-import { createSqliteRepositoryRegistry } from "./sqlite-repositories.js";
+import { createSqliteRepositoryRegistry } from "./sql-repositories.js";
 
 export interface SqliteDatabaseConfig {
   filePath: string;

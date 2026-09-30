@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 
+import { sqliteConnection, type SqlConnection } from "@sitepilot/sql";
+
 import {
   gutenbergV2ApprovalSchema,
   gutenbergV2JobRecordSchema,
@@ -32,7 +34,11 @@ export interface GutenbergV2ExecutionJournal {
 type JournalRow = { payload: string };
 type ApprovalRow = { payload: string; payloadHash: string };
 
-function ensureTables(connection: Database.Database): void {
+/**
+ * SQLite creates the journal tables itself. On Postgres they come from the
+ * hosted schema migrations.
+ */
+function ensureSqliteTables(connection: Database.Database): void {
   connection.pragma("busy_timeout = 5000");
   connection.exec(`
     CREATE TABLE IF NOT EXISTS gutenberg_v2_execution_journal (
@@ -57,13 +63,12 @@ function ensureTables(connection: Database.Database): void {
   `);
 }
 
-export class SqliteGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJournal {
-  public constructor(private readonly connection: Database.Database) {
-    ensureTables(connection);
-  }
+/** The v2 journal over either database. */
+export class SqlGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJournal {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async get(executionId: string): Promise<GutenbergV2JobRecord | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { executionId: string },
         JournalRow
@@ -78,7 +83,7 @@ export class SqliteGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJo
     record: GutenbergV2JobRecord
   ): Promise<GutenbergV2JournalCreateResult> {
     const parsed = gutenbergV2JobRecordSchema.parse(record);
-    const result = this.connection
+    const result = await this.connection
       .prepare(
         `INSERT INTO gutenberg_v2_execution_journal
           (execution_id, revision, state, idempotency_key, payload, created_at, updated_at)
@@ -98,8 +103,8 @@ export class SqliteGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJo
     if (result.changes === 1) return { created: true, record: parsed };
     const existing =
       (await this.get(parsed.executionId)) ??
-      (() => {
-        const row = this.connection
+      (await (async () => {
+        const row = await this.connection
           .prepare<
             { idempotencyKey: string },
             JournalRow
@@ -108,7 +113,7 @@ export class SqliteGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJo
         return row
           ? gutenbergV2JobRecordSchema.parse(JSON.parse(row.payload))
           : null;
-      })();
+      })());
     if (!existing)
       throw new Error(
         "The v2 journal lost an execution after a conflicting insert."
@@ -128,7 +133,7 @@ export class SqliteGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJo
         "A journal transition must preserve execution identity and increment revision once."
       );
     }
-    const result = this.connection
+    const result = await this.connection
       .prepare(
         `UPDATE gutenberg_v2_execution_journal
          SET revision = @nextRevision, state = @nextState, payload = @payload, updated_at = @updatedAt
@@ -147,17 +152,16 @@ export class SqliteGutenbergV2ExecutionJournal implements GutenbergV2ExecutionJo
   }
 }
 
-export class SqliteGutenbergV2ApprovalStore implements GutenbergV2ApprovalStore {
-  public constructor(private readonly connection: Database.Database) {
-    ensureTables(connection);
-  }
+/** Immutable approvals over either database. */
+export class SqlGutenbergV2ApprovalStore implements GutenbergV2ApprovalStore {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async get(approvalId: string): Promise<GutenbergV2Approval | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { approvalId: string },
         ApprovalRow
-      >(`SELECT payload, payload_hash AS payloadHash FROM gutenberg_v2_approvals WHERE approval_id = @approvalId`)
+      >(`SELECT payload, payload_hash AS "payloadHash" FROM gutenberg_v2_approvals WHERE approval_id = @approvalId`)
       .get({ approvalId });
     if (!row) return null;
     const approval = gutenbergV2ApprovalSchema.parse(JSON.parse(row.payload));
@@ -172,7 +176,7 @@ export class SqliteGutenbergV2ApprovalStore implements GutenbergV2ApprovalStore 
   public async save(approval: GutenbergV2Approval): Promise<void> {
     const parsed = gutenbergV2ApprovalSchema.parse(approval);
     const payloadHash = hashGutenbergV2Value(parsed);
-    const result = this.connection
+    const result = await this.connection
       .prepare(
         `INSERT INTO gutenberg_v2_approvals
           (approval_id, candidate_id, expires_at, payload_hash, payload, created_at)
@@ -195,5 +199,19 @@ export class SqliteGutenbergV2ApprovalStore implements GutenbergV2ApprovalStore 
         `Approval ${parsed.approvalId} is already bound to another immutable payload.`
       );
     }
+  }
+}
+
+export class SqliteGutenbergV2ExecutionJournal extends SqlGutenbergV2ExecutionJournal {
+  public constructor(connection: Database.Database) {
+    ensureSqliteTables(connection);
+    super(sqliteConnection(connection));
+  }
+}
+
+export class SqliteGutenbergV2ApprovalStore extends SqlGutenbergV2ApprovalStore {
+  public constructor(connection: Database.Database) {
+    ensureSqliteTables(connection);
+    super(sqliteConnection(connection));
   }
 }

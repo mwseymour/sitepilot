@@ -32,4 +32,15 @@ export {
 } from "./sqlite.js";
 export { sqliteMigrations } from "./migrations.js";
 export type { SqliteMigration } from "./migrations.js";
-export { createSqliteRepositoryRegistry } from "./sqlite-repositories.js";
+export {
+  createSqlRepositoryRegistry,
+  createSqliteRepositoryRegistry
+} from "./sql-repositories.js";
+export {
+  POSTGRES_SCHEMA,
+  createPostgresPool,
+  initializePostgresDatabase,
+  postgresMigrations,
+  runPostgresMigrations
+} from "./postgres.js";
+export type { PostgresDatabaseContext, PostgresMigration } from "./postgres.js";

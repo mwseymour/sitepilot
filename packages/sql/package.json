@@ -1,5 +1,5 @@
 {
-  "name": "@sitepilot/repositories",
+  "name": "@sitepilot/sql",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@sitepilot/contracts": "0.1.0",
-    "@sitepilot/domain": "0.1.0",
-    "@sitepilot/sql": "0.1.0",
     "better-sqlite3": "^12.9.0",
     "pg": "^8.23.1"
   },

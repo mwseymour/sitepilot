@@ -17,6 +17,7 @@
     { "path": "./packages/mcp-server" },
     { "path": "./packages/plugin-protocol" },
     { "path": "./packages/logging" },
+    { "path": "./packages/sql" },
     { "path": "./packages/test-utils" }
   ]
 }

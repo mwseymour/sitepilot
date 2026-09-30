@@ -15,7 +15,18 @@ import type {
   SiteConfigVersion,
   Workspace
 } from "@sitepilot/domain";
-import { initializeDatabase } from "@sitepilot/repositories";
+import {
+  initializeDatabase,
+  initializePostgresDatabase,
+  type RepositoryRegistry
+} from "@sitepilot/repositories";
+
+import { sqliteConnection, type SqlConnection } from "@sitepilot/sql";
+
+import {
+  TEST_POSTGRES_URL,
+  createTestPostgresDatabase
+} from "./postgres-test-database.js";
 
 const temporaryDirectories: string[] = [];
 const now = "2026-04-19T12:00:00.000Z";
@@ -26,18 +37,52 @@ afterEach(() => {
   }
 });
 
-function createDatabase() {
+type TestDatabase = {
+  repositories: RepositoryRegistry;
+  sql: SqlConnection;
+  close: () => Promise<void>;
+};
+
+async function createSqliteDatabase(): Promise<TestDatabase> {
   const directory = mkdtempSync(join(tmpdir(), "sitepilot-repo-"));
   temporaryDirectories.push(directory);
-
-  return initializeDatabase({
+  const database = initializeDatabase({
     filePath: join(directory, "sitepilot.sqlite")
   });
+  return {
+    repositories: database.repositories,
+    sql: sqliteConnection(database.connection),
+    close: async () => database.close()
+  };
 }
 
-describe("sqlite repositories", () => {
+async function createPostgresDatabase(): Promise<TestDatabase> {
+  const created = await createTestPostgresDatabase();
+  const database = await initializePostgresDatabase({
+    connectionString: created.url,
+    max: 2
+  });
+  return {
+    repositories: database.repositories,
+    sql: database.sql,
+    close: async () => {
+      await database.close();
+      await created.drop();
+    }
+  };
+}
+
+// The same repositories run on the desktop's SQLite and the hosted Postgres.
+const backends: Array<[string, () => Promise<TestDatabase>]> = [
+  ["sqlite", createSqliteDatabase],
+  ...(TEST_POSTGRES_URL
+    ? [["postgres", createPostgresDatabase] as [string, () => Promise<TestDatabase>]]
+    : [])
+];
+
+describe.each(backends)("%s repositories", (_name, createDatabase) => {
   it("round-trips workspace and site records", async () => {
-    const database = createDatabase();
+    const database = await createDatabase();
 
     try {
       const workspace: Workspace = {
@@ -75,12 +120,12 @@ describe("sqlite repositories", () => {
         ])
       );
     } finally {
-      database.close();
+      await database.close();
     }
   });
 
   it("round-trips site config, discovery, thread, request, approval, and audit records", async () => {
-    const database = createDatabase();
+    const database = await createDatabase();
 
     try {
       const workspace: Workspace = {
@@ -181,7 +226,7 @@ describe("sqlite repositories", () => {
       await database.repositories?.discoverySnapshots.save(snapshot);
       await database.repositories?.chatThreads.save(thread);
       await database.repositories?.requests.save(request);
-      database.connection
+      await database.sql
         .prepare(
           `INSERT INTO action_plans (
              id, request_id, site_id, summary, assumptions_json, open_questions_json,
@@ -236,12 +281,12 @@ describe("sqlite repositories", () => {
         ])
       );
     } finally {
-      database.close();
+      await database.close();
     }
   });
 
   it("round-trips chat messages and clarification rounds", async () => {
-    const database = createDatabase();
+    const database = await createDatabase();
 
     try {
       const workspace: Workspace = {
@@ -332,12 +377,12 @@ describe("sqlite repositories", () => {
         ])
       );
     } finally {
-      database.close();
+      await database.close();
     }
   });
 
   it("deletes chat threads by id", async () => {
-    const database = createDatabase();
+    const database = await createDatabase();
 
     try {
       const workspace: Workspace = {
@@ -377,7 +422,7 @@ describe("sqlite repositories", () => {
         database.repositories?.chatThreads.getById(thread.id)
       ).resolves.toBeNull();
     } finally {
-      database.close();
+      await database.close();
     }
   });
 });

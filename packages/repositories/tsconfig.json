@@ -7,5 +7,6 @@
     "exactOptionalPropertyTypes": false
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../contracts" }, { "path": "../domain" }]
+  "references": [{ "path": "../contracts" }, { "path": "../domain" },
+    { "path": "../sql" }]
 }

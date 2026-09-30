@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 
+import { sqliteConnection, type SqlConnection } from "@sitepilot/sql";
+
 import {
   actionPlanSchema,
   type Action as ContractAction,
@@ -63,19 +65,19 @@ function asBoolean(value: number): boolean {
   return value === 1;
 }
 
-function upsert(
-  connection: Database.Database,
+async function upsert(
+  connection: SqlConnection,
   sql: string,
   params: Record<string, unknown>
-): void {
-  connection.prepare(sql).run(params);
+): Promise<void> {
+  await connection.prepare(sql).run(params);
 }
 
-class SqliteWorkspaceRepository implements WorkspaceRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlWorkspaceRepository implements WorkspaceRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(id: Workspace["id"]): Promise<Workspace | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -110,7 +112,7 @@ class SqliteWorkspaceRepository implements WorkspaceRepository {
   }
 
   public async list(): Promise<Workspace[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         [],
         {
@@ -141,7 +143,7 @@ class SqliteWorkspaceRepository implements WorkspaceRepository {
   }
 
   public async save(workspace: Workspace): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO workspaces (
          id, name, slug, description, owner_user_profile_id, created_at, updated_at
@@ -167,11 +169,11 @@ class SqliteWorkspaceRepository implements WorkspaceRepository {
   }
 }
 
-class SqliteSiteRepository implements SiteRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlSiteRepository implements SiteRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(id: Site["id"]): Promise<Site | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -217,7 +219,7 @@ class SqliteSiteRepository implements SiteRepository {
   public async listByWorkspaceId(
     workspaceId: Site["workspaceId"]
   ): Promise<Site[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { workspaceId: string },
         {
@@ -258,7 +260,7 @@ class SqliteSiteRepository implements SiteRepository {
   }
 
   public async save(site: Site): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO sites (
          id, workspace_id, name, base_url, environment, activation_status,
@@ -292,11 +294,11 @@ class SqliteSiteRepository implements SiteRepository {
   }
 }
 
-class SqliteSiteConnectionRepository implements SiteConnectionRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlSiteConnectionRepository implements SiteConnectionRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getBySiteId(siteId: Site["id"]): Promise<SiteConnection | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -343,7 +345,7 @@ class SqliteSiteConnectionRepository implements SiteConnectionRepository {
   }
 
   public async save(connection: SiteConnection): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO site_connections (
          id, site_id, status, protocol_version, plugin_version, client_identifier,
@@ -381,13 +383,13 @@ class SqliteSiteConnectionRepository implements SiteConnectionRepository {
   }
 }
 
-class SqliteSiteConfigRepository implements SiteConfigRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlSiteConfigRepository implements SiteConfigRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getActiveBySiteId(
     siteId: SiteConfigVersion["siteId"]
   ): Promise<SiteConfigVersion | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -431,7 +433,7 @@ class SqliteSiteConfigRepository implements SiteConfigRepository {
   public async listVersions(
     siteId: SiteConfigVersion["siteId"]
   ): Promise<SiteConfigVersion[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -468,7 +470,7 @@ class SqliteSiteConfigRepository implements SiteConfigRepository {
   }
 
   public async save(config: SiteConfigVersion): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO site_config_versions (
          id, site_id, version, is_active, summary, required_sections_complete,
@@ -497,13 +499,13 @@ class SqliteSiteConfigRepository implements SiteConfigRepository {
   }
 }
 
-class SqliteDiscoverySnapshotRepository implements DiscoverySnapshotRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlDiscoverySnapshotRepository implements DiscoverySnapshotRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getLatest(
     siteId: DiscoverySnapshot["siteId"]
   ): Promise<DiscoverySnapshot | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -545,7 +547,7 @@ class SqliteDiscoverySnapshotRepository implements DiscoverySnapshotRepository {
   public async listBySiteId(
     siteId: DiscoverySnapshot["siteId"]
   ): Promise<DiscoverySnapshot[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -580,7 +582,7 @@ class SqliteDiscoverySnapshotRepository implements DiscoverySnapshotRepository {
   }
 
   public async save(snapshot: DiscoverySnapshot): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO discovery_snapshots (
          id, site_id, revision, warnings_json, capabilities_json, summary_json,
@@ -606,11 +608,11 @@ class SqliteDiscoverySnapshotRepository implements DiscoverySnapshotRepository {
   }
 }
 
-class SqliteChatThreadRepository implements ChatThreadRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlChatThreadRepository implements ChatThreadRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(id: ChatThread["id"]): Promise<ChatThread | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -649,7 +651,7 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
   public async listBySiteId(
     siteId: ChatThread["siteId"]
   ): Promise<ChatThread[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -683,7 +685,7 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
   }
 
   public async save(thread: ChatThread): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO chat_threads (
          id, site_id, title, type, archived_at, source, created_at, updated_at
@@ -710,17 +712,17 @@ class SqliteChatThreadRepository implements ChatThreadRepository {
   }
 
   public async deleteById(id: ChatThread["id"]): Promise<void> {
-    this.connection
+    await this.connection
       .prepare(`DELETE FROM chat_threads WHERE id = @id`)
       .run({ id });
   }
 }
 
-class SqliteChatMessageRepository implements ChatMessageRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlChatMessageRepository implements ChatMessageRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(id: ChatMessage["id"]): Promise<ChatMessage | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -766,7 +768,7 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
   public async listByThreadId(
     threadId: ChatMessage["threadId"]
   ): Promise<ChatMessage[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { threadId: string },
         {
@@ -809,7 +811,7 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
   }
 
   public async save(message: ChatMessage): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO chat_messages (
          id, thread_id, site_id, author_json, body_json, attachments_json,
@@ -841,13 +843,13 @@ class SqliteChatMessageRepository implements ChatMessageRepository {
   }
 }
 
-class SqliteClarificationRoundRepository implements ClarificationRoundRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlClarificationRoundRepository implements ClarificationRoundRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(
     id: ClarificationRound["id"]
   ): Promise<ClarificationRound | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -887,7 +889,7 @@ class SqliteClarificationRoundRepository implements ClarificationRoundRepository
   public async listByRequestId(
     requestId: ClarificationRound["requestId"]
   ): Promise<ClarificationRound[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { requestId: string },
         {
@@ -922,7 +924,7 @@ class SqliteClarificationRoundRepository implements ClarificationRoundRepository
   }
 
   public async save(round: ClarificationRound): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO clarification_rounds (
          id, request_id, site_id, questions_json, answers_json, resolved_at,
@@ -952,11 +954,11 @@ class SqliteClarificationRoundRepository implements ClarificationRoundRepository
   }
 }
 
-class SqliteRequestRepository implements RequestRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlRequestRepository implements RequestRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(id: Request["id"]): Promise<Request | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -1007,7 +1009,7 @@ class SqliteRequestRepository implements RequestRepository {
   public async listByThreadId(
     threadId: Request["threadId"]
   ): Promise<Request[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { threadId: string },
         {
@@ -1055,7 +1057,7 @@ class SqliteRequestRepository implements RequestRepository {
   }
 
   public async listBySiteId(siteId: Request["siteId"]): Promise<Request[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -1104,7 +1106,7 @@ class SqliteRequestRepository implements RequestRepository {
   }
 
   public async save(request: Request): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO requests (
          id, site_id, thread_id, requested_by_json, status, user_prompt,
@@ -1140,15 +1142,15 @@ class SqliteRequestRepository implements RequestRepository {
   }
 }
 
-class SqliteRequestVisualAnalysisRepository
+class SqlRequestVisualAnalysisRepository
   implements RequestVisualAnalysisRepository
 {
-  public constructor(private readonly connection: Database.Database) {}
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getByRequestId(
     requestId: RequestVisualAnalysis["requestId"]
   ): Promise<RequestVisualAnalysis | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { requestId: string },
         {
@@ -1206,7 +1208,7 @@ class SqliteRequestVisualAnalysisRepository
   }
 
   public async save(analysis: RequestVisualAnalysis): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO request_visual_analyses (
          id, request_id, site_id, provider, model, source_image_count,
@@ -1258,13 +1260,13 @@ class SqliteRequestVisualAnalysisRepository
   }
 }
 
-class SqliteActionPlanRepository implements ActionPlanRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlActionPlanRepository implements ActionPlanRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async saveFromContract(plan: ContractActionPlan): Promise<void> {
-    const run = this.connection.transaction(() => {
-      upsert(
-        this.connection,
+    await this.connection.transaction(async (tx) => {
+      await upsert(
+        tx,
         `INSERT INTO action_plans (
            id, request_id, site_id, summary, assumptions_json, open_questions_json,
            approval_required, risk_level, target_entity_refs_json,
@@ -1316,8 +1318,8 @@ class SqliteActionPlanRepository implements ActionPlanRepository {
             permissionRequirement: action.permissionRequirement
           }
         };
-        upsert(
-          this.connection,
+        await upsert(
+          tx,
           `INSERT INTO actions (
              id, plan_id, request_id, type, risk_level, dry_run_capable,
              rollback_supported, input_json, created_at, updated_at
@@ -1349,8 +1351,6 @@ class SqliteActionPlanRepository implements ActionPlanRepository {
         );
       }
     });
-
-    run();
   }
 
   public async getById(
@@ -1373,7 +1373,7 @@ class SqliteActionPlanRepository implements ActionPlanRepository {
       updated_at: string;
     };
 
-    const row = this.connection
+    const row = await this.connection
       .prepare<{ id: string }, PlanRow>(
         `SELECT id, request_id, site_id, summary, assumptions_json, open_questions_json,
                 approval_required, risk_level, target_entity_refs_json,
@@ -1400,7 +1400,7 @@ class SqliteActionPlanRepository implements ActionPlanRepository {
       updated_at: string;
     };
 
-    const actionRows = this.connection
+    const actionRows = await this.connection
       .prepare<{ planId: string }, ActionRow>(
         `SELECT id, plan_id, request_id, type, risk_level, dry_run_capable, rollback_supported,
                 input_json, created_at, updated_at
@@ -1467,11 +1467,11 @@ class SqliteActionPlanRepository implements ActionPlanRepository {
   }
 }
 
-class SqliteProviderUsageRepository implements ProviderUsageRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlProviderUsageRepository implements ProviderUsageRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async append(event: ProviderUsageEvent): Promise<void> {
-    this.connection
+    await this.connection
       .prepare(
         `INSERT INTO provider_usage_events (
            id, workspace_id, site_id, request_id, provider, model,
@@ -1496,13 +1496,13 @@ class SqliteProviderUsageRepository implements ProviderUsageRepository {
   }
 }
 
-class SqliteApprovalRepository implements ApprovalRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlApprovalRepository implements ApprovalRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(
     id: ApprovalRequest["id"]
   ): Promise<ApprovalRequest | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -1544,7 +1544,7 @@ class SqliteApprovalRepository implements ApprovalRepository {
   public async listByRequestId(
     requestId: ApprovalRequest["requestId"]
   ): Promise<ApprovalRequest[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { requestId: string },
         {
@@ -1584,7 +1584,7 @@ class SqliteApprovalRepository implements ApprovalRepository {
     siteId: ApprovalRequest["siteId"]
   ): Promise<ApprovalRequest[]> {
     const now = new Date().toISOString();
-    this.connection
+    await this.connection
       .prepare(
         `UPDATE approval_requests
          SET status = 'expired', updated_at = @now
@@ -1595,7 +1595,7 @@ class SqliteApprovalRepository implements ApprovalRepository {
       )
       .run({ siteId, now });
 
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { siteId: string; now: string },
         {
@@ -1634,7 +1634,7 @@ class SqliteApprovalRepository implements ApprovalRepository {
   }
 
   public async save(approvalRequest: ApprovalRequest): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO approval_requests (
          id, request_id, plan_id, site_id, status, requested_by_json, expires_at,
@@ -1666,7 +1666,7 @@ class SqliteApprovalRepository implements ApprovalRepository {
   }
 
   public async appendDecision(decision: ApprovalDecision): Promise<void> {
-    this.connection
+    await this.connection
       .prepare(
         `INSERT INTO approval_decisions (
            id, approval_request_id, decided_by_json, decision, note,
@@ -1688,8 +1688,8 @@ class SqliteApprovalRepository implements ApprovalRepository {
   }
 }
 
-class SqliteAuditEntryRepository implements AuditEntryRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlAuditEntryRepository implements AuditEntryRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async listByRequestId(
     requestId: AuditEntry["requestId"]
@@ -1698,7 +1698,7 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
       return [];
     }
 
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { requestId: string },
         {
@@ -1727,7 +1727,7 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
   public async listBySiteId(
     siteId: AuditEntry["siteId"]
   ): Promise<AuditEntry[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { siteId: string },
         {
@@ -1814,12 +1814,12 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
       updated_at: string;
     };
 
-    const rows = this.connection.prepare(sql).all(bind) as Row[];
+    const rows = (await this.connection.prepare(sql).all(bind)) as Row[];
     return rows.map((row) => this.mapAuditEntry(row));
   }
 
   public async append(entry: AuditEntry): Promise<void> {
-    this.connection
+    await this.connection
       .prepare(
         `INSERT INTO audit_entries (
            id, site_id, request_id, action_id, event_type, actor_json, metadata_json,
@@ -1872,11 +1872,11 @@ class SqliteAuditEntryRepository implements AuditEntryRepository {
   }
 }
 
-class SqliteExecutionRunRepository implements ExecutionRunRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlExecutionRunRepository implements ExecutionRunRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async getById(id: ExecutionRun["id"]): Promise<ExecutionRun | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { id: string },
         {
@@ -1917,7 +1917,7 @@ class SqliteExecutionRunRepository implements ExecutionRunRepository {
   }
 
   public async getByIdempotencyKey(key: string): Promise<ExecutionRun | null> {
-    const row = this.connection
+    const row = await this.connection
       .prepare<
         { key: string },
         {
@@ -1958,7 +1958,7 @@ class SqliteExecutionRunRepository implements ExecutionRunRepository {
   }
 
   public async save(run: ExecutionRun): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO execution_runs (
          id, request_id, plan_id, site_id, status, idempotency_key,
@@ -1992,11 +1992,11 @@ class SqliteExecutionRunRepository implements ExecutionRunRepository {
   }
 }
 
-class SqliteToolInvocationRepository implements ToolInvocationRepository {
-  public constructor(private readonly connection: Database.Database) {}
+class SqlToolInvocationRepository implements ToolInvocationRepository {
+  public constructor(private readonly connection: SqlConnection) {}
 
   public async save(invocation: ToolInvocation): Promise<void> {
-    upsert(
+    await upsert(
       this.connection,
       `INSERT INTO tool_invocations (
          id, execution_run_id, action_id, tool_name, status, input_json, output_json, error_code,
@@ -2035,7 +2035,7 @@ class SqliteToolInvocationRepository implements ToolInvocationRepository {
   public async listByExecutionRunId(
     runId: ToolInvocation["executionRunId"]
   ): Promise<ToolInvocation[]> {
-    const rows = this.connection
+    const rows = await this.connection
       .prepare<
         { runId: string },
         {
@@ -2081,25 +2081,32 @@ class SqliteToolInvocationRepository implements ToolInvocationRepository {
   }
 }
 
+/** Repositories over either database. */
+export function createSqlRepositoryRegistry(
+  connection: SqlConnection
+): RepositoryRegistry {
+  return {
+    workspaces: new SqlWorkspaceRepository(connection),
+    sites: new SqlSiteRepository(connection),
+    siteConnections: new SqlSiteConnectionRepository(connection),
+    siteConfigs: new SqlSiteConfigRepository(connection),
+    discoverySnapshots: new SqlDiscoverySnapshotRepository(connection),
+    chatThreads: new SqlChatThreadRepository(connection),
+    chatMessages: new SqlChatMessageRepository(connection),
+    requests: new SqlRequestRepository(connection),
+    requestVisualAnalyses: new SqlRequestVisualAnalysisRepository(connection),
+    clarificationRounds: new SqlClarificationRoundRepository(connection),
+    actionPlans: new SqlActionPlanRepository(connection),
+    providerUsage: new SqlProviderUsageRepository(connection),
+    approvals: new SqlApprovalRepository(connection),
+    auditEntries: new SqlAuditEntryRepository(connection),
+    executionRuns: new SqlExecutionRunRepository(connection),
+    toolInvocations: new SqlToolInvocationRepository(connection)
+  };
+}
+
 export function createSqliteRepositoryRegistry(
   connection: Database.Database
 ): RepositoryRegistry {
-  return {
-    workspaces: new SqliteWorkspaceRepository(connection),
-    sites: new SqliteSiteRepository(connection),
-    siteConnections: new SqliteSiteConnectionRepository(connection),
-    siteConfigs: new SqliteSiteConfigRepository(connection),
-    discoverySnapshots: new SqliteDiscoverySnapshotRepository(connection),
-    chatThreads: new SqliteChatThreadRepository(connection),
-    chatMessages: new SqliteChatMessageRepository(connection),
-    requests: new SqliteRequestRepository(connection),
-    requestVisualAnalyses: new SqliteRequestVisualAnalysisRepository(connection),
-    clarificationRounds: new SqliteClarificationRoundRepository(connection),
-    actionPlans: new SqliteActionPlanRepository(connection),
-    providerUsage: new SqliteProviderUsageRepository(connection),
-    approvals: new SqliteApprovalRepository(connection),
-    auditEntries: new SqliteAuditEntryRepository(connection),
-    executionRuns: new SqliteExecutionRunRepository(connection),
-    toolInvocations: new SqliteToolInvocationRepository(connection)
-  };
+  return createSqlRepositoryRegistry(sqliteConnection(connection));
 }

@@ -16,6 +16,8 @@ export type {
   GutenbergV2WorkerCompileResult
 } from "./gutenberg-v2-content-service.js";
 export {
+  SqlGutenbergV2ApprovalStore,
+  SqlGutenbergV2ExecutionJournal,
   SqliteGutenbergV2ApprovalStore,
   SqliteGutenbergV2ExecutionJournal
 } from "./gutenberg-v2-journal.js";

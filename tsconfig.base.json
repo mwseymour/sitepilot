@@ -22,7 +22,8 @@
       ],
       "@sitepilot/mcp-server": ["packages/mcp-server/src/index.ts"],
       "@sitepilot/test-utils": ["packages/test-utils/src/index.ts"],
-      "@sitepilot/server": ["apps/server/src/app.ts"]
+      "@sitepilot/server": ["apps/server/src/app.ts"],
+      "@sitepilot/sql": ["packages/sql/src/index.ts"]
     },
     "strict": true,
     "noUncheckedIndexedAccess": true,
