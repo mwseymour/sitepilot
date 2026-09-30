@@ -415,5 +415,31 @@ export const sqliteMigrations: SqliteMigration[] = [
        SET status = 'archived', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE ${OPEN_V1_REQUESTS}`
     ]
+  },
+  {
+    id: "009_gutenberg_v2_journal_tables",
+    description:
+      "Create the v2 journal and approval tables as a migration; they used to be created on first use.",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS gutenberg_v2_execution_journal (
+        execution_id TEXT PRIMARY KEY,
+        revision INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS gutenberg_v2_execution_idempotency
+        ON gutenberg_v2_execution_journal(idempotency_key)`,
+      `CREATE TABLE IF NOT EXISTS gutenberg_v2_approvals (
+        approval_id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`
+    ]
   }
 ];

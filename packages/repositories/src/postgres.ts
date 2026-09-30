@@ -2,7 +2,7 @@ import pg from "pg";
 
 import { postgresConnection, type SqlConnection } from "@sitepilot/sql";
 
-import type { RepositoryRegistry } from "./interfaces.js";
+import type { AppDatabase, RepositoryRegistry } from "./interfaces.js";
 import { createSqlRepositoryRegistry } from "./sql-repositories.js";
 import type { AppliedMigrationRecord } from "./sqlite.js";
 
@@ -399,7 +399,7 @@ export async function runPostgresMigrations(
   }
 }
 
-export type PostgresDatabaseContext = {
+export type PostgresDatabaseContext = AppDatabase & {
   pool: pg.Pool;
   sql: SqlConnection;
   migrations: AppliedMigrationRecord[];

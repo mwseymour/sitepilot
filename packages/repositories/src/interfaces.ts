@@ -1,4 +1,5 @@
 import type { ActionPlan as ContractActionPlan } from "@sitepilot/contracts";
+import type { SqlConnection } from "@sitepilot/sql";
 import type {
   ActionId,
   ApprovalDecision,
@@ -165,4 +166,14 @@ export interface RepositoryRegistry {
   auditEntries: AuditEntryRepository;
   executionRuns: ExecutionRunRepository;
   toolInvocations: ToolInvocationRepository;
+}
+
+/**
+ * The app's database, whichever engine holds it: the desktop's SQLite or the
+ * hosted backend's Postgres. Code that needs SQL beyond the repositories uses
+ * `sql`, and keeps it portable (see @sitepilot/sql).
+ */
+export interface AppDatabase {
+  readonly sql: SqlConnection;
+  readonly repositories: RepositoryRegistry;
 }

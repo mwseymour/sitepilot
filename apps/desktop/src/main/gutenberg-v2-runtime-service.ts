@@ -5,8 +5,8 @@ import {
   FileGutenbergV2StagedAssetStore,
   GutenbergV2ContentService,
   type GutenbergV2ExecutionJournal,
-  SqliteGutenbergV2ApprovalStore,
-  SqliteGutenbergV2ExecutionJournal,
+  SqlGutenbergV2ApprovalStore,
+  SqlGutenbergV2ExecutionJournal,
   type GutenbergV2StagedAssetStore
 } from "@sitepilot/services";
 import type {
@@ -128,8 +128,8 @@ export async function createGutenbergV2DesktopRuntime(
   const artifacts = new FileGutenbergV2ReviewArtifactStore(
     join(root, "review", siteId)
   );
-  const connection = getDatabase().connection;
-  const journal = new SqliteGutenbergV2ExecutionJournal(connection);
+  const { sql } = getDatabase();
+  const journal = new SqlGutenbergV2ExecutionJournal(sql);
   return {
     ok: true,
     runtime: {
@@ -147,7 +147,7 @@ export async function createGutenbergV2DesktopRuntime(
         wordpress: signed.transport,
         media: signed.media,
         journal,
-        approvals: new SqliteGutenbergV2ApprovalStore(connection)
+        approvals: new SqlGutenbergV2ApprovalStore(sql)
       })
     }
   };

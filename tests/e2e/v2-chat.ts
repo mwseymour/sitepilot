@@ -317,7 +317,7 @@ async function main(): Promise<void> {
       "The request engine marker is not v2."
     );
     assert(
-      hasGutenbergV2RequestMapping(siteId, requestId),
+      await hasGutenbergV2RequestMapping(siteId, requestId),
       "The v2 mapping was not durable."
     );
   } finally {

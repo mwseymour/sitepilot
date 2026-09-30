@@ -428,221 +428,39 @@ export async function deleteChatThreadForSite(
     return t;
   }
 
-  const deleteThread = db.connection.transaction(() => {
-    const requestIds = db.connection
-      .prepare<{ threadId: string }, { id: string }>(
-        `SELECT id
-         FROM requests
-         WHERE thread_id = @threadId`
-      )
-      .all({ threadId })
-      .map((row) => row.id);
-
-    const planIds =
-      requestIds.length > 0
-        ? db.connection
-            .prepare<{ threadId: string }, { id: string }>(
-              `SELECT action_plans.id
-               FROM action_plans
-               INNER JOIN requests
-                 ON requests.id = action_plans.request_id
-               WHERE requests.thread_id = @threadId`
-            )
-            .all({ threadId })
-            .map((row) => row.id)
-        : [];
-
-    const actionIds =
-      requestIds.length > 0
-        ? db.connection
-            .prepare<{ threadId: string }, { id: string }>(
-              `SELECT actions.id
-               FROM actions
-               INNER JOIN requests
-                 ON requests.id = actions.request_id
-               WHERE requests.thread_id = @threadId`
-            )
-            .all({ threadId })
-            .map((row) => row.id)
-        : [];
-
-    const approvalIds =
-      requestIds.length > 0
-        ? db.connection
-            .prepare<{ threadId: string }, { id: string }>(
-              `SELECT approval_requests.id
-               FROM approval_requests
-               INNER JOIN requests
-                 ON requests.id = approval_requests.request_id
-               WHERE requests.thread_id = @threadId`
-            )
-            .all({ threadId })
-            .map((row) => row.id)
-        : [];
-
-    const executionRunIds =
-      requestIds.length > 0
-        ? db.connection
-            .prepare<{ threadId: string }, { id: string }>(
-              `SELECT execution_runs.id
-               FROM execution_runs
-               INNER JOIN requests
-                 ON requests.id = execution_runs.request_id
-               WHERE requests.thread_id = @threadId`
-            )
-            .all({ threadId })
-            .map((row) => row.id)
-        : [];
-
-    db.connection
-      .prepare(`DELETE FROM chat_messages WHERE thread_id = @threadId`)
-      .run({ threadId });
-
-    if (requestIds.length > 0) {
-      db.connection
-        .prepare(
-          `DELETE FROM clarification_rounds
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM audit_entries
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM audit_entries
-           WHERE action_id IN (
-             SELECT actions.id
-             FROM actions
-             INNER JOIN requests
-               ON requests.id = actions.request_id
-             WHERE requests.thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM attachments
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM provider_usage_events
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM rollback_records
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM request_visual_analyses
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
-      db.connection
-        .prepare(
-          `DELETE FROM gutenberg_v2_request_executions
-           WHERE request_id IN (
-             SELECT id FROM requests WHERE thread_id = @threadId
-           )`
-        )
-        .run({ threadId });
+  // Children first, so every foreign key still holds at each step. The old
+  // v1 tables are cleared too, for threads made before v1 was removed.
+  const threadRequests = `SELECT id FROM requests WHERE thread_id = @threadId`;
+  const threadActions = `SELECT actions.id FROM actions
+    INNER JOIN requests ON requests.id = actions.request_id
+    WHERE requests.thread_id = @threadId`;
+  const statements = [
+    `DELETE FROM chat_messages WHERE thread_id = @threadId`,
+    `DELETE FROM clarification_rounds WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM audit_entries WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM audit_entries WHERE action_id IN (${threadActions})`,
+    `DELETE FROM attachments WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM provider_usage_events WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM rollback_records WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM request_visual_analyses WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM gutenberg_v2_request_executions WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM approval_decisions WHERE approval_request_id IN (
+       SELECT id FROM approval_requests WHERE request_id IN (${threadRequests}))`,
+    `DELETE FROM approval_requests WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM tool_invocations WHERE execution_run_id IN (
+       SELECT id FROM execution_runs WHERE request_id IN (${threadRequests}))`,
+    `DELETE FROM execution_runs WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM tool_invocations WHERE action_id IN (${threadActions})`,
+    `DELETE FROM actions WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM action_plans WHERE request_id IN (${threadRequests})`,
+    `DELETE FROM requests WHERE thread_id = @threadId`,
+    `DELETE FROM chat_threads WHERE id = @threadId`
+  ];
+  await db.sql.transaction(async (tx) => {
+    for (const statement of statements) {
+      await tx.prepare(statement).run({ threadId });
     }
-
-    if (approvalIds.length > 0) {
-      const placeholders = approvalIds.map(() => "?").join(", ");
-      db.connection
-        .prepare(
-          `DELETE FROM approval_decisions
-           WHERE approval_request_id IN (${placeholders})`
-        )
-        .run(...approvalIds);
-      db.connection
-        .prepare(
-          `DELETE FROM approval_requests
-           WHERE id IN (${placeholders})`
-        )
-        .run(...approvalIds);
-    }
-
-    if (executionRunIds.length > 0) {
-      const placeholders = executionRunIds.map(() => "?").join(", ");
-      db.connection
-        .prepare(
-          `DELETE FROM tool_invocations
-           WHERE execution_run_id IN (${placeholders})`
-        )
-        .run(...executionRunIds);
-      db.connection
-        .prepare(
-          `DELETE FROM execution_runs
-           WHERE id IN (${placeholders})`
-        )
-        .run(...executionRunIds);
-    }
-
-    if (actionIds.length > 0) {
-      const placeholders = actionIds.map(() => "?").join(", ");
-      db.connection
-        .prepare(
-          `DELETE FROM tool_invocations
-           WHERE action_id IN (${placeholders})`
-        )
-        .run(...actionIds);
-      db.connection
-        .prepare(
-          `DELETE FROM actions
-           WHERE id IN (${placeholders})`
-        )
-        .run(...actionIds);
-    }
-
-    if (planIds.length > 0) {
-      const placeholders = planIds.map(() => "?").join(", ");
-      db.connection
-        .prepare(
-          `DELETE FROM action_plans
-           WHERE id IN (${placeholders})`
-        )
-        .run(...planIds);
-    }
-
-    if (requestIds.length > 0) {
-      const placeholders = requestIds.map(() => "?").join(", ");
-      db.connection
-        .prepare(
-          `DELETE FROM requests
-           WHERE id IN (${placeholders})`
-        )
-        .run(...requestIds);
-    }
-
-    db.connection
-      .prepare(`DELETE FROM chat_threads WHERE id = @threadId`)
-      .run({ threadId });
   });
-
-  deleteThread();
   return { ok: true, threadId };
 }
 

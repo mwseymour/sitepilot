@@ -107,7 +107,7 @@ async function continueOpenRequest(input: {
   }
 
   const v2Bound =
-    hasGutenbergV2RequestMapping(input.siteId, input.request.id) ||
+    (await hasGutenbergV2RequestMapping(input.siteId, input.request.id)) ||
     input.gutenbergV2Target !== undefined;
   if (v2Bound) {
     const generated = await continueGutenbergV2AfterFollowUp({

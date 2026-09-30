@@ -484,9 +484,9 @@ export function createDesktopMcpBackend(
     },
 
     async listSites(): Promise<McpSite[]> {
-      const rows = getDatabase()
-        .connection.prepare<[], { id: string; name: string; baseUrl: string }>(
-          `SELECT id, name, base_url AS baseUrl FROM sites
+      const rows = await getDatabase()
+        .sql.prepare<[], { id: string; name: string; baseUrl: string }>(
+          `SELECT id, name, base_url AS "baseUrl" FROM sites
             WHERE activation_status = 'active' ORDER BY name`
         )
         .all();

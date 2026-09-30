@@ -10,7 +10,7 @@ import type {
   ThreadType
 } from "@sitepilot/domain";
 import { isMcpToolError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
-import { SqliteGutenbergV2ExecutionJournal } from "@sitepilot/services";
+import { SqlGutenbergV2ExecutionJournal } from "@sitepilot/services";
 
 import { getDatabase } from "./app-database.js";
 import { createMcpClientForSite } from "./site-mcp-client.js";
@@ -29,8 +29,8 @@ type ActivityRow = {
   executionUpdatedAt: string | null;
 };
 
-function journal(): SqliteGutenbergV2ExecutionJournal {
-  return new SqliteGutenbergV2ExecutionJournal(getDatabase().connection);
+function journal(): SqlGutenbergV2ExecutionJournal {
+  return new SqlGutenbergV2ExecutionJournal(getDatabase().sql);
 }
 
 function latest(...values: Array<string | null>): string {
@@ -52,12 +52,15 @@ export async function getSiteActivitySummary(input: {
   | { ok: false; code: string; message: string }
 > {
   try {
-    const rows = getDatabase()
-      .connection.prepare<{ siteId: string; limit: number }, ActivityRow>(
-        `SELECT t.id AS threadId, t.title, t.type, t.source, t.updated_at AS threadUpdatedAt,
-                r.id AS requestId, r.status AS requestStatus, r.updated_at AS requestUpdatedAt,
-                e.execution_id AS executionId, e.target_json AS targetJson,
-                e.updated_at AS executionUpdatedAt
+    const sql = getDatabase().sql;
+    // The latest of three timestamps: MAX() on SQLite, GREATEST() on Postgres.
+    const greatest = sql.dialect === "postgres" ? "GREATEST" : "MAX";
+    const rows = await sql
+      .prepare<{ siteId: string; limit: number }, ActivityRow>(
+        `SELECT t.id AS "threadId", t.title, t.type, t.source, t.updated_at AS "threadUpdatedAt",
+                r.id AS "requestId", r.status AS "requestStatus", r.updated_at AS "requestUpdatedAt",
+                e.execution_id AS "executionId", e.target_json AS "targetJson",
+                e.updated_at AS "executionUpdatedAt"
            FROM chat_threads t
            LEFT JOIN requests r ON r.id = (
              SELECT id FROM requests WHERE thread_id = t.id
@@ -65,7 +68,7 @@ export async function getSiteActivitySummary(input: {
            )
            LEFT JOIN gutenberg_v2_request_executions e ON e.request_id = r.id
           WHERE t.site_id = @siteId AND t.archived_at IS NULL
-          ORDER BY MAX(t.updated_at, COALESCE(r.updated_at, ''), COALESCE(e.updated_at, '')) DESC
+          ORDER BY ${greatest}(t.updated_at, COALESCE(r.updated_at, ''), COALESCE(e.updated_at, '')) DESC
           LIMIT @limit`
       )
       .all({ siteId: input.siteId, limit: input.limit ?? 20 });
@@ -118,12 +121,12 @@ export async function getGutenbergV2ExecutionProgress(input: {
   siteId: SiteId;
   requestId: string;
 }) {
-  const row = getDatabase()
-    .connection.prepare<
+  const row = await getDatabase()
+    .sql.prepare<
       { siteId: string; requestId: string },
       { executionId: string }
     >(
-      `SELECT execution_id AS executionId FROM gutenberg_v2_request_executions
+      `SELECT execution_id AS "executionId" FROM gutenberg_v2_request_executions
         WHERE site_id = @siteId AND request_id = @requestId`
     )
     .get({ siteId: input.siteId, requestId: input.requestId });

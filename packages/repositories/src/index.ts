@@ -2,6 +2,7 @@ export const REPOSITORIES_PACKAGE_NAME = "@sitepilot/repositories";
 
 export type {
   ActionPlanRepository,
+  AppDatabase,
   ApprovalRepository,
   AuditSiteQuery,
   AuditEntryRepository,

@@ -103,7 +103,7 @@ describe("ingestRequestThreadMessage", () => {
     db.repositories.sites.getById.mockResolvedValue(site);
     db.repositories.chatThreads.getById.mockResolvedValue(thread);
     db.repositories.requests.listByThreadId.mockResolvedValue([]);
-    (hasGutenbergV2RequestMapping as Mock).mockReturnValue(false);
+    (hasGutenbergV2RequestMapping as Mock).mockResolvedValue(false);
   });
 
   it("creates a request on the first message and amends the same request on the next", async () => {
@@ -245,7 +245,7 @@ describe("ingestRequestThreadMessage", () => {
     db.repositories.requests.listByThreadId.mockResolvedValue([
       makeRequest({ status: "awaiting_approval" })
     ]);
-    (hasGutenbergV2RequestMapping as Mock).mockReturnValue(true);
+    (hasGutenbergV2RequestMapping as Mock).mockResolvedValue(true);
     (amendRequestForThread as Mock).mockResolvedValue({
       ok: true,
       request: makeRequest({ status: "new" })

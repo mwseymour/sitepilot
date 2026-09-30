@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
 
 import {
   buildLlmGutenbergV2Plan,
@@ -31,6 +30,7 @@ import {
   createAnthropicChatClient,
   createOpenAiChatClient
 } from "@sitepilot/provider-adapters";
+import type { SqlConnection } from "@sitepilot/sql";
 import { z } from "zod";
 
 import { getDatabase } from "./app-database.js";
@@ -89,9 +89,9 @@ type Mapping = {
   updatedAt: string;
 };
 
-function getOptionalConnection(): Database.Database | undefined {
-  const database = getDatabase() as { connection?: Database.Database };
-  return database.connection;
+/** Undefined in tests that stand in a database without SQL. */
+function getOptionalSql(): SqlConnection | undefined {
+  return (getDatabase() as { sql?: SqlConnection }).sql;
 }
 
 const protocolSchema = z.object({
@@ -352,9 +352,12 @@ async function assertV2Enabled(
   }
 }
 
-function readMapping(siteId: SiteId, requestId: RequestId): Mapping | null {
-  const row = getDatabase()
-    .connection.prepare<
+async function readMapping(
+  siteId: SiteId,
+  requestId: RequestId
+): Promise<Mapping | null> {
+  const row = await getDatabase()
+    .sql.prepare<
       { siteId: string; requestId: string },
       {
         requestId: string;
@@ -367,9 +370,9 @@ function readMapping(siteId: SiteId, requestId: RequestId): Mapping | null {
         updatedAt: string;
       }
     >(
-      `SELECT request_id AS requestId, site_id AS siteId, execution_id AS executionId,
-      idempotency_key AS idempotencyKey,
-      target_json AS targetJson, decision, created_at AS createdAt, updated_at AS updatedAt
+      `SELECT request_id AS "requestId", site_id AS "siteId", execution_id AS "executionId",
+      idempotency_key AS "idempotencyKey",
+      target_json AS "targetJson", decision, created_at AS "createdAt", updated_at AS "updatedAt"
      FROM gutenberg_v2_request_executions WHERE site_id = @siteId AND request_id = @requestId`
     )
     .get({ siteId, requestId });
@@ -394,9 +397,9 @@ function readMapping(siteId: SiteId, requestId: RequestId): Mapping | null {
   };
 }
 
-function saveMapping(mapping: Mapping): void {
-  getDatabase()
-    .connection.prepare(
+async function saveMapping(mapping: Mapping): Promise<void> {
+  await getDatabase()
+    .sql.prepare(
       `INSERT INTO gutenberg_v2_request_executions
        (request_id, site_id, execution_id, idempotency_key, target_json, decision, created_at, updated_at)
      VALUES (@requestId, @siteId, @executionId, @idempotencyKey, @targetJson, @decision, @createdAt, @updatedAt)
@@ -407,55 +410,55 @@ function saveMapping(mapping: Mapping): void {
     .run({ ...mapping, targetJson: JSON.stringify(mapping.target) });
 }
 
-function claimV2Request(mapping: Mapping): boolean {
-  const connection = getOptionalConnection();
-  if (!connection) return false;
-  const transaction = connection.transaction(() => {
-    const claimed = connection
-      .prepare(
-        `UPDATE requests SET content_engine = 'gutenberg_v2', updated_at = @updatedAt
-         WHERE id = @requestId AND site_id = @siteId AND content_engine IS NULL
-           AND latest_plan_id IS NULL AND latest_execution_run_id IS NULL`
-      )
-      .run({
-        siteId: mapping.siteId,
-        requestId: mapping.requestId,
-        updatedAt: mapping.updatedAt
-      });
-    if (claimed.changes !== 1) return false;
-    const insertStatement = connection.prepare(
-      `INSERT INTO gutenberg_v2_request_executions
-         (request_id, site_id, execution_id, idempotency_key, target_json, decision, created_at, updated_at)
-       VALUES (@requestId, @siteId, @executionId, @idempotencyKey, @targetJson, NULL, @createdAt, @updatedAt)`
-    );
-    const inserted = insertStatement.run({
-      requestId: mapping.requestId,
-      siteId: mapping.siteId,
-      executionId: mapping.executionId,
-      idempotencyKey: mapping.idempotencyKey,
-      targetJson: JSON.stringify(mapping.target),
-      createdAt: mapping.createdAt,
-      updatedAt: mapping.updatedAt
-    });
-    if (inserted.changes !== 1) throw new Error("gutenberg_v2_claim_conflict");
-    return true;
-  });
+async function claimV2Request(mapping: Mapping): Promise<boolean> {
+  const sql = getOptionalSql();
+  if (!sql) return false;
   try {
-    return transaction();
+    return await sql.transaction(async (tx) => {
+      const claimed = await tx
+        .prepare(
+          `UPDATE requests SET content_engine = 'gutenberg_v2', updated_at = @updatedAt
+           WHERE id = @requestId AND site_id = @siteId AND content_engine IS NULL
+             AND latest_plan_id IS NULL AND latest_execution_run_id IS NULL`
+        )
+        .run({
+          siteId: mapping.siteId,
+          requestId: mapping.requestId,
+          updatedAt: mapping.updatedAt
+        });
+      if (claimed.changes !== 1) return false;
+      const inserted = await tx
+        .prepare(
+          `INSERT INTO gutenberg_v2_request_executions
+             (request_id, site_id, execution_id, idempotency_key, target_json, decision, created_at, updated_at)
+           VALUES (@requestId, @siteId, @executionId, @idempotencyKey, @targetJson, NULL, @createdAt, @updatedAt)`
+        )
+        .run({
+          requestId: mapping.requestId,
+          siteId: mapping.siteId,
+          executionId: mapping.executionId,
+          idempotencyKey: mapping.idempotencyKey,
+          targetJson: JSON.stringify(mapping.target),
+          createdAt: mapping.createdAt,
+          updatedAt: mapping.updatedAt
+        });
+      if (inserted.changes !== 1) throw new Error("gutenberg_v2_claim_conflict");
+      return true;
+    });
   } catch {
     return false;
   }
 }
 
-export function hasGutenbergV2RequestMapping(
+export async function hasGutenbergV2RequestMapping(
   siteId: SiteId,
   requestId: RequestId
-): boolean {
-  const connection = getOptionalConnection();
-  if (!connection) return false;
-  const row = connection
+): Promise<boolean> {
+  const sql = getOptionalSql();
+  if (!sql) return false;
+  const row = await sql
     .prepare<{ siteId: string; requestId: string }, { requestId: string }>(
-      `SELECT request_id AS requestId FROM gutenberg_v2_request_executions
+      `SELECT request_id AS "requestId" FROM gutenberg_v2_request_executions
        WHERE site_id = @siteId AND request_id = @requestId`
     )
     .get({ siteId, requestId });
@@ -586,7 +589,7 @@ async function requireMapping(
   siteId: SiteId,
   requestId: RequestId
 ): Promise<Mapping | { ok: false; code: string; message: string }> {
-  const mapping = readMapping(siteId, requestId);
+  const mapping = await readMapping(siteId, requestId);
   if (!mapping) {
     return {
       ok: false,
@@ -699,7 +702,7 @@ export async function continueGutenbergV2AfterFollowUp(input: {
   note: string;
   target?: GutenbergV2Target;
 }) {
-  const mapping = readMapping(input.siteId, input.requestId);
+  const mapping = await readMapping(input.siteId, input.requestId);
   const target = mapping?.target ?? input.target;
   if (!target) {
     return {
@@ -762,7 +765,7 @@ async function withdrawGutenbergV2Approval(input: {
   candidateId: string;
   note: string;
 }): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
-  const mapping = readMapping(input.siteId, input.requestId);
+  const mapping = await readMapping(input.siteId, input.requestId);
   if (!mapping) {
     return {
       ok: false,
@@ -777,7 +780,7 @@ async function withdrawGutenbergV2Approval(input: {
       executionId: mapping.executionId,
       candidateId: input.candidateId
     });
-    saveMapping({
+    await saveMapping({
       ...mapping,
       decision: "revision_requested",
       updatedAt: nowIso()
@@ -847,7 +850,7 @@ export async function generateGutenbergV2Candidate(input: {
       message:
         "Resolve clarification before generating a Gutenberg v2 candidate."
     };
-  const existing = readMapping(input.siteId, input.requestId);
+  const existing = await readMapping(input.siteId, input.requestId);
   if (
     existing &&
     hashGutenbergV2Value(existing.target) !== hashGutenbergV2Value(input.target)
@@ -940,8 +943,8 @@ export async function generateGutenbergV2Candidate(input: {
     createdAt: nowIso(),
     updatedAt: nowIso()
   };
-  if (!existing && !claimV2Request(mapping)) {
-    const claimed = readMapping(input.siteId, input.requestId);
+  if (!existing && !(await claimV2Request(mapping))) {
+    const claimed = await readMapping(input.siteId, input.requestId);
     return claimed
       ? {
           ok: false as const,
@@ -971,7 +974,7 @@ export async function generateGutenbergV2Candidate(input: {
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
-    saveMapping(mapping);
+    await saveMapping(mapping);
   }
   inFlightV2Generations.add(generationKey);
   const runtime = await createGutenbergV2DesktopRuntime(input.siteId);
@@ -1271,7 +1274,7 @@ export async function decideGutenbergV2Candidate(input: {
       mapping.decision = input.decision;
     }
     mapping.updatedAt = nowIso();
-    saveMapping(mapping);
+    await saveMapping(mapping);
     await saveRequestStatus(
       input.requestId,
       input.siteId,
@@ -1339,7 +1342,7 @@ export async function executeGutenbergV2Candidate(input: {
       executionId: mapping.executionId
     });
     mapping.updatedAt = nowIso();
-    saveMapping(mapping);
+    await saveMapping(mapping);
     await saveRequestStatus(
       input.requestId,
       input.siteId,
@@ -1455,7 +1458,7 @@ export async function findGutenbergV2WrittenPostTarget(input: {
   requestIds: readonly RequestId[];
 }): Promise<GutenbergV2Target | null> {
   for (const requestId of input.requestIds) {
-    const mapping = readMapping(input.siteId, requestId);
+    const mapping = await readMapping(input.siteId, requestId);
     if (!mapping) continue;
     const current = await getGutenbergV2RequestState({
       siteId: input.siteId,
@@ -1480,7 +1483,7 @@ export async function getGutenbergV2RequestState(input: {
   siteId: SiteId;
   requestId: RequestId;
 }) {
-  const mapping = readMapping(input.siteId, input.requestId);
+  const mapping = await readMapping(input.siteId, input.requestId);
   if (!mapping) return { ok: true as const, state: null };
   const runtime = await createGutenbergV2DesktopRuntime(input.siteId);
   if (!runtime.ok) return runtime;
@@ -1497,8 +1500,8 @@ export async function getGutenbergV2RequestState(input: {
 export async function listGutenbergV2PendingCandidates(input: {
   siteId: SiteId;
 }) {
-  const rows = getDatabase()
-    .connection.prepare<
+  const rows = await getDatabase()
+    .sql.prepare<
       { siteId: string },
       {
         requestId: string;
@@ -1511,9 +1514,9 @@ export async function listGutenbergV2PendingCandidates(input: {
         updatedAt: string;
       }
     >(
-      `SELECT request_id AS requestId, site_id AS siteId, execution_id AS executionId,
-            idempotency_key AS idempotencyKey,
-            target_json AS targetJson, decision, created_at AS createdAt, updated_at AS updatedAt
+      `SELECT request_id AS "requestId", site_id AS "siteId", execution_id AS "executionId",
+            idempotency_key AS "idempotencyKey",
+            target_json AS "targetJson", decision, created_at AS "createdAt", updated_at AS "updatedAt"
      FROM gutenberg_v2_request_executions WHERE site_id = @siteId ORDER BY updated_at DESC LIMIT 200`
     )
     .all({ siteId: input.siteId });

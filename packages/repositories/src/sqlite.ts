@@ -2,9 +2,11 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type { RepositoryRegistry } from "./interfaces.js";
+import { sqliteConnection, type SqlConnection } from "@sitepilot/sql";
+
+import type { AppDatabase, RepositoryRegistry } from "./interfaces.js";
 import { sqliteMigrations, type SqliteMigration } from "./migrations.js";
-import { createSqliteRepositoryRegistry } from "./sql-repositories.js";
+import { createSqlRepositoryRegistry } from "./sql-repositories.js";
 
 export interface SqliteDatabaseConfig {
   filePath: string;
@@ -17,8 +19,9 @@ export interface AppliedMigrationRecord {
   appliedAt: string;
 }
 
-export interface DatabaseContext {
+export interface DatabaseContext extends AppDatabase {
   connection: Database.Database;
+  sql: SqlConnection;
   filePath: string;
   migrations: AppliedMigrationRecord[];
   repositories: RepositoryRegistry;
@@ -32,6 +35,8 @@ function ensureParentDirectory(filePath: string): void {
 function enablePragmas(connection: Database.Database): void {
   connection.pragma("journal_mode = WAL");
   connection.pragma("foreign_keys = ON");
+  // The desktop runs the v2 worker and the UI on separate connections.
+  connection.pragma("busy_timeout = 5000");
 }
 
 function ensureMigrationTable(connection: Database.Database): void {
@@ -121,10 +126,13 @@ export function initializeDatabase(
 ): DatabaseContext {
   const connection = openSqliteDatabase(config);
   const migrations = runSqliteMigrations(connection);
-  const repositories = createSqliteRepositoryRegistry(connection);
+  // One adapter for the repositories and raw SQL alike.
+  const sql = sqliteConnection(connection);
+  const repositories = createSqlRepositoryRegistry(sql);
 
   return {
     connection,
+    sql,
     filePath: config.filePath,
     migrations,
     repositories,

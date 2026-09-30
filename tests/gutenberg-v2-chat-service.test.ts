@@ -431,7 +431,7 @@ describe("desktop Gutenberg v2 chat boundary", () => {
       expect.arrayContaining(["requests", "sites"])
     );
     expect(
-      hasGutenbergV2RequestMapping("site-1" as SiteId, "request-1" as RequestId)
+      await hasGutenbergV2RequestMapping("site-1" as SiteId, "request-1" as RequestId)
     ).toBe(false);
     database.connection
       .prepare(
@@ -439,7 +439,7 @@ describe("desktop Gutenberg v2 chat boundary", () => {
       )
       .run({ now: new Date().toISOString() });
     expect(
-      hasGutenbergV2RequestMapping("site-1" as SiteId, "request-1" as RequestId)
+      await hasGutenbergV2RequestMapping("site-1" as SiteId, "request-1" as RequestId)
     ).toBe(true);
     database.connection
       .prepare(
