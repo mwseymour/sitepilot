@@ -46,6 +46,18 @@ export {
   hashGutenbergV2Value
 } from "./gutenberg-v2-hashing.js";
 export {
+  APPROVAL_PROOF_AUDIENCE,
+  APPROVAL_STATEMENT_SCHEMA,
+  approvalKeyId,
+  approvalKeyRequest,
+  approvalSigningKeyFromPem,
+  generateApprovalSigningKey,
+  gutenbergV2ApprovalStatement,
+  signGutenbergV2Approval,
+  verifyGutenbergV2ApprovalProof
+} from "./gutenberg-v2-approval-proof.js";
+export type { ApprovalSigningKey } from "./gutenberg-v2-approval-proof.js";
+export {
   buildLlmGutenbergV2Plan,
   GutenbergV2PlanGenerationError
 } from "./gutenberg-v2-plan-generator.js";
@@ -63,6 +75,17 @@ export {
   mergeRevisedRequestPrompt
 } from "./request-revision-merge.js";
 export { extractJsonObject } from "./json-extract.js";
+export {
+  isPublicAddress,
+  safeFetch,
+  SafeFetchError
+} from "./safe-fetch.js";
+export type {
+  ResolvedAddress,
+  SafeFetchErrorCode,
+  SafeFetchOptions,
+  SafeFetchResponse
+} from "./safe-fetch.js";
 export {
   actionSupportsPostLookup,
   buildPostLookupArguments,

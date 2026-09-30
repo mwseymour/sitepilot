@@ -285,7 +285,7 @@ export function executionReport(input: {
   if (result.state !== "succeeded") {
     lines.push(
       result.retry.retryable
-        ? "Next: this can be retried safely from the request panel."
+        ? "Next: the post was restored, so it's safe to revise the request and try again."
         : "Next: inspect the post in WordPress before retrying; do not re-run blindly."
     );
   }

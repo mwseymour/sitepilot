@@ -13,6 +13,7 @@ use SitePilot\Registration\Registration_Code;
 use SitePilot\Registration\Store;
 use SitePilot\V2\Feature;
 use SitePilot\V2\Runtime_Fingerprint;
+use SitePilot\Errors\Error_Contract;
 
 /**
  * Registers POST /wp-json/sitepilot/v1/register.
@@ -42,20 +43,12 @@ final class Registration_Routes {
 	public static function register_site( \WP_REST_Request $request ) {
 		$params = $request->get_json_params();
 		if ( ! is_array( $params ) ) {
-			return new \WP_Error(
-				'sitepilot_invalid_json',
-				__( 'Request body must be JSON.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_json', __( 'Request body must be JSON.', 'sitepilot' ), 400 );
 		}
 
 		$code = isset( $params['registrationCode'] ) ? (string) $params['registrationCode'] : '';
 		if ( ! Registration_Code::matches( $code ) ) {
-			return new \WP_Error(
-				'sitepilot_invalid_code',
-				__( 'Invalid registration code.', 'sitepilot' ),
-				array( 'status' => 403 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_code', __( 'Invalid registration code.', 'sitepilot' ), 403 );
 		}
 
 		$site_id            = isset( $params['siteId'] ) ? (string) $params['siteId'] : '';
@@ -70,89 +63,49 @@ final class Registration_Routes {
 		$secret_b64         = isset( $params['sharedSecretBase64'] ) ? (string) $params['sharedSecretBase64'] : '';
 
 		if ( $site_id === '' || $workspace_id === '' || $trusted_origin === '' || $client_id === '' ) {
-			return new \WP_Error(
-				'sitepilot_invalid_payload',
-				__( 'Missing required registration fields.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_payload', __( 'Missing required registration fields.', 'sitepilot' ), 400 );
 		}
 
 		if ( $protocol_requested !== SITEPILOT_PROTOCOL_VERSION ) {
-			return new \WP_Error(
-				'sitepilot_protocol_mismatch',
-				__( 'Protocol version mismatch.', 'sitepilot' ),
-				array( 'status' => 409 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'protocol_mismatch', __( 'Protocol version mismatch.', 'sitepilot' ), 409 );
 		}
 
 		if ( $site_name === '' || $site_base_url === '' || $environment === '' || $secret_b64 === '' ) {
-			return new \WP_Error(
-				'sitepilot_invalid_payload',
-				__( 'Missing site metadata or shared secret.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_payload', __( 'Missing site metadata or shared secret.', 'sitepilot' ), 400 );
 		}
 
 		$allowed_env = array( 'production', 'staging', 'development' );
 		if ( ! in_array( $environment, $allowed_env, true ) ) {
-			return new \WP_Error(
-				'sitepilot_invalid_environment',
-				__( 'Invalid environment value.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_environment', __( 'Invalid environment value.', 'sitepilot' ), 400 );
 		}
 
 		$secret_raw = base64_decode( $secret_b64, true );
 		if ( $secret_raw === false || strlen( $secret_raw ) < 16 ) {
-			return new \WP_Error(
-				'sitepilot_invalid_secret',
-				__( 'Invalid shared secret.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_secret', __( 'Invalid shared secret.', 'sitepilot' ), 400 );
 		}
 
 		// Signed SitePilot calls run as this user and get exactly its capabilities.
 		if ( $wordpress_username === '' ) {
-			return new \WP_Error(
-				'sitepilot_wordpress_user_required',
-				__( 'Enter the WordPress username SitePilot should act as.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'wordpress_user_required', __( 'Enter the WordPress username SitePilot should act as.', 'sitepilot' ), 400 );
 		}
 		$user = get_user_by( 'login', $wordpress_username );
 		if ( ! $user instanceof \WP_User ) {
-			return new \WP_Error(
-				'sitepilot_invalid_wordpress_user',
-				__( 'The requested WordPress username was not found.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_wordpress_user', __( 'The requested WordPress username was not found.', 'sitepilot' ), 400 );
 		}
 		if ( ! user_can( $user, 'read' ) ) {
-			return new \WP_Error(
-				'sitepilot_invalid_wordpress_user',
-				__( 'The requested WordPress user cannot access SitePilot MCP.', 'sitepilot' ),
-				array( 'status' => 400 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_wordpress_user', __( 'The requested WordPress user cannot access SitePilot MCP.', 'sitepilot' ), 400 );
 		}
 		$user_id = (int) $user->ID;
 
 		// A registration never replaces an existing one, so a leaked code can't
 		// take over a connected SitePilot's site ID or lock it out.
 		if ( null !== Store::get_site( $site_id ) ) {
-			return new \WP_Error(
-				'sitepilot_site_exists',
-				__( 'This site ID is already registered. Register again from SitePilot to get a new one.', 'sitepilot' ),
-				array( 'status' => 409 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'site_exists', __( 'This site ID is already registered. Register again from SitePilot to get a new one.', 'sitepilot' ), 409 );
 		}
 
 		// Last, so a rejected request doesn't use up the code.
 		if ( ! Registration_Code::consume( $code ) ) {
-			return new \WP_Error(
-				'sitepilot_invalid_code',
-				__( 'Invalid registration code.', 'sitepilot' ),
-				array( 'status' => 403 )
-			);
+			return Error_Contract::error( 'sitepilot_', 'invalid_code', __( 'Invalid registration code.', 'sitepilot' ), 403 );
 		}
 
 		$fingerprint = hash( 'sha256', $secret_raw, false );

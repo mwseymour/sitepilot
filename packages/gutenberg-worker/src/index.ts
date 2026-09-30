@@ -7,7 +7,10 @@ export type {
   GutenbergV2EditorSessionProvider,
   WordPressEditorSessionClientOptions
 } from "./session-client.js";
-export { GutenbergV2WorkerError } from "./worker-error.js";
+export {
+  GutenbergV2WorkerError,
+  workerErrorFromWordPress
+} from "./worker-error.js";
 export { SignedWordPressV2Transport } from "./wordpress-transport.js";
 export { TrustedGutenbergV2PreviewMediaResolver } from "./preview-media-resolver.js";
 export type { TrustedGutenbergV2PreviewMediaResolverOptions } from "./preview-media-resolver.js";

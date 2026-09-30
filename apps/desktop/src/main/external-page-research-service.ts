@@ -1,3 +1,5 @@
+import { safeFetch, SafeFetchError, type SafeFetchResponse } from "@sitepilot/services";
+
 type ExtractedPage = {
   url: string;
   title: string;
@@ -104,6 +106,18 @@ export function parseExternalResearchIntent(text: string): {
   };
 }
 
+function decodeBody(body: Buffer, contentType: string): string {
+  const charset = /charset=([\w-]+)/i.exec(contentType)?.[1];
+  try {
+    return new TextDecoder(charset ?? "utf-8").decode(body);
+  } catch {
+    return new TextDecoder("utf-8").decode(body);
+  }
+}
+
+/** Largest page research reads, in bytes. */
+const MAX_PAGE_BYTES = 2 * 1024 * 1024;
+
 export async function fetchExternalPageText(urlText: string): Promise<ExtractedPage> {
   let parsedUrl: URL;
   try {
@@ -115,23 +129,34 @@ export async function fetchExternalPageText(urlText: string): Promise<ExtractedP
     throw new Error("Only http and https links are supported for research fetches.");
   }
 
-  const response = await fetch(parsedUrl.toString(), {
-    headers: {
-      accept: "text/html, text/plain;q=0.9, application/xhtml+xml;q=0.8"
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(15_000)
-  });
-  if (!response.ok) {
+  // Links come from people and models, so they must not reach this machine,
+  // the local network or cloud metadata, directly or through a redirect.
+  let response: SafeFetchResponse;
+  try {
+    response = await safeFetch(parsedUrl.toString(), {
+      allowHttp: true,
+      maxBytes: MAX_PAGE_BYTES,
+      timeoutMs: 15_000,
+      headers: {
+        accept: "text/html, text/plain;q=0.9, application/xhtml+xml;q=0.8"
+      }
+    });
+  } catch (error) {
+    if (error instanceof SafeFetchError) {
+      throw new Error(error.message);
+    }
+    throw error;
+  }
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(`Failed to fetch the page (${response.status}).`);
   }
 
-  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const contentType = response.headers["content-type"]?.toLowerCase() ?? "";
   if (!contentType.includes("text/html") && !contentType.startsWith("text/plain")) {
     throw new Error("That link did not return an HTML or plain text page.");
   }
 
-  const rawText = await response.text();
+  const rawText = decodeBody(response.body, contentType);
   const title =
     contentType.includes("text/html")
       ? extractHtmlTitle(rawText)
@@ -144,7 +169,7 @@ export async function fetchExternalPageText(urlText: string): Promise<ExtractedP
 
   const truncated = extracted.length > MAX_EXTRACTED_TEXT_LENGTH;
   return {
-    url: response.url || parsedUrl.toString(),
+    url: response.url,
     title: title && title.length > 0 ? title : safeHostname(parsedUrl),
     text: truncated ? `${extracted.slice(0, MAX_EXTRACTED_TEXT_LENGTH).trimEnd()}...` : extracted,
     truncated

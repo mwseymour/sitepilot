@@ -9,6 +9,8 @@ declare( strict_types = 1 );
 
 namespace SitePilot\V2;
 
+use SitePilot\Errors\Error_Contract;
+
 /**
  * The v2 native editor runtime is SitePilot's only content engine. A site stops
  * SitePilot changing content by defining SITEPILOT_V2_ENABLED as the boolean
@@ -23,10 +25,11 @@ final class Feature {
 	}
 
 	public static function disabled_error(): \WP_Error {
-		return new \WP_Error(
-			'sitepilot_v2_disabled',
+		return Error_Contract::error(
+			'sitepilot_',
+			'v2_disabled',
 			__( 'SitePilot changes are turned off on this site (SITEPILOT_V2_ENABLED is false).', 'sitepilot' ),
-			array( 'status' => 503 )
+			503
 		);
 	}
 }

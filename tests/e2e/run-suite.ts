@@ -39,6 +39,11 @@ const status: Step = {
   env: wpPathEnv
 };
 const seo: Step = { script: "v2-seo", skipReason: needsWpPath, env: wpPathEnv };
+const renderCheck: Step = {
+  script: "v2-render-check",
+  skipReason: needsWpPath,
+  env: wpPathEnv
+};
 const acf: Step = {
   script: "v2-acf",
   skipReason: () =>
@@ -69,8 +74,8 @@ const longPost: Step = {
 
 const SUITES: Record<string, Step[]> = {
   smoke: [onboarding, chat],
-  content: [onboarding, chat, engine, mcp],
-  all: [onboarding, chat, engine, mcp, status, seo, acf, longPost]
+  content: [onboarding, chat, engine, mcp, renderCheck],
+  all: [onboarding, chat, engine, mcp, renderCheck, status, seo, acf, longPost]
 };
 
 type Outcome = {

@@ -3,6 +3,20 @@
  * return `structuredContent`, `content`, or a plain object).
  */
 export function normalizeMcpToolResult(raw: unknown): Record<string, unknown> {
+  const normalized = normalize(raw);
+  // Keep the tool's error flag, which the content alone doesn't carry.
+  if (
+    raw !== null &&
+    typeof raw === "object" &&
+    (raw as { isError?: unknown }).isError === true &&
+    normalized.isError === undefined
+  ) {
+    return { ...normalized, isError: true };
+  }
+  return normalized;
+}
+
+function normalize(raw: unknown): Record<string, unknown> {
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     if (

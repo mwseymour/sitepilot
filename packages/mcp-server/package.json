@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "@sitepilot/contracts": "0.1.0",
     "@sitepilot/services": "0.1.0",
     "zod": "^3.24.4"
   }

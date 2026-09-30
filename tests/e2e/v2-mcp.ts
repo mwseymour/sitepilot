@@ -219,6 +219,22 @@ async function main(): Promise<void> {
       "create_conversation did not answer."
     );
 
+    // Hardening T4: a pasted link can't make SitePilot read this machine or
+    // the local network, even through a Conversation started from MCP.
+    const local = jsonOf<{ thread_id: string; answer: string }>(
+      await client.callTool({
+        name: "create_conversation",
+        arguments: {
+          site_id: siteId,
+          question: "Summarise the text on this page: http://127.0.0.1:8765/"
+        }
+      })
+    );
+    assert(
+      /private or local address/i.test(local.answer),
+      `A loopback link was not refused: ${local.answer.slice(0, 300)}`
+    );
+
     // A request returns straight away and builds its preview in the background.
     const title = `SitePilot MCP E2E ${Date.now()}`;
     deterministicPlanner(title);

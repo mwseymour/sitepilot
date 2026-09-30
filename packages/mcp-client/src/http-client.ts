@@ -1,3 +1,4 @@
+import { parseWordPressError, type SitePilotError } from "@sitepilot/contracts";
 import { z } from "zod";
 
 import type {
@@ -17,6 +18,46 @@ const toolsListResultSchema = z.object({
     })
   )
 });
+
+/**
+ * An HTTP-level MCP failure. `error` is the site's sitepilot.error/v1 reading
+ * of the response, including why a signed request was refused.
+ */
+export class McpHttpError extends Error {
+  public readonly status: number;
+  public readonly error: SitePilotError;
+
+  public constructor(status: number, statusText: string, text: string) {
+    let body: unknown;
+    try {
+      body = JSON.parse(text) as unknown;
+    } catch {
+      body = undefined;
+    }
+    const error = parseWordPressError(
+      status,
+      body,
+      `The site's MCP route answered HTTP ${status}${statusText ? ` ${statusText}` : ""}.`
+    );
+    super(
+      `MCP HTTP: ${status}${statusText ? ` ${statusText}` : ""} — ${error.message}${
+        error.auth ? ` (${error.auth.reason})` : ""
+      }`
+    );
+    this.name = "McpHttpError";
+    this.status = status;
+    this.error = error;
+  }
+}
+
+/** True when a tools/call result is the tool reporting an error in-band. */
+export function isMcpToolError(raw: unknown): boolean {
+  return (
+    raw !== null &&
+    typeof raw === "object" &&
+    (raw as { isError?: unknown }).isError === true
+  );
+}
 
 export type McpHttpClientOptions = {
   /** Full MCP HTTP endpoint URL (e.g. https://site/wp-json/sitepilot/mcp). */
@@ -93,10 +134,14 @@ export class McpHttpClient {
     }
 
     const text = await response.text();
-    const parsed = JSON.parse(text) as JsonRpcResponse<unknown>;
-
     if (!response.ok) {
-      throw new Error(`MCP HTTP: ${response.status} — ${text}`);
+      throw new McpHttpError(response.status, response.statusText, text);
+    }
+    let parsed: JsonRpcResponse<unknown>;
+    try {
+      parsed = JSON.parse(text) as JsonRpcResponse<unknown>;
+    } catch {
+      throw new Error(`MCP HTTP: invalid JSON (${response.status})`);
     }
 
     if (typeof parsed === "object" && parsed !== null && "error" in parsed) {
@@ -143,17 +188,14 @@ export class McpHttpClient {
     });
 
     const text = await response.text();
+    if (!response.ok) {
+      throw new McpHttpError(response.status, response.statusText, text);
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(text) as unknown;
     } catch {
       throw new Error(`MCP HTTP: invalid JSON (${response.status})`);
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `MCP HTTP: ${response.status} ${response.statusText} — ${text}`
-      );
     }
 
     const envelope = parsed as JsonRpcResponse<T>;
@@ -197,6 +239,11 @@ export class McpHttpClient {
     return map;
   }
 
+  /**
+   * Calls a tool and returns the raw result. A tool error comes back in-band
+   * with `isError: true` (see isMcpToolError); only transport and JSON-RPC
+   * failures throw.
+   */
   async callTool(
     name: string,
     argumentsJson: Record<string, unknown>

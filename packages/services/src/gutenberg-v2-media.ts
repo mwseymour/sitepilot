@@ -411,12 +411,21 @@ export class DurableGutenbergV2MediaService implements GutenbergV2MediaService {
         ...(media.caption === undefined ? {} : { caption: media.caption })
       });
     }
+    // A signed approval travels with uploads: a site that requires proofs
+    // checks it before creating attachments. Older plugins, which never ask
+    // for proofs, would refuse the extra fields.
     const request = gutenbergV2MediaBindingsRequestSchema.parse({
       schemaVersion: "sitepilot.media-bindings-request/v2",
       executionId: input.executionId,
       idempotencyKey: input.idempotencyKey,
       siteId: input.candidate.siteId,
-      items
+      items,
+      ...(input.approval.proof
+        ? {
+            approval: input.approval,
+            mediaManifest: input.candidate.mediaManifest
+          }
+        : {})
     });
     const response = gutenbergV2MediaBindingsResponseSchema.parse(
       await this.#transport.resolveMediaBindings(request)

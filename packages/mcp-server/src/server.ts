@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { classifyErrorCode } from "@sitepilot/contracts";
 import {
   READ_TOOL_REGISTRY,
   sanitizeReadToolArguments,
@@ -104,11 +105,23 @@ function success(value: unknown, preface?: string): CallToolResult {
   };
 }
 
+/**
+ * A tool error in sitepilot.error/v1 terms: the text for people and older
+ * clients, and the same fields as structured content for models.
+ */
 function failure(code: string, message: string): CallToolResult {
+  const { cause, retryable } = classifyErrorCode(code);
   return {
     isError: true,
-    content: [{ type: "text", text: `${message} (${code})` }]
+    content: [{ type: "text", text: `${message} (${code})` }],
+    structuredContent: { code, cause, retryable, message }
   };
+}
+
+function failureCode(result: CallToolResult): string | undefined {
+  const code = (result.structuredContent as { code?: unknown } | undefined)
+    ?.code;
+  return result.isError === true && typeof code === "string" ? code : undefined;
 }
 
 function withoutOk<T extends { ok: true }>(value: T): Omit<T, "ok"> {
@@ -200,6 +213,7 @@ export function createSitePilotMcpServer(
     const caller = callerOf();
     const audit: { siteId?: string } = {};
     let result: CallToolResult;
+    let code: string | undefined;
     try {
       result = await fn(caller, audit);
     } catch (error) {
@@ -208,12 +222,14 @@ export function createSitePilotMcpServer(
         error instanceof Error ? error.message : String(error)
       );
     }
+    code = failureCode(result);
     await backend
       .recordToolCall?.(
         {
           tool,
           ...(audit.siteId !== undefined ? { siteId: audit.siteId } : {}),
-          ok: result.isError !== true
+          ok: result.isError !== true,
+          ...(code !== undefined ? { code } : {})
         },
         caller
       )

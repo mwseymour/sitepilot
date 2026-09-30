@@ -566,6 +566,97 @@ describe("GutenbergV2ContentService", () => {
     expect(env.commitCalls()).toBe(1);
   });
 
+  it("reconciles once by itself when the commit response is lost during execution", async () => {
+    const env = harness();
+    await compileAndApprove(env);
+    env.setThrowAfterCommit();
+    const result = await env.service.executeApprovedCandidate({
+      executionId: "execution-1"
+    });
+    expect(result.state).toBe("succeeded");
+    expect(env.commitCalls()).toBe(1);
+  });
+
+  it("keeps a new draft that doesn't render and fails the job with the reason", async () => {
+    const env = harness();
+    await compileAndApprove(env);
+    Object.assign(env.wordpress, {
+      renderCheck: vi.fn(async () => ({
+        schemaVersion: "sitepilot.render-check/v2" as const,
+        postId: 42,
+        outcome: "render_error" as const,
+        block: { name: "acf/container", index: 0 },
+        message: "Rendering threw an error: Undefined array key"
+      }))
+    });
+    const result = await env.service.executeApprovedCandidate({
+      executionId: "execution-1"
+    });
+    expect(result.state).toBe("post_write_verification_failed");
+    const job = await env.journal.get("execution-1");
+    expect(job?.failure).toMatchObject({ code: "render_failed", phase: "verify" });
+    expect(job?.failure?.message).toContain("acf/container block (block 1)");
+    expect(env.wordpress.conditionalRollback).not.toHaveBeenCalled();
+  });
+
+  it("succeeds when the new draft renders, and never blocks on a check that can't run", async () => {
+    for (const renderCheck of [
+      vi.fn(async () => ({
+        schemaVersion: "sitepilot.render-check/v2" as const,
+        postId: 42,
+        outcome: "ok" as const
+      })),
+      vi.fn(async () => {
+        throw new Error("render check unavailable");
+      }),
+      vi.fn(async () => null)
+    ]) {
+      const env = harness();
+      await compileAndApprove(env);
+      Object.assign(env.wordpress, { renderCheck });
+      const result = await env.service.executeApprovedCandidate({
+        executionId: "execution-1"
+      });
+      expect(result.state).toBe("succeeded");
+      expect(renderCheck).toHaveBeenCalled();
+    }
+  });
+
+  it("ends the job when WordPress permanently refuses the commit", async () => {
+    const env = harness();
+    await compileAndApprove(env);
+    await env.service.prepareCommit({ executionId: "execution-1" });
+    env.wordpress.commitCandidate.mockRejectedValueOnce(
+      Object.assign(new Error("The post changed after it was reviewed."), {
+        code: "stale_source",
+        retryable: false
+      })
+    );
+    await expect(
+      env.service.commitCandidate({ executionId: "execution-1" })
+    ).rejects.toMatchObject({ code: "stale_source", retryable: false });
+    expect(await env.journal.get("execution-1")).toMatchObject({
+      state: "stale_approval",
+      failure: { code: "stale_source", phase: "commit" }
+    });
+  });
+
+  it("keeps a transient commit failure open for a reconciling retry", async () => {
+    const env = harness();
+    await compileAndApprove(env);
+    await env.service.prepareCommit({ executionId: "execution-1" });
+    env.wordpress.commitCandidate.mockRejectedValueOnce(
+      Object.assign(new Error("HTTP 502"), {
+        code: "editor_unavailable",
+        retryable: true
+      })
+    );
+    await expect(
+      env.service.commitCandidate({ executionId: "execution-1" })
+    ).rejects.toMatchObject({ code: "conditional_commit_failed", retryable: true });
+    expect((await env.journal.get("execution-1"))?.state).toBe("committing");
+  });
+
   it("retries a lost media response in preparing with the same durable identity", async () => {
     const env = harness();
     await compileAndApprove(env);

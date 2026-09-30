@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { classifyErrorCode } from "@sitepilot/contracts";
+
 import type {
   AuditEntryId,
   ChatMessage,
@@ -10,7 +12,7 @@ import type {
   SiteId,
   SiteRole
 } from "@sitepilot/domain";
-import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import { isMcpToolError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import {
   clientSourceFromName,
   type McpCaller,
@@ -62,7 +64,13 @@ type V2State = NonNullable<
 
 type BackgroundJob =
   | { status: "running"; startedAt: string }
-  | { status: "failed"; code: string; message: string; at: string };
+  | {
+      status: "failed";
+      code: string;
+      message: string;
+      retryable?: boolean;
+      at: string;
+    };
 
 export type DesktopMcpBackendOptions = {
   /** The sites this client may use, or "all" for every active site. */
@@ -75,6 +83,20 @@ function nowIso(): string {
 
 function fail(code: string, message: string) {
   return { ok: false as const, code, message };
+}
+
+function failureOf(
+  code: string,
+  message: string,
+  retryable?: boolean
+): NonNullable<McpRequestStatus["failure"]> {
+  const classified = classifyErrorCode(code);
+  return {
+    code,
+    cause: classified.cause,
+    retryable: retryable ?? classified.retryable,
+    message
+  };
 }
 
 function callContextFor(caller: McpCaller, tool: string): CallContext {
@@ -299,6 +321,7 @@ export function createDesktopMcpBackend(
 
     let state: McpRequestState;
     let summary: string;
+    let failure: McpRequestStatus["failure"];
     if (job?.status === "running") {
       state = "preparing_preview";
       summary = STATE_SUMMARIES.preparing_preview;
@@ -308,6 +331,7 @@ export function createDesktopMcpBackend(
     ) {
       state = "needs_attention";
       summary = job.message;
+      failure = failureOf(job.code, job.message, job.retryable);
     } else if (request?.status === "clarifying") {
       state = "needs_your_reply";
       summary = STATE_SUMMARIES.needs_your_reply;
@@ -381,6 +405,13 @@ export function createDesktopMcpBackend(
       ...(state === "awaiting_approval" || state === "approved"
         ? { approvalHint: APPROVAL_HINT }
         : {}),
+      ...(failure === undefined && v2?.failure && state !== "completed"
+        ? {
+            failure: failureOf(v2.failure.code, v2.failure.message)
+          }
+        : failure !== undefined
+          ? { failure }
+          : {}),
       recentMessages: recentMessages(messages),
       updatedAt: [thread.updatedAt, request?.updatedAt, v2?.updatedAt]
         .filter((value): value is string => value !== undefined)
@@ -417,6 +448,9 @@ export function createDesktopMcpBackend(
             status: "failed",
             code: result.code,
             message: result.message,
+            ...("retryable" in result && typeof result.retryable === "boolean"
+              ? { retryable: result.retryable }
+              : {}),
             at: nowIso()
           });
         }
@@ -495,17 +529,16 @@ export function createDesktopMcpBackend(
         const mcp = await createMcpClientForSite(siteId as SiteId);
         if (!mcp.ok) return fail(mcp.code, mcp.message);
         const raw = await mcp.client.callTool(tool.source.ability, args);
-        const isError =
-          raw !== null &&
-          typeof raw === "object" &&
-          (raw as { isError?: unknown }).isError === true;
         const result = normalizeMcpToolResult(raw);
-        if (isError) {
+        // Some abilities report a failure in-band with ok: false.
+        if (isMcpToolError(raw) || result.ok === false) {
           return fail(
             "lookup_failed",
             typeof result.error === "string"
               ? result.error
-              : "The lookup failed."
+              : typeof result.raw === "string"
+                ? result.raw
+                : "The lookup failed."
           );
         }
         return { ok: true, result };

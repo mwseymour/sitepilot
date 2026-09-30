@@ -1,6 +1,6 @@
 # SitePilot hardening plan
 
-Status: in progress on branch `sitepilot_v2_hardening`. Phase 1 (removing v1) and Phase 2 (trust fixes) were done on 30 September 2026; see [Progress](#progress).
+Status: implemented on branch `sitepilot_v2_hardening` on 30 September 2026; see [Progress](#progress).
 
 Source: a read-only review of the WPVibe plugin (`vibe-ai` 1.19.2, SeedProd), followed by research into how SitePilot handles the same concerns today. This plan covers:
 
@@ -16,7 +16,11 @@ We are reimplementing the ideas, not copying WPVibe's code. WPVibe is GPL-2.0-or
 | --- | --- |
 | 1. Remove v1 | Done. The E2E suites run the v2 scripts, v1 code is deleted from the desktop, packages and plugin (plugin 0.2.0), open v1 requests are archived by migration 008, and the v1 docs are in `docs/archive/v1/`. Also fixed: deleting a thread that ran a v2 request failed with a foreign-key error. |
 | 2. Trust fixes | Done: T1, T3, T5, T6 and T8, with a regression test for T2. One change from the design below: a registration for an existing site ID is refused outright rather than treated as a rotation. Phase 7 registers approval keys through its own signed route instead. |
-| 3–7 | Not started. |
+| 3. Safe URL fetching | Done: `safeFetch` in `packages/services`, used by page research; site requests get a default timeout; a failed upload's file is deleted. |
+| 5. Retry-safe writes | Done: a permanent commit refusal ends the job in `stale_approval`; v2 requests time out after 180 s; applying reconciles once by itself after an uncertain commit. |
+| 6. Render check | Done: `/sitepilot/v2/render-check` (`render_check_v1`), a baseline before each edit, rollback or a failed-but-kept draft after. One change: no separate preview-page fetch, because WordPress's critical-error page returns HTTP 500, which the render check and the publish URL check already treat as a failure. The E2E uses a `render_block` fault, since the MAMP site has no ACF blocks. |
+| 4. One error format | Done: `sitepilot.error/v1` in the plugin (`error_contract_v1`) and in contracts, with one parser (`parseWordPressError`) for the worker, the editor session and the MCP client. An unknown 4xx is never retried. SitePilot's MCP server returns the code, cause and retry flag as structured content, and `request_status` includes them. Connectivity diagnostics name the auth refusal reason and any stripped signing headers. Also fixed: an execution result said a retry was safe after a failed rollback, and not after a clean one. Left as they are: read abilities still report in-band errors as text, which the desktop handles. The two `createMcpClientForSite` helpers are not merged yet. |
+| 7. Approval proofs | Done: an Ed25519 approval key in the desktop's secure storage, registered through `/sitepilot/v2/approval-key` when a site advertises `approval_proof_v1`. The plugin checks the proof at prepare, and at media bindings that upload files. Commit refuses a prepared write without one once a key exists. Each approval lasts at most 30 minutes and serves one execution. Receipts record the approval ID, approver and key ID. One change: the key's fingerprint isn't in `/protocol`, because `/protocol` is public and shared by every client; the settings page shows which clients require proofs instead. |
 
 ## Goals
 

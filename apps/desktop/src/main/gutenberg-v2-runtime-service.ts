@@ -10,6 +10,8 @@ import {
   type GutenbergV2StagedAssetStore
 } from "@sitepilot/services";
 import type {
+  GutenbergV2ApprovalKeyRequest,
+  GutenbergV2ApprovalKeyResponse,
   GutenbergV2BlockFixtureStatus,
   GutenbergV2SourceSnapshot,
   GutenbergV2ThirdPartyReport
@@ -43,6 +45,10 @@ export type GutenbergV2DesktopRuntime = {
   ): Promise<GutenbergV2BlockFixtureStatus[]>;
   /** Read-only probe and content scan of the site's third-party blocks. */
   probeThirdPartyBlocks?(): Promise<GutenbergV2ThirdPartyReport>;
+  /** Gives the site this desktop's approval key (plugin approval_proof_v1). */
+  registerApprovalKey?(
+    request: GutenbergV2ApprovalKeyRequest
+  ): Promise<GutenbergV2ApprovalKeyResponse>;
   close(): Promise<void>;
 };
 
@@ -132,6 +138,8 @@ export async function createGutenbergV2DesktopRuntime(
       readSource: (input) => signed.worker.readSource(input),
       runBlockFixtures: (blockNames) => signed.runBlockFixtures(blockNames),
       probeThirdPartyBlocks: () => signed.probeThirdPartyBlocks(),
+      registerApprovalKey: (request) =>
+        signed.transport.registerApprovalKey(request),
       close: () => signed.worker.close(),
       journal,
       content: new GutenbergV2ContentService({

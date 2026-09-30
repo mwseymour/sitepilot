@@ -2,6 +2,10 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import {
+  gutenbergV2ApprovalKeyRequestSchema,
+  gutenbergV2ApprovalKeyResponseSchema,
+  type GutenbergV2ApprovalKeyRequest,
+  type GutenbergV2ApprovalKeyResponse,
   gutenbergV2CommitReceiptSchema,
   gutenbergV2CommitRequestSchema,
   gutenbergV2MediaBindingsRequestSchema,
@@ -14,7 +18,7 @@ import {
   gutenbergV2ReconcileResponseSchema,
   gutenbergV2RecoverRequestSchema,
   gutenbergV2RecoverResponseSchema,
-  gutenbergV2ValidationFailureCodeSchema,
+  gutenbergV2RenderCheckSchema,
   type GutenbergV2CommitReceipt,
   type GutenbergV2MediaBindingsRequest,
   type GutenbergV2MediaBindingsResponse,
@@ -22,6 +26,7 @@ import {
   type GutenbergV2PrepareCommitResponse,
   type GutenbergV2Readback,
   type GutenbergV2RecoverResponse,
+  type GutenbergV2RenderCheck,
   type GutenbergV2SourceSnapshot,
   gutenbergV2BlockFixtureStatusSchema,
   gutenbergV2BlockUsageSchema,
@@ -35,7 +40,10 @@ import type {
   GutenbergV2WordPressTransport
 } from "@sitepilot/services";
 
-import { GutenbergV2WorkerError } from "./worker-error.js";
+import {
+  GutenbergV2WorkerError,
+  workerErrorFromWordPress
+} from "./worker-error.js";
 
 export interface GutenbergV2SourceReader {
   readSource(input: {
@@ -54,7 +62,11 @@ export type SignedWordPressV2TransportOptions = {
   sharedSecret: Buffer;
   sourceReader: GutenbergV2SourceReader;
   fetchImplementation?: typeof fetch;
+  /** Longest a v2 request may take, in milliseconds. Defaults to 180 seconds, for media uploads. */
+  timeoutMs?: number;
 };
+
+const DEFAULT_TIMEOUT_MS = 180_000;
 
 const endpointNames = {
   prepare: "prepare",
@@ -64,7 +76,9 @@ const endpointNames = {
   recover: "recover",
   mediaBindings: "media-bindings",
   blockFixtures: "block-fixtures",
-  blockUsage: "block-usage"
+  blockUsage: "block-usage",
+  renderCheck: "render-check",
+  approvalKey: "approval-key"
 } as const;
 
 export class SignedWordPressV2Transport
@@ -76,6 +90,7 @@ export class SignedWordPressV2Transport
   readonly #sharedSecret: Buffer;
   readonly #sourceReader: GutenbergV2SourceReader;
   readonly #fetch: typeof fetch;
+  readonly #timeoutMs: number;
 
   public constructor(options: SignedWordPressV2TransportOptions) {
     this.#siteUrl = new URL(
@@ -86,6 +101,75 @@ export class SignedWordPressV2Transport
     this.#sharedSecret = Buffer.from(options.sharedSecret);
     this.#sourceReader = options.sourceReader;
     this.#fetch = options.fetchImplementation ?? fetch;
+    this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  }
+
+  /**
+   * Registers or replaces this client's approval key on the site (plugin
+   * feature approval_proof_v1). From then on the site refuses v2 writes
+   * without a signed approval.
+   */
+  public async registerApprovalKey(
+    request: GutenbergV2ApprovalKeyRequest
+  ): Promise<GutenbergV2ApprovalKeyResponse> {
+    const response = gutenbergV2ApprovalKeyResponseSchema.parse(
+      await this.#post(
+        endpointNames.approvalKey,
+        gutenbergV2ApprovalKeyRequestSchema.parse(request)
+      )
+    );
+    if (response.keyId !== request.keyId) {
+      throw new GutenbergV2WorkerError(
+        "schema_invalid",
+        "The site registered a different approval key.",
+        false
+      );
+    }
+    return response;
+  }
+
+  /**
+   * Renders the saved post in WordPress (plugin feature render_check_v1).
+   * Returns null when the plugin has no render check. A crash while
+   * rendering (a 5xx, often WordPress's critical-error page) is a failed
+   * render, not a reason to retry.
+   */
+  public async renderCheck(input: {
+    siteId: string;
+    postId: number;
+  }): Promise<GutenbergV2RenderCheck | null> {
+    if (input.siteId !== this.#siteId) {
+      throw new GutenbergV2WorkerError(
+        "permission_denied",
+        "The render check site does not match transport configuration.",
+        false
+      );
+    }
+    try {
+      return gutenbergV2RenderCheckSchema.parse(
+        await this.#post(endpointNames.renderCheck, {
+          schemaVersion: "sitepilot.render-check-request/v2",
+          postId: input.postId
+        })
+      );
+    } catch (error) {
+      if (error instanceof GutenbergV2WorkerError && error.httpStatus === 404) {
+        return null;
+      }
+      if (
+        error instanceof GutenbergV2WorkerError &&
+        error.httpStatus !== undefined &&
+        error.httpStatus >= 500
+      ) {
+        return {
+          schemaVersion: "sitepilot.render-check/v2",
+          postId: input.postId,
+          outcome: "render_error",
+          message: `WordPress failed while rendering the post (HTTP ${error.httpStatus}).`
+        };
+      }
+      throw error;
+    }
   }
 
   public async readSource(
@@ -264,16 +348,34 @@ export class SignedWordPressV2Transport
       bodyBuffer,
       sharedSecret: this.#sharedSecret
     });
-    const response = await this.#fetch(endpoint, {
-      method: "POST",
-      body,
-      redirect: "manual",
-      headers: {
-        ...signedHeaders,
-        "content-type": "application/json",
-        accept: "application/json"
-      }
-    });
+    let response: Response;
+    try {
+      response = await this.#fetch(endpoint, {
+        method: "POST",
+        body,
+        redirect: "manual",
+        signal: AbortSignal.timeout(this.#timeoutMs),
+        headers: {
+          ...signedHeaders,
+          "content-type": "application/json",
+          accept: "application/json"
+        }
+      });
+    } catch (error) {
+      // No response: the request may or may not have reached WordPress, so
+      // callers reconcile before any retry writes again.
+      const timedOut =
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      throw new GutenbergV2WorkerError(
+        "editor_unavailable",
+        timedOut
+          ? "WordPress didn't answer a v2 request in time."
+          : "Could not reach WordPress for a v2 request.",
+        true,
+        error
+      );
+    }
     if (response.status >= 300 && response.status < 400) {
       throw new GutenbergV2WorkerError(
         "permission_denied",
@@ -297,38 +399,16 @@ export class SignedWordPressV2Transport
         "editor_unavailable",
         "WordPress returned invalid JSON for a v2 request.",
         true,
-        error
+        error,
+        [],
+        response.status
       );
     }
     if (!response.ok) {
-      const record =
-        decoded !== null &&
-        typeof decoded === "object" &&
-        !Array.isArray(decoded)
-          ? (decoded as Record<string, unknown>)
-          : {};
-      const data =
-        record.data !== null &&
-        typeof record.data === "object" &&
-        !Array.isArray(record.data)
-          ? (record.data as Record<string, unknown>)
-          : {};
-      const code = typeof data.code === "string" ? data.code : undefined;
-      const parsedCode = gutenbergV2ValidationFailureCodeSchema.safeParse(code);
-      const failureCode =
-        code === "prepared_commit_changed"
-          ? "idempotency_conflict"
-          : parsedCode.success
-            ? parsedCode.data
-            : "editor_unavailable";
-      const retryable =
-        response.status >= 500 || failureCode === "editor_unavailable";
-      throw new GutenbergV2WorkerError(
-        failureCode,
-        typeof record.message === "string"
-          ? record.message
-          : `WordPress v2 request failed with HTTP ${response.status}.`,
-        retryable
+      throw workerErrorFromWordPress(
+        response.status,
+        decoded,
+        `WordPress v2 request failed with HTTP ${response.status}.`
       );
     }
     return decoded;

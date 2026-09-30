@@ -9,6 +9,8 @@ declare( strict_types = 1 );
 
 namespace SitePilot\V2;
 
+use SitePilot\Errors\Error_Contract;
+
 /** Binds approved library or staged media without changing global media metadata. */
 final class Media_Service {
 
@@ -92,6 +94,45 @@ final class Media_Service {
 	 * @param array<string, mixed> $input Request body.
 	 * @return array<string, mixed>|\WP_Error
 	 */
+	/**
+	 * Uploads create attachments before the commit, so on a site that requires
+	 * approval proofs they need the signed approval too, and must be media
+	 * that approval covers. Library bindings create nothing and need neither.
+	 *
+	 * @param array<string, mixed> $input Request body.
+	 * @param array<int, mixed>    $items Media items.
+	 */
+	private static function check_approval( array $input, array $items, string $site_id, string $execution_id ): ?\WP_Error {
+		$uploads = array();
+		foreach ( $items as $item ) {
+			if ( is_array( $item ) && 'staged_asset' === ( $item['kind'] ?? '' ) ) {
+				$uploads[ (string) $item['ref'] ] = strtolower( (string) $item['approvedChecksum'] );
+			}
+		}
+		if ( array() === $uploads || ! Approval_Proof::required( $site_id ) ) {
+			return null;
+		}
+		$approval = is_array( $input['approval'] ?? null ) ? $input['approval'] : null;
+		$manifest = is_array( $input['mediaManifest'] ?? null ) ? $input['mediaManifest'] : null;
+		if ( null === $approval || null === $manifest || ! is_array( $approval['binding'] ?? null )
+			|| ! hash_equals( (string) ( $approval['binding']['mediaManifestHash'] ?? '' ), hash( 'sha256', Runtime_Fingerprint::canonical_json( $manifest ) ) )
+		) {
+			return Approval_Proof::refuse( __( 'Uploading media to this site needs the signed approval of the change it belongs to.', 'sitepilot' ), 'proof_missing' );
+		}
+		$approved = array();
+		foreach ( $manifest as $entry ) {
+			if ( is_array( $entry ) && isset( $entry['ref'], $entry['approvedChecksum'] ) ) {
+				$approved[ (string) $entry['ref'] ] = strtolower( (string) $entry['approvedChecksum'] );
+			}
+		}
+		foreach ( $uploads as $ref => $checksum ) {
+			if ( ! isset( $approved[ $ref ] ) || ! hash_equals( $approved[ $ref ], $checksum ) ) {
+				return self::error( 'media_changed', 'A media upload is not covered by the approval.', 409 );
+			}
+		}
+		return Approval_Proof::verify( $site_id, $approval, $execution_id );
+	}
+
 	public static function bind( array $input ) {
 		if ( ! Feature::enabled() ) {
 			return Feature::disabled_error();
@@ -101,7 +142,7 @@ final class Media_Service {
 		$idempotency_key = self::identifier( $input['idempotencyKey'] ?? '' );
 		$items = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : null;
 		if ( 'sitepilot.media-bindings-request/v2' !== ( $input['schemaVersion'] ?? null )
-			|| array_diff( array_keys( $input ), array( 'schemaVersion', 'executionId', 'idempotencyKey', 'siteId', 'items' ) )
+			|| array_diff( array_keys( $input ), array( 'schemaVersion', 'executionId', 'idempotencyKey', 'siteId', 'items', 'approval', 'mediaManifest' ) )
 			|| ! hash_equals( $site_id, (string) ( $input['siteId'] ?? '' ) )
 			|| '' === $execution_id
 			|| '' === $idempotency_key
@@ -121,6 +162,10 @@ final class Media_Service {
 		$validated = self::validate_items( $items, $site_id, $execution_id, $idempotency_key );
 		if ( $validated instanceof \WP_Error ) {
 			return $validated;
+		}
+		$approval_error = self::check_approval( $input, $items, $site_id, $execution_id );
+		if ( $approval_error instanceof \WP_Error ) {
+			return $approval_error;
 		}
 		$request_hash = hash( 'sha256', Runtime_Fingerprint::canonical_json( $input, true ) );
 		$key = self::OPTION_PREFIX . hash( 'sha256', $site_id . "\n" . $execution_id . "\n" . $idempotency_key );
@@ -326,7 +371,7 @@ final class Media_Service {
 			return true;
 		} catch ( \Throwable $error ) {
 			$wpdb->query( 'ROLLBACK' );
-			$code = $error->getMessage();
+			$code = Error_Contract::code_from_exception( $error, 'conditional_commit_failed' );
 			$status = 'idempotency_conflict' === $code ? 409 : ( 'permission_denied' === $code ? 403 : ( 'media_changed' === $code ? 422 : 503 ) );
 			return self::error( $code, 'The media binding could not be completed or safely reconciled.', $status );
 		}
@@ -355,7 +400,8 @@ final class Media_Service {
 	/** @param array<string, mixed> $intent @return array<string, mixed>|\WP_Error */
 	private static function staged_mapping( string $ref, array $intent, string $binary ) {
 		global $wpdb;
-		$file = (string) $intent['absoluteFile'];
+		$file      = (string) $intent['absoluteFile'];
+		$installed = false;
 		if ( is_link( $file ) ) {
 			return self::error( 'media_changed', 'The deterministic media path is not a regular file.', 409 );
 		}
@@ -371,7 +417,9 @@ final class Media_Service {
 				}
 				return self::error( 'media_changed', 'The staged media bytes could not be written.', 503 );
 			}
-			if ( ! @rename( $temp_file, $file ) ) {
+			if ( @rename( $temp_file, $file ) ) {
+				$installed = true;
+			} else {
 				wp_delete_file( $temp_file );
 				if ( ! file_exists( $file ) ) {
 					return self::error( 'media_changed', 'The staged media file could not be atomically installed.', 503 );
@@ -384,6 +432,10 @@ final class Media_Service {
 		$checked = wp_check_filetype_and_ext( $file, (string) $intent['fileName'], get_allowed_mime_types() );
 		$detected_mime = self::detected_mime_type( $file, (string) $intent['mediaType'] );
 		if ( (string) ( $checked['type'] ?? '' ) !== (string) $intent['mediaType'] || ! self::mime_matches( (string) $intent['mediaType'], $detected_mime ) ) {
+			// Don't leave a file that failed the check in the uploads folder.
+			if ( $installed ) {
+				wp_delete_file( $file );
+			}
 			return self::error( 'media_changed', 'The staged media bytes do not match the approved type.', 422 );
 		}
 		$post_name = (string) $intent['postName'];
@@ -498,7 +550,8 @@ final class Media_Service {
 			return true;
 		} catch ( \Throwable $error ) {
 			$wpdb->query( 'ROLLBACK' );
-			return self::error( $error->getMessage(), 'The media metadata journal could not be completed.', 503 );
+			$code = Error_Contract::code_from_exception( $error, 'conditional_commit_failed' );
+			return self::error( $code, 'The media metadata journal could not be completed.', Error_Contract::status_for( $code, 503 ) );
 		}
 	}
 
@@ -564,6 +617,6 @@ final class Media_Service {
 	}
 
 	private static function error( string $code, string $message, int $status ): \WP_Error {
-		return new \WP_Error( 'sitepilot_v2_' . $code, __( $message, 'sitepilot' ), array( 'status' => $status, 'code' => $code ) );
+		return Error_Contract::error( 'sitepilot_v2_', sanitize_key( $code ), __( $message, 'sitepilot' ), $status );
 	}
 }

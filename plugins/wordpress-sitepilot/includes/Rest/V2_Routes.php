@@ -12,11 +12,14 @@ namespace SitePilot\Rest;
 use SitePilot\Registration\Store;
 use SitePilot\Security\Signed_Request_Verifier;
 use SitePilot\V2\Acf_Blocks;
+use SitePilot\V2\Approval_Proof;
 use SitePilot\V2\Block_Usage;
 use SitePilot\V2\Commit_Service;
 use SitePilot\V2\Editor_Session;
 use SitePilot\V2\Feature;
 use SitePilot\V2\Media_Service;
+use SitePilot\V2\Render_Check;
+use SitePilot\Errors\Error_Contract;
 
 /** Registers /wp-json/sitepilot/v2 routes. */
 final class V2_Routes {
@@ -46,6 +49,8 @@ final class V2_Routes {
 		self::signed_route( '/block-definitions', 'block_definitions', 200 );
 		self::signed_route( '/block-fixtures', 'block_fixtures', 200 );
 		self::signed_route( '/block-usage', 'block_usage', 200 );
+		self::signed_route( '/render-check', 'render_check', 200 );
+		self::signed_route( '/approval-key', 'approval_key', 200 );
 	}
 
 	private static function signed_route( string $route, string $method, int $status ): void {
@@ -191,16 +196,51 @@ final class V2_Routes {
 		return Block_Usage::scan();
 	}
 
+	/**
+	 * Renders a saved post to check a write didn't break the page.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public static function render_check( \WP_REST_Request $request ) {
+		$params = self::json( $request );
+		return $params instanceof \WP_Error ? $params : Render_Check::check( $params );
+	}
+
+	/**
+	 * Registers or replaces the calling client's approval key. Once set, every
+	 * v2 write from that client needs a signed approval proof.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public static function approval_key( \WP_REST_Request $request ) {
+		$params = self::json( $request );
+		return $params instanceof \WP_Error ? $params : Approval_Proof::register_key( $params );
+	}
+
 	/** @return bool|\WP_Error */
 	private static function signed_access( \WP_REST_Request $request, string $route ) {
 		if ( ! Signed_Request_Verifier::verify_rest_request( $request, $route ) ) {
-			return self::error( 'permission_denied', 'The SitePilot request signature is invalid.', 401 );
+			return Error_Contract::error(
+				'sitepilot_v2_',
+				'permission_denied',
+				__( 'The SitePilot request signature is invalid.', 'sitepilot' ),
+				401,
+				array(),
+				Signed_Request_Verifier::failure_reason() ?? 'signature_invalid'
+			);
 		}
 		$site = Store::get_site( Signed_Request_Verifier::get_authenticated_site_id() );
 		$user_id = is_array( $site ) ? (int) ( $site['user_id'] ?? 0 ) : 0;
 		$user = $user_id > 0 ? get_user_by( 'id', $user_id ) : false;
 		if ( ! $user instanceof \WP_User || ! user_can( $user, 'read' ) ) {
-			return self::error( 'permission_denied', 'The registered SitePilot service identity is unavailable.', 403 );
+			return Error_Contract::error(
+				'sitepilot_v2_',
+				'permission_denied',
+				__( 'The WordPress user this SitePilot client acts as is missing or can’t read. Register the site again.', 'sitepilot' ),
+				403,
+				array(),
+				'no_mapped_user'
+			);
 		}
 		wp_set_current_user( $user_id );
 		return true;
@@ -213,6 +253,6 @@ final class V2_Routes {
 	}
 
 	private static function error( string $code, string $message, int $status ): \WP_Error {
-		return new \WP_Error( 'sitepilot_v2_' . $code, __( $message, 'sitepilot' ), array( 'status' => $status, 'code' => $code ) );
+		return Error_Contract::error( 'sitepilot_v2_', sanitize_key( $code ), __( $message, 'sitepilot' ), $status );
 	}
 }

@@ -9,7 +9,7 @@ import type {
   SiteId,
   ThreadType
 } from "@sitepilot/domain";
-import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import { isMcpToolError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import { SqliteGutenbergV2ExecutionJournal } from "@sitepilot/services";
 
 import { getDatabase } from "./app-database.js";
@@ -179,6 +179,15 @@ export async function searchSiteContent(input: {
           }
     );
     const result = normalizeMcpToolResult(raw);
+    // A post that doesn't exist is an empty search, not a failure.
+    if (isMcpToolError(raw) && !byId) {
+      return {
+        ok: false,
+        code: "lookup_failed",
+        message:
+          typeof result.raw === "string" ? result.raw : "The site lookup failed."
+      };
+    }
     const rows = byId
       ? result.post_id
         ? [result]

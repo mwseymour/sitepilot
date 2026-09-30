@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@sitepilot/services", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sitepilot/services")>()),
+  safeFetch: vi.fn()
+}));
+
+import { safeFetch, SafeFetchError } from "@sitepilot/services";
+
 import {
   buildExternalPageRequestPrompt,
   fetchExternalPageText,
@@ -45,20 +52,14 @@ describe("external page research service", () => {
   });
 
   it("extracts readable text from html pages", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        url: "https://example.com/about",
-        headers: {
-          get: (name: string) =>
-            name.toLowerCase() === "content-type" ? "text/html; charset=utf-8" : null
-        },
-        text: async () =>
-          "<html><head><title>Example About</title><style>.x{}</style></head><body><main><h1>About us</h1><p>We build sites.</p><script>bad()</script></main></body></html>"
-      }))
-    );
+    vi.mocked(safeFetch).mockResolvedValueOnce({
+      url: "https://example.com/about",
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+      body: Buffer.from(
+        "<html><head><title>Example About</title><style>.x{}</style></head><body><main><h1>About us</h1><p>We build sites.</p><script>bad()</script></main></body></html>"
+      )
+    });
 
     const page = await fetchExternalPageText("https://example.com/about");
 
@@ -66,6 +67,23 @@ describe("external page research service", () => {
     expect(page.text).toContain("About us");
     expect(page.text).toContain("We build sites.");
     expect(page.text).not.toContain("bad()");
+  });
+
+  it("fetches through safeFetch, which allows http for public addresses only", async () => {
+    vi.mocked(safeFetch).mockRejectedValueOnce(
+      new SafeFetchError(
+        "address_not_allowed",
+        "127.0.0.1 points to a private or local address, which SitePilot won't fetch."
+      )
+    );
+
+    await expect(fetchExternalPageText("http://127.0.0.1:8765/")).rejects.toThrow(
+      "private or local address"
+    );
+    expect(vi.mocked(safeFetch)).toHaveBeenCalledWith(
+      "http://127.0.0.1:8765/",
+      expect.objectContaining({ allowHttp: true, maxBytes: 2 * 1024 * 1024 })
+    );
   });
 
   it("builds a request prompt that preserves source provenance", () => {

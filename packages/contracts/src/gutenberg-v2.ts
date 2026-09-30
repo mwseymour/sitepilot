@@ -1708,7 +1708,10 @@ export const gutenbergV2ValidationFailureCodeSchema = z.enum([
   "conditional_commit_failed",
   "idempotency_conflict",
   "verification_failed",
-  "rollback_conflict"
+  "rollback_conflict",
+  "render_failed",
+  "rollback_failed",
+  "wordpress_error"
 ]);
 
 export const gutenbergV2ValidationIssueSchema = z
@@ -2027,6 +2030,43 @@ export const gutenbergV2ApprovalBindingSchema = z
   })
   .strict();
 
+/** The longest a signed approval may stay valid. The plugin enforces it. */
+export const GUTENBERG_V2_APPROVAL_MAX_TTL_MS = 30 * 60_000;
+
+/**
+ * An Ed25519 signature over the approval statement, made with the approver's
+ * approval key. Sites that registered the key refuse writes without one.
+ */
+export const gutenbergV2ApprovalProofSchema = z
+  .object({
+    schemaVersion: z.literal("sitepilot.approval-proof/v1"),
+    algorithm: z.literal("ed25519"),
+    keyId: z.string().regex(/^ak_[a-f0-9]{32}$/),
+    signature: z.string().regex(/^[A-Za-z0-9+/]{86}==$/)
+  })
+  .strict();
+
+/** Registers or replaces a client's approval key on a site. */
+export const gutenbergV2ApprovalKeyRequestSchema = z
+  .object({
+    schemaVersion: z.literal("sitepilot.approval-key-request/v1"),
+    algorithm: z.literal("ed25519"),
+    keyId: z.string().regex(/^ak_[a-f0-9]{32}$/),
+    /** The raw 32-byte public key, base64. */
+    publicKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/)
+  })
+  .strict();
+
+export const gutenbergV2ApprovalKeyResponseSchema = z
+  .object({
+    schemaVersion: z.literal("sitepilot.approval-key/v1"),
+    keyId: z.string().regex(/^ak_[a-f0-9]{32}$/),
+    algorithm: z.literal("ed25519"),
+    registeredAt: isoTimestampSchema,
+    required: z.boolean()
+  })
+  .strict();
+
 export const gutenbergV2ApprovalSchema = z
   .object({
     schemaVersion: z.literal("sitepilot.approval/v2"),
@@ -2034,7 +2074,8 @@ export const gutenbergV2ApprovalSchema = z
     approverId: identifierSchema,
     approvedAt: isoTimestampSchema,
     expiresAt: isoTimestampSchema,
-    binding: gutenbergV2ApprovalBindingSchema
+    binding: gutenbergV2ApprovalBindingSchema,
+    proof: gutenbergV2ApprovalProofSchema.optional()
   })
   .strict()
   .refine(
@@ -2101,7 +2142,16 @@ export const gutenbergV2MediaBindingsRequestSchema = z
     siteId: identifierSchema,
     items: z
       .array(gutenbergV2MediaBindingItemSchema)
-      .max(GUTENBERG_V2_LIMITS.maxMediaBindingItems)
+      .max(GUTENBERG_V2_LIMITS.maxMediaBindingItems),
+    /**
+     * With a signed approval, a site that requires proofs checks the uploads
+     * belong to the approved candidate before creating any attachment.
+     */
+    approval: gutenbergV2ApprovalSchema.optional(),
+    mediaManifest: z
+      .array(gutenbergV2MediaManifestEntrySchema)
+      .max(GUTENBERG_V2_LIMITS.maxMediaItems)
+      .optional()
   })
   .strict()
   .superRefine((request, context) => {
@@ -2337,10 +2387,33 @@ export const gutenbergV2JobRecordSchema = z
       .optional(),
     result: gutenbergV2ExecutionResultSchema.optional(),
     failure: gutenbergV2ValidationIssueSchema.optional(),
+    /**
+     * Whether an existing post rendered before the write: "ok", "broken", or
+     * "unsupported" when the plugin has no render check.
+     */
+    renderBaseline: z.enum(["ok", "broken", "unsupported"]).optional(),
     createdAt: isoTimestampSchema,
     updatedAt: isoTimestampSchema
   })
   .strict();
+
+/** The plugin rendering a saved post in-process (render_check_v1). */
+export const gutenbergV2RenderCheckSchema = z
+  .object({
+    schemaVersion: z.literal("sitepilot.render-check/v2"),
+    postId: positiveIntegerSchema,
+    outcome: z.enum(["ok", "render_error", "empty_output"]),
+    block: z
+      .object({
+        name: z.string().min(1).max(200),
+        index: z.number().int().nonnegative()
+      })
+      .strict()
+      .optional(),
+    message: z.string().max(1000).optional()
+  })
+  .strict();
+export type GutenbergV2RenderCheck = z.infer<typeof gutenbergV2RenderCheckSchema>;
 
 export const gutenbergV2EditorSessionRequestSchema = z
   .object({
@@ -2497,7 +2570,16 @@ export const gutenbergV2CommitReceiptSchema = z
     persistedContentHash: sha256Schema,
     persistedFieldsHash: sha256Schema,
     beforeStateRef: identifierSchema,
-    committedAt: isoTimestampSchema
+    committedAt: isoTimestampSchema,
+    /** Who approved the write, as the site recorded it. */
+    approval: z
+      .object({
+        approvalId: identifierSchema,
+        approverId: identifierSchema.optional(),
+        keyId: identifierSchema.optional()
+      })
+      .strict()
+      .optional()
   })
   .strict();
 
@@ -2609,6 +2691,15 @@ export type GutenbergV2ApprovalBinding = z.infer<
   typeof gutenbergV2ApprovalBindingSchema
 >;
 export type GutenbergV2Approval = z.infer<typeof gutenbergV2ApprovalSchema>;
+export type GutenbergV2ApprovalProof = z.infer<
+  typeof gutenbergV2ApprovalProofSchema
+>;
+export type GutenbergV2ApprovalKeyRequest = z.infer<
+  typeof gutenbergV2ApprovalKeyRequestSchema
+>;
+export type GutenbergV2ApprovalKeyResponse = z.infer<
+  typeof gutenbergV2ApprovalKeyResponseSchema
+>;
 export type GutenbergV2PreparedCommit = z.infer<
   typeof gutenbergV2PreparedCommitSchema
 >;

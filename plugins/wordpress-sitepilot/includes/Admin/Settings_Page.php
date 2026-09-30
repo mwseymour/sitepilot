@@ -125,7 +125,7 @@ final class Settings_Page {
 			return;
 		}
 		echo '<table class="widefat striped"><thead><tr>';
-		foreach ( array( __( 'Name', 'sitepilot' ), __( 'Site ID', 'sitepilot' ), __( 'Acts as', 'sitepilot' ), __( 'Registered', 'sitepilot' ), '' ) as $heading ) {
+		foreach ( array( __( 'Name', 'sitepilot' ), __( 'Site ID', 'sitepilot' ), __( 'Acts as', 'sitepilot' ), __( 'Signed approvals', 'sitepilot' ), __( 'Registered', 'sitepilot' ), '' ) as $heading ) {
 			echo '<th>' . esc_html( $heading ) . '</th>';
 		}
 		echo '</tr></thead><tbody>';
@@ -135,6 +135,7 @@ final class Settings_Page {
 			echo '<td>' . esc_html( '' !== $site['name'] ? $site['name'] : __( '(unnamed)', 'sitepilot' ) ) . '</td>';
 			echo '<td>' . esc_html( substr( $site['site_id'], 0, 8 ) ) . '…</td>';
 			echo '<td>' . esc_html( $user instanceof \WP_User ? $user->user_login : __( 'No user: signed requests are refused', 'sitepilot' ) ) . '</td>';
+			echo '<td>' . esc_html( '' !== $site['approval_key_id'] ? __( 'Required for every change', 'sitepilot' ) : __( 'Not set up yet', 'sitepilot' ) ) . '</td>';
 			echo '<td>' . esc_html( $site['registered_at'] > 0 ? wp_date( get_option( 'date_format' ), $site['registered_at'] ) : __( 'Before 0.2.0', 'sitepilot' ) ) . '</td>';
 			echo '<td><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 			wp_nonce_field( 'sitepilot_revoke_site_' . $site['site_id'] );

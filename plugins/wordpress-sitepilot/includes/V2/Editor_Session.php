@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace SitePilot\V2;
 
 use SitePilot\Registration\Store;
+use SitePilot\Errors\Error_Contract;
 
 /**
  * Issues one-use browser bootstraps and enforces the preparation boundary.
@@ -279,7 +280,7 @@ final class Editor_Session {
 			return $result;
 		}
 		if ( self::is_mutating_method( $request->get_method() ) ) {
-			return self::error( 'sitepilot_v2_read_only', 'The SitePilot preparation session is read-only.', 403 );
+			return self::error( 'read_only', 'The SitePilot preparation session is read-only.', 403 );
 		}
 		$route = (string) $request->get_route();
 		if ( preg_match( '#^/wp/v2/(?:posts|pages)(?:/|$)#', $route ) ) {
@@ -457,6 +458,6 @@ final class Editor_Session {
 	}
 
 	private static function error( string $code, string $message, int $status ): \WP_Error {
-		return new \WP_Error( 'sitepilot_v2_' . $code, __( $message, 'sitepilot' ), array( 'status' => $status ) );
+		return Error_Contract::error( 'sitepilot_v2_', sanitize_key( $code ), __( $message, 'sitepilot' ), $status );
 	}
 }

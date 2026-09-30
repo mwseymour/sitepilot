@@ -845,4 +845,37 @@ describe("PlaywrightGutenbergV2Worker", () => {
       message: "The approval expired."
     });
   });
+
+  it("turns a request that times out into a retryable failure", async () => {
+    const fetchImplementation = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(init.signal?.reason);
+          });
+        })
+    );
+    const transport = new SignedWordPressV2Transport({
+      siteUrl: "https://example.test",
+      siteId: "site-1",
+      clientId: "worker-1",
+      sharedSecret: Buffer.alloc(32, 7),
+      sourceReader: { readSource: vi.fn() },
+      fetchImplementation: fetchImplementation as unknown as typeof fetch,
+      timeoutMs: 20
+    });
+
+    await expect(
+      transport.reconcileExecution({
+        schemaVersion: "sitepilot.reconcile-request/v2",
+        executionId: "execution-1",
+        idempotencyKey: "key-1",
+        siteId: "site-1"
+      })
+    ).rejects.toMatchObject({
+      code: "editor_unavailable",
+      retryable: true,
+      message: "WordPress didn't answer a v2 request in time."
+    });
+  });
 });

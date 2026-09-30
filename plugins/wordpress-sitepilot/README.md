@@ -14,6 +14,11 @@ The MCP tools only read: `find-posts`, `get-post`, `site-discovery` and `ping`. 
   - Lookups only return drafts, pending and private posts to users who can edit them.
   - Request nonces are recorded atomically, so parallel replays can't both pass.
   - Settings → SitePilot lists registered clients, with a Revoke button.
+  - `/protocol` lists the plugin's `features`, so the desktop only uses what the site supports.
+  - Errors follow `sitepilot.error/v1` (`error_contract_v1`). Each one has a stable code, a cause and whether retrying could help. A refused signed request also says why (`auth.reason`), and `/sitepilot/v1/echo-headers` shows which signing headers reached the site.
+  - `/sitepilot/v2/render-check` (`render_check_v1`) renders a saved post in-process, so SitePilot can roll back an edit that breaks the page.
+  - Signed approvals (`approval_proof_v1`). A client can register an Ed25519 approval key through `/sitepilot/v2/approval-key`. From then on, every v2 write from that client needs an approval signed with that key. The approval must be bound to the exact change, last at most 30 minutes and be used once. Commit receipts record who approved each write.
+  - A media upload whose file type check fails leaves no file behind.
 
 ## Requirements
 
@@ -36,9 +41,10 @@ Then symlink or copy this folder into `wp-content/plugins/sitepilot` and activat
 | -------------------- | ------ | -------------------------------- |
 | Health               | GET    | `/wp-json/sitepilot/v1/health`   |
 | Protocol metadata    | GET    | `/wp-json/sitepilot/v1/protocol` |
+| Signing header check | GET, POST | `/wp-json/sitepilot/v1/echo-headers` |
 | MCP (HTTP, JSON-RPC) | POST   | `/wp-json/sitepilot/mcp`         |
 
-MCP calls require a logged-in user with `read` capability (or stronger). After `initialize`, send the `Mcp-Session-Id` header on subsequent JSON-RPC requests (handled automatically by `@sitepilot/mcp-client`).
+MCP calls must be signed by a registered SitePilot client, and run as the WordPress user it was registered with. After `initialize`, send the `Mcp-Session-Id` header on subsequent JSON-RPC requests (handled automatically by `@sitepilot/mcp-client`).
 
 If the SitePilot MCP server doesn't register (no Abilities API, no MCP Adapter, a different MCP Adapter loaded first, or the adapter rejecting the server), the plugin records why. Settings → SitePilot shows the reason and the loaded adapter version, the Dashboard and Plugins screens show an admin notice, and the PHP error log gets one line when the state changes. `/protocol` reports `mcp.registered` and `mcp.issue` for that request, without the detail message.
 

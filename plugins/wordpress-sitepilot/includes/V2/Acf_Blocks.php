@@ -9,6 +9,8 @@ declare( strict_types = 1 );
 
 namespace SitePilot\V2;
 
+use SitePilot\Errors\Error_Contract;
+
 /**
  * Describes every registered `acf/*` block with all of its fields, and keeps
  * the per-site record of which blocks passed a native save-and-reopen test.
@@ -768,6 +770,6 @@ final class Acf_Blocks {
 	}
 
 	private static function error( string $code, string $message, int $status ): \WP_Error {
-		return new \WP_Error( 'sitepilot_v2_' . $code, $message, array( 'status' => $status, 'code' => $code ) );
+		return Error_Contract::error( 'sitepilot_v2_', sanitize_key( $code ), __( $message, 'sitepilot' ), $status );
 	}
 }

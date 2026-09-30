@@ -19,6 +19,7 @@ import {
   type GutenbergV2BlockNode,
   type GutenbergV2BlockPlan,
   type GutenbergV2CommitReceipt,
+  type GutenbergV2RenderCheck,
   type GutenbergV2CompiledCandidate,
   type GutenbergV2EditorCapabilitySnapshot,
   type GutenbergV2ExecutionResult,
@@ -100,6 +101,14 @@ export interface GutenbergV2WordPressTransport {
    * confirm a publish or unpublish took effect publicly.
    */
   checkPublicUrl?(url: string): Promise<{ status: number; finalUrl: string }>;
+  /**
+   * Renders the saved post in WordPress (plugin feature render_check_v1).
+   * Null when the plugin has no render check.
+   */
+  renderCheck?(input: {
+    siteId: string;
+    postId: number;
+  }): Promise<GutenbergV2RenderCheck | null>;
   prepareCommit(
     input: GutenbergV2PrepareCommitRequest
   ): Promise<GutenbergV2PrepareCommitResponse>;
@@ -233,6 +242,43 @@ const ALLOWED_TRANSITIONS: Readonly<
   rollback_conflict: [],
   manual_intervention_required: []
 };
+
+/**
+ * A refusal WordPress won't change its mind about: a known failure code that
+ * its sender marked as not retryable. Timeouts, network errors and 5xx
+ * responses don't qualify, because the commit may have landed.
+ */
+function permanentRefusal(
+  error: unknown
+): { code: GutenbergV2ValidationIssue["code"]; message: string } | null {
+  if (error === null || typeof error !== "object") return null;
+  const candidate = error as {
+    code?: unknown;
+    retryable?: unknown;
+    message?: unknown;
+    httpStatus?: unknown;
+  };
+  if (candidate.retryable !== false || typeof candidate.code !== "string") return null;
+  // A 5xx means WordPress itself failed; the write may have happened.
+  if (typeof candidate.httpStatus === "number" && candidate.httpStatus >= 500) {
+    return null;
+  }
+  const code = gutenbergV2ValidationFailureCodeSchema.safeParse(candidate.code);
+  if (
+    !code.success ||
+    code.data === "editor_unavailable" ||
+    code.data === "conditional_commit_failed"
+  ) {
+    return null;
+  }
+  return {
+    code: code.data,
+    message:
+      typeof candidate.message === "string" && candidate.message.length > 0
+        ? candidate.message
+        : "WordPress refused the commit."
+  };
+}
 
 function planPostType(plan: GutenbergV2BlockPlan): "post" | "page" {
   return plan.target.postType;
@@ -713,6 +759,17 @@ export class GutenbergV2ContentService {
         candidate.intent.operation === "create_draft"
           ? undefined
           : await this.#readAndCheckSource(candidate.intent);
+      // Whether the post renders before the write, so a problem that was
+      // already there doesn't count against this change.
+      if (
+        postId !== undefined &&
+        candidate.intent.operation !== "set_status" &&
+        job.renderBaseline === undefined
+      ) {
+        job = await this.#replaceWithinState(job, {
+          renderBaseline: await this.#renderBaseline(candidate.siteId, postId)
+        });
+      }
       const media = await this.#dependencies.media.resolveForCommit({
         executionId: job.executionId,
         idempotencyKey: job.idempotencyKey,
@@ -882,6 +939,9 @@ export class GutenbergV2ContentService {
         `Execution ${input.executionId} has no prepared commit.`
       );
     }
+    // Set once WordPress has returned a receipt, after which a failure can no
+    // longer mean "nothing was written".
+    let receiptObtained = false;
     try {
       let receipt = await this.#dependencies.wordpress.reconcileExecution({
         schemaVersion: "sitepilot.reconcile-request/v2",
@@ -921,6 +981,7 @@ export class GutenbergV2ContentService {
           preparedCommitId: job.preparedCommit.preparedCommitId
         });
       }
+      receiptObtained = receipt !== null && receipt !== undefined;
       const parsed = gutenbergV2CommitReceiptSchema.parse(receipt);
       this.#assertCommitReceipt(job, parsed);
       await this.#transition(job, "verifying", {
@@ -937,6 +998,19 @@ export class GutenbergV2ContentService {
         error.code === "approval_expired"
       )
         throw error;
+      const refusal = receiptObtained ? null : permanentRefusal(error);
+      if (refusal) {
+        // WordPress refused the commit inside its transaction, so nothing was
+        // written. A retry can't succeed: the update needs a fresh build and
+        // approval.
+        await this.#transition(job, "stale_approval", {
+          failure: issue(refusal.code, "commit", refusal.message)
+        });
+        throw new GutenbergV2ServiceError(refusal.code, refusal.message, {
+          retryable: false,
+          cause: error
+        });
+      }
       throw new GutenbergV2ServiceError(
         "conditional_commit_failed",
         "The commit outcome is uncertain; retry will reconcile by execution and idempotency ID before any further write.",
@@ -1055,7 +1129,11 @@ export class GutenbergV2ContentService {
       readback.fieldsHash === job.preparedCommit?.serverPreparedFieldsHash &&
       seoMatches(job, readback) &&
       report.contentPreservation.checked.includes("post_fields");
-    if (report.outcome === "valid" && hashesMatch) {
+    const renderFailure =
+      report.outcome === "valid" && hashesMatch
+        ? await this.#renderFailure(job)
+        : null;
+    if (report.outcome === "valid" && hashesMatch && renderFailure === null) {
       const result = this.#executionResult(
         job,
         "succeeded",
@@ -1071,10 +1149,12 @@ export class GutenbergV2ContentService {
     }
 
     if (job.candidate.operation === "create_draft") {
-      const failedReport = this.#failedVerificationReport(
-        report,
-        "The persisted content or post fields differ from the server-prepared candidate."
-      );
+      const failedReport = renderFailure
+        ? this.#failedVerificationReport(report, renderFailure, "render_failed")
+        : this.#failedVerificationReport(
+            report,
+            "The persisted content or post fields differ from the server-prepared candidate."
+          );
       const result = this.#executionResult(
         job,
         "post_write_verification_failed",
@@ -1087,11 +1167,17 @@ export class GutenbergV2ContentService {
       );
       await this.#transition(job, "post_write_verification_failed", {
         result,
-        failure: issue(
-          "persisted_content_invalid",
-          "verify",
-          "The created draft failed persisted editor verification and was retained for inspection."
-        )
+        failure: renderFailure
+          ? issue(
+              "render_failed",
+              "verify",
+              `The draft was saved but doesn't render, so it was kept for inspection. ${renderFailure}`
+            )
+          : issue(
+              "persisted_content_invalid",
+              "verify",
+              "The created draft failed persisted editor verification and was retained for inspection."
+            )
       });
       return result;
     }
@@ -1120,10 +1206,12 @@ export class GutenbergV2ContentService {
         : recovery.outcome === "conflict"
           ? "rollback_conflict"
           : "manual_intervention_required";
-    const failedReport = this.#failedVerificationReport(
-      report,
-      "The persisted content or post fields differ from the server-prepared candidate."
-    );
+    const failedReport = renderFailure
+      ? this.#failedVerificationReport(report, renderFailure, "render_failed")
+      : this.#failedVerificationReport(
+          report,
+          "The persisted content or post fields differ from the server-prepared candidate."
+        );
     const result = this.#executionResult(
       job,
       nextState,
@@ -1136,11 +1224,17 @@ export class GutenbergV2ContentService {
       failure: issue(
         recovery.outcome === "conflict"
           ? "rollback_conflict"
-          : "persisted_content_invalid",
+          : renderFailure
+            ? "render_failed"
+            : "persisted_content_invalid",
         "rollback",
-        recovery.outcome === "restored"
-          ? "Persisted verification failed and the prior content was restored."
-          : "Persisted verification failed and automatic rollback could not safely restore the prior content."
+        renderFailure
+          ? recovery.outcome === "restored"
+            ? `The update broke the page, so the prior content was restored. ${renderFailure}`
+            : `The update broke the page and automatic rollback could not safely restore the prior content. ${renderFailure}`
+          : recovery.outcome === "restored"
+            ? "Persisted verification failed and the prior content was restored."
+            : "Persisted verification failed and automatic rollback could not safely restore the prior content."
       )
     });
     return result;
@@ -1155,7 +1249,7 @@ export class GutenbergV2ContentService {
       await this.prepareCommit(input);
     const refreshed = await this.#requireJob(input.executionId);
     const receipt = ["preparing", "committing"].includes(refreshed.state)
-      ? await this.commitCandidate(input)
+      ? await this.#commitReconcilingOnce(input)
       : undefined;
     const afterCommit = await this.#requireJob(input.executionId);
     if (afterCommit.state === "verifying") {
@@ -1168,6 +1262,28 @@ export class GutenbergV2ContentService {
       "idempotency_conflict",
       `Execution ${input.executionId} cannot execute from ${afterCommit.state}.`
     );
+  }
+
+  /**
+   * Commits, and after an uncertain outcome (a timeout or a lost response)
+   * tries once more straight away. commitCandidate reconciles by execution and
+   * idempotency ID before it writes, so the second try can't write twice.
+   */
+  async #commitReconcilingOnce(input: {
+    executionId: string;
+  }): Promise<GutenbergV2CommitReceipt> {
+    try {
+      return await this.commitCandidate(input);
+    } catch (error) {
+      if (
+        !(error instanceof GutenbergV2ServiceError) ||
+        error.code !== "conditional_commit_failed" ||
+        !error.retryable
+      ) {
+        throw error;
+      }
+      return this.commitCandidate(input);
+    }
   }
 
   #statusCandidate(
@@ -1676,7 +1792,9 @@ export class GutenbergV2ContentService {
       verification,
       beforeStateRef: job.beforeStateRef,
       createdMediaIds: job.createdMediaIds ?? [],
-      retry: { retryable: state === "manual_intervention_required" },
+      // Only a rollback leaves the post as it was, so only then is a fresh
+      // attempt safe. After a failed rollback a person has to look first.
+      retry: { retryable: state === "rolled_back" },
       rollback,
       auditRef: `execution:${job.executionId}`,
       completedAt: this.#now()
@@ -1685,17 +1803,65 @@ export class GutenbergV2ContentService {
 
   #failedVerificationReport(
     report: GutenbergV2ValidationReport,
-    message: string
+    message: string,
+    code: GutenbergV2ValidationIssue["code"] = "persisted_content_invalid"
   ): GutenbergV2ValidationReport {
     if (report.outcome === "invalid") return report;
     return gutenbergV2ValidationReportSchema.parse({
       ...report,
       outcome: "invalid",
-      issues: [
-        ...report.issues,
-        issue("persisted_content_invalid", "verify", message)
-      ]
+      issues: [...report.issues, issue(code, "verify", message)]
     });
+  }
+
+  /** "ok", "broken", or "unsupported" when the plugin can't render-check. */
+  async #renderBaseline(
+    siteId: string,
+    postId: number
+  ): Promise<"ok" | "broken" | "unsupported"> {
+    const renderCheck = this.#dependencies.wordpress.renderCheck;
+    if (!renderCheck) return "unsupported";
+    try {
+      const result = await renderCheck.call(this.#dependencies.wordpress, {
+        siteId,
+        postId
+      });
+      if (result === null) return "unsupported";
+      return result.outcome === "ok" ? "ok" : "broken";
+    } catch {
+      // A check that can't run is no reason to hold up the write.
+      return "unsupported";
+    }
+  }
+
+  /**
+   * Why the saved post no longer renders, or null. Only counts when the post
+   * is new or rendered cleanly before the write, and never blocks on a check
+   * that can't run.
+   */
+  async #renderFailure(job: GutenbergV2JobRecord): Promise<string | null> {
+    const renderCheck = this.#dependencies.wordpress.renderCheck;
+    if (!renderCheck || !job.candidate || !job.postId) return null;
+    if (job.candidate.intent.operation === "set_status") return null;
+    if (job.candidate.operation !== "create_draft" && job.renderBaseline !== "ok") {
+      return null;
+    }
+    let result: GutenbergV2RenderCheck | null;
+    try {
+      result = await renderCheck.call(this.#dependencies.wordpress, {
+        siteId: job.siteId,
+        postId: job.postId
+      });
+    } catch {
+      return null;
+    }
+    if (result === null || result.outcome === "ok") return null;
+    const where = result.block
+      ? `The ${result.block.name} block (block ${result.block.index + 1}) failed to render`
+      : result.outcome === "empty_output"
+        ? "The page rendered nothing"
+        : "The page failed to render";
+    return result.message ? `${where}: ${result.message}` : `${where}.`;
   }
 
   #deterministicVerificationFailureReport(

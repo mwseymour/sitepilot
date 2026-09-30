@@ -27,8 +27,12 @@ import {
   GutenbergV2ServiceError,
   SqliteGutenbergV2ApprovalStore,
   SqliteGutenbergV2ExecutionJournal,
+  approvalKeyRequest,
   createGutenbergV2ApprovalBinding,
+  generateApprovalSigningKey,
   hashGutenbergV2Value,
+  signGutenbergV2Approval,
+  type ApprovalSigningKey,
   type GutenbergV2StagedAsset,
   type GutenbergV2WordPressTransport
 } from "@sitepilot/services";
@@ -1625,7 +1629,10 @@ function replacementPlan(
   });
 }
 
-function approval(
+/** Set once the site has this run's approval key; from then on it's required. */
+let approvalKey: ApprovalSigningKey | undefined;
+
+function unsignedApproval(
   candidate: GutenbergV2CompiledCandidate
 ): GutenbergV2Approval {
   const now = new Date();
@@ -1637,6 +1644,82 @@ function approval(
     expiresAt: new Date(now.getTime() + 10 * 60_000).toISOString(),
     binding: createGutenbergV2ApprovalBinding(candidate)
   };
+}
+
+function approval(
+  candidate: GutenbergV2CompiledCandidate
+): GutenbergV2Approval {
+  const unsigned = unsignedApproval(candidate);
+  return approvalKey ? signGutenbergV2Approval(unsigned, approvalKey) : unsigned;
+}
+
+/**
+ * Phase 7 exit: with an approval key registered, the site refuses a write
+ * whose approval has no proof, or a proof that no longer matches.
+ */
+async function runApprovalProofChecks(
+  service: GutenbergV2ContentService,
+  siteId: string
+): Promise<Record<string, string>> {
+  const cases: Array<{
+    label: string;
+    build: (candidate: GutenbergV2CompiledCandidate) => GutenbergV2Approval;
+  }> = [
+    { label: "missing", build: unsignedApproval },
+    {
+      label: "tampered",
+      build: (candidate) => {
+        const approved = approval(candidate);
+        return {
+          ...approved,
+          expiresAt: new Date(
+            Date.parse(approved.expiresAt) + 60_000
+          ).toISOString()
+        };
+      }
+    }
+  ];
+  const outcomes: Record<string, string> = {};
+  for (const { label, build } of cases) {
+    const executionId = `execution-proof-${label}-${randomUUID()}`;
+    const candidate = await service.compileCandidate({
+      executionId,
+      idempotencyKey: `idempotency-${randomUUID()}`,
+      plan: gutenbergV2BlockPlanSchema.parse({
+        schemaVersion: "sitepilot.block-plan/v2",
+        planId: `plan-${randomUUID()}`,
+        siteId,
+        operation: "create_draft",
+        target: { postType: "post" },
+        postFields: {
+          title: `AUTOMATED-TEST-V2-PROOF-${label}-${randomUUID().slice(0, 8)}`,
+          status: "draft"
+        },
+        blocks: [
+          {
+            ref: "p",
+            name: "core/paragraph",
+            attributes: { content: "Needs a signed approval." },
+            children: []
+          }
+        ],
+        media: []
+      })
+    });
+    await service.recordApproval({ executionId, approval: build(candidate) });
+    let refusal: string | undefined;
+    try {
+      await service.prepareCommit({ executionId });
+    } catch (error) {
+      refusal = error instanceof GutenbergV2ServiceError ? error.code : String(error);
+    }
+    assert(
+      refusal === "approval_invalid",
+      `A write with a ${label} approval proof was not refused (${refusal ?? "prepared"}).`
+    );
+    outcomes[label] = refusal;
+  }
+  return outcomes;
 }
 
 function boundedServiceDiagnostic(error: GutenbergV2ServiceError): string {
@@ -2130,6 +2213,16 @@ async function main(): Promise<void> {
     jobTimeoutMs: 120_000
   });
   const { worker, transport: wordpress, media } = runtime;
+  // Every approval in this run is signed, and the site requires it.
+  const generatedKey = generateApprovalSigningKey().key;
+  const keyResponse = await wordpress.registerApprovalKey(
+    approvalKeyRequest(generatedKey)
+  );
+  assert(
+    keyResponse.required && keyResponse.keyId === generatedKey.keyId,
+    "The site did not register the approval key."
+  );
+  approvalKey = generatedKey;
   const staged = await stagedAssets.stage({
     bytes: readFileSync(join(process.cwd(), "tests/e2e/fixtures/test.jpeg")),
     mediaType: "image/jpeg"
@@ -2207,6 +2300,13 @@ async function main(): Promise<void> {
       );
       return;
     }
+    const approvalProofRefusals = await runApprovalProofChecks(
+      service,
+      registration.siteId
+    );
+    console.log(
+      `Approval proofs: refused ${Object.keys(approvalProofRefusals).join(" and ")} proofs.`
+    );
     const title = `AUTOMATED-TEST-V2-${runId}`;
     const creationPlan = createPlan(registration.siteId, title, staged);
     const expectedNodeCount = countPlanNodes(creationPlan);
@@ -2479,13 +2579,21 @@ async function main(): Promise<void> {
     try {
       await service.commitCandidate({ executionId: staleExecution });
     } catch (error) {
+      // A permanent refusal: nothing was written and a retry can't help, so
+      // the job ends instead of waiting in committing.
       staleCommitRejected =
         error instanceof GutenbergV2ServiceError &&
-        error.code === "conditional_commit_failed";
+        error.code === "stale_source" &&
+        !error.retryable;
     }
     assert(
       staleCommitRejected,
       "A human edit between prepare and commit did not reject the stale source."
+    );
+    const staleJob = await journal.get(staleExecution);
+    assert(
+      staleJob?.state === "stale_approval",
+      `A refused stale commit left the job in ${staleJob?.state}.`
     );
     const afterStaleRejection = await wordpress.readBack({
       schemaVersion: "sitepilot.readback-request/v2",
@@ -2550,6 +2658,7 @@ async function main(): Promise<void> {
     const summary = {
       schemaVersion: "sitepilot.v2-e2e-result/v1",
       siteId: registration.siteId,
+      approvalProofRefusals,
       createExecution,
       libraryExecution,
       updateExecution,

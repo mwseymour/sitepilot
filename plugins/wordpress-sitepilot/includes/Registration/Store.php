@@ -38,7 +38,7 @@ final class Store {
 	/**
 	 * Registered clients for the settings page. Secrets are left out.
 	 *
-	 * @return array<int, array{site_id: string, name: string, client_id: string, fingerprint: string, user_id: int, registered_at: int}>
+	 * @return array<int, array{site_id: string, name: string, client_id: string, fingerprint: string, user_id: int, registered_at: int, approval_key_id: string}>
 	 */
 	public static function list_sites(): array {
 		$rows = array();
@@ -53,9 +53,21 @@ final class Store {
 				'fingerprint'   => isset( $row['fingerprint'] ) ? (string) $row['fingerprint'] : '',
 				'user_id'       => isset( $row['user_id'] ) ? (int) $row['user_id'] : 0,
 				'registered_at' => isset( $row['registered_at'] ) ? (int) $row['registered_at'] : 0,
+				'approval_key_id' => isset( $row['approval_key']['key_id'] ) ? (string) $row['approval_key']['key_id'] : '',
 			);
 		}
 		return $rows;
+	}
+
+	/**
+	 * The whole stored record, secret included, for code that keeps its own
+	 * fields on it (the approval key).
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public static function get_row( string $site_id ): ?array {
+		$row = self::all_rows()[ $site_id ] ?? null;
+		return is_array( $row ) ? $row : null;
 	}
 
 	/** @return array<string, mixed> */

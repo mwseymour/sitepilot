@@ -62,6 +62,10 @@ export {
   gutenbergV2SupportPolicy,
   gutenbergV2ApprovalBindingSchema,
   gutenbergV2ApprovalSchema,
+  gutenbergV2ApprovalProofSchema,
+  gutenbergV2ApprovalKeyRequestSchema,
+  gutenbergV2ApprovalKeyResponseSchema,
+  GUTENBERG_V2_APPROVAL_MAX_TTL_MS,
   gutenbergV2BlockNodeSchema,
   gutenbergV2BlockPlanSchema,
   gutenbergV2CapabilityBlockSchema,
@@ -91,6 +95,7 @@ export {
   gutenbergV2PrepareCommitResponseSchema,
   gutenbergV2ReadbackRequestSchema,
   gutenbergV2ReadbackSchema,
+  gutenbergV2RenderCheckSchema,
   gutenbergV2ReconcileRequestSchema,
   gutenbergV2ReconcileResponseSchema,
   gutenbergV2RecoverRequestSchema,
@@ -103,6 +108,9 @@ export {
 } from "./gutenberg-v2.js";
 export type {
   GutenbergV2Approval,
+  GutenbergV2ApprovalProof,
+  GutenbergV2ApprovalKeyRequest,
+  GutenbergV2ApprovalKeyResponse,
   GutenbergV2ApprovalBinding,
   GutenbergV2BlockNode,
   GutenbergV2BlockPlan,
@@ -130,6 +138,7 @@ export type {
   GutenbergV2PrepareCommitRequest,
   GutenbergV2PrepareCommitResponse,
   GutenbergV2Readback,
+  GutenbergV2RenderCheck,
   GutenbergV2ReadbackRequest,
   GutenbergV2ReconcileRequest,
   GutenbergV2ReconcileResponse,
@@ -332,3 +341,12 @@ export type {
   WorkspaceListResponse,
   WorkspaceSummary
 } from "./schemas.js";
+export {
+  authFailureReasonSchema,
+  classifyErrorCode,
+  errorCauseSchema,
+  KNOWN_ERROR_CODES,
+  parseWordPressError,
+  sitePilotErrorSchema
+} from "./errors.js";
+export type { AuthFailureReason, ErrorCause, SitePilotError } from "./errors.js";

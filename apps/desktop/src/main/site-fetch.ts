@@ -6,6 +6,12 @@ const insecureLoopbackHttpsAgent = new HttpsAgent({
   rejectUnauthorized: false
 });
 
+/** Longest a site request may take when the caller doesn't set its own signal. */
+const DEFAULT_TIMEOUT_MS = 120_000;
+
+/** Largest response read on the local-development path, in bytes. */
+const MAX_LOOPBACK_RESPONSE_BYTES = 32 * 1024 * 1024;
+
 function getRequestUrl(input: RequestInfo | URL): URL {
   if (typeof input === "string") {
     return new URL(input);
@@ -92,8 +98,9 @@ export async function fetchSiteUrl(
   init?: RequestInit
 ): Promise<Response> {
   const url = getRequestUrl(input);
+  const signal = init?.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
   if (!shouldBypassTlsVerification(url)) {
-    return fetch(input, init);
+    return fetch(input, { ...init, signal });
   }
 
   const body = await readRequestBody(init?.body);
@@ -118,10 +125,16 @@ export async function fetchSiteUrl(
       },
       (res) => {
         const chunks: Buffer[] = [];
+        let received = 0;
         res.on("data", (chunk: Buffer | string) => {
-          chunks.push(
-            typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk
-          );
+          const bytes =
+            typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
+          received += bytes.length;
+          if (received > MAX_LOOPBACK_RESPONSE_BYTES) {
+            req.destroy(new Error("The site's response was too large."));
+            return;
+          }
+          chunks.push(bytes);
         });
         res.on("end", () => {
           const responseHeaders = new Headers();
@@ -147,20 +160,17 @@ export async function fetchSiteUrl(
 
     req.on("error", reject);
 
-    const signal = init?.signal;
-    if (signal) {
-      if (signal.aborted) {
-        req.destroy(createAbortError());
-        return;
-      }
-      signal.addEventListener(
-        "abort",
-        () => {
-          req.destroy(createAbortError());
-        },
-        { once: true }
-      );
+    if (signal.aborted) {
+      req.destroy(createAbortError());
+      return;
     }
+    signal.addEventListener(
+      "abort",
+      () => {
+        req.destroy(createAbortError());
+      },
+      { once: true }
+    );
 
     if (body.length > 0) {
       req.write(body);

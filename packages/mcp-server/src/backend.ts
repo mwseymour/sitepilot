@@ -71,6 +71,11 @@ export type McpRequestStatus = {
   };
   reviewArtifacts?: Array<{ id: string; kind: string }>;
   result?: { postId?: number; editUrl?: string };
+  /**
+   * Why the request stopped, in sitepilot.error/v1 terms. When `retryable` is
+   * false, sending the same thing again won't help; revise the request.
+   */
+  failure?: { code: string; cause: string; retryable: boolean; message: string };
   /** Where a person approves the change. */
   approvalHint?: string;
   recentMessages: McpThreadMessage[];

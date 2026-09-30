@@ -11,6 +11,7 @@ import {
   type GutenbergV2PlanRevision
 } from "@sitepilot/services";
 import {
+  GUTENBERG_V2_APPROVAL_MAX_TTL_MS,
   GUTENBERG_V2_SEO_FIELDS,
   GUTENBERG_V2_SEO_FIELD_LABELS,
   type GutenbergV2CompiledCandidate,
@@ -34,6 +35,7 @@ import { z } from "zod";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
+import { signApprovalForSite } from "./approval-key-service.js";
 import { assertCallerMay, currentActor } from "./call-context.js";
 import {
   candidateReadyReport,
@@ -92,7 +94,11 @@ function getOptionalConnection(): Database.Database | undefined {
   return database.connection;
 }
 
-const protocolSchema = z.object({ v2: z.object({ enabled: z.boolean() }) });
+const protocolSchema = z.object({
+  v2: z.object({ enabled: z.boolean() }),
+  /** What the site's plugin supports, such as approval_proof_v1. */
+  features: z.array(z.string()).optional()
+});
 
 type PlannerFactory = (input: {
   siteId: SiteId;
@@ -198,9 +204,17 @@ function errorResult(error: unknown): {
   ok: false;
   code: string;
   message: string;
+  retryable?: boolean;
+  issues?: readonly GutenbergV2ServiceError["issues"][number][];
 } {
   if (error instanceof GutenbergV2ServiceError) {
-    return { ok: false, code: error.code, message: error.message };
+    return {
+      ok: false,
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+      ...(error.issues.length > 0 ? { issues: error.issues } : {})
+    };
   }
   if (error instanceof GutenbergV2PlanGenerationError) {
     return { ok: false, code: "planner_model_failed", message: error.message };
@@ -292,7 +306,10 @@ const V2_DISABLED_MESSAGE =
 
 async function assertV2Enabled(
   siteId: SiteId
-): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+): Promise<
+  | { ok: true; features: readonly string[] }
+  | { ok: false; code: string; message: string }
+> {
   const db = getDatabase();
   const site = await db.repositories.sites.getById(siteId);
   if (!site || site.activationStatus !== "active") {
@@ -306,7 +323,7 @@ async function assertV2Enabled(
   // (SITEPILOT_V2_ENABLED) is the site's switch for SitePilot writes.
   if (protocolProbeForTests) {
     return (await protocolProbeForTests(site.baseUrl))
-      ? { ok: true }
+      ? { ok: true, features: [] }
       : { ok: false, code: "gutenberg_v2_destination_disabled", message: V2_DISABLED_MESSAGE };
   }
   try {
@@ -325,6 +342,7 @@ async function assertV2Enabled(
         message: `Could not check whether this site accepts SitePilot changes (HTTP ${response.status}).`
       };
     }
+    return { ok: true, features: body.data.features ?? [] };
   } catch {
     return {
       ok: false,
@@ -332,7 +350,6 @@ async function assertV2Enabled(
       message: "Could not check whether this site accepts SitePilot changes."
     };
   }
-  return { ok: true };
 }
 
 function readMapping(siteId: SiteId, requestId: RequestId): Mapping | null {
@@ -1222,16 +1239,27 @@ export async function decideGutenbergV2Candidate(input: {
         next = job;
       } else {
         const approvedAt = nowIso();
-        next = await runtime.runtime.content.recordApproval({
-          executionId: mapping.executionId,
+        // Sites that support proofs get the approval signed with the
+        // desktop's approval key, and refuse the write without it.
+        const signed = await signApprovalForSite({
+          siteId: input.siteId,
+          features: enabled.features,
+          registerApprovalKey: runtime.runtime.registerApprovalKey,
           approval: {
             schemaVersion: "sitepilot.approval/v2",
             approvalId: randomUUID(),
             approverId: currentActor().userProfileId,
             approvedAt,
-            expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+            expiresAt: new Date(
+              Date.parse(approvedAt) + GUTENBERG_V2_APPROVAL_MAX_TTL_MS
+            ).toISOString(),
             binding: createGutenbergV2ApprovalBinding(job.candidate)
           }
+        });
+        if (!signed.ok) return signed;
+        next = await runtime.runtime.content.recordApproval({
+          executionId: mapping.executionId,
+          approval: signed.approval
         });
       }
       mapping.decision = "approved";

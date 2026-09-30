@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { DiscoverySnapshot, Site } from "@sitepilot/domain";
-import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import { isMcpToolError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 
 import { getDatabase } from "./app-database.js";
 import {
@@ -53,6 +53,18 @@ export async function refreshDiscoveryForSite(
   try {
     const raw = await mcpBundle.client.callTool("sitepilot-site-discovery", {});
     discoveryPayload = normalizeMcpToolResult(raw);
+    if (isMcpToolError(raw)) {
+      return {
+        ok: false,
+        code: "discovery_tool_failed",
+        message:
+          typeof discoveryPayload.raw === "string"
+            ? discoveryPayload.raw
+            : typeof discoveryPayload.error === "string"
+              ? discoveryPayload.error
+              : "The site's discovery tool failed."
+      };
+    }
   } catch (e) {
     return {
       ok: false,

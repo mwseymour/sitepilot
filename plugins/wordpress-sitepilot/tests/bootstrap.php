@@ -14,6 +14,10 @@ namespace SitePilot\Registration {
 			return $site_id === '' ? null : array( 'id' => $site_id );
 		}
 
+		public static function get_row( string $site_id ): ?array {
+			return self::get_site( $site_id );
+		}
+
 		public static function save_site( string $site_id, array $record ): void {
 			$GLOBALS['sitepilot_test_sites'][ $site_id ] = $record;
 		}

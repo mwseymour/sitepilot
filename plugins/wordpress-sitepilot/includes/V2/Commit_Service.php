@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace SitePilot\V2;
 
 use SitePilot\Seo\Seo_Adapter;
+use SitePilot\Errors\Error_Contract;
 
 /**
  * Stores approval-bound preparations and commits them inside an InnoDB
@@ -70,6 +71,10 @@ final class Commit_Service {
 		$binding_error = self::validate_approval_binding( $candidate, $approval['binding'] );
 		if ( $binding_error instanceof \WP_Error ) {
 			return $binding_error;
+		}
+		$proof_error = Approval_Proof::verify( $site_id, $approval, $execution_id );
+		if ( $proof_error instanceof \WP_Error ) {
+			return $proof_error;
 		}
 
 		$content = $final_content;
@@ -160,10 +165,15 @@ final class Commit_Service {
 
 		$support = self::conditional_support();
 		if ( empty( $support['supported'] ) ) {
-			return new \WP_Error(
+			// Permanent: the database can't do the transactional commit, so a retry can't help.
+			return Error_Contract::custom(
 				'sitepilot_v2_conditional_commit_unsupported',
+				'conditional_commit_failed',
 				__( 'The WordPress database tables do not support the required transactional commit.', 'sitepilot' ),
-				array( 'status' => 503, 'code' => 'conditional_commit_failed', 'support' => $support )
+				503,
+				'not_supported',
+				false,
+				array( 'support' => $support )
 			);
 		}
 
@@ -321,6 +331,10 @@ final class Commit_Service {
 			if ( strtotime( (string) $prepared['expiresAt'] ) <= time() || strtotime( (string) $stored['approval']['expiresAt'] ) <= time() ) {
 				throw new \RuntimeException( 'approval_expired' );
 			}
+			// Prepared before the client registered its approval key.
+			if ( Approval_Proof::required( $authenticated_site_id ) && ! is_array( $stored['approval']['proof'] ?? null ) ) {
+				throw new \RuntimeException( 'approval_invalid' );
+			}
 
 			$candidate = $stored['candidate'];
 			$post_type = (string) ( $candidate['intent']['target']['postType'] ?? '' );
@@ -430,6 +444,12 @@ final class Commit_Service {
 				'persistedFieldsHash'  => self::fields_hash( (string) $row_after['post_title'], (string) $row_after['post_excerpt'], (string) $row_after['post_status'] ),
 				'beforeStateRef'       => $before_ref,
 				'committedAt'          => gmdate( 'c' ),
+				// The site's own record of who approved the write.
+				'approval'             => array(
+					'approvalId' => (string) $stored['approval']['approvalId'],
+					...( is_string( $stored['approval']['approverId'] ?? null ) && '' !== $stored['approval']['approverId'] ? array( 'approverId' => $stored['approval']['approverId'] ) : array() ),
+					...( is_string( $stored['approval']['proof']['keyId'] ?? null ) ? array( 'keyId' => $stored['approval']['proof']['keyId'] ) : array() ),
+				),
 			);
 			self::insert_option_row( $receipt_key, $receipt );
 			if ( false === $wpdb->query( 'COMMIT' ) ) {
@@ -445,8 +465,8 @@ final class Commit_Service {
 			return $receipt;
 		} catch ( \Throwable $error ) {
 			$wpdb->query( 'ROLLBACK' );
-			$code = $error->getMessage();
-			$status = in_array( $code, array( 'stale_source', 'runtime_changed', 'approval_expired', 'prepared_commit_changed', 'media_changed' ), true ) ? 409 : ( 'permission_denied' === $code ? 403 : 503 );
+			$code = Error_Contract::code_from_exception( $error, 'conditional_commit_failed' );
+			$status = in_array( $code, array( 'stale_source', 'runtime_changed', 'approval_expired', 'approval_invalid', 'prepared_commit_changed', 'media_changed' ), true ) ? 409 : ( 'permission_denied' === $code ? 403 : 503 );
 			return self::error( $code, 'The conditional commit was rejected before a verified result could be returned.', $status );
 		}
 	}
@@ -1061,6 +1081,6 @@ final class Commit_Service {
 	}
 
 	private static function error( string $code, string $message, int $status ): \WP_Error {
-		return new \WP_Error( 'sitepilot_v2_' . sanitize_key( $code ), __( $message, 'sitepilot' ), array( 'status' => $status, 'code' => $code ) );
+		return Error_Contract::error( 'sitepilot_v2_', sanitize_key( $code ), __( $message, 'sitepilot' ), $status );
 	}
 }

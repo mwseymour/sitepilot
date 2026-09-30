@@ -14,6 +14,7 @@ import {
   clientSourceSchema,
   urlSchema
 } from "./common.js";
+import { authFailureReasonSchema } from "./errors.js";
 import { siteRegistrationSchema } from "./protocol.js";
 import {
   chatMessageSchema,
@@ -216,7 +217,11 @@ export const connectivityDiagnosticsSchema = z.object({
     }),
     authentication: z.object({
       ok: z.boolean(),
-      message: z.string().optional()
+      message: z.string().optional(),
+      /** Why the site refused the signed request (sitepilot.error/v1 auth.reason). */
+      reason: authFailureReasonSchema.optional(),
+      /** Signing headers the site never received, when a host strips them. */
+      missingHeaders: z.array(z.string()).optional()
     }),
     mcpTools: z.object({
       ok: z.boolean(),

@@ -200,8 +200,20 @@ describe("SitePilot MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("request_not_found");
+    // Models get the sitepilot.error/v1 fields, not just the text.
+    expect(result.structuredContent).toEqual({
+      code: "request_not_found",
+      cause: "not_found",
+      retryable: false,
+      message: "No request with that ID on this site."
+    });
     expect(backend.recordToolCall).toHaveBeenLastCalledWith(
-      { tool: "request_status", siteId: "site-1", ok: false },
+      {
+        tool: "request_status",
+        siteId: "site-1",
+        ok: false,
+        code: "request_not_found"
+      },
       expect.anything()
     );
   });

@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Mcp;
 
+use SitePilot\Errors\Error_Contract;
 use SitePilot\Registration\Store;
 use SitePilot\Security\Signed_Request_Verifier;
 
@@ -56,6 +57,40 @@ final class Mcp_Permission {
 		self::$trusted_user_id = $user_id;
 
 		return current_user_can( 'read' );
+	}
+
+	public static function register_hooks(): void {
+		add_filter( 'rest_request_before_callbacks', array( self::class, 'refuse_with_reason' ), 10, 3 );
+	}
+
+	/**
+	 * Refuses an unsigned or badly signed request to the SitePilot MCP route
+	 * with sitepilot.error/v1, including why. The MCP adapter would otherwise
+	 * turn the refusal into a generic 401. Runs before permission callbacks;
+	 * a pass here is reused by check_access, so the nonce is checked once.
+	 *
+	 * @param mixed            $response Response so far.
+	 * @param array<mixed>     $handler  Route handler.
+	 * @param \WP_REST_Request $request  Request.
+	 * @return mixed
+	 */
+	public static function refuse_with_reason( $response, $handler, $request ) {
+		unset( $handler );
+		if ( is_wp_error( $response ) || ! $request instanceof \WP_REST_Request || '/sitepilot/mcp' !== rtrim( $request->get_route(), '/' ) ) {
+			return $response;
+		}
+		if ( self::check_access( $request ) ) {
+			return $response;
+		}
+		$reason = Signed_Request_Verifier::failure_reason() ?? 'no_mapped_user';
+		return Error_Contract::error(
+			'sitepilot_',
+			'permission_denied',
+			__( 'The SitePilot MCP route only accepts requests signed by a registered SitePilot client.', 'sitepilot' ),
+			401,
+			array(),
+			$reason
+		);
 	}
 
 	/**

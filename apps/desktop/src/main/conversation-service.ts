@@ -6,7 +6,7 @@ import {
   type ChatModelClient
 } from "@sitepilot/provider-adapters";
 import { extractJsonObject } from "@sitepilot/services";
-import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
+import { McpHttpError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import {
   findReadToolByAbility,
   sanitizeReadToolArguments
@@ -579,10 +579,22 @@ async function runConversationAgent(input: {
       const outcome = await callConversationTool(mcp, step.tool, args);
       resultText = summarizeToolResultForModel(outcome.result);
     } catch (error) {
-      resultText = JSON.stringify({
-        ok: false,
-        error: error instanceof Error ? error.message : "tool_call_failed"
-      });
+      // Give the model the code and whether a retry could help, so it can
+      // tell a refusal from a hiccup.
+      resultText = JSON.stringify(
+        error instanceof McpHttpError
+          ? {
+              ok: false,
+              error: error.error.message,
+              code: error.error.code,
+              cause: error.error.cause,
+              retryable: error.error.retryable
+            }
+          : {
+              ok: false,
+              error: error instanceof Error ? error.message : "tool_call_failed"
+            }
+      );
     }
 
     messages.push(

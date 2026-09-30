@@ -45,7 +45,7 @@ Use the full suite for broader or cross-layer changes, including:
 - `npm run test:e2e:smoke`
   Registers the site, runs discovery and activation, and checks the connection (`v2-onboarding`). Then runs a request through the desktop chat: plan, review artifacts, approve, apply and a safe re-run (`v2-chat`).
 - `npm run test:e2e:content`
-  The smoke suite, plus the v2 engine suite (`v2-gutenberg`): compile, approve, commit, read back and roll back, preserved blocks, new blocks and history. Also the local MCP server loop (`v2-mcp`): lookups, a conversation, a request, approval refused from MCP and allowed from the desktop.
+  The smoke suite, plus the v2 engine suite (`v2-gutenberg`): compile, approve, commit, read back and roll back, preserved blocks, new blocks and history, with signed approvals that the site requires (a missing or tampered proof is refused). Also the local MCP server loop (`v2-mcp`): lookups, a conversation, a request, approval refused from MCP and allowed from the desktop. And the render check (`v2-render-check`): a draft that doesn't render is kept and failed, and an edit that breaks a post is rolled back.
 - `npm run test:e2e:all`
   The content suite, plus publish and unpublish (`v2-status`), Yoast SEO fields (`v2-seo`), ACF blocks on the ACF test site (`v2-acf`) and a real-model long post with images (`v2-long-post`).
 
@@ -53,8 +53,8 @@ Each script also runs on its own, for example `npm run test:e2e:v2-chat` or `npm
 
 Some scripts in the full suite need more setup. When it's missing, the suite skips that script and prints the reason:
 
-- `v2-status` and `v2-seo` need the site's WordPress directory: `SITEPILOT_E2E_WP_PATH`, or `wpPath` in `.sitepilot-e2e.local.json`.
-- `v2-acf` needs the ACF site: `SITEPILOT_E2E_ACF_BASE_URL`, `SITEPILOT_E2E_ACF_ADMIN_USERNAME` and `SITEPILOT_E2E_ACF_REGISTRATION_CODE`, or `acf` in `.sitepilot-e2e.local.json`.
+- `v2-status`, `v2-seo` and `v2-render-check` need the site's WordPress directory: `SITEPILOT_E2E_WP_PATH`, or `wpPath` in `.sitepilot-e2e.local.json`. With it set, every script also reads a fresh registration code with wp-cli, since each code works once.
+- `v2-acf` needs the ACF site: `SITEPILOT_E2E_ACF_BASE_URL`, `SITEPILOT_E2E_ACF_ADMIN_USERNAME` and `SITEPILOT_E2E_ACF_WP_PATH` (or `_ADMIN_PASSWORD`), or `acf` in `.sitepilot-e2e.local.json`.
 - `v2-long-post` needs an OpenAI key: `OPENAI_API_KEY`, or `openAiApiKey` in `.sitepilot-e2e.local.json`.
 
 Run the suites on Node 22. The local test sites run a copy of the plugin, not the repo, so copy the plugin into the site before running WordPress E2E after plugin changes.

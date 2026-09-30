@@ -4,7 +4,6 @@ import {
   gutenbergV2EditorBootstrapResponseSchema,
   gutenbergV2EditorSessionRequestSchema,
   gutenbergV2EditorSessionResponseSchema,
-  gutenbergV2ValidationFailureCodeSchema,
   type GutenbergV2EditorBootstrapResponse,
   type GutenbergV2EditorSessionRequest,
   type GutenbergV2EditorSessionResponse
@@ -12,7 +11,10 @@ import {
 import { signSitePilotHmacRequest } from "@sitepilot/plugin-protocol";
 import type { BrowserContext } from "playwright";
 
-import { GutenbergV2WorkerError } from "./worker-error.js";
+import {
+  GutenbergV2WorkerError,
+  workerErrorFromWordPress
+} from "./worker-error.js";
 
 export interface GutenbergV2EditorSessionProvider {
   createSession(
@@ -73,34 +75,9 @@ function wordpressFailure(
   } catch {
     payload = undefined;
   }
-  const record =
-    payload !== null && typeof payload === "object" && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {};
-  const data =
-    record.data !== null &&
-    typeof record.data === "object" &&
-    !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {};
-  const serverCode = typeof data.code === "string" ? data.code : undefined;
-  const parsedCode =
-    gutenbergV2ValidationFailureCodeSchema.safeParse(serverCode);
-  const code =
-    status === 401 || status === 403
-      ? "permission_denied"
-      : parsedCode.success
-        ? parsedCode.data
-        : "editor_unavailable";
-  const serverMessage =
-    typeof record.message === "string" && record.message.trim().length > 0
-      ? record.message.trim().slice(0, 2_000)
-      : fallbackMessage;
-  return new GutenbergV2WorkerError(
-    code,
-    serverMessage,
-    status >= 500 || code === "editor_unavailable"
-  );
+  return workerErrorFromWordPress(status, payload, fallbackMessage, {
+    authStatusMeansPermissionDenied: true
+  });
 }
 
 export class WordPressEditorSessionClient implements GutenbergV2EditorSessionProvider {

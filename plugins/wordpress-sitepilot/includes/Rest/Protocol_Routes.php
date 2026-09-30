@@ -9,7 +9,9 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Rest;
 
+use SitePilot\Errors\Error_Contract;
 use SitePilot\Mcp\Mcp_Status;
+use SitePilot\V2\Approval_Proof;
 use SitePilot\V2\Feature;
 
 /**
@@ -28,6 +30,16 @@ final class Protocol_Routes {
 			array(
 				'methods'             => 'GET',
 				'callback'            => array( self::class, 'health' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		register_rest_route(
+			'sitepilot/v1',
+			'/echo-headers',
+			array(
+				'methods'             => array( 'GET', 'POST' ),
+				'callback'            => array( self::class, 'echo_headers' ),
 				'permission_callback' => '__return_true',
 			)
 		);
@@ -61,6 +73,32 @@ final class Protocol_Routes {
 	}
 
 	/**
+	 * Which SitePilot signing headers reached WordPress, by name only. Some
+	 * hosts and firewalls strip unfamiliar headers, and a signed request then
+	 * fails for no visible reason; the desktop's connectivity check calls this
+	 * to say which one went missing.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function echo_headers( \WP_REST_Request $request ) {
+		$expected = array( 'x-sitepilot-site-id', 'x-sitepilot-client-id', 'x-sitepilot-request-id', 'x-sitepilot-timestamp', 'x-sitepilot-nonce', 'x-sitepilot-payload-sha256', 'x-sitepilot-signature' );
+		$received = array();
+		foreach ( $expected as $name ) {
+			if ( '' !== (string) $request->get_header( $name ) ) {
+				$received[] = $name;
+			}
+		}
+		return new \WP_REST_Response(
+			array(
+				'received' => $received,
+				'missing'  => array_values( array_diff( $expected, $received ) ),
+			),
+			200
+		);
+	}
+
+	/**
 	 * @param \WP_REST_Request $request Request.
 	 * @return \WP_REST_Response
 	 */
@@ -73,6 +111,8 @@ final class Protocol_Routes {
 				'mcp_namespace'  => 'sitepilot',
 				'mcp_route'      => 'mcp',
 				'mcp'            => Mcp_Status::for_protocol(),
+				// What this plugin supports, so the desktop only uses what's here.
+				'features'       => array( Error_Contract::FEATURE, 'render_check_v1', Approval_Proof::FEATURE ),
 				'v2'             => array(
 					'enabled'        => Feature::enabled(),
 					'bridge_version' => Feature::BRIDGE_VERSION,
