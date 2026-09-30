@@ -9,7 +9,7 @@ Scope: the SitePilot MCP server, the clients that use it (Claude Code, Claude De
 - **Phase 1:** a call context (`apps/desktop/src/main/call-context.ts`) carries the actor and the client source through every service call, using `AsyncLocalStorage` rather than new parameters. Desktop calls default to the desktop operator with `source: "desktop"`, so the desktop behaves as before.
   - `ActorRef` gained an optional `source`, so request, message, approval and audit actors all record the client with no extra columns.
   - Migration `007_chat_thread_source` adds `chat_threads.source`, which the activity summary returns.
-  - Approving, rejecting and applying (`decideGutenbergV2Candidate`, `executeGutenbergV2Candidate`, `decideApprovalForSite`) refuse any caller without the approve role. Asking for a revision is still allowed, since it's part of the request conversation.
+  - Approving, rejecting and applying (`decideGutenbergV2Candidate` and `executeGutenbergV2Candidate`; v1's `decideApprovalForSite` was removed on 30 September 2026) refuse any caller without the approve role. Asking for a revision is still allowed, since it's part of the request conversation.
   - Not done: removing the remaining Electron fallbacks, and a non-Electron `SecureStorage` outside the E2E one. The local stage didn't need them.
 - **Phase 2 (in part):** `packages/services/src/read-tool-registry.ts` defines `find_posts`, `get_post` and `site_capabilities`. The Conversations service takes its prompt lines and argument sanitizing from it.
   - Not done: building tools from the plugin's ability schemas, the plugin-side read-only check, `query_content`, the narrow tools and lookup gaps.
@@ -54,7 +54,7 @@ Scope: the SitePilot MCP server, the clients that use it (Claude Code, Claude De
   - Requests: `ingestRequestThreadMessage` (`request-ingress-service.ts:214`), `createChatThreadForSite` and `postChatMessage` (`chat-service.ts`).
   - v2 state: `getGutenbergV2RequestState`, `getGutenbergV2ReviewArtifact` and `listGutenbergV2PendingCandidates` (`gutenberg-v2-chat-service.ts`), plus `getGutenbergV2ExecutionProgress` (`site-activity-service.ts`).
   - Conversations: `buildConversationReply` (`conversation-service.ts:900`).
-  - Approval, which is never exposed as a tool: `decideGutenbergV2Candidate`, `executeGutenbergV2Candidate` and `decideApprovalForSite`.
+  - Approval, which is never exposed as a tool: `decideGutenbergV2Candidate` and `executeGutenbergV2Candidate`. (v1's `decideApprovalForSite` was removed on 30 September 2026.)
 - **LLM providers:** `packages/provider-adapters` has Anthropic and OpenAI adapters. There is no Copilot adapter.
 - **No MCP server code.** `packages/mcp-client` is SitePilot's client for the WordPress plugin's MCP endpoint. `@modelcontextprotocol/sdk` is not installed.
 
@@ -73,7 +73,7 @@ Record answers in `v2-build.md` section 12 as they are made.
 
 | Decision | Blocks | Notes |
 | --- | --- | --- |
-| Hosting location, database and network route to the WordPress site | Phase 5 | SQLite fits a single-instance deployment. Postgres fits if the backend needs more than one instance. |
+| Hosting location, database and network route to the WordPress site | Phase 5 | **Hosting and database decided on 30 September 2026:** the services run on Railway, and the data sits separately in Supabase (Postgres and Storage). See build spec section 12. The network route is still open: the worker needs a fixed outgoing IP that the site's firewall allows. |
 | WordPress browser authentication for the hosted worker (V2B-01) | Phase 5 | Owned by the v2 build. The hosted worker can't compile without it. |
 | Copilot provider spike | Phase 5 planning in production | Until it passes, the hosted planner can't run under the approved-LLM policy. The local stage keeps using the desktop's configured provider. |
 | OAuth provider (the organisation's IdP, or a SitePilot-issued authorization server) | Phase 6 | The MCP authorization spec needs OAuth 2.1 with PKCE and protected-resource metadata. |
@@ -191,8 +191,8 @@ The desktop app hosts the Phase 3 server on localhost, so the process that owns 
 
 Blocked on the Phase 0 hosting, WordPress-authentication and Copilot decisions. This is the part of V2B-08 that the MCP server depends on.
 
-- **Server app:** `apps/server`, a Node service that runs the same services with a server runtime context. That means a database, a secrets store, an artifact store and the Playwright worker next to it.
-- **Storage:** implement the repository interfaces for the chosen database. Replace the file-based v2 journal and staged assets with database rows and object storage. Durable jobs survive restarts, as section 8 of the build spec requires.
+- **Server app:** `apps/server`, a Node service on Railway that runs the same services with a server runtime context. The Playwright worker and the Slack app run as separate Railway services beside it, and secrets live in Railway.
+- **Storage:** implement the repository interfaces for Postgres on Supabase. Only the backend connects to it. Replace the file-based v2 journal and staged assets with database rows and Supabase Storage, and serve review artifacts through signed links. Durable jobs survive restarts, as section 8 of the build spec requires.
 - **Planner:** the Copilot adapter in `packages/provider-adapters`, used for every client. There's no fallback to direct OpenAI or Anthropic calls in this deployment.
 - **Hosted app (web):** Requests and Conversations lists across all sources, the review page (diff, desktop and mobile previews, change list), and approve, reject and request revision. Approval uses the same backend call as the desktop, as the signed-in user.
 - **Signed review links** with an expiry, for `request_status` and Slack.

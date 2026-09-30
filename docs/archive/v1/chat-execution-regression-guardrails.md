@@ -1,5 +1,7 @@
 # Chat And Execution Regression Guardrails
 
+> **Archived on 30 September 2026.** This describes the v1 content engine, which SitePilot removed. It's kept for history. For the current engine, see [What Gutenberg v2 can do](../../v2-capabilities.md).
+
 This document records the dry-run regressions seen across the SitePilot chat flow and the layered fixes that now protect against them. The goal is simple: future planner or execution work must not reintroduce silent content corruption or ambiguous follow-up behavior.
 
 ## Why this exists

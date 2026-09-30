@@ -238,7 +238,7 @@ Everything is still created as a draft. Publishing is a separate, explicitly app
   - "the post titled …".
   - "the last created post" (`find-posts` with `orderby=date&order=DESC&limit=1`, which now works).
   - "the latest page".
-- Reuse `packages/services/src/post-target-resolution.ts` (currently used only by v1).
+- Reuse `packages/services/src/post-target-resolution.ts`. It was kept for this when v1 was removed on 30 September 2026.
 - Binding is safety-critical, so the resolved post is shown back for confirmation before generating. For example: "I'll update #946 'Back button hijacking…' (draft) — continue?". Ambiguous matches list the candidates instead of guessing.
 - The UI's Post ID field stays as an override. Slack will need exactly this.
 - Status requests use the same resolution: "publish post 946", "unpublish the latest page" (see 4.3).

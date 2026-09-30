@@ -92,13 +92,13 @@ At a high level, the implemented workflow is:
 1. A site is registered from the desktop app against the plugin.
 2. The app runs diagnostics and discovery, then persists a discovery snapshot.
 3. The app drafts a site config and requires activation before chat workflows are live.
-4. A user creates a per-site chat thread and submits a typed request.
-5. Main-process services assemble planner context, run clarification checks, and generate a typed `ActionPlan`.
-6. Approval logic decides whether actions can proceed.
-7. Approved actions are mapped to plugin MCP tool calls and executed against WordPress.
-8. Results, approvals, and rollback metadata are appended to the audit log.
+4. A user creates a per-site request thread, chooses what to change (a new draft, or a post by ID) and describes the change.
+5. The Gutenberg v2 engine plans the blocks and builds a candidate in the site's own block editor, with review previews.
+6. A person approves the candidate. The approval is bound to that exact result.
+7. The plugin commits the approved markup through its signed v2 routes, and a fresh editor session reads it back to verify it.
+8. Requests, approvals and results are appended to the audit log.
 
-Content requests now run on the Gutenberg v2 engine by default. It builds each candidate in the site's own block editor, binds approval to the exact result, and verifies the write in a fresh editor. See [What Gutenberg v2 can do](./v2-capabilities.md).
+v2 is the only content engine; the older v1 action-plan engine was removed on 30 September 2026. See [What Gutenberg v2 can do](./v2-capabilities.md).
 
 ## Current Desktop Surface Area
 
@@ -122,21 +122,20 @@ The main-process service layer currently includes:
 - `discovery-service`
 - `site-config-draft`
 - `site-workspace-service`
-- `chat-service`
-- `conversation-service`
-- `planner-context-service`
-- `plan-generation-service`
-- `approval-workflow-service`
-- `execution-orchestrator-service`
+- `chat-service` and `request-ingress-service`
+- `conversation-service` and `external-page-research-service`
+- `gutenberg-v2-chat-service`, `gutenberg-v2-runtime-service` and `gutenberg-v2-report`
+- `request-bundle-service`
+- `site-activity-service`
+- `acf-block-test-service` and `third-party-block-test-service`
+- `mcp-server-service` and `mcp-backend` (the local MCP server)
 - `audit-query-service`
 - `settings-service`
 - `planner-preferences-service`
-- `planner-skills-service`
 - `export-site-service`
 - `import-site-service`
 - `provider-status-service`
 - `core-block-index-service`
-- `request-visual-analysis-service`
 
 ## Persistence And Trust Boundaries
 
@@ -148,18 +147,17 @@ The renderer does not talk directly to WordPress, SQLite, or AI providers. It go
 
 ## Current State Of The Implementation
 
-The repository has completed the original numbered task graph through T35 in [docs/task-graph.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/task-graph.md). In practical terms, that means the repo already contains:
+The repository completed the original numbered task graph through T35 ([archived with v1](./archive/v1/task-graph.md)), and then built the Gutenberg v2 engine. In practical terms, the repo contains:
 
 - the Electron shell and workspace UI
 - shared contracts and domain packages
 - SQLite repositories and audit querying
 - secure storage and settings flows
 - registration, diagnostics, discovery, and site-config activation
-- chat/request persistence and planner context assembly
-- screenshot-reference analysis and operator review before planning for screenshot-driven requests
-- clarification and typed plan generation
-- approval workflow and execution orchestration
-- plugin-side MCP bridge with initial read/write capabilities
+- chat/request persistence and Conversations (read-only lookups and page research)
+- the Gutenberg v2 engine: planning, editor-built candidates, review artifacts, bound approvals, signed commits, read-back verification and conditional rollback
+- a local MCP server for Claude Code, Codex and Claude Desktop
+- a plugin-side MCP bridge with read-only lookups
 - export/import, compatibility metadata, and baseline integration coverage
 
 ## Important Known Limits
@@ -168,16 +166,14 @@ These are the main current gaps called out by the latest handoff:
 
 - no full Electron-to-live-WordPress end-to-end CI path yet
 - import is not idempotent; re-import can duplicate audit rows
-- rollback metadata exists only for actions that return usable `before` state
-- the numbered task graph stops at T35, so future work needs a new backlog or graph extension
+- see the [v2 roadmap](./v2-roadmap.md) and [hardening plan](./v2-hardening-plan.md) for planned work
 
 ## Best Documents By Need
 
 - General current-state overview: [docs/system-overview.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/system-overview.md)
 - Locked architecture and boundaries: [docs/architecture.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/architecture.md)
 - Product intent and complete scope: [SPEC.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/SPEC.md)
-- Build sequence and completion history: [docs/task-graph.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/task-graph.md)
+- Build sequence and completion history (v1, archived): [docs/archive/v1/task-graph.md](./archive/v1/task-graph.md)
 - Gutenberg v2 capabilities: [docs/v2-capabilities.md](./v2-capabilities.md)
-- Gutenberg v1 write contract: [docs/reliable-gutenberg-blocks.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/reliable-gutenberg-blocks.md)
-- Screenshot analysis workflow: [docs/screenshot-analysis-workflow.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/screenshot-analysis-workflow.md)
+- The removed v1 engine's docs: [docs/archive/v1](./archive/v1/)
 - Plugin setup and routes: [plugins/wordpress-sitepilot/README.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/plugins/wordpress-sitepilot/README.md)

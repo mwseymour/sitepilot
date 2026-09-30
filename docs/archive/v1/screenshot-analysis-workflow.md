@@ -1,5 +1,7 @@
 # Screenshot Analysis Workflow
 
+> **Archived on 30 September 2026.** This describes the v1 content engine, which SitePilot removed. It's kept for history. For the current engine, see [What Gutenberg v2 can do](../../v2-capabilities.md).
+
 ## Purpose
 
 This document describes the current screenshot-to-WordPress page workflow in SitePilot.
@@ -219,7 +221,7 @@ The planner and execution path are still constrained by:
 
 See:
 
-- [docs/reliable-gutenberg-blocks.md](/Users/mattseymour/Desktop/ai-dev/sitepilot/docs/reliable-gutenberg-blocks.md)
+- [docs/reliable-gutenberg-blocks.md](./reliable-gutenberg-blocks.md)
 
 If the screenshot implies unsupported effects or blocks, the manifest should preserve the design intent in `mappingWarnings` rather than pretending the block support exists.
 

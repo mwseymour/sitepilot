@@ -1,8 +1,8 @@
 # Gutenberg v2 implementation
 
-The v2 path is additive and does not fall back to SitePilot's v1 content writer. Its public TypeScript entry points are `@sitepilot/contracts`, `@sitepilot/services`, and `@sitepilot/gutenberg-worker`.
+v2 is SitePilot's only content engine; the v1 content writer was removed on 30 September 2026. Its public TypeScript entry points are `@sitepilot/contracts`, `@sitepilot/services`, and `@sitepilot/gutenberg-worker`.
 
-v2 is the default content engine. The WordPress plugin enables it unless the destination defines `SITEPILOT_V2_ENABLED` as the boolean `false`, which acts as a per-site off switch. The desktop app no longer has a per-site v2 setting and no longer offers the v1 planner in its UI; the v1 code paths remain in the codebase. The worker connects to WordPress; it does not start a local web server.
+The WordPress plugin accepts v2 writes unless the destination defines `SITEPILOT_V2_ENABLED` as the boolean `false`, which turns off SitePilot content changes on that site while lookups keep working. The desktop app has no per-site v2 setting. The worker connects to WordPress; it does not start a local web server.
 
 ## Runtime construction
 
@@ -60,8 +60,6 @@ ACF blocks are not in the matrix. `gutenbergV2SupportPolicy()` treats every `acf
 - **Shape.** ACF plan nodes carry `name`, `data`, `mode` and `align` (ACF's editor script sets `align` on mount, so v2 writes the block's default up front and the block reopens byte-identical).
 - **Commit.** `Commit_Service` checks each authored ACF block's data against the field definitions again (`Acf_Blocks::validate_data`). An `edit_block` keeps stored field values the edit does not restate.
 
-v1's `acf/container` handling now fills data from the live field definitions (`Acf_Blocks::normalize_data`) instead of hardcoded site defaults.
-
 Every block object and attribute object is strict. Unknown attributes, unsupported nesting, unsafe rich text, raw wrapper markup, excessive depth or count, and destination normalization loss fail closed. Optional attributes should be omitted unless the operator requested them. In particular, button `width` is valid in the static contract. The native probe records either preservation or a structured `content_changed` result when the destination normalizes it away; the v2 planner still omits it unless a destination fixture proves preservation. Destination round-trip validation remains authoritative.
 
 Block-specific rules:
@@ -84,7 +82,7 @@ Authorable blocks outside preserved regions must still pass WordPress's strict v
 
 ## SEO fields
 
-`SitePilot\Seo\Seo_Adapter` is the one mapping from neutral fields (`title`, `description`, `focusKeyphrase`, `canonical`, `indexing`, `socialTitle`, `socialDescription`) to the active SEO plugin's post meta. Only Yoast SEO is mapped (`_yoast_wpseo_title`, `_metadesc`, `_focuskw`, `_canonical`, `_meta-robots-noindex` as 0/1/2, `_opengraph-title`, `_opengraph-description`). v1 `set-post-seo-meta`, v2 commits, `get-post` and site discovery (`seo.writable`) all use it.
+`SitePilot\Seo\Seo_Adapter` is the one mapping from neutral fields (`title`, `description`, `focusKeyphrase`, `canonical`, `indexing`, `socialTitle`, `socialDescription`) to the active SEO plugin's post meta. Only Yoast SEO is mapped (`_yoast_wpseo_title`, `_metadesc`, `_focuskw`, `_canonical`, `_meta-robots-noindex` as 0/1/2, `_opengraph-title`, `_opengraph-description`). v2 commits, `get-post` and site discovery (`seo.writable`) all use it.
 
 - **Contract.** `postFields.seo` (`gutenbergV2SeoChangesSchema`) lists only the changed fields. Values must already be what WordPress stores (`sanitize_text_field` / `esc_url_raw` leave them unchanged); the server refuses anything else rather than storing a different value than was approved. It is part of `requestedPostFields`, so `requestedFieldsHash` and the approval bind it.
 - **Capability and source.** The editor session adds `seo` (plugin, version, fields) to the capability snapshot and the post's current values to the source snapshot. The planner offers SEO fields only when the capability is present.

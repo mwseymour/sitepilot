@@ -1,5 +1,7 @@
 # Automated Local Testing Specification
 
+> **Archived on 30 September 2026.** This was the design for the v1 scenario runner (`tests/e2e/run.ts`), which SitePilot removed with the v1 engine. The E2E suites now run the v2 scripts; see [`AGENTS.md`](../../../AGENTS.md).
+
 ## Purpose
 
 SitePilot needs a repeatable local test loop that exercises the same workflow an

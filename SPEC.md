@@ -910,6 +910,8 @@ The DB stores references and non-sensitive metadata.
 All DB access goes through a repository layer with no raw SQL in UI or orchestration code. This allows future migration to MySQL/Postgres in hosted mode.
 
 22. Data model
+
+Note (30 September 2026): ActionPlan, Action, ApprovalRequest, ApprovalDecision, ExecutionRun and ToolInvocation belong to the removed v1 engine. Their tables are kept so old threads stay readable, but nothing new is written to them. Gutenberg v2 records its candidates, approvals and executions in its own journal; see docs/v2-implementation.md.
 22.1 Core entities
 Workspace
 UserProfile

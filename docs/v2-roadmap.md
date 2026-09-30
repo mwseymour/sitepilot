@@ -29,7 +29,7 @@ Status: planned, 25 September 2026. This is the forward-looking list for the Gut
 
 ## Categories and tags
 
-Neither v1 nor v2 can set taxonomy terms today. The only uses of a category are as a lookup filter (`find-posts`), and in discovery, which records which public taxonomies exist but not their terms.
+v2 can't set taxonomy terms today, and v1 couldn't either. The only uses of a category are as a lookup filter (`find-posts`), and in discovery, which records which public taxonomies exist but not their terms.
 
 ### Discovery (S)
 

@@ -1,5 +1,7 @@
 # Reliable Gutenberg Block Generation
 
+> **Archived on 30 September 2026.** This describes the v1 content engine, which SitePilot removed. It's kept for history. For the current engine, see [What Gutenberg v2 can do](../../v2-capabilities.md).
+
 ## Purpose
 
 SitePilot must not rely on model-authored Gutenberg serialized HTML for complex post layouts. Gutenberg validates saved markup against the block's expected saved output, and small differences in wrappers, attributes, nesting, `innerContent`, or block comments can make WordPress show "Block contains unexpected or invalid content" or collapse content into a Classic block.

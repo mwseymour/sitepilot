@@ -35,7 +35,7 @@ Success means:
 | Studio MCP              | Comparison and diagnosis tooling during development, on disposable sites matching the destination. It is not a production dependency or deployment requirement. |
 | WPPilot                 | Reference for staged changes, editor-session readiness and finalization. Do not install it as a SitePilot dependency or copy its architecture wholesale.        |
 | Block support           | Explicit reviewed support matrix intersected with the destination's available blocks and capabilities. Discovery alone does not authorise a block.              |
-| Existing implementation | Keep v1 available for explicitly selected v1 jobs while v2 is introduced behind a feature flag. No silent fallback from a failed v2 job.                        |
+| Existing implementation | Keep v1 available for explicitly selected v1 jobs while v2 is introduced behind a feature flag. No silent fallback from a failed v2 job. v1 was removed on 30 September 2026 ([hardening plan](./v2-hardening-plan.md)). |
 | Hosting                 | One configured website per deployment; shared services and the worker must not depend on Electron.                                                              |
 | AI provider             | Provider-neutral content contract; the hosted product uses the approved Copilot adapter. Compilation and validation make no LLM calls.                          |
 
@@ -53,7 +53,7 @@ The implementation is isolated in these v2 paths and is the default content engi
 | `plugins/wordpress-sitepilot/includes/V2`, `includes/Rest/V2_Routes.php`, `assets/js/editor-bridge.js` | Scoped native editor sessions, runtime discovery, Gutenberg compilation, byte-exact preservation of existing blocks, durable media binding, transactional commit, read-back and conditional recovery. `Block_Policy` reads the generated `block-manifest.json`. |
 | `tests/e2e/v2-gutenberg.ts`                                                                            | Destination-native block/media coverage, authenticated read-only enforcement, save/reopen, stale-source conflict, reconciliation and conditional rollback. |
 
-The current PHP `serialize_blocks()` call assembles supplied parsed-block markup. It does not execute static blocks' JavaScript save implementations. Existing checks and canonicalizers remain useful v1 behaviour, but are not the v2 correctness boundary. See [Reliable Gutenberg Block Generation](./reliable-gutenberg-blocks.md) and [Custom Block Support](./custom-block-support.md).
+The current PHP `serialize_blocks()` call assembles supplied parsed-block markup. It does not execute static blocks' JavaScript save implementations. Existing checks and canonicalizers remain useful v1 behaviour, but are not the v2 correctness boundary. See [Reliable Gutenberg Block Generation](./archive/v1/reliable-gutenberg-blocks.md) and [Custom Block Support](./archive/v1/custom-block-support.md), both archived with v1.
 
 ## 4. Initial scope
 
@@ -309,11 +309,15 @@ The release report must show the exact supported runtime/block matrix, all agree
 
 Ship behind an explicit v2 capability/feature flag. Start with comparison mode that compiles and validates without changing posts, then enable approved draft creation, then the agreed existing-post operations. Keep engine version in every plan and audit record. Disabling v2 stops new v2 executions and does not rewrite existing posts or resubmit failed jobs through v1.
 
+Decisions made so far:
+
+- **Hosting (30 September 2026).** The hosted services run on Railway: `apps/server`, the browser worker and the Slack app. The data sits separately in Supabase: Postgres for the repositories and durable jobs, and Storage for review artifacts and staged media. Only the backend connects to Supabase. The web app and clients go through `apps/server`, which creates approval bindings. Signing keys stay in Railway's secrets, not in the database. Put both in European regions close to each other.
+
 Remaining rollout gates include:
 
 - The actual website, WordPress/Gutenberg versions, theme, active plugins, post types and required third-party blocks.
 - Examples and expected outcomes for the recurring failures.
-- Approved hosted worker location/network route and WordPress browser authentication.
+- The hosted worker's network route to the site, such as a fixed outgoing IP from Railway that the site's firewall allows, and WordPress browser authentication.
 - Conditional commit support in the target hosting/database environment.
 - Exact first-release authoring/verification matrix and intentional HTML policy.
 - Private preview/staging, artifact retention, approval expiry and failed-draft/media cleanup policy.

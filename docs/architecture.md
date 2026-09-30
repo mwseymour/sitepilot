@@ -1,5 +1,7 @@
 # SitePilot Architecture
 
+> **Updated on 30 September 2026.** SitePilot removed its v1 engine, which planned typed action plans and ran them through the plugin's MCP write abilities. The sections on the ActionPlan and Action schemas, the approval payload and plan validation describe that removed engine. Content changes now go through Gutenberg v2: see [v2 implementation](./v2-implementation.md) and [What Gutenberg v2 can do](./v2-capabilities.md). The layers, trust boundaries, storage and security model below still apply.
+
 ## Purpose
 
 This document turns the product spec into an implementation architecture for the first local-desktop release of SitePilot.
@@ -123,11 +125,9 @@ The plugin does not own:
 
 ## Gutenberg Block Content
 
-Complex Gutenberg content must use the structured parsed-block flow documented in [Reliable Gutenberg Block Generation](./reliable-gutenberg-blocks.md).
+Gutenberg content is built by the v2 engine. The planner returns a structured block plan, and the browser worker builds it with Gutenberg's own APIs in a real editor session. The plugin then commits exactly the markup that was reviewed and approved, and a fresh editor session reads it back to check it. See [v2 implementation](./v2-implementation.md).
 
-Do not rely on model-authored serialized block HTML for nested, layout, media, or spacer content. The planner should emit `input.blocks`, desktop should preserve that tree, and the WordPress plugin should validate, sanitize, canonicalize, and serialize it with WordPress core `serialize_blocks()`.
-
-The most important implementation detail is that `serialize_blocks()` serializes the supplied parsed block tree; it does not recreate every static block's save markup from `blockName`. Parent layout blocks need correct `innerContent` wrapper strings and `null` child placeholders before serialization.
+The v1 parsed-block write contract is archived in [Reliable Gutenberg Block Generation](./archive/v1/reliable-gutenberg-blocks.md).
 
 ## Runtime Boundaries
 
@@ -463,6 +463,8 @@ All database access must go through repository interfaces. No raw SQL should app
 Direct SQL is allowed only inside repository implementations and migration files.
 
 ## Execution Pipeline
+
+> This is the original v1 pipeline. In v2, steps 7 to 11 are: plan blocks, build them in the editor worker, show the review artifacts, record an approval bound to the candidate, then prepare and commit through the signed v2 routes and read back. See [v2 implementation](./v2-implementation.md).
 
 The request pipeline in the main process should be:
 

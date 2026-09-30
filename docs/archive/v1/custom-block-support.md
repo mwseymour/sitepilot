@@ -1,5 +1,7 @@
 # Custom Block Support
 
+> **Archived on 30 September 2026.** This describes the v1 content engine, which SitePilot removed. It's kept for history. For the current engine, see [What Gutenberg v2 can do](../../v2-capabilities.md).
+
 SitePilot discovers third-party Gutenberg blocks during site discovery, but it only writes custom blocks after they have been explicitly loaded into SitePilot's support registry.
 
 Discovery records all non-core registered blocks in `third_party_blocks`. ACF blocks are then classified into `sections.contentModel.customBlockSupport` when a site config draft is generated:

@@ -1,5 +1,7 @@
 # Block Promotion Workflow
 
+> **Archived on 30 September 2026.** This describes the v1 content engine, which SitePilot removed. It's kept for history. For the current engine, see [What Gutenberg v2 can do](../../v2-capabilities.md).
+
 ## Purpose
 
 Promote blocks from `indexed` to `executable` without inventing Gutenberg save
