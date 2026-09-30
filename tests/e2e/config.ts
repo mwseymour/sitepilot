@@ -9,6 +9,15 @@ type LocalConfig = {
   registrationCode?: string;
   openAiApiKey?: string;
   anthropicApiKey?: string;
+  /** The MAMP site's WordPress directory, for scripts that read the database with wp-cli. */
+  wpPath?: string;
+  /** A second site with ACF blocks, for test:e2e:v2-acf. */
+  acf?: {
+    baseUrl?: string;
+    adminUsername?: string;
+    adminPassword?: string;
+    registrationCode?: string;
+  };
 };
 
 function loadLocalConfig(): LocalConfig {
@@ -55,6 +64,18 @@ export const E2E_OPENAI_API_KEY =
   process.env.OPENAI_API_KEY ?? localConfig.openAiApiKey;
 export const E2E_ANTHROPIC_API_KEY =
   process.env.ANTHROPIC_API_KEY ?? localConfig.anthropicApiKey;
+export const E2E_WP_PATH =
+  process.env.SITEPILOT_E2E_WP_PATH ?? localConfig.wpPath;
+export const E2E_ACF_SITE = {
+  baseUrl: process.env.SITEPILOT_E2E_ACF_BASE_URL ?? localConfig.acf?.baseUrl,
+  adminUsername:
+    process.env.SITEPILOT_E2E_ACF_ADMIN_USERNAME ?? localConfig.acf?.adminUsername,
+  adminPassword:
+    process.env.SITEPILOT_E2E_ACF_ADMIN_PASSWORD ?? localConfig.acf?.adminPassword,
+  registrationCode:
+    process.env.SITEPILOT_E2E_ACF_REGISTRATION_CODE ??
+    localConfig.acf?.registrationCode
+};
 export const E2E_ARTIFACTS_ROOT = join(
   process.cwd(),
   ".sitepilot-test-artifacts"

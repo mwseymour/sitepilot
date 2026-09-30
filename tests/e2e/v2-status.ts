@@ -39,12 +39,13 @@ import {
   E2E_ADMIN_USERNAME,
   E2E_ARTIFACTS_ROOT,
   E2E_BASE_URL,
-  E2E_REGISTRATION_CODE
+  E2E_REGISTRATION_CODE,
+  E2E_WP_PATH
 } from "./config.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-const WP_PATH = process.env.SITEPILOT_E2E_WP_PATH ?? "";
+const WP_PATH = E2E_WP_PATH ?? "";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

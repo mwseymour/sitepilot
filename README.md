@@ -52,9 +52,9 @@ npm run start
 E2E notes:
 
 - The E2E harness requires Node `22.12+`.
-- `test:e2e:smoke` runs the fastest baseline scenarios.
-- `test:e2e:content` adds structured update and attached-image coverage.
-- `test:e2e:all` runs the full fixture-backed E2E suite.
+- `test:e2e:smoke` registers and activates the site, then runs one request through the desktop chat.
+- `test:e2e:content` adds the v2 engine suite and the local MCP server loop.
+- `test:e2e:all` adds publish and unpublish, Yoast SEO, ACF blocks and a real-model long post. Scripts whose site path, second site or model key isn't configured are skipped with the reason. See `AGENTS.md`.
 
 Plugin setup:
 
