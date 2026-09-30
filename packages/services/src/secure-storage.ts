@@ -13,8 +13,9 @@ export type SecretKey = {
 };
 
 /**
- * OS-backed secret storage for the Electron main process. Implementations must
- * never persist plaintext under the SQLite database file; see Task T08.
+ * Secret storage: Electron's OS-backed safeStorage in the desktop app, and
+ * EncryptedSqlSecureStorage on the hosted server. Implementations never
+ * persist plaintext; see Task T08.
  */
 export interface SecureStorage {
   get(key: SecretKey): Promise<string | undefined>;

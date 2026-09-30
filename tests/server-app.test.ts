@@ -44,7 +44,8 @@ describe("SitePilot server", () => {
       commit: "0123456",
       region: "europe-west4",
       startedAt: "2026-09-30T12:00:00.000Z",
-      database: { status: "not_configured" }
+      database: { status: "not_configured" },
+      secrets: "not_configured"
     });
   });
 

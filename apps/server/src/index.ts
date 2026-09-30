@@ -4,17 +4,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { configureRuntimeContext } from "@sitepilot/core/runtime-context";
+import {
+  EncryptedSqlSecureStorage,
+  parseSecretsKey
+} from "@sitepilot/services";
 
 import { createRequestHandler, serverInfoFromEnvironment } from "./app.js";
 import { connectWithRetry, type DatabaseStatus } from "./database.js";
+import type { SecretsStatus } from "./app.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8080", 10);
 const info = serverInfoFromEnvironment();
 let databaseStatus: DatabaseStatus = { status: "not_configured" };
+// Site secrets and approval keys are encrypted under this key. It never
+// leaves the environment and is never logged.
+const secretsKey = parseSecretsKey(process.env.SITEPILOT_SECRETS_KEY);
+let secretsStatus: SecretsStatus = process.env.SITEPILOT_SECRETS_KEY
+  ? secretsKey
+    ? "waiting_for_database"
+    : "invalid_key"
+  : "not_configured";
 const shutdownController = new AbortController();
 
 const server = createServer(
-  createRequestHandler(info, () => databaseStatus)
+  createRequestHandler(info, () => databaseStatus, () => secretsStatus)
 );
 
 // "::" accepts IPv4 and IPv6. Railway's private network is IPv6-only.
@@ -41,8 +54,24 @@ const connecting = connectWithRetry({
   if (!connected) return null;
   configureRuntimeContext({
     userDataPath: dataDirectory,
-    database: connected.database
+    database: connected.database,
+    ...(secretsKey
+      ? {
+          secureStorage: new EncryptedSqlSecureStorage(
+            connected.database.sql,
+            secretsKey
+          )
+        }
+      : {})
   });
+  if (secretsKey) secretsStatus = "ok";
+  console.log(
+    secretsStatus === "ok"
+      ? "Secure storage: on, encrypted in the database."
+      : secretsStatus === "invalid_key"
+        ? "Secure storage: off. SITEPILOT_SECRETS_KEY is set but isn't 32 bytes of base64."
+        : "Secure storage: off. SITEPILOT_SECRETS_KEY isn't set."
+  );
   console.log(
     `Database ready: ${connected.database.migrations.length} migration(s) applied, TLS ${connected.tls}.`
   );

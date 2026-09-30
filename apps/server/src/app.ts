@@ -10,6 +10,12 @@ import type { DatabaseStatus } from "./database.js";
 
 export const SERVER_VERSION = "0.1.0";
 
+export type SecretsStatus =
+  | "ok"
+  | "waiting_for_database"
+  | "not_configured"
+  | "invalid_key";
+
 export type ServerInfo = {
   version: string;
   /** The deployed commit, shortened. Null outside Railway. */
@@ -48,7 +54,8 @@ function sendJson(
 
 export function createRequestHandler(
   info: ServerInfo,
-  databaseStatus: () => DatabaseStatus = () => ({ status: "not_configured" })
+  databaseStatus: () => DatabaseStatus = () => ({ status: "not_configured" }),
+  secretsStatus: () => SecretsStatus = () => "not_configured"
 ): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -67,7 +74,8 @@ export function createRequestHandler(
           database:
             database.status === "connecting"
               ? { status: "connecting", attempts: database.attempts }
-              : database
+              : database,
+          secrets: secretsStatus()
         },
         request.method
       );

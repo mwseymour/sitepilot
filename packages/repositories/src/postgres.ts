@@ -341,6 +341,24 @@ CREATE TABLE gutenberg_v2_approvals (
   created_at TEXT NOT NULL
 );
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "002_encrypted_secrets",
+    description:
+      "Encrypted secrets for the hosted server (site shared secrets, approval keys, provider keys).",
+    // Same shape as SECRETS_TABLE_SQL in @sitepilot/services.
+    sql: `
+CREATE TABLE secrets (
+  namespace TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  key_fingerprint TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (namespace, key_id)
+);
+${REVOKE_API_ROLES}`
   }
 ];
 

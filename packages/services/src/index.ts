@@ -100,3 +100,8 @@ export type {
   SecretNamespace,
   SecureStorage
 } from "./secure-storage.js";
+export {
+  EncryptedSqlSecureStorage,
+  SECRETS_TABLE_SQL,
+  parseSecretsKey
+} from "./sql-secure-storage.js";
