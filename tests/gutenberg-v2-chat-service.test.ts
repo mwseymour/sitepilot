@@ -13,7 +13,7 @@ import {
 import {
   configureRuntimeContext,
   resetRuntimeContext
-} from "../apps/desktop/src/main/runtime-context.js";
+} from "../packages/core/src/runtime-context.js";
 import {
   configureGutenbergV2PlannerFactory,
   configureGutenbergV2ProtocolProbe,
@@ -25,8 +25,8 @@ import {
   getGutenbergV2RequestState,
   getGutenbergV2ReviewArtifact,
   hasGutenbergV2RequestMapping
-} from "../apps/desktop/src/main/gutenberg-v2-chat-service.js";
-import { configureGutenbergV2RuntimeFactory } from "../apps/desktop/src/main/gutenberg-v2-runtime-service.js";
+} from "../packages/core/src/gutenberg-v2-chat-service.js";
+import { configureGutenbergV2RuntimeFactory } from "../packages/core/src/gutenberg-v2-runtime-service.js";
 
 const temporary: string[] = [];
 const databases: ReturnType<typeof initializeDatabase>[] = [];

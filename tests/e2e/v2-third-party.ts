@@ -7,13 +7,13 @@ import { join } from "node:path";
 import type { SiteId } from "@sitepilot/domain";
 import { initializeDatabase } from "@sitepilot/repositories";
 
-import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
-import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
+import { getDatabase } from "../../packages/core/src/app-database.js";
+import { registerSiteWithWordPress } from "../../packages/core/src/register-site.js";
 import {
   configureRuntimeContext,
   resetRuntimeContext
-} from "../../apps/desktop/src/main/runtime-context.js";
-import { testThirdPartyBlocksForSite } from "../../apps/desktop/src/main/third-party-block-test-service.js";
+} from "../../packages/core/src/runtime-context.js";
+import { testThirdPartyBlocksForSite } from "../../packages/core/src/third-party-block-test-service.js";
 
 import {
   E2E_ADMIN_USERNAME,

@@ -72,7 +72,7 @@ const db = {
   }
 };
 
-vi.mock("../apps/desktop/src/main/app-database.js", () => ({
+vi.mock("../packages/core/src/app-database.js", () => ({
   getDatabase: () => db
 }));
 
@@ -99,7 +99,7 @@ describe("chat service request revision", () => {
 
   it("allows revising an approved request back to a planable state", async () => {
     const { amendRequestForThread } = await import(
-      "../apps/desktop/src/main/chat-service.js"
+      "../packages/core/src/chat-service.js"
     );
 
     const result = await amendRequestForThread(
@@ -129,7 +129,7 @@ describe("chat service request revision", () => {
 
   it("merges a follow-up into the same request instead of replacing it", async () => {
     const { amendRequestForThread } = await import(
-      "../apps/desktop/src/main/chat-service.js"
+      "../packages/core/src/chat-service.js"
     );
     db.repositories.requests.getById.mockResolvedValue({
       ...request,
@@ -155,7 +155,7 @@ describe("chat service request revision", () => {
 
   it("still blocks revisions while execution is running", async () => {
     const { amendRequestForThread } = await import(
-      "../apps/desktop/src/main/chat-service.js"
+      "../packages/core/src/chat-service.js"
     );
     db.repositories.requests.getById.mockResolvedValue({
       ...request,
@@ -192,7 +192,7 @@ describe("chat service request revision", () => {
     ]);
 
     const { appendSystemChatMessage } = await import(
-      "../apps/desktop/src/main/chat-service.js"
+      "../packages/core/src/chat-service.js"
     );
 
     const result = await appendSystemChatMessage(
@@ -210,7 +210,7 @@ describe("chat service request revision", () => {
   });
 
   it("starts a v2 draft request in a new thread when a conversation turn returns research handoff content", async () => {
-    vi.doMock("../apps/desktop/src/main/conversation-service.js", () => ({
+    vi.doMock("../packages/core/src/conversation-service.js", () => ({
       buildConversationReply: vi.fn(async () => ({
         text: 'Fetched Example page and created a new request thread: Research: Example page.',
         requestPrompt: "Use this external page as source material.",
@@ -218,7 +218,7 @@ describe("chat service request revision", () => {
       }))
     }));
     const ingestRequestThreadMessage = vi.fn(async () => ({ ok: true }));
-    vi.doMock("../apps/desktop/src/main/request-ingress-service.js", () => ({
+    vi.doMock("../packages/core/src/request-ingress-service.js", () => ({
       ingestRequestThreadMessage
     }));
 
@@ -230,7 +230,7 @@ describe("chat service request revision", () => {
     db.repositories.chatThreads.save.mockImplementation(async (value) => value);
 
     const { postChatMessage } = await import(
-      "../apps/desktop/src/main/chat-service.js"
+      "../packages/core/src/chat-service.js"
     );
 
     const result = await postChatMessage(

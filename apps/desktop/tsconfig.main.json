@@ -10,6 +10,7 @@
   "include": ["src/main/**/*.ts"],
   "references": [
     { "path": "../../packages/contracts" },
+    { "path": "../../packages/core" },
     { "path": "../../packages/domain" },
     { "path": "../../packages/mcp-client" },
     { "path": "../../packages/mcp-server" },

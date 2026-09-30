@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../apps/desktop/src/main/app-database.js", () => ({
+vi.mock("../packages/core/src/app-database.js", () => ({
   getDatabase: () => {
     throw new Error(
       "The approval guard must refuse before touching the database."
@@ -14,11 +14,11 @@ import {
   currentActor,
   runWithCallContext,
   type CallContext
-} from "../apps/desktop/src/main/call-context.js";
+} from "../packages/core/src/call-context.js";
 import {
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate
-} from "../apps/desktop/src/main/gutenberg-v2-chat-service.js";
+} from "../packages/core/src/gutenberg-v2-chat-service.js";
 import type { RequestId, SiteId } from "@sitepilot/domain";
 
 const MCP_CLIENT: CallContext = {

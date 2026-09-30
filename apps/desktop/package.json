@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@sitepilot/contracts": "0.1.0",
+    "@sitepilot/core": "0.1.0",
     "@sitepilot/domain": "0.1.0",
     "@sitepilot/gutenberg-worker": "0.1.0",
     "@sitepilot/mcp-client": "0.1.0",

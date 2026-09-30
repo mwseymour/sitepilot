@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { siteConfigSchema } from "@sitepilot/contracts";
 import type { DiscoverySnapshot } from "@sitepilot/domain";
 
-import { buildSiteConfigDraftFromDiscovery } from "../apps/desktop/src/main/site-config-draft.js";
+import { buildSiteConfigDraftFromDiscovery } from "../packages/core/src/site-config-draft.js";
 
 const baseSnapshot = (
   summary: Record<string, unknown>,

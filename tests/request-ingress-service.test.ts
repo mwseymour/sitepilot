@@ -15,18 +15,18 @@ const db = {
   }
 };
 
-vi.mock("../apps/desktop/src/main/app-database.js", () => ({
+vi.mock("../packages/core/src/app-database.js", () => ({
   getDatabase: () => db
 }));
 
-vi.mock("../apps/desktop/src/main/chat-service.js", () => ({
+vi.mock("../packages/core/src/chat-service.js", () => ({
   createTypedRequestForThread: vi.fn(),
   amendRequestForThread: vi.fn(),
   answerClarificationForRequest: vi.fn(),
   postChatMessage: vi.fn()
 }));
 
-vi.mock("../apps/desktop/src/main/gutenberg-v2-chat-service.js", () => ({
+vi.mock("../packages/core/src/gutenberg-v2-chat-service.js", () => ({
   continueGutenbergV2AfterFollowUp: vi.fn(),
   hasGutenbergV2RequestMapping: vi.fn()
 }));
@@ -36,15 +36,15 @@ import {
   answerClarificationForRequest,
   createTypedRequestForThread,
   postChatMessage
-} from "../apps/desktop/src/main/chat-service.js";
+} from "../packages/core/src/chat-service.js";
 import {
   continueGutenbergV2AfterFollowUp,
   hasGutenbergV2RequestMapping
-} from "../apps/desktop/src/main/gutenberg-v2-chat-service.js";
+} from "../packages/core/src/gutenberg-v2-chat-service.js";
 import {
   ingestRequestThreadMessage,
   selectOpenRequestForFollowUp
-} from "../apps/desktop/src/main/request-ingress-service.js";
+} from "../packages/core/src/request-ingress-service.js";
 
 const site = {
   id: "site-1",

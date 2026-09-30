@@ -1,13 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { DatabaseContext } from "@sitepilot/repositories";
+import type { AppDatabase } from "@sitepilot/repositories";
 import type { SecureStorage } from "@sitepilot/services";
 
 type RuntimeOverrides = {
   userDataPath?: string;
   secureStorage?: SecureStorage;
-  database?: DatabaseContext;
+  database?: AppDatabase;
 };
 
 let overrides: RuntimeOverrides = {};
@@ -35,7 +35,7 @@ export function getRuntimeSecureStorage(): SecureStorage | null {
   return overrides.secureStorage ?? null;
 }
 
-export function getRuntimeDatabase(): DatabaseContext | null {
+export function getRuntimeDatabase(): AppDatabase | null {
   return overrides.database ?? null;
 }
 

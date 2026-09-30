@@ -10,11 +10,11 @@ import {
   createChatThreadForSite,
   createTypedRequestForThread,
   deleteChatThreadForSite
-} from "../apps/desktop/src/main/chat-service.js";
+} from "../packages/core/src/chat-service.js";
 import {
   configureRuntimeContext,
   resetRuntimeContext
-} from "../apps/desktop/src/main/runtime-context.js";
+} from "../packages/core/src/runtime-context.js";
 
 const now = "2026-09-30T09:00:00.000Z";
 const temporaryDirectories: string[] = [];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { gutenbergV2StatusIntent } from "../apps/desktop/src/main/gutenberg-v2-status-intent.js";
+import { gutenbergV2StatusIntent } from "../packages/core/src/gutenberg-v2-status-intent.js";
 
 describe("publish and unpublish follow-ups", () => {
   it.each([

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 
 import { chromium } from "playwright";
 
-import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
+import { registerSiteWithWordPress } from "../../packages/core/src/register-site.js";
 
 import {
   E2E_ADMIN_PASSWORD,

@@ -11,7 +11,7 @@ import {
   buildExternalPageRequestPrompt,
   fetchExternalPageText,
   parseExternalResearchIntent
-} from "../apps/desktop/src/main/external-page-research-service.js";
+} from "../packages/core/src/external-page-research-service.js";
 
 describe("external page research service", () => {
   afterEach(() => {

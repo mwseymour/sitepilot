@@ -1,4 +1,6 @@
 import { app, BrowserWindow, screen, shell } from "electron";
+
+import { configureDesktopRuntime } from "./desktop-runtime.js";
 import { registerIpcHandlers } from "./ipc.js";
 import {
   startMcpServerIfEnabled,
@@ -35,6 +37,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 }
 
 function registerLifecycle(): void {
+  configureDesktopRuntime();
   registerIpcHandlers();
 
   void app.whenReady().then(async () => {

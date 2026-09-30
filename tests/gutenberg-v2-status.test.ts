@@ -9,7 +9,7 @@ import { hashGutenbergV2Value } from "@sitepilot/services";
 import {
   friendlyCandidateReady,
   friendlyExecution
-} from "../apps/desktop/src/main/gutenberg-v2-report.js";
+} from "../packages/core/src/gutenberg-v2-report.js";
 
 const hash = "a".repeat(64);
 const target = {

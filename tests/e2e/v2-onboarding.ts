@@ -15,15 +15,15 @@ import { join } from "node:path";
 import type { SiteConfigId, SiteId } from "@sitepilot/domain";
 import { initializeDatabase } from "@sitepilot/repositories";
 
-import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
-import { runConnectivityDiagnostics } from "../../apps/desktop/src/main/connectivity-diagnostics.js";
-import { refreshDiscoveryForSite } from "../../apps/desktop/src/main/discovery-service.js";
-import { configureRuntimeContext } from "../../apps/desktop/src/main/runtime-context.js";
-import { generateAndPersistSiteConfigDraft } from "../../apps/desktop/src/main/site-config-draft.js";
-import { fetchSiteUrl } from "../../apps/desktop/src/main/site-fetch.js";
-import { confirmSiteConfigActivation } from "../../apps/desktop/src/main/site-workspace-service.js";
+import { getDatabase } from "../../packages/core/src/app-database.js";
+import { runConnectivityDiagnostics } from "../../packages/core/src/connectivity-diagnostics.js";
+import { refreshDiscoveryForSite } from "../../packages/core/src/discovery-service.js";
+import { configureRuntimeContext } from "../../packages/core/src/runtime-context.js";
+import { generateAndPersistSiteConfigDraft } from "../../packages/core/src/site-config-draft.js";
+import { fetchSiteUrl } from "../../packages/core/src/site-fetch.js";
+import { confirmSiteConfigActivation } from "../../packages/core/src/site-workspace-service.js";
 
-import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
+import { registerSiteWithWordPress } from "../../packages/core/src/register-site.js";
 
 import { E2E_ADMIN_USERNAME, E2E_BASE_URL } from "./config.js";
 import { createFileSecureStorage } from "./file-secure-storage.js";

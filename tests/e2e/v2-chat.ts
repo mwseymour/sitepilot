@@ -12,7 +12,7 @@ import { initializeDatabase } from "@sitepilot/repositories";
 import {
   createChatThreadForSite,
   createTypedRequestForThread
-} from "../../apps/desktop/src/main/chat-service.js";
+} from "../../packages/core/src/chat-service.js";
 import {
   configureGutenbergV2PlannerFactory,
   decideGutenbergV2Candidate,
@@ -20,13 +20,13 @@ import {
   generateGutenbergV2Candidate,
   getGutenbergV2ReviewArtifact,
   hasGutenbergV2RequestMapping
-} from "../../apps/desktop/src/main/gutenberg-v2-chat-service.js";
-import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
+} from "../../packages/core/src/gutenberg-v2-chat-service.js";
+import { getDatabase } from "../../packages/core/src/app-database.js";
 import {
   configureRuntimeContext,
   resetRuntimeContext
-} from "../../apps/desktop/src/main/runtime-context.js";
-import { fetchSiteUrl } from "../../apps/desktop/src/main/site-fetch.js";
+} from "../../packages/core/src/runtime-context.js";
+import { fetchSiteUrl } from "../../packages/core/src/site-fetch.js";
 
 import {
   E2E_BASE_URL

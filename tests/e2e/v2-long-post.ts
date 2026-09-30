@@ -17,20 +17,20 @@ import { initializeDatabase } from "@sitepilot/repositories";
 import {
   createChatThreadForSite,
   createTypedRequestForThread
-} from "../../apps/desktop/src/main/chat-service.js";
+} from "../../packages/core/src/chat-service.js";
 import {
   configureGutenbergV2PlannerFactory,
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate,
   generateGutenbergV2Candidate,
   getGutenbergV2ReviewArtifact
-} from "../../apps/desktop/src/main/gutenberg-v2-chat-service.js";
-import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
-import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
+} from "../../packages/core/src/gutenberg-v2-chat-service.js";
+import { getDatabase } from "../../packages/core/src/app-database.js";
+import { registerSiteWithWordPress } from "../../packages/core/src/register-site.js";
 import {
   configureRuntimeContext,
   resetRuntimeContext
-} from "../../apps/desktop/src/main/runtime-context.js";
+} from "../../packages/core/src/runtime-context.js";
 
 import {
   E2E_ADMIN_USERNAME,

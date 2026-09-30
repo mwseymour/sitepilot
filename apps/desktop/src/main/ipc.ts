@@ -19,7 +19,7 @@ import type {
   WorkspaceId
 } from "@sitepilot/domain";
 
-import { listAuditEntriesForSite } from "./audit-query-service.js";
+import { listAuditEntriesForSite } from "@sitepilot/core/audit-query-service";
 import {
   amendRequestForThread,
   appendSystemChatMessage,
@@ -31,30 +31,30 @@ import {
   listChatThreadsForSite,
   postChatMessage,
   renameChatThreadForSite
-} from "./chat-service.js";
-import { runConnectivityDiagnostics } from "./connectivity-diagnostics.js";
-import { getDatabase } from "./app-database.js";
-import { refreshDiscoveryForSite } from "./discovery-service.js";
-import { testAcfBlocksForSite } from "./acf-block-test-service.js";
-import { testThirdPartyBlocksForSite } from "./third-party-block-test-service.js";
-import { generateAndPersistSiteConfigDraft } from "./site-config-draft.js";
+} from "@sitepilot/core/chat-service";
+import { runConnectivityDiagnostics } from "@sitepilot/core/connectivity-diagnostics";
+import { getDatabase } from "@sitepilot/core/app-database";
+import { refreshDiscoveryForSite } from "@sitepilot/core/discovery-service";
+import { testAcfBlocksForSite } from "@sitepilot/core/acf-block-test-service";
+import { testThirdPartyBlocksForSite } from "@sitepilot/core/third-party-block-test-service";
+import { generateAndPersistSiteConfigDraft } from "@sitepilot/core/site-config-draft";
 import {
   confirmSiteConfigActivation,
   getSiteWorkspaceState,
   saveSiteConfigDocument
-} from "./site-workspace-service.js";
-import { readProviderStatus } from "./provider-status-service.js";
-import { registerSiteWithWordPress } from "./register-site.js";
-import { getRequestBundleForThread } from "./request-bundle-service.js";
+} from "@sitepilot/core/site-workspace-service";
+import { readProviderStatus } from "@sitepilot/core/provider-status-service";
+import { registerSiteWithWordPress } from "@sitepilot/core/register-site";
+import { getRequestBundleForThread } from "@sitepilot/core/request-bundle-service";
 import {
   getGutenbergV2ExecutionProgress,
   getSiteActivitySummary,
   searchSiteContent
-} from "./site-activity-service.js";
-import { ingestRequestThreadMessage } from "./request-ingress-service.js";
-import { getCompatibilityPayload } from "./compatibility-info.js";
-import { buildSiteExportBundle } from "./export-site-service.js";
-import { applySiteImportBundle } from "./import-site-service.js";
+} from "@sitepilot/core/site-activity-service";
+import { ingestRequestThreadMessage } from "@sitepilot/core/request-ingress-service";
+import { getCompatibilityPayload } from "@sitepilot/core/compatibility-info";
+import { buildSiteExportBundle } from "@sitepilot/core/export-site-service";
+import { applySiteImportBundle } from "@sitepilot/core/import-site-service";
 import {
   getMcpServerState,
   regenerateMcpServerToken,
@@ -69,7 +69,7 @@ import {
   setPlannerPreferences,
   setUiPreferences,
   setProviderSecret
-} from "./settings-service.js";
+} from "@sitepilot/core/settings-service";
 import {
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate,
@@ -77,7 +77,7 @@ import {
   getGutenbergV2RequestState,
   getGutenbergV2ReviewArtifact,
   listGutenbergV2PendingCandidates
-} from "./gutenberg-v2-chat-service.js";
+} from "@sitepilot/core/gutenberg-v2-chat-service";
 
 function parseRequest<TChannel extends IpcChannel>(
   channel: TChannel,

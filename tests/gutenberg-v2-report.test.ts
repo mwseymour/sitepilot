@@ -9,7 +9,7 @@ import {
   parsePlainLanguage,
   plainLanguagePrompt,
   requestNotices
-} from "../apps/desktop/src/main/gutenberg-v2-report.js";
+} from "../packages/core/src/gutenberg-v2-report.js";
 
 const target = {
   operation: "apply_operations" as const,

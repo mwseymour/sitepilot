@@ -26,23 +26,23 @@ import {
 } from "@sitepilot/mcp-server";
 import { initializeDatabase } from "@sitepilot/repositories";
 
-import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
+import { getDatabase } from "../../packages/core/src/app-database.js";
 import {
   DEFAULT_OPERATOR,
   runWithCallContext
-} from "../../apps/desktop/src/main/call-context.js";
+} from "../../packages/core/src/call-context.js";
 import {
   configureGutenbergV2PlannerFactory,
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate,
   getGutenbergV2RequestState
-} from "../../apps/desktop/src/main/gutenberg-v2-chat-service.js";
-import { createDesktopMcpBackend } from "../../apps/desktop/src/main/mcp-backend.js";
-import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
+} from "../../packages/core/src/gutenberg-v2-chat-service.js";
+import { createDesktopMcpBackend } from "../../packages/core/src/mcp-backend.js";
+import { registerSiteWithWordPress } from "../../packages/core/src/register-site.js";
 import {
   configureRuntimeContext,
   resetRuntimeContext
-} from "../../apps/desktop/src/main/runtime-context.js";
+} from "../../packages/core/src/runtime-context.js";
 
 import {
   E2E_ADMIN_USERNAME,

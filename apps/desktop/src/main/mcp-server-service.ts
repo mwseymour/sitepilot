@@ -6,8 +6,8 @@ import {
   type LocalMcpHttpServer
 } from "@sitepilot/mcp-server";
 
-import { getSecureStorage } from "./app-secure-storage.js";
-import { createDesktopMcpBackend } from "./mcp-backend.js";
+import { getSecureStorage } from "@sitepilot/core/app-secure-storage";
+import { createDesktopMcpBackend } from "@sitepilot/core/mcp-backend";
 
 export const DEFAULT_MCP_PORT = 8765;
 

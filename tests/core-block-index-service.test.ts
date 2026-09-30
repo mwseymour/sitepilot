@@ -7,7 +7,7 @@ import {
   buildWordPressCoreBlockIndex,
   defaultWordPressCoreIndexCachePath,
   reindexWordPressCoreBlockIndex
-} from "../apps/desktop/src/main/core-block-index-service.js";
+} from "../packages/core/src/core-block-index-service.js";
 
 const tempDirs: string[] = [];
 

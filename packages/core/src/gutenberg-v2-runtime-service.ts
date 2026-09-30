@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import {
@@ -73,11 +72,9 @@ export function configureGutenbergV2RuntimeFactory(
 function getArtifactRoot(): string {
   const runtimeRoot = resolveRuntimeChildPath("gutenberg-v2");
   if (runtimeRoot) return runtimeRoot;
-  const require = createRequire(import.meta.url);
-  const electron = require("electron") as {
-    app: { getPath(name: string): string };
-  };
-  return join(electron.app.getPath("userData"), "gutenberg-v2");
+  throw new Error(
+    "SitePilot's data folder isn't configured. The desktop app and the server set it with configureRuntimeContext at startup."
+  );
 }
 
 export async function createGutenbergV2DesktopRuntime(

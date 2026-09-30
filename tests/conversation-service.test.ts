@@ -15,17 +15,17 @@ const secrets: Record<string, string | undefined> = {};
 const callTool = vi.fn<(name: string, args: Record<string, unknown>) => Promise<unknown>>();
 const complete = vi.fn<(messages: unknown[], model: string) => Promise<{ text: string }>>();
 
-vi.mock("../apps/desktop/src/main/app-database.js", () => ({
+vi.mock("../packages/core/src/app-database.js", () => ({
   getDatabase: () => db
 }));
 
-vi.mock("../apps/desktop/src/main/app-secure-storage.js", () => ({
+vi.mock("../packages/core/src/app-secure-storage.js", () => ({
   getSecureStorage: () => ({
     get: async ({ keyId }: { keyId: string }) => secrets[keyId]
   })
 }));
 
-vi.mock("../apps/desktop/src/main/planner-preferences-service.js", () => ({
+vi.mock("../packages/core/src/planner-preferences-service.js", () => ({
   loadPlannerPreferences: async () => ({
     preferredProvider: "anthropic",
     openaiModel: "gpt-test",
@@ -33,7 +33,7 @@ vi.mock("../apps/desktop/src/main/planner-preferences-service.js", () => ({
   })
 }));
 
-vi.mock("../apps/desktop/src/main/site-mcp-client.js", () => ({
+vi.mock("../packages/core/src/site-mcp-client.js", () => ({
   createMcpClientForSite: async () => ({ ok: true, client: { callTool } })
 }));
 
@@ -67,7 +67,7 @@ const latestPost = {
 
 async function reply(text: string) {
   const { buildConversationReply } = await import(
-    "../apps/desktop/src/main/conversation-service.js"
+    "../packages/core/src/conversation-service.js"
   );
   return buildConversationReply({
     siteId: "site-1" as never,

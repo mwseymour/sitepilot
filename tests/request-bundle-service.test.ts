@@ -32,7 +32,7 @@ const db = {
   }
 };
 
-vi.mock("../apps/desktop/src/main/app-database.js", () => ({
+vi.mock("../packages/core/src/app-database.js", () => ({
   getDatabase: () => db
 }));
 
@@ -42,7 +42,7 @@ async function loadBundle(overrides: Record<string, unknown> = {}) {
     ...overrides
   });
   const { getRequestBundleForThread } =
-    await import("../apps/desktop/src/main/request-bundle-service.js");
+    await import("../packages/core/src/request-bundle-service.js");
   return getRequestBundleForThread({
     siteId: "site-1" as never,
     threadId: "thread-1" as never,

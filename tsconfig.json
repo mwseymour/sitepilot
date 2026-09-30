@@ -18,6 +18,7 @@
     { "path": "./packages/plugin-protocol" },
     { "path": "./packages/logging" },
     { "path": "./packages/sql" },
+    { "path": "./packages/core" },
     { "path": "./packages/test-utils" }
   ]
 }

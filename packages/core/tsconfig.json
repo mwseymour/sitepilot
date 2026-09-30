@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../domain" },
+    { "path": "../gutenberg-worker" },
+    { "path": "../mcp-client" },
+    { "path": "../mcp-server" },
+    { "path": "../plugin-protocol" },
+    { "path": "../provider-adapters" },
+    { "path": "../repositories" },
+    { "path": "../services" },
+    { "path": "../sql" }
+  ]
+}
