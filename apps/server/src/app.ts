@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { DatabaseStatus } from "./database.js";
+
 /**
- * SitePilot's hosted backend (MCP plan, Phase 5). For now it only answers
- * the health check Railway uses to decide a deploy is live. The request,
- * review and MCP routes arrive as the headless core moves out of the
- * desktop app.
+ * SitePilot's hosted backend (MCP plan, Phase 5). It runs the same services
+ * as the desktop app (@sitepilot/core) on Supabase Postgres. So far it only
+ * answers the health check; the request, review and MCP routes come next.
  */
 
 export const SERVER_VERSION = "0.1.0";
@@ -46,16 +47,28 @@ function sendJson(
 }
 
 export function createRequestHandler(
-  info: ServerInfo
+  info: ServerInfo,
+  databaseStatus: () => DatabaseStatus = () => ({ status: "not_configured" })
 ): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const readOnly = request.method === "GET" || request.method === "HEAD";
+    // The process is up even while the database is still connecting, so
+    // this stays 200; the body says how the database is doing.
     if (path === "/healthz" && readOnly) {
+      const database = databaseStatus();
       sendJson(
         response,
         200,
-        { status: "ok", service: "sitepilot-server", ...info },
+        {
+          status: "ok",
+          service: "sitepilot-server",
+          ...info,
+          database:
+            database.status === "connecting"
+              ? { status: "connecting", attempts: database.attempts }
+              : database
+        },
         request.method
       );
       return;

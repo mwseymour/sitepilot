@@ -269,7 +269,10 @@ async function main(): Promise<void> {
     const firstState = gutenbergV2RequestStateSchema.parse(
       firstExecution.state
     );
-    assert(firstState.state === "succeeded", "Execution did not succeed.");
+    assert(
+      firstState.state === "succeeded",
+      `Execution ended in ${firstState.state}: ${JSON.stringify(firstState.failure ?? null)}`
+    );
     assert(
       typeof firstState.result?.postId === "number",
       "Execution did not return the created post id."
