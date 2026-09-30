@@ -16,7 +16,8 @@ use SitePilot\Mcp\Mcp_Permission;
 use WP\MCP\Transport\HttpTransport;
 
 /**
- * Exposes SitePilot read-only abilities on the SitePilot MCP route.
+ * Exposes SitePilot's read-only abilities on the SitePilot MCP route. Content
+ * changes go through the signed v2 routes instead.
  */
 final class Server_Registrar {
 
@@ -62,22 +63,16 @@ final class Server_Registrar {
 			'sitepilot',
 			'mcp',
 			__( 'SitePilot MCP', 'sitepilot' ),
-			__( 'SitePilot tools for the desktop app (read and vetted writes).', 'sitepilot' ),
+			__( 'Read-only SitePilot lookups for the desktop app.', 'sitepilot' ),
 			SITEPILOT_VERSION,
 			array( HttpTransport::class ),
 			ErrorLogMcpErrorHandler::class,
 			NullMcpObservabilityHandler::class,
 			array(
 				'sitepilot/ping',
-				'sitepilot/site-summary',
 				'sitepilot/site-discovery',
 				'sitepilot/find-posts',
 				'sitepilot/get-post',
-				'sitepilot/create-draft-post',
-				'sitepilot/update-post-fields',
-				'sitepilot/set-post-seo-meta',
-				'sitepilot/set-post-featured-image',
-				'sitepilot/upload-media-asset',
 			),
 			array(),
 			array(),

@@ -1,8 +1,12 @@
 # SitePilot WordPress plugin
 
-Thin companion plugin for the SitePilot desktop app: protocol metadata REST routes, `wordpress/mcp-adapter` integration, and read-only MCP tools.
+Companion plugin for the SitePilot desktop app: protocol metadata REST routes, `wordpress/mcp-adapter` integration with read-only lookup tools, and the signed Gutenberg v2 routes that make every content change.
 
-For block editor writes, the plugin accepts structured parsed block arrays in `blocks`, validates and sanitizes them recursively, canonicalizes common core block shapes, and serializes them with WordPress core `serialize_blocks()`. See [Reliable Gutenberg Block Generation](../../docs/reliable-gutenberg-blocks.md) for the contract, debugging notes, and failure modes. For third-party block loading, see [Custom Block Support](../../docs/custom-block-support.md).
+The MCP tools only read: `find-posts`, `get-post`, `site-discovery` and `ping`. Content changes go through the v2 routes described below, after someone approves them in SitePilot.
+
+## Changes
+
+- **0.2.0:** Removed the v1 write abilities (`create-draft-post`, `update-post-fields`, `set-post-seo-meta`, `set-post-featured-image` and `upload-media-asset`) and the unused `site-summary` ability. SitePilot no longer calls them. Update every site, because older versions still expose them.
 
 ## Requirements
 
@@ -39,9 +43,10 @@ Vendor directory is gitignored; run `composer install` after clone.
 
 ## Gutenberg v2 content engine
 
-The v2 editor bridge and commit routes are the default content engine. To turn
-v2 off on a site, define `SITEPILOT_V2_ENABLED` as the boolean `false` in
-`wp-config.php`. There is deliberately no wp-admin switch for it.
+The v2 editor bridge and commit routes are SitePilot's only content engine. To
+stop SitePilot changing content on a site, define `SITEPILOT_V2_ENABLED` as the
+boolean `false` in `wp-config.php`. Lookups keep working. There is deliberately
+no wp-admin switch for it.
 
 The signed v2 transport is rooted at `/wp-json/sitepilot/v2` and exposes
 `editor-sessions`, `editor-bootstrap`, `prepare`, `commit`, `reconcile`,

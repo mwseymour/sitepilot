@@ -31,6 +31,15 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const EXACT_TEST_URL = "https://test.localhost:8890/";
 const REQUIRED_TOOLS = ["sitepilot-find-posts", "sitepilot-get-post", "sitepilot-site-discovery"];
+// The v1 write abilities were removed in plugin 0.2.0. Content changes only go
+// through the signed v2 routes.
+const REMOVED_WRITE_TOOLS = [
+  "sitepilot-create-draft-post",
+  "sitepilot-update-post-fields",
+  "sitepilot-set-post-seo-meta",
+  "sitepilot-set-post-featured-image",
+  "sitepilot-upload-media-asset"
+];
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -103,6 +112,12 @@ async function main(): Promise<void> {
     assert(
       missingTools.length === 0,
       `The plugin MCP server is missing ${missingTools.join(", ")}. It listed: ${toolNames.join(", ")}`
+    );
+
+    const exposedWriteTools = REMOVED_WRITE_TOOLS.filter((name) => toolNames.includes(name));
+    assert(
+      exposedWriteTools.length === 0,
+      `The plugin MCP server still exposes v1 write tools: ${exposedWriteTools.join(", ")}. Is the site's plugin copy up to date?`
     );
 
     const protocolResponse = await fetchSiteUrl(`${E2E_BASE_URL}wp-json/sitepilot/v1/protocol`);

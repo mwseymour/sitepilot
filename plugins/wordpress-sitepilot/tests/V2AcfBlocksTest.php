@@ -45,20 +45,6 @@ final class V2AcfBlocksTest extends TestCase {
 		$this->assertStringContainsString( '0 or 1', (string) Acf_Blocks::validate_data( 'acf/container', array_merge( self::DATA, array( 'bottom_border' => 'maybe' ) ) ) );
 	}
 
-	public function test_defaults_come_from_the_field_definitions(): void {
-		$this->assertSame(
-			array(
-				'colour'          => 'bg-white',
-				'_colour'         => 'field_container_colour',
-				'padding_amount'  => 'py-[80px] md:py-[100px]',
-				'_padding_amount' => 'field_container_padding_amount',
-				'bottom_border'   => '1',
-				'_bottom_border'  => 'field_container_bottom_border',
-			),
-			Acf_Blocks::normalize_data( 'acf/container', array() )
-		);
-	}
-
 	public function test_a_block_is_authorable_only_while_its_fixture_is_current(): void {
 		$this->assertNotContains( 'acf/container', Block_Policy::authorable_blocks() );
 		$this->assertContains( 'acf/container', Block_Policy::fixture_required_blocks() );

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       SitePilot
  * Description:       Companion bridge for the SitePilot desktop app — protocol metadata, MCP tools, and future site execution.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.9
  * Requires PHP:       8.1
  * Author:            SitePilot
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SITEPILOT_VERSION', '0.1.0' );
+define( 'SITEPILOT_VERSION', '0.2.0' );
 define( 'SITEPILOT_PROTOCOL_VERSION', '1.0.0' );
 define( 'SITEPILOT_PLUGIN_FILE', __FILE__ );
 define( 'SITEPILOT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );

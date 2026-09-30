@@ -79,48 +79,6 @@ final class Abilities_Registrar {
 		);
 
 		wp_register_ability(
-			'sitepilot/site-summary',
-			array(
-				'label'               => __( 'Site summary', 'sitepilot' ),
-				'description'         => __( 'Returns public site identity metadata (no secrets).', 'sitepilot' ),
-				'category'            => 'sitepilot',
-				'input_schema'        => array(
-					'type'                 => 'object',
-					'properties'           => array(),
-					'additionalProperties' => false,
-				),
-				'output_schema'       => array(
-					'type'       => 'object',
-					'properties' => array(
-						'name'       => array( 'type' => 'string' ),
-						'home_url'   => array( 'type' => 'string', 'format' => 'uri' ),
-						'wp_version' => array( 'type' => 'string' ),
-					),
-					'required'   => array( 'name', 'home_url', 'wp_version' ),
-				),
-				'execute_callback'    => static function ( array $input ) {
-					unset( $input );
-					return array(
-						'name'       => get_bloginfo( 'name' ),
-						'home_url'   => home_url( '/' ),
-						'wp_version' => get_bloginfo( 'version' ),
-					);
-				},
-				'permission_callback' => static function ( $input = array() ) {
-					unset( $input );
-					return current_user_can( 'read' );
-				},
-				'meta'                => array(
-					'annotations' => array(
-						'readonly'    => true,
-						'destructive' => false,
-						'idempotent'  => true,
-					),
-				),
-			)
-		);
-
-		wp_register_ability(
 			'sitepilot/site-discovery',
 			array(
 				'label'               => __( 'Site discovery', 'sitepilot' ),

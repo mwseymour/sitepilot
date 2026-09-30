@@ -12,7 +12,6 @@ namespace SitePilot;
 use SitePilot\Admin\Settings_Page;
 use SitePilot\Mcp\Abilities_Registrar;
 use SitePilot\Mcp\Mcp_Status;
-use SitePilot\Mcp\Write_Abilities;
 use SitePilot\Mcp\Server_Registrar;
 use SitePilot\Security\Signed_Request_Verifier;
 use SitePilot\Rest\Protocol_Routes;
@@ -49,7 +48,6 @@ final class Plugin {
 
 		if ( function_exists( 'wp_register_ability' ) ) {
 			Abilities_Registrar::register_hooks();
-			Write_Abilities::register_hooks();
 			Server_Registrar::register_hooks();
 		}
 	}
