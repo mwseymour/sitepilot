@@ -1603,9 +1603,12 @@
 
 /* Messages */
 
+/* A zero basis makes the list take only the space left over. With `auto`, a
+   long thread's content height made flexbox shrink the composer too, pushing
+   its actions out of the box. */
 .workspace-main.is-flush .chat-messages {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 1.1rem;
   max-height: none;
