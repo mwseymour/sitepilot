@@ -31,7 +31,6 @@ import {
   configureRuntimeContext,
   resetRuntimeContext
 } from "../../apps/desktop/src/main/runtime-context.js";
-import { saveSitePlannerSettings } from "../../apps/desktop/src/main/settings-service.js";
 
 import {
   E2E_ADMIN_USERNAME,
@@ -169,10 +168,6 @@ async function main(): Promise<void> {
       activationStatus: "active",
       updatedAt: new Date().toISOString()
     });
-    await saveSitePlannerSettings(secureStorage, siteId, {
-      bypassApprovalRequests: false,
-      gutenbergV2Enabled: true
-    });
     // Replays a saved planner response instead of calling the model.
     const replay = process.env.SITEPILOT_LONG_POST_PLAN_FILE
       ? readFileSync(process.env.SITEPILOT_LONG_POST_PLAN_FILE, "utf8")
@@ -216,8 +211,7 @@ async function main(): Promise<void> {
       siteId,
       thread.thread.id,
       prompt,
-      imagePaths.map(attachment),
-      "gutenberg_v2"
+      imagePaths.map(attachment)
     );
     if (!("request" in request)) throw new Error("Request creation failed.");
     const requestId = request.request.id as RequestId;

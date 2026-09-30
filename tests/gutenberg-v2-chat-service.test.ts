@@ -24,8 +24,7 @@ import {
   generateGutenbergV2Candidate,
   getGutenbergV2RequestState,
   getGutenbergV2ReviewArtifact,
-  hasGutenbergV2RequestMapping,
-  claimV1RequestEngine
+  hasGutenbergV2RequestMapping
 } from "../apps/desktop/src/main/gutenberg-v2-chat-service.js";
 import { configureGutenbergV2RuntimeFactory } from "../apps/desktop/src/main/gutenberg-v2-runtime-service.js";
 
@@ -442,9 +441,6 @@ describe("desktop Gutenberg v2 chat boundary", () => {
     expect(
       hasGutenbergV2RequestMapping("site-1" as SiteId, "request-1" as RequestId)
     ).toBe(true);
-    expect(
-      claimV1RequestEngine("site-1" as SiteId, "request-1" as RequestId)
-    ).toBe(false);
     database.connection
       .prepare(
         "INSERT INTO requests (id,site_id,thread_id,requested_by_json,status,user_prompt,attachments_json,created_at,updated_at,content_engine) SELECT 'request-2',site_id,thread_id,requested_by_json,'new','v1 owned',attachments_json,created_at,updated_at,'v1' FROM requests WHERE id='request-1'"

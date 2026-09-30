@@ -17,6 +17,8 @@ type LocalConfig = {
     adminUsername?: string;
     adminPassword?: string;
     registrationCode?: string;
+    /** The ACF site's WordPress directory, for reading its registration code with wp-cli. */
+    wpPath?: string;
   };
 };
 
@@ -69,12 +71,15 @@ export const E2E_WP_PATH =
 export const E2E_ACF_SITE = {
   baseUrl: process.env.SITEPILOT_E2E_ACF_BASE_URL ?? localConfig.acf?.baseUrl,
   adminUsername:
-    process.env.SITEPILOT_E2E_ACF_ADMIN_USERNAME ?? localConfig.acf?.adminUsername,
+    process.env.SITEPILOT_E2E_ACF_ADMIN_USERNAME ??
+    localConfig.acf?.adminUsername,
   adminPassword:
-    process.env.SITEPILOT_E2E_ACF_ADMIN_PASSWORD ?? localConfig.acf?.adminPassword,
+    process.env.SITEPILOT_E2E_ACF_ADMIN_PASSWORD ??
+    localConfig.acf?.adminPassword,
   registrationCode:
     process.env.SITEPILOT_E2E_ACF_REGISTRATION_CODE ??
-    localConfig.acf?.registrationCode
+    localConfig.acf?.registrationCode,
+  wpPath: process.env.SITEPILOT_E2E_ACF_WP_PATH ?? localConfig.acf?.wpPath
 };
 export const E2E_ARTIFACTS_ROOT = join(
   process.cwd(),

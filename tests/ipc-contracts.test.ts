@@ -177,39 +177,8 @@ describe("ipc contracts", () => {
         code: "stub",
         message: "Not used in this contract shape test."
       }),
-      buildPlannerContext: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
-      analyzeRequestVisualAnalysis: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
-      reviewRequestVisualAnalysis: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
-      generateActionPlan: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
-      listPendingApprovals: async () => ({ ok: true, approvals: [] }),
-      decideApproval: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
       listAuditEntries: async () => ({ ok: true, entries: [] }),
       getRequestBundle: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
-      executePlanAction: async () => ({
         ok: false,
         code: "stub",
         message: "Not used in this contract shape test."
@@ -231,11 +200,6 @@ describe("ipc contracts", () => {
         message: "Not used in this contract shape test."
       }),
       setPlannerPreferences: async () => ({
-        ok: false,
-        code: "stub",
-        message: "Not used in this contract shape test."
-      }),
-      setSitePlannerSettings: async () => ({
         ok: false,
         code: "stub",
         message: "Not used in this contract shape test."

@@ -37,9 +37,9 @@ import {
   E2E_ADMIN_PASSWORD,
   E2E_ADMIN_USERNAME,
   E2E_ARTIFACTS_ROOT,
-  E2E_BASE_URL,
-  E2E_REGISTRATION_CODE
+  E2E_BASE_URL
 } from "./config.js";
+import { currentRegistrationCode } from "./registration.js";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -62,26 +62,6 @@ async function login(): Promise<BrowserContext> {
   await page.waitForURL(/\/wp-admin\//, { timeout: 30_000 });
   await page.close();
   return context;
-}
-
-async function registrationCode(): Promise<string> {
-  const configured = E2E_REGISTRATION_CODE.trim();
-  const context = await login();
-  try {
-    const page = await context.newPage();
-    await page.goto(
-      `${E2E_BASE_URL}wp-admin/options-general.php?page=sitepilot`,
-      {
-        waitUntil: "domcontentloaded"
-      }
-    );
-    const code = (await page.locator("code").allTextContents())
-      .map((value) => value.trim())
-      .find((value) => /^[A-Za-z0-9]{16,}$/.test(value));
-    return code ?? configured;
-  } finally {
-    await context.browser()?.close();
-  }
 }
 
 async function registerTestClient(): Promise<{
@@ -111,7 +91,7 @@ async function registerTestClient(): Promise<{
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
-      registrationCode: await registrationCode(),
+      registrationCode: await currentRegistrationCode(),
       siteId,
       workspaceId: "sitepilot-v2-e2e",
       trustedAppOrigin: "https://sitepilot.desktop",

@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 import { chromium } from "playwright";
 
 import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
@@ -6,14 +8,16 @@ import {
   E2E_ADMIN_PASSWORD,
   E2E_ADMIN_USERNAME,
   E2E_BASE_URL,
-  E2E_REGISTRATION_CODE
+  E2E_REGISTRATION_CODE,
+  E2E_WP_PATH
 } from "./config.js";
 
 type RegisterResult = Awaited<ReturnType<typeof registerSiteWithWordPress>>;
 
 /**
  * Reads the current registration code from Settings → SitePilot as the
- * E2E admin. Used when the configured code is out of date.
+ * E2E admin. The code sits inside a closed "Show code" disclosure, which
+ * textContent still reads.
  */
 export async function discoverRegistrationCode(): Promise<string> {
   const browser = await chromium.launch({ headless: true });
@@ -46,30 +50,46 @@ export async function discoverRegistrationCode(): Promise<string> {
 }
 
 /**
- * Registers the E2E site the way the desktop's Add Site page does. Tries the
- * configured registration code first, then the one shown in wp-admin.
+ * The site's registration code right now. Each registration uses the code up
+ * (plugin 0.2.0 and later), so every script reads a fresh one just before it
+ * registers: through wp-cli when the site's WordPress path is set, otherwise
+ * from wp-admin. The configured code is the last resort, for older plugins.
  */
-export async function registerE2ESite(siteName: string): Promise<RegisterResult> {
-  const request = {
+export async function currentRegistrationCode(): Promise<string> {
+  if (E2E_WP_PATH) {
+    try {
+      const code = execFileSync(
+        "wp",
+        ["option", "get", "sitepilot_registration_code"],
+        {
+          cwd: E2E_WP_PATH,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"]
+        }
+      ).trim();
+      if (code.length > 0) return code;
+    } catch {
+      // Fall through to wp-admin.
+    }
+  }
+  try {
+    return await discoverRegistrationCode();
+  } catch (error) {
+    if (E2E_REGISTRATION_CODE.length > 0) return E2E_REGISTRATION_CODE;
+    throw error;
+  }
+}
+
+/** Registers the E2E site the way the desktop's Add Site page does. */
+export async function registerE2ESite(
+  siteName: string
+): Promise<RegisterResult> {
+  return registerSiteWithWordPress({
     baseUrl: E2E_BASE_URL,
     siteName,
     wordpressUsername: E2E_ADMIN_USERNAME,
     workspaceId: "workspace-1",
-    environment: "development" as const
-  };
-  const configuredAttempt = await registerSiteWithWordPress({
-    ...request,
-    registrationCode: E2E_REGISTRATION_CODE
-  });
-  if (
-    configuredAttempt.ok ||
-    configuredAttempt.code !== "register_rejected" ||
-    !/invalid registration code/i.test(configuredAttempt.message)
-  ) {
-    return configuredAttempt;
-  }
-  return registerSiteWithWordPress({
-    ...request,
-    registrationCode: await discoverRegistrationCode()
+    environment: "development",
+    registrationCode: await currentRegistrationCode()
   });
 }

@@ -11,42 +11,6 @@ const request = {
   },
   status: "new",
   userPrompt: "Create a draft page with a burger image.",
-  latestPlanId: "plan-1",
-  createdAt: "2026-04-28T10:00:00.000Z",
-  updatedAt: "2026-04-28T10:00:00.000Z"
-};
-
-const plan = {
-  id: "plan-1",
-  requestId: request.id,
-  siteId: request.siteId,
-  requestSummary: "Create a draft page with a burger image.",
-  assumptions: [],
-  openQuestions: ["None."],
-  targetEntities: ["page: Big Beefy Boys"],
-  proposedActions: [
-    {
-      id: "action-1",
-      type: "create_draft_post",
-      version: 1,
-      input: {
-        title: "Big Beefy Boys",
-        post_type: "page",
-        post_status: "draft",
-        content: "<!-- wp:paragraph --><p>Hello.</p><!-- /wp:paragraph -->"
-      },
-      targetEntityRefs: ["page: Big Beefy Boys"],
-      permissionRequirement: "create_draft_post",
-      riskLevel: "low",
-      dryRunCapable: true,
-      rollbackSupported: false
-    }
-  ],
-  dependencies: [],
-  approvalRequired: false,
-  riskLevel: "low",
-  rollbackNotes: [],
-  validationWarnings: [],
   createdAt: "2026-04-28T10:00:00.000Z",
   updatedAt: "2026-04-28T10:00:00.000Z"
 };
@@ -54,47 +18,16 @@ const plan = {
 const db = {
   repositories: {
     requests: {
-      getById: vi.fn(async () => request),
+      getById: vi.fn(
+        async (): Promise<Record<string, unknown> | null> => request
+      ),
       save: vi.fn(async () => undefined)
     },
-    requestVisualAnalyses: {
-      getByRequestId: vi.fn(async () => null)
-    },
     actionPlans: {
-      getById: vi.fn(async () => plan)
-    },
-    approvals: {
-      listByRequestId: vi.fn(async () => [])
+      getById: vi.fn(async (): Promise<Record<string, unknown> | null> => null)
     },
     executionRuns: {
-      getById: vi.fn(async () => null)
-    },
-    toolInvocations: {
-      listByExecutionRunId: vi.fn(async () => [])
-    },
-    discoverySnapshots: {
-      getLatest: vi.fn(async () => ({
-        id: "discovery-1",
-        capabilities: ["read", "edit_drafts"]
-      }))
-    },
-    siteConfigs: {
-      listVersions: vi.fn(async () => [
-        {
-          version: 1,
-          document: {
-            requiredSectionsComplete: true,
-            activationStatus: "active",
-            sections: {
-              approvalPolicy: {
-                publishRequiresApproval: true,
-                menuChangesRequireApproval: true,
-                autoApproveCategories: ["draft_content_update"]
-              }
-            }
-          }
-        }
-      ])
+      getById: vi.fn(async (): Promise<Record<string, unknown> | null> => null)
     }
   }
 };
@@ -103,141 +36,77 @@ vi.mock("../apps/desktop/src/main/app-database.js", () => ({
   getDatabase: () => db
 }));
 
-vi.mock("../apps/desktop/src/main/app-secure-storage.js", () => ({
-  getSecureStorage: () => ({})
-}));
-
-vi.mock("../apps/desktop/src/main/settings-service.js", () => ({
-  loadSitePlannerSettings: vi.fn(async () => ({
-    bypassApprovalRequests: false
-  }))
-}));
+async function loadBundle(overrides: Record<string, unknown> = {}) {
+  db.repositories.requests.getById.mockResolvedValue({
+    ...request,
+    ...overrides
+  });
+  const { getRequestBundleForThread } =
+    await import("../apps/desktop/src/main/request-bundle-service.js");
+  return getRequestBundleForThread({
+    siteId: "site-1" as never,
+    threadId: "thread-1" as never,
+    requestId: "request-1" as never
+  });
+}
 
 describe("request-bundle-service", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    db.repositories.requests.getById.mockResolvedValue(request);
-    db.repositories.actionPlans.getById.mockResolvedValue(plan);
-    db.repositories.approvals.listByRequestId.mockResolvedValue([]);
-    db.repositories.siteConfigs.listVersions.mockResolvedValue([
-      {
-        version: 1,
-        document: {
-          requiredSectionsComplete: true,
-          activationStatus: "active",
-          sections: {
-            approvalPolicy: {
-              publishRequiresApproval: true,
-              menuChangesRequireApproval: true,
-              autoApproveCategories: ["draft_content_update"]
-            }
-          }
-        }
-      }
-    ]);
+    db.repositories.actionPlans.getById.mockResolvedValue(null);
+    db.repositories.executionRuns.getById.mockResolvedValue(null);
   });
 
-  it("reconciles stale request status from the latest plan validation", async () => {
-    const { getRequestBundleForThread } = await import(
-      "../apps/desktop/src/main/request-bundle-service.js"
-    );
+  it("returns a v2 request with no legacy summary, and never rewrites its status", async () => {
+    const result = await loadBundle();
 
-    const result = await getRequestBundleForThread({
-      siteId: request.siteId as never,
-      threadId: request.threadId as never,
-      requestId: request.id as never
+    expect(result).toMatchObject({
+      ok: true,
+      request: { id: "request-1" },
+      legacyV1: null
     });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.request.status).toBe("approved");
-    expect(result.visualAnalysis).toBeNull();
-    expect(db.repositories.requests.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: request.id,
-        status: "approved",
-        updatedAt: request.updatedAt
-      })
-    );
+    expect(db.repositories.requests.save).not.toHaveBeenCalled();
+    expect(db.repositories.actionPlans.getById).not.toHaveBeenCalled();
   });
 
-  it("preserves an explicit approval decision for the current plan", async () => {
-    db.repositories.requests.getById.mockResolvedValue({
-      ...request,
-      status: "approved"
+  it("summarises a request made with the removed v1 engine", async () => {
+    db.repositories.actionPlans.getById.mockResolvedValue({
+      id: "plan-1",
+      proposedActions: [{ id: "a1" }, { id: "a2" }]
     });
-    db.repositories.approvals.listByRequestId.mockResolvedValue([
-      {
-        id: "approval-1",
-        requestId: request.id,
-        planId: plan.id,
-        siteId: request.siteId,
-        status: "approved",
-        requestedBy: request.requestedBy,
-        createdAt: "2026-04-28T10:01:00.000Z",
-        updatedAt: "2026-04-28T10:02:00.000Z"
-      }
-    ]);
-
-    const { getRequestBundleForThread } = await import(
-      "../apps/desktop/src/main/request-bundle-service.js"
-    );
-
-    const result = await getRequestBundleForThread({
-      siteId: request.siteId as never,
-      threadId: request.threadId as never,
-      requestId: request.id as never
+    db.repositories.executionRuns.getById.mockResolvedValue({
+      id: "run-1",
+      status: "failed"
     });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
+    const result = await loadBundle({
+      status: "archived",
+      latestPlanId: "plan-1",
+      latestExecutionRunId: "run-1"
+    });
 
-    expect(result.request.status).toBe("approved");
+    expect(result).toMatchObject({
+      ok: true,
+      legacyV1: { plannedActionCount: 2, lastRunStatus: "failed" }
+    });
     expect(db.repositories.requests.save).not.toHaveBeenCalled();
   });
 
-  it("preserves a rejection or revision request for the current plan", async () => {
-    db.repositories.approvals.listByRequestId.mockResolvedValue([
-      {
-        id: "approval-1",
-        requestId: request.id,
-        planId: plan.id,
-        siteId: request.siteId,
-        status: "rejected",
-        requestedBy: request.requestedBy,
-        createdAt: "2026-04-28T10:01:00.000Z",
-        updatedAt: "2026-04-28T10:02:00.000Z"
-      }
-    ]);
+  it("still summarises a v1 request whose plan can no longer be read", async () => {
+    db.repositories.actionPlans.getById.mockRejectedValue(new Error("bad row"));
 
-    const { getRequestBundleForThread } = await import(
-      "../apps/desktop/src/main/request-bundle-service.js"
-    );
+    const result = await loadBundle({ latestPlanId: "plan-1" });
 
-    const result = await getRequestBundleForThread({
-      siteId: request.siteId as never,
-      threadId: request.threadId as never,
-      requestId: request.id as never
+    expect(result).toMatchObject({
+      ok: true,
+      legacyV1: { plannedActionCount: 0 }
     });
+  });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
+  it("refuses a request from another thread", async () => {
+    const result = await loadBundle({ threadId: "thread-2" });
 
-    expect(result.request.status).toBe("drafted");
-    expect(db.repositories.requests.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: request.id,
-        status: "drafted",
-        updatedAt: request.updatedAt
-      })
-    );
+    expect(result).toMatchObject({ ok: false, code: "thread_mismatch" });
   });
 });

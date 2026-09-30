@@ -1,213 +1,52 @@
-import {
-  requestVisualAnalysisSchema,
-  siteConfigSchema,
-  type ActionPlan as ContractActionPlan
-} from "@sitepilot/contracts";
 import type {
-  ApprovalRequest,
   ChatThreadId,
-  ExecutionRun,
   Request,
   RequestId,
-  RequestVisualAnalysis,
-  SiteId,
-  ToolInvocation
+  SiteId
 } from "@sitepilot/domain";
-import { validateActionPlan } from "@sitepilot/validation";
 
 import { getDatabase } from "./app-database.js";
-import {
-  applyApprovalBypass,
-  deriveRequestStatusAfterPlanning
-} from "./plan-generation-service.js";
-import { getSecureStorage } from "./app-secure-storage.js";
-import { loadSitePlannerSettings } from "./settings-service.js";
 
-export type RequestBundlePendingApproval = {
-  id: ApprovalRequest["id"];
-  requestId: ApprovalRequest["requestId"];
-  planId: ApprovalRequest["planId"];
-  siteId: ApprovalRequest["siteId"];
-  status: ApprovalRequest["status"];
-  expiresAt?: ApprovalRequest["expiresAt"];
-};
-
-export type RequestBundleLastExecution = {
-  id: ExecutionRun["id"];
-  status: ExecutionRun["status"];
-  idempotencyKey: string;
-  toolInvocation?: {
-    id: ToolInvocation["id"];
-    toolName: ToolInvocation["toolName"];
-    status: ToolInvocation["status"];
-    input: ToolInvocation["input"];
-    output?: ToolInvocation["output"];
-    errorCode?: ToolInvocation["errorCode"];
-  } | null;
-  completedAt?: ExecutionRun["completedAt"];
+/** Read-only summary for a request made with the removed v1 engine. */
+export type RequestBundleLegacyV1 = {
+  plannedActionCount: number;
+  lastRunStatus?: string;
 };
 
 export type GetRequestBundleResult =
   | {
       ok: true;
       request: Request;
-      plan: ContractActionPlan | null;
-      visualAnalysis: RequestVisualAnalysisPayload | null;
-      pendingApproval: RequestBundlePendingApproval | null;
-      lastExecution: RequestBundleLastExecution | null;
+      legacyV1: RequestBundleLegacyV1 | null;
     }
   | { ok: false; code: string; message: string };
 
-type RequestVisualAnalysisPayload = ReturnType<
-  typeof requestVisualAnalysisSchema.parse
->;
-
-function contractRequestVisualAnalysisPayload(
-  analysis: RequestVisualAnalysis
-): RequestVisualAnalysisPayload {
-  return requestVisualAnalysisSchema.parse({
-    id: analysis.id,
-    requestId: analysis.requestId,
-    siteId: analysis.siteId,
-    provider: analysis.provider,
-    model: analysis.model,
-    sourceImageCount: analysis.sourceImageCount,
-    analyzedRequestUpdatedAt: analysis.analyzedRequestUpdatedAt,
-    summary: analysis.summary,
-    pageType: analysis.pageType,
-    layoutPattern: analysis.layoutPattern,
-    styleNotes: analysis.styleNotes,
-    responsiveNotes: analysis.responsiveNotes,
-    regions: analysis.regions,
-    mappingWarnings: analysis.mappingWarnings,
-    ...(analysis.reviewedAt !== undefined
-      ? { reviewedAt: analysis.reviewedAt }
-      : {}),
-    createdAt: analysis.createdAt,
-    updatedAt: analysis.updatedAt
-  });
-}
-
-async function loadSiteConfigApprovalPolicy(input: {
-  siteId: SiteId;
-}): Promise<{
-  publishRequiresApproval: boolean;
-  autoApproveCategories: string[];
-}> {
-  const db = getDatabase();
-  const versions = await db.repositories.siteConfigs.listVersions(input.siteId);
-  const latestConfig = [...versions].sort((a, b) => b.version - a.version)[0];
-  if (!latestConfig) {
-    return {
-      publishRequiresApproval: false,
-      autoApproveCategories: ["draft_content_update"]
-    };
-  }
-  try {
-    const cfg = siteConfigSchema.parse(latestConfig.document);
-    return {
-      publishRequiresApproval: cfg.sections.approvalPolicy.publishRequiresApproval,
-      autoApproveCategories: cfg.sections.approvalPolicy.autoApproveCategories
-    };
-  } catch {
-    return {
-      publishRequiresApproval: false,
-      autoApproveCategories: ["draft_content_update"]
-    };
-  }
-}
-
-function shouldRecomputeRequestStatus(status: Request["status"]): boolean {
-  return (
-    status === "new" ||
-    status === "drafted" ||
-    status === "awaiting_approval" ||
-    status === "approved"
-  );
-}
-
-function deriveRequestStatusFromApproval(
-  approval: ApprovalRequest | undefined
-): Request["status"] | null {
-  if (!approval) {
+async function legacyV1Summary(
+  request: Request
+): Promise<RequestBundleLegacyV1 | null> {
+  if (
+    request.latestPlanId === undefined &&
+    request.latestExecutionRunId === undefined
+  ) {
     return null;
   }
-  if (approval.status === "pending") {
-    return "awaiting_approval";
-  }
-  if (approval.status === "approved") {
-    return "approved";
-  }
-  if (
-    approval.status === "rejected" ||
-    approval.status === "revision_requested"
-  ) {
-    return "drafted";
-  }
-  return null;
-}
-
-async function reconcileRequestStatusFromPlan(input: {
-  request: Request;
-  plan: ContractActionPlan | null;
-}): Promise<Request> {
-  if (!input.plan || !shouldRecomputeRequestStatus(input.request.status)) {
-    return input.request;
-  }
-
   const db = getDatabase();
-  const [approvals, discovery, approvalPolicy, sitePlannerSettings] =
-    await Promise.all([
-      db.repositories.approvals.listByRequestId(input.request.id),
-      db.repositories.discoverySnapshots.getLatest(input.request.siteId),
-      loadSiteConfigApprovalPolicy({ siteId: input.request.siteId }),
-      loadSitePlannerSettings(getSecureStorage(), input.request.siteId)
-    ]);
-
-  const latestApprovalForPlan = approvals
-    .filter((approval) => approval.planId === input.plan?.id)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .at(-1);
-  const approvalStatus = deriveRequestStatusFromApproval(latestApprovalForPlan);
-  if (approvalStatus !== null) {
-    if (approvalStatus === input.request.status) {
-      return input.request;
-    }
-    const updatedRequest: Request = {
-      ...input.request,
-      status: approvalStatus,
-      updatedAt: input.request.updatedAt
-    };
-    await db.repositories.requests.save(updatedRequest);
-    return updatedRequest;
-  }
-
-  const rawValidation = validateActionPlan(input.plan, {
-    discoveryCapabilities: discovery?.capabilities ?? [],
-    siteConfigPublishRequiresApproval: approvalPolicy.publishRequiresApproval,
-    siteConfigAutoApproveCategories: approvalPolicy.autoApproveCategories
-  });
-  const validation = applyApprovalBypass(
-    rawValidation,
-    sitePlannerSettings.bypassApprovalRequests
-  );
-  const nextStatus = deriveRequestStatusAfterPlanning({
-    currentStatus: input.request.status,
-    rawValidation,
-    validation
-  });
-
-  if (nextStatus === input.request.status) {
-    return input.request;
-  }
-
-  const updatedRequest: Request = {
-    ...input.request,
-    status: nextStatus,
-    updatedAt: input.request.updatedAt
+  const plan =
+    request.latestPlanId !== undefined
+      ? await db.repositories.actionPlans
+          .getById(request.latestPlanId)
+          .catch(() => null)
+      : null;
+  const run =
+    request.latestExecutionRunId !== undefined
+      ? await db.repositories.executionRuns
+          .getById(request.latestExecutionRunId)
+          .catch(() => null)
+      : null;
+  return {
+    plannedActionCount: plan?.proposedActions.length ?? 0,
+    ...(run ? { lastRunStatus: run.status } : {})
   };
-  await db.repositories.requests.save(updatedRequest);
-  return updatedRequest;
 }
 
 export async function getRequestBundleForThread(input: {
@@ -231,86 +70,5 @@ export async function getRequestBundleForThread(input: {
       message: "Request does not belong to this thread."
     };
   }
-
-  let plan: ContractActionPlan | null = null;
-  if (request.latestPlanId !== undefined) {
-    try {
-      plan = await db.repositories.actionPlans.getById(request.latestPlanId);
-    } catch {
-      plan = null;
-    }
-  }
-
-  const effectiveRequest = await reconcileRequestStatusFromPlan({
-    request,
-    plan
-  });
-  const visualAnalysisRow =
-    await db.repositories.requestVisualAnalyses.getByRequestId(input.requestId);
-  const visualAnalysis =
-    visualAnalysisRow === null
-      ? null
-      : contractRequestVisualAnalysisPayload(visualAnalysisRow);
-
-  const approvals = await db.repositories.approvals.listByRequestId(
-    input.requestId
-  );
-  const pending = approvals.find((a) => a.status === "pending");
-  const pendingApproval: RequestBundlePendingApproval | null =
-    pending !== undefined
-      ? {
-          id: pending.id,
-          requestId: pending.requestId,
-          planId: pending.planId,
-          siteId: pending.siteId,
-          status: pending.status,
-          ...(pending.expiresAt !== undefined
-            ? { expiresAt: pending.expiresAt }
-            : {})
-        }
-      : null;
-
-  let lastExecution: RequestBundleLastExecution | null = null;
-  if (request.latestExecutionRunId !== undefined) {
-    const run = await db.repositories.executionRuns.getById(
-      request.latestExecutionRunId
-    );
-    if (run) {
-      const invocations =
-        await db.repositories.toolInvocations.listByExecutionRunId(run.id);
-      const invocation = invocations.at(-1);
-      lastExecution = {
-        id: run.id,
-        status: run.status,
-        idempotencyKey: run.idempotencyKey,
-        toolInvocation:
-          invocation !== undefined
-            ? {
-                id: invocation.id,
-                toolName: invocation.toolName,
-                status: invocation.status,
-                input: invocation.input,
-                ...(invocation.output !== undefined
-                  ? { output: invocation.output }
-                  : {}),
-                ...(invocation.errorCode !== undefined
-                  ? { errorCode: invocation.errorCode }
-                  : {})
-              }
-            : null,
-        ...(run.completedAt !== undefined
-          ? { completedAt: run.completedAt }
-          : {})
-      };
-    }
-  }
-
-  return {
-    ok: true,
-    request: effectiveRequest,
-    plan,
-    visualAnalysis,
-    pendingApproval,
-    lastExecution
-  };
+  return { ok: true, request, legacyV1: await legacyV1Summary(request) };
 }

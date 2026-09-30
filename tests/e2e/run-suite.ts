@@ -26,26 +26,34 @@ const onboarding: Step = { script: "v2-onboarding" };
 const chat: Step = { script: "v2-chat" };
 const engine: Step = { script: "v2-gutenberg" };
 const mcp: Step = { script: "v2-mcp" };
+const needsWpPath = (): string | null =>
+  E2E_WP_PATH
+    ? null
+    : "set SITEPILOT_E2E_WP_PATH or wpPath in .sitepilot-e2e.local.json";
+const wpPathEnv = (): Record<string, string> => ({
+  SITEPILOT_E2E_WP_PATH: E2E_WP_PATH ?? ""
+});
 const status: Step = {
   script: "v2-status",
-  skipReason: () => (E2E_WP_PATH ? null : "set SITEPILOT_E2E_WP_PATH or wpPath in .sitepilot-e2e.local.json"),
-  env: () => ({ SITEPILOT_E2E_WP_PATH: E2E_WP_PATH ?? "" })
+  skipReason: needsWpPath,
+  env: wpPathEnv
 };
-const seo: Step = {
-  script: "v2-seo",
-  skipReason: status.skipReason,
-  env: status.env
-};
+const seo: Step = { script: "v2-seo", skipReason: needsWpPath, env: wpPathEnv };
 const acf: Step = {
   script: "v2-acf",
   skipReason: () =>
-    E2E_ACF_SITE.baseUrl && E2E_ACF_SITE.adminUsername && E2E_ACF_SITE.registrationCode
+    E2E_ACF_SITE.baseUrl && E2E_ACF_SITE.adminUsername
       ? null
-      : "set SITEPILOT_E2E_ACF_BASE_URL, _ADMIN_USERNAME and _REGISTRATION_CODE, or acf in .sitepilot-e2e.local.json",
+      : "set SITEPILOT_E2E_ACF_BASE_URL and _ADMIN_USERNAME (plus _WP_PATH, or _ADMIN_PASSWORD), or acf in .sitepilot-e2e.local.json",
   env: () => ({
     SITEPILOT_E2E_BASE_URL: E2E_ACF_SITE.baseUrl ?? "",
     SITEPILOT_E2E_ADMIN_USERNAME: E2E_ACF_SITE.adminUsername ?? "",
-    SITEPILOT_E2E_REGISTRATION_CODE: E2E_ACF_SITE.registrationCode ?? "",
+    // Each script reads a fresh registration code, so this must be the ACF
+    // site's WordPress path, not the MAMP site's.
+    SITEPILOT_E2E_WP_PATH: E2E_ACF_SITE.wpPath ?? "",
+    ...(E2E_ACF_SITE.registrationCode
+      ? { SITEPILOT_E2E_REGISTRATION_CODE: E2E_ACF_SITE.registrationCode }
+      : {}),
     ...(E2E_ACF_SITE.adminPassword
       ? { SITEPILOT_E2E_ADMIN_PASSWORD: E2E_ACF_SITE.adminPassword }
       : {})
@@ -54,7 +62,9 @@ const acf: Step = {
 const longPost: Step = {
   script: "v2-long-post",
   skipReason: () =>
-    E2E_OPENAI_API_KEY ? null : "set OPENAI_API_KEY or openAiApiKey in .sitepilot-e2e.local.json"
+    E2E_OPENAI_API_KEY
+      ? null
+      : "set OPENAI_API_KEY or openAiApiKey in .sitepilot-e2e.local.json"
 };
 
 const SUITES: Record<string, Step[]> = {
@@ -63,7 +73,11 @@ const SUITES: Record<string, Step[]> = {
   all: [onboarding, chat, engine, mcp, status, seo, acf, longPost]
 };
 
-type Outcome = { script: string; result: "passed" | "failed" | "skipped"; detail?: string };
+type Outcome = {
+  script: string;
+  result: "passed" | "failed" | "skipped";
+  detail?: string;
+};
 
 function parseSuiteName(): string {
   const suiteName = process.argv[2];
@@ -79,7 +93,10 @@ function runScript(step: Step): Promise<number | null> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [join(process.cwd(), "node_modules/tsx/dist/cli.mjs"), `tests/e2e/${step.script}.ts`],
+      [
+        join(process.cwd(), "node_modules/tsx/dist/cli.mjs"),
+        `tests/e2e/${step.script}.ts`
+      ],
       {
         stdio: "inherit",
         env: { ...process.env, ...(step.env?.() ?? {}) }
@@ -94,7 +111,7 @@ async function main(): Promise<void> {
   const suiteName = parseSuiteName();
   const outcomes: Outcome[] = [];
 
-  for (const step of SUITES[suiteName]) {
+  for (const step of SUITES[suiteName] ?? []) {
     const reason = step.skipReason?.() ?? null;
     if (reason) {
       console.log(`\n=== ${step.script}: skipped (${reason})`);

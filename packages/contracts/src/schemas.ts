@@ -17,7 +17,6 @@ import {
   threadTypeSchema,
   clientSourceSchema,
   timestampsSchema,
-  toolInvocationStatusSchema,
   urlSchema
 } from "./common.js";
 
@@ -116,51 +115,9 @@ export const siteConfigSchema = z.object({
   ...timestampsSchema.shape
 });
 
-export const sitePlannerSettingsSchema = z.object({
-  bypassApprovalRequests: z.boolean(),
-  gutenbergV2Enabled: z.boolean().default(false)
-});
-
 export const uiPreferencesSchema = z.object({
   developerToolsEnabled: z.boolean(),
   preserveOriginalImageUploads: z.boolean()
-});
-
-export const requestVisualAnalysisRegionSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  kind: z.string().min(1),
-  layout: z.string().min(1),
-  position: z.string().min(1),
-  contentSummary: z.string().min(1),
-  suggestedBlocks: z.array(z.string().min(1)).min(1),
-  emphasis: z.string().min(1),
-  confidence: z.number().min(0).max(1)
-});
-
-export const requestVisualAnalysisSchema = z.object({
-  id: idSchema,
-  requestId: idSchema,
-  siteId: idSchema,
-  provider: z.enum(["openai", "anthropic", "compatible"]),
-  model: z.string().min(1),
-  sourceImageCount: z.number().int().positive(),
-  analyzedRequestUpdatedAt: isoTimestampSchema,
-  summary: z.string().min(1),
-  pageType: z.string().min(1),
-  layoutPattern: z.string().min(1),
-  styleNotes: z.array(z.string().min(1)),
-  responsiveNotes: z.array(z.string().min(1)),
-  regions: z.array(requestVisualAnalysisRegionSchema).min(1),
-  mappingWarnings: z.array(z.string().min(1)),
-  reviewedAt: isoTimestampSchema.optional(),
-  ...timestampsSchema.shape
-});
-
-const plannerContextAttachmentSchema = z.object({
-  fileName: z.string().min(1),
-  mediaType: z.string().regex(/^image\//),
-  sizeBytes: z.number().int().nonnegative()
 });
 
 export const actionSchema = z.object({
@@ -246,34 +203,6 @@ export const discoverySnapshotSchema = z.object({
   ...timestampsSchema.shape
 });
 
-export const approvalPayloadSchema = z.object({
-  approvalRequestId: idSchema,
-  siteId: idSchema,
-  requestId: idSchema,
-  threadId: idSchema,
-  requestSummary: z.string().min(1),
-  proposedActions: z.array(actionSchema).min(1),
-  objectDiffs: z.array(
-    z.object({
-      objectType: z.string().min(1),
-      objectId: z.string().min(1),
-      changes: z.array(
-        z.object({
-          field: z.string().min(1),
-          before: jsonValueSchema.optional(),
-          after: jsonValueSchema.optional()
-        })
-      )
-    })
-  ),
-  contentPreview: localizedTextBlockSchema.optional(),
-  affectedUrls: z.array(urlSchema),
-  riskLevel: actionRiskLevelSchema,
-  rollbackNotes: z.array(z.string()),
-  reasoningSummary: z.string().min(1),
-  executionDependencies: z.array(z.string())
-});
-
 export const workspaceSummarySchema = z.object({
   id: idSchema,
   name: z.string().min(1),
@@ -318,18 +247,6 @@ export const requestSchema = z.object({
   ...timestampsSchema.shape
 });
 
-export const toolInvocationSchema = z.object({
-  id: idSchema,
-  executionRunId: idSchema,
-  actionId: idSchema.optional(),
-  toolName: z.string().min(1),
-  status: toolInvocationStatusSchema,
-  input: z.record(jsonValueSchema),
-  output: z.record(jsonValueSchema).optional(),
-  errorCode: z.string().optional(),
-  ...timestampsSchema.shape
-});
-
 export const siteConnectionSchema = z.object({
   id: idSchema,
   siteId: idSchema,
@@ -354,35 +271,6 @@ export const clarificationRoundSchema = z.object({
   ...timestampsSchema.shape
 });
 
-export const plannerContextSchema = z.object({
-  siteId: idSchema,
-  threadId: idSchema,
-  builtAt: isoTimestampSchema,
-  siteConfig: siteConfigSchema.nullable(),
-  discoverySummary: z.record(jsonValueSchema).nullable(),
-  activeSkills: z
-    .array(
-      z.object({
-        name: z.string().min(1),
-        instructions: z.string().min(1)
-      })
-    )
-    .optional(),
-  messages: z.array(
-    z.object({
-      messageId: idSchema,
-      role: z.enum(["user", "assistant", "system"]),
-      format: z.enum(["plain_text", "markdown", "html"]),
-      text: z.string(),
-      attachments: z.array(plannerContextAttachmentSchema).optional(),
-      createdAt: isoTimestampSchema,
-      requestId: idSchema.optional()
-    })
-  ),
-  targetSummaries: z.array(z.string()),
-  priorChanges: z.array(z.string())
-});
-
 export type SiteConfig = z.infer<typeof siteConfigSchema>;
 export type ChatThreadPayload = z.infer<typeof chatThreadSchema>;
 export type ChatMessagePayload = z.infer<typeof chatMessageSchema>;
@@ -390,15 +278,9 @@ export type Action = z.infer<typeof actionSchema>;
 export type ActionPlan = z.infer<typeof actionPlanSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type DiscoverySnapshot = z.infer<typeof discoverySnapshotSchema>;
-export type ApprovalPayload = z.infer<typeof approvalPayloadSchema>;
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
 export type ClarificationRoundPayload = z.infer<
   typeof clarificationRoundSchema
 >;
-export type PlannerContext = z.infer<typeof plannerContextSchema>;
-export type SitePlannerSettings = z.infer<typeof sitePlannerSettingsSchema>;
 export type UiPreferences = z.infer<typeof uiPreferencesSchema>;
-export type RequestVisualAnalysisPayload = z.infer<
-  typeof requestVisualAnalysisSchema
->;

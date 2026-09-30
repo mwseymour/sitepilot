@@ -22,7 +22,6 @@ import {
   hasGutenbergV2RequestMapping,
   type GutenbergV2Target
 } from "./gutenberg-v2-chat-service.js";
-import { generateActionPlanForRequest } from "./plan-generation-service.js";
 
 export const OPEN_FOLLOW_UP_STATUSES = [
   "new",
@@ -46,14 +45,6 @@ type GutenbergV2ContinueState = Extract<
   Awaited<ReturnType<typeof continueGutenbergV2AfterFollowUp>>,
   { ok: true }
 >["state"];
-type GeneratedPlan = Extract<
-  Awaited<ReturnType<typeof generateActionPlanForRequest>>,
-  { ok: true }
->["plan"];
-type GeneratedValidation = Extract<
-  Awaited<ReturnType<typeof generateActionPlanForRequest>>,
-  { ok: true }
->["validation"];
 
 export type IngestThreadMessageResult =
   | {
@@ -63,8 +54,6 @@ export type IngestThreadMessageResult =
       clarificationRound?: ClarificationRound;
       continued: boolean;
       gutenbergV2State?: GutenbergV2ContinueState;
-      plan?: GeneratedPlan;
-      validation?: GeneratedValidation;
     }
   | { ok: false; code: string; message: string; request?: Request };
 
@@ -105,14 +94,11 @@ async function continueOpenRequest(input: {
   request: Request;
   note: string;
   gutenbergV2Target?: GutenbergV2Target;
-  alwaysContinue?: boolean;
 }): Promise<
   | {
       ok: true;
       continued: boolean;
       gutenbergV2State?: GutenbergV2ContinueState;
-      plan?: GeneratedPlan;
-      validation?: GeneratedValidation;
     }
   | { ok: false; code: string; message: string }
 > {
@@ -139,23 +125,6 @@ async function continueOpenRequest(input: {
       ok: true,
       continued: true,
       gutenbergV2State: generated.state
-    };
-  }
-
-  if (input.alwaysContinue === true || input.request.latestPlanId !== undefined) {
-    const planned = await generateActionPlanForRequest(
-      input.siteId,
-      input.threadId,
-      input.request.id
-    );
-    if (!planned.ok) {
-      return planned;
-    }
-    return {
-      ok: true,
-      continued: true,
-      plan: planned.plan,
-      validation: planned.validation
     };
   }
 
@@ -204,10 +173,6 @@ function withContinue(
     ...(continued.gutenbergV2State !== undefined
       ? { gutenbergV2State: continued.gutenbergV2State }
       : {}),
-    ...(continued.plan !== undefined ? { plan: continued.plan } : {}),
-    ...(continued.validation !== undefined
-      ? { validation: continued.validation }
-      : {})
   };
 }
 
@@ -217,7 +182,6 @@ export async function ingestRequestThreadMessage(input: {
   text: string;
   attachments?: ImageAttachmentPayload[];
   gutenbergV2Target?: GutenbergV2Target;
-  alwaysContinue?: boolean;
 }): Promise<IngestThreadMessageResult> {
   const trimmed = input.text.trim();
   if (trimmed.length === 0) {
@@ -301,9 +265,6 @@ export async function ingestRequestThreadMessage(input: {
           ...(input.gutenbergV2Target !== undefined
             ? { gutenbergV2Target: input.gutenbergV2Target }
             : {}),
-          ...(input.alwaysContinue !== undefined
-            ? { alwaysContinue: input.alwaysContinue }
-            : {})
         })
       );
     }
@@ -331,9 +292,6 @@ export async function ingestRequestThreadMessage(input: {
         ...(input.gutenbergV2Target !== undefined
           ? { gutenbergV2Target: input.gutenbergV2Target }
           : {}),
-        ...(input.alwaysContinue !== undefined
-          ? { alwaysContinue: input.alwaysContinue }
-          : {})
       })
     );
   }
@@ -389,8 +347,7 @@ export async function ingestRequestThreadMessage(input: {
       input.siteId,
       input.threadId,
       trimmed,
-      attachments,
-      gutenbergV2Target !== undefined ? "gutenberg_v2" : undefined
+      attachments
     ),
     "created"
   );
@@ -405,9 +362,6 @@ export async function ingestRequestThreadMessage(input: {
       request: created.request,
       note: trimmed,
       ...(gutenbergV2Target !== undefined ? { gutenbergV2Target } : {}),
-      ...(input.alwaysContinue !== undefined
-        ? { alwaysContinue: input.alwaysContinue }
-        : {})
     })
   );
 }

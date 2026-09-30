@@ -15,12 +15,11 @@ import {
   runWithCallContext,
   type CallContext
 } from "../apps/desktop/src/main/call-context.js";
-import { decideApprovalForSite } from "../apps/desktop/src/main/approval-workflow-service.js";
 import {
   decideGutenbergV2Candidate,
   executeGutenbergV2Candidate
 } from "../apps/desktop/src/main/gutenberg-v2-chat-service.js";
-import type { ApprovalRequestId, RequestId, SiteId } from "@sitepilot/domain";
+import type { RequestId, SiteId } from "@sitepilot/domain";
 
 const MCP_CLIENT: CallContext = {
   actor: { ...DEFAULT_OPERATOR, siteRoles: ["request"] },
@@ -66,13 +65,6 @@ describe("call context", () => {
       }
       expect(
         await executeGutenbergV2Candidate({ siteId, requestId })
-      ).toMatchObject({ ok: false, code: "forbidden" });
-      expect(
-        await decideApprovalForSite({
-          siteId,
-          approvalRequestId: "approval-1" as ApprovalRequestId,
-          decision: "approved"
-        })
       ).toMatchObject({ ok: false, code: "forbidden" });
     });
   });

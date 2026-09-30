@@ -1,5 +1,4 @@
 import { useRef, type ReactElement, type RefObject } from "react";
-import { Link } from "react-router-dom";
 
 import type { ImageAttachmentPayload } from "@sitepilot/contracts";
 
@@ -9,15 +8,9 @@ import {
   MAX_IMAGE_ATTACHMENTS
 } from "./attachments.js";
 import type { ComposerCopy } from "./request-view.js";
-import {
-  SHOW_V1_WORKFLOW,
-  type GutenbergV2Operation,
-  type RequestWorkflow
-} from "./types.js";
+import type { GutenbergV2Operation } from "./types.js";
 
 type ContentWorkflowFieldsetProps = {
-  requestWorkflow: RequestWorkflow;
-  onRequestWorkflowChange: (workflow: RequestWorkflow) => void;
   gutenbergV2Operation: GutenbergV2Operation;
   onGutenbergV2OperationChange: (operation: GutenbergV2Operation) => void;
   gutenbergV2PostType: "post" | "page";
@@ -29,8 +22,6 @@ type ContentWorkflowFieldsetProps = {
 };
 
 function ContentWorkflowFieldset({
-  requestWorkflow,
-  onRequestWorkflowChange,
   gutenbergV2Operation,
   onGutenbergV2OperationChange,
   gutenbergV2PostType,
@@ -42,74 +33,57 @@ function ContentWorkflowFieldset({
   return (
     <fieldset className="chat-v2-controls composer-target">
       <legend className="visually-hidden">What to change</legend>
-      {SHOW_V1_WORKFLOW ? (
+      <div className="chat-v2-target-grid">
         <label className="settings-field">
-          <span>Planner</span>
+          <span>Operation</span>
           <select
-            value={requestWorkflow}
+            value={gutenbergV2Operation}
             disabled={targetLocked}
-            onChange={(event) => {
-              onRequestWorkflowChange(event.target.value as RequestWorkflow);
-            }}
+            onChange={(event) =>
+              onGutenbergV2OperationChange(
+                event.target.value as GutenbergV2Operation
+              )
+            }
           >
-            <option value="legacy">Standard planner</option>
-            <option value="gutenberg_v2">Native editor candidate</option>
+            <option value="create_draft">Create draft</option>
+            <option value="replace_content">Replace all content</option>
+            <option value="apply_operations">Apply selected changes</option>
+            <option value="publish">Publish</option>
+            <option value="unpublish">Unpublish (back to draft)</option>
           </select>
         </label>
-      ) : null}
-      {requestWorkflow === "gutenberg_v2" ? (
-        <div className="chat-v2-target-grid">
+        <label className="settings-field">
+          <span>Content type</span>
+          <select
+            value={gutenbergV2PostType}
+            disabled={targetLocked}
+            onChange={(event) =>
+              onGutenbergV2PostTypeChange(
+                event.target.value as "post" | "page"
+              )
+            }
+          >
+            <option value="post">Post</option>
+            <option value="page">Page</option>
+          </select>
+        </label>
+        {gutenbergV2Operation !== "create_draft" ? (
           <label className="settings-field">
-            <span>Operation</span>
-            <select
-              value={gutenbergV2Operation}
+            <span>Post ID</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={gutenbergV2PostId}
               disabled={targetLocked}
+              placeholder="e.g. 123"
               onChange={(event) =>
-                onGutenbergV2OperationChange(
-                  event.target.value as GutenbergV2Operation
-                )
+                onGutenbergV2PostIdChange(event.target.value)
               }
-            >
-              <option value="create_draft">Create draft</option>
-              <option value="replace_content">Replace all content</option>
-              <option value="apply_operations">Apply selected changes</option>
-              <option value="publish">Publish</option>
-              <option value="unpublish">Unpublish (back to draft)</option>
-            </select>
+            />
           </label>
-          <label className="settings-field">
-            <span>Content type</span>
-            <select
-              value={gutenbergV2PostType}
-              disabled={targetLocked}
-              onChange={(event) =>
-                onGutenbergV2PostTypeChange(
-                  event.target.value as "post" | "page"
-                )
-              }
-            >
-              <option value="post">Post</option>
-              <option value="page">Page</option>
-            </select>
-          </label>
-          {gutenbergV2Operation !== "create_draft" ? (
-            <label className="settings-field">
-              <span>Post ID</span>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={gutenbergV2PostId}
-                disabled={targetLocked}
-                placeholder="e.g. 123"
-                onChange={(event) =>
-                  onGutenbergV2PostIdChange(event.target.value)
-                }
-              />
-            </label>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </fieldset>
   );
 }
@@ -117,7 +91,6 @@ function ContentWorkflowFieldset({
 type PendingAttachmentsProps = {
   attachments: ImageAttachmentPayload[];
   isConversationMode: boolean;
-  requestWorkflow: RequestWorkflow;
   preserveOriginalImageUploads: boolean;
   busy: boolean;
   onTogglePurpose: (index: number) => void;
@@ -127,7 +100,6 @@ type PendingAttachmentsProps = {
 function PendingAttachments({
   attachments,
   isConversationMode,
-  requestWorkflow,
   preserveOriginalImageUploads,
   busy,
   onTogglePurpose,
@@ -145,9 +117,7 @@ function PendingAttachments({
             : "Original image files will be kept at full size for planning and upload."
           : "Images are resized before planning so they are sent as compressed references instead of full-size originals."}
         {!isConversationMode
-          ? requestWorkflow === "gutenberg_v2"
-            ? " “Place in post” images are added to the content; “Layout reference” images and PDF pages are only used to work out what to build."
-            : " The planner uses up to 3 images per request."
+          ? " “Place in post” images are added to the content; “Layout reference” images and PDF pages are only used to work out what to build."
           : ""}
       </p>
       <AttachmentGrid
@@ -187,7 +157,6 @@ function PendingAttachments({
 }
 
 type ComposerProps = Omit<ContentWorkflowFieldsetProps, "targetLocked"> & {
-  siteId: string;
   copy: ComposerCopy;
   isConversationMode: boolean;
   busy: boolean;
@@ -206,21 +175,16 @@ type ComposerProps = Omit<ContentWorkflowFieldsetProps, "targetLocked"> & {
   onPickAttachments: (fileList: FileList | null) => void;
   onToggleAttachmentPurpose: (index: number) => void;
   onRemoveAttachment: (index: number) => void;
-  submitIsSecondary: boolean;
   onSubmit: () => void;
-  showOpenApprovals: boolean;
 };
 
 export function Composer({
-  siteId,
   copy,
   isConversationMode,
   busy,
   showSubmitSpinner,
   hasGutenbergV2State,
   gutenbergV2TargetValid,
-  requestWorkflow,
-  onRequestWorkflowChange,
   gutenbergV2Operation,
   onGutenbergV2OperationChange,
   gutenbergV2PostType,
@@ -238,9 +202,7 @@ export function Composer({
   onPickAttachments,
   onToggleAttachmentPurpose,
   onRemoveAttachment,
-  submitIsSecondary,
-  onSubmit,
-  showOpenApprovals
+  onSubmit
 }: ComposerProps): ReactElement {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -249,8 +211,6 @@ export function Composer({
     <div className="composer">
       {showTarget ? (
         <ContentWorkflowFieldset
-          requestWorkflow={requestWorkflow}
-          onRequestWorkflowChange={onRequestWorkflowChange}
           gutenbergV2Operation={gutenbergV2Operation}
           onGutenbergV2OperationChange={onGutenbergV2OperationChange}
           gutenbergV2PostType={gutenbergV2PostType}
@@ -280,7 +240,6 @@ export function Composer({
         <PendingAttachments
           attachments={pendingAttachments}
           isConversationMode={isConversationMode}
-          requestWorkflow={requestWorkflow}
           preserveOriginalImageUploads={preserveOriginalImageUploads}
           busy={busy}
           onTogglePurpose={onToggleAttachmentPurpose}
@@ -301,18 +260,13 @@ export function Composer({
           <span>{isConversationMode ? "Images" : "Images or PDF"}</span>
         </button>
         <span className="composer-helper">{copy.helper}</span>
-        {showOpenApprovals ? (
-          <Link className="btn btn-secondary btn-small" to={`/site/${siteId}/approvals`}>
-            Open approvals
-          </Link>
-        ) : null}
         <button
           type="button"
-          className={submitIsSecondary ? "btn btn-secondary" : "btn composer-send"}
+          className="btn composer-send"
           disabled={
             busy ||
             requestPrompt.trim().length === 0 ||
-            (requestWorkflow === "gutenberg_v2" && !gutenbergV2TargetValid)
+            !gutenbergV2TargetValid
           }
           onClick={onSubmit}
           // Shows the spinner however the message was sent (click or ⌘↵).

@@ -2,8 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { chromium } from "playwright";
-
 import {
   gutenbergV2GetReviewArtifactResponseSchema,
   gutenbergV2RequestStateSchema
@@ -24,22 +22,17 @@ import {
   hasGutenbergV2RequestMapping
 } from "../../apps/desktop/src/main/gutenberg-v2-chat-service.js";
 import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
-import { registerSiteWithWordPress } from "../../apps/desktop/src/main/register-site.js";
 import {
   configureRuntimeContext,
   resetRuntimeContext
 } from "../../apps/desktop/src/main/runtime-context.js";
-import { saveSitePlannerSettings } from "../../apps/desktop/src/main/settings-service.js";
-import { generateActionPlanForRequest } from "../../apps/desktop/src/main/plan-generation-service.js";
 import { fetchSiteUrl } from "../../apps/desktop/src/main/site-fetch.js";
 
 import {
-  E2E_ADMIN_PASSWORD,
-  E2E_ADMIN_USERNAME,
-  E2E_BASE_URL,
-  E2E_REGISTRATION_CODE
+  E2E_BASE_URL
 } from "./config.js";
 import { createFileSecureStorage } from "./file-secure-storage.js";
+import { registerE2ESite } from "./registration.js";
 
 const EXACT_TEST_URL = "https://test.localhost:8890/";
 const PNG_SIGNATURE = Buffer.from([
@@ -81,65 +74,6 @@ function deterministicPlanner(title: string): void {
       })
     }
   }));
-}
-
-async function discoverRegistrationCode(): Promise<string> {
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
-  try {
-    const page = await context.newPage();
-    await page.goto(`${E2E_BASE_URL}wp-login.php`, {
-      waitUntil: "networkidle"
-    });
-    await page.locator("#user_login").fill(E2E_ADMIN_USERNAME);
-    await page.locator("#user_pass").fill(E2E_ADMIN_PASSWORD);
-    await page.locator("#wp-submit").click();
-    await page.waitForURL(/wp-admin/, { timeout: 30_000 });
-    await page.goto(
-      `${E2E_BASE_URL}wp-admin/options-general.php?page=sitepilot`,
-      { waitUntil: "networkidle" }
-    );
-    const code = (await page.locator("code").allTextContents())
-      .map((value) => value.trim())
-      .find((value) => /^[A-Za-z0-9]{16,}$/.test(value));
-    if (!code) {
-      throw new Error(
-        "Could not discover the SitePilot registration code from wp-admin."
-      );
-    }
-    return code;
-  } finally {
-    await browser.close();
-  }
-}
-
-async function registerManagedSite(): Promise<
-  Awaited<ReturnType<typeof registerSiteWithWordPress>>
-> {
-  const request = {
-    baseUrl: E2E_BASE_URL,
-    siteName: "SitePilot v2 Chat E2E",
-    wordpressUsername: E2E_ADMIN_USERNAME,
-    workspaceId: "workspace-1",
-    environment: "development" as const
-  };
-  const configuredAttempt = await registerSiteWithWordPress({
-    ...request,
-    registrationCode: E2E_REGISTRATION_CODE
-  });
-  if (!("code" in configuredAttempt)) {
-    return configuredAttempt;
-  }
-  if (
-    configuredAttempt.code !== "register_rejected" ||
-    !/invalid registration code/i.test(configuredAttempt.message)
-  ) {
-    return configuredAttempt;
-  }
-  return registerSiteWithWordPress({
-    ...request,
-    registrationCode: await discoverRegistrationCode()
-  });
 }
 
 function summarizeArtifact(
@@ -223,7 +157,7 @@ async function main(): Promise<void> {
     assert(workspace, "Desktop registration workspace was not seeded.");
     assert(owner, "Desktop registration owner profile was not seeded.");
 
-    const registration = await registerManagedSite();
+    const registration = await registerE2ESite("SitePilot v2 Chat E2E");
     if (!("site" in registration)) {
       throw new Error(
         `MAMP registration failed (${"code" in registration ? registration.code : "missing site"}).`
@@ -239,11 +173,6 @@ async function main(): Promise<void> {
       updatedAt: new Date().toISOString()
     });
 
-    // Prove the local half of the double gate blocks before planner execution.
-    await saveSitePlannerSettings(secureStorage, siteId, {
-      bypassApprovalRequests: false,
-      gutenbergV2Enabled: false
-    });
     const thread = await createChatThreadForSite(siteId, {
       title: "Gutenberg v2 Chat E2E",
       type: "general_request"
@@ -269,10 +198,6 @@ async function main(): Promise<void> {
       operation: "create_draft" as const,
       postType: "post" as const
     };
-    await saveSitePlannerSettings(secureStorage, siteId, {
-      bypassApprovalRequests: false,
-      gutenbergV2Enabled: true
-    });
     const protocolResponse = await fetchSiteUrl(
       `${E2E_BASE_URL.replace(/\/+$/, "")}/wp-json/sitepilot/v1/protocol`
     );
@@ -394,16 +319,6 @@ async function main(): Promise<void> {
     assert(
       hasGutenbergV2RequestMapping(siteId, requestId),
       "The v2 mapping was not durable."
-    );
-
-    const v1Collision = await generateActionPlanForRequest(
-      siteId,
-      thread.thread.id,
-      requestId
-    );
-    assert(
-      "code" in v1Collision && v1Collision.code === "request_engine_conflict",
-      "The legacy v1 planner accepted a v2-owned request."
     );
   } finally {
     configureGutenbergV2PlannerFactory(undefined);

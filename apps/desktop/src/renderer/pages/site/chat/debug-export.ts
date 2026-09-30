@@ -2,13 +2,7 @@ import type { ImageAttachmentPayload } from "@sitepilot/contracts";
 
 import type { SiteWorkspaceContextValue } from "../../../site-workspace/site-workspace-context.js";
 import { summarizeImageAttachment } from "./attachments.js";
-import { parseJsonDebugValue } from "./message-format.js";
-import type {
-  DryRunPreview,
-  MessageRow,
-  RequestBundleOk,
-  ThreadRow
-} from "./types.js";
+import type { MessageRow, RequestBundleOk, ThreadRow } from "./types.js";
 
 type WorkspaceData = NonNullable<SiteWorkspaceContextValue["data"]>;
 
@@ -20,7 +14,6 @@ export type DebugExportInput = {
   developerToolsEnabled: boolean;
   preserveOriginalImageUploads: boolean;
   busy: boolean;
-  execBusy: boolean;
   activityLabel: string | null;
   execProgressLabel: string | null;
   lastExecHint: string | null;
@@ -32,9 +25,6 @@ export type DebugExportInput = {
   pendingAttachments: ImageAttachmentPayload[];
   developerMessages: string[];
   bundle: RequestBundleOk | null;
-  planValidationJson: string | null;
-  plannerJson: string | null;
-  dryRunPreview: DryRunPreview | null;
 };
 
 // Key order is kept stable so copied logs diff cleanly between sessions.
@@ -46,7 +36,6 @@ export function buildDebugExport({
   developerToolsEnabled,
   preserveOriginalImageUploads,
   busy,
-  execBusy,
   activityLabel,
   execProgressLabel,
   lastExecHint,
@@ -57,10 +46,7 @@ export function buildDebugExport({
   requestPrompt,
   pendingAttachments,
   developerMessages,
-  bundle,
-  planValidationJson,
-  plannerJson,
-  dryRunPreview
+  bundle
 }: DebugExportInput) {
   return {
     exportedAt: new Date().toISOString(),
@@ -79,7 +65,6 @@ export function buildDebugExport({
       developerToolsEnabled,
       preserveOriginalImageUploads,
       busy,
-      execBusy,
       activityLabel,
       execProgressLabel,
       lastExecHint,
@@ -101,18 +86,7 @@ export function buildDebugExport({
     debugPanels: {
       feedbackLog: developerMessages,
       currentRequestPrompt: bundle?.request.userPrompt ?? null,
-      visualAnalysis: bundle?.visualAnalysis ?? null,
-      planValidation: parseJsonDebugValue(planValidationJson),
-      plannedActions: bundle?.plan?.proposedActions ?? null,
-      lastMcpRequest: bundle?.lastExecution?.toolInvocation
-        ? {
-            toolName: bundle.lastExecution.toolInvocation.toolName,
-            input: bundle.lastExecution.toolInvocation.input
-          }
-        : null,
-      lastMcpResponse: bundle?.lastExecution?.toolInvocation?.output ?? null,
-      plannerContext: parseJsonDebugValue(plannerJson),
-      dryRunPreview
+      legacyV1: bundle?.legacyV1 ?? null
     },
     bundle,
     workspaceData: data

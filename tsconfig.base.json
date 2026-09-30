@@ -21,8 +21,7 @@
         "packages/services/src/read-tool-registry.ts"
       ],
       "@sitepilot/mcp-server": ["packages/mcp-server/src/index.ts"],
-      "@sitepilot/test-utils": ["packages/test-utils/src/index.ts"],
-      "@sitepilot/validation": ["packages/validation/src/index.ts"]
+      "@sitepilot/test-utils": ["packages/test-utils/src/index.ts"]
     },
     "strict": true,
     "noUncheckedIndexedAccess": true,

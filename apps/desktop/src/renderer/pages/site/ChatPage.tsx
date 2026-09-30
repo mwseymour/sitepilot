@@ -17,12 +17,10 @@ import {
 import type {
   GutenbergV2ExecutionState,
   ImageAttachmentPayload,
-  SitePlannerSettings,
   UiPreferences
 } from "@sitepilot/contracts";
-import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
 
-import { modePageCopy, type RequestNextActionId } from "../../chat-workflow.js";
+import { modePageCopy } from "../../chat-workflow.js";
 import {
   notifyActivityChanged,
   useSiteWorkspace
@@ -46,23 +44,16 @@ import { buildDebugExport, copyTextToClipboard } from "./chat/debug-export.js";
 import { DeveloperPanel } from "./chat/DeveloperPanel.js";
 import { isSystemMessage, threadTypeMeta } from "./chat/message-format.js";
 import { MessageFilterBar, MessageList } from "./chat/MessageList.js";
-import {
-  actionCanResolveViaLookup,
-  actionCanResolveViaPlannedCreate
-} from "./chat/plan-actions.js";
 import { RequestPanel } from "./chat/RequestPanel.js";
-import { composerCopy, deriveRequestView } from "./chat/request-view.js";
+import { composerCopy } from "./chat/request-view.js";
 import { ThreadHeader } from "./chat/ThreadHeader.js";
-import {
-  SHOW_V1_WORKFLOW,
-  type ChatMode,
-  type DryRunPreview,
-  type GutenbergV2Operation,
-  type MessageFilter,
-  type MessageRow,
-  type RequestBundleOk,
-  type RequestWorkflow,
-  type ThreadRow
+import type {
+  ChatMode,
+  GutenbergV2Operation,
+  MessageFilter,
+  MessageRow,
+  RequestBundleOk,
+  ThreadRow
 } from "./chat/types.js";
 
 export function ChatPage({
@@ -102,19 +93,11 @@ export function ChatPage({
   >([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [plannerJson, setPlannerJson] = useState<string | null>(null);
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
-  const [planValidationJson, setPlanValidationJson] = useState<string | null>(
-    null
-  );
   const [bundle, setBundle] = useState<RequestBundleOk | null>(null);
   const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(
     null
   );
-  const [sitePlannerSettings, setSitePlannerSettings] =
-    useState<SitePlannerSettings | null>(null);
-  const [requestWorkflow, setRequestWorkflow] =
-    useState<RequestWorkflow>("gutenberg_v2");
   const [gutenbergV2Operation, setGutenbergV2Operation] =
     useState<GutenbergV2Operation>("create_draft");
   const [gutenbergV2PostType, setGutenbergV2PostType] = useState<
@@ -123,14 +106,9 @@ export function ChatPage({
   const [gutenbergV2PostId, setGutenbergV2PostId] = useState("");
   const [gutenbergV2State, setGutenbergV2State] =
     useState<GutenbergV2UiState | null>(null);
-  const workflowInitializedRef = useRef(false);
-  const [execBusy, setExecBusy] = useState(false);
-  useAppBusy(busy || execBusy);
+  useAppBusy(busy);
   const [lastExecHint, setLastExecHint] = useState<string | null>(null);
   const [execProgressLabel, setExecProgressLabel] = useState<string | null>(
-    null
-  );
-  const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(
     null
   );
   const [debugCopyLabel, setDebugCopyLabel] = useState("Copy debug log");
@@ -202,7 +180,6 @@ export function ChatPage({
       });
       if (!cancelled && state.ok) {
         setUiPreferences(state.uiPreferences);
-        setSitePlannerSettings(state.sitePlannerSettings ?? null);
       }
     }
 
@@ -211,15 +188,6 @@ export function ChatPage({
       cancelled = true;
     };
   }, [data, siteId]);
-
-  useEffect(() => {
-    if (sitePlannerSettings === null || workflowInitializedRef.current) {
-      return;
-    }
-    workflowInitializedRef.current = true;
-    // v2 is the only workflow offered in the UI; v1 stays reachable in code.
-    setRequestWorkflow(SHOW_V1_WORKFLOW ? requestWorkflow : "gutenberg_v2");
-  }, [sitePlannerSettings]);
 
   useEffect(() => {
     if (threads.length === 0) {
@@ -401,29 +369,10 @@ export function ChatPage({
   }, [
     messages,
     bundle?.request.status,
-    bundle?.plan?.id,
     execProgressLabel,
     lastExecHint
   ]);
 
-  const executableActions = useMemo(
-    () =>
-      bundle?.plan?.proposedActions.filter((action, actionIndex, actions) => {
-        const priorActions = actions.slice(0, actionIndex);
-        return (
-          actionToMcpToolCall(action.type, action.input, true) !== null ||
-          actionCanResolveViaLookup(action.type, action.input) ||
-          actionCanResolveViaPlannedCreate(
-            action.type,
-            action.input,
-            priorActions
-          )
-        );
-      }) ?? [],
-    [bundle?.plan]
-  );
-  const openQuestions = bundle?.plan?.openQuestions ?? [];
-  const canRunPlanDirectly = executableActions.length > 0;
   const selectedThread = threads.find(
     (thread) => thread.id === selectedThreadId
   );
@@ -652,8 +601,6 @@ export function ChatPage({
       setMessages([]);
       setLastRequestId(null);
       setBundle(null);
-      setPlannerJson(null);
-      setPlanValidationJson(null);
       setLastExecHint(null);
       setExecProgressLabel(null);
       setRequestPrompt("");
@@ -698,28 +645,6 @@ export function ChatPage({
     };
   }, [gutenbergV2Operation, gutenbergV2PostId, gutenbergV2PostType]);
 
-  async function generateGutenbergV2Candidate(
-    requestId: string
-  ): Promise<void> {
-    if (gutenbergV2Target === null) {
-      setErr(
-        "Enter a valid positive post ID before generating an update candidate."
-      );
-      return;
-    }
-    const res = await window.sitePilotDesktop.gutenbergV2GenerateCandidate({
-      siteId,
-      requestId,
-      target: gutenbergV2Target
-    });
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    setGutenbergV2State(res.state);
-    setErr(null);
-  }
-
   async function onSubmitPrompt(): Promise<void> {
     if (!selectedThreadId || requestPrompt.trim().length === 0) {
       return;
@@ -749,7 +674,7 @@ export function ChatPage({
       return;
     }
 
-    if (requestWorkflow === "gutenberg_v2" && gutenbergV2Target === null) {
+    if (gutenbergV2Target === null) {
       setErr("Choose a native editor operation and complete its target first.");
       setBusy(false);
       return;
@@ -760,9 +685,7 @@ export function ChatPage({
       threadId: selectedThreadId,
       text,
       ...(attachments.length > 0 ? { attachments } : {}),
-      ...(requestWorkflow === "gutenberg_v2" && gutenbergV2Target !== null
-        ? { gutenbergV2Target }
-        : {})
+      gutenbergV2Target
     });
     setBusy(false);
     if (res.request) {
@@ -786,10 +709,7 @@ export function ChatPage({
     if (res.gutenbergV2State !== undefined) {
       setGutenbergV2State(res.gutenbergV2State);
     }
-    if (res.validation !== undefined) {
-      setPlanValidationJson(JSON.stringify(res.validation, null, 2));
-    } else if (res.outcome !== "noted") {
-      setPlanValidationJson(null);
+    if (res.outcome !== "noted") {
       setLastExecHint(null);
     }
     await loadMessages(selectedThreadId);
@@ -849,227 +769,6 @@ export function ChatPage({
       setErr(
         error instanceof Error ? error.message : "Failed to read the file."
       );
-    }
-  }
-
-  async function onGeneratePlan(): Promise<void> {
-    if (!selectedThreadId || lastRequestId === null) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.generateActionPlan({
-      siteId,
-      threadId: selectedThreadId,
-      requestId: lastRequestId
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      setPlanValidationJson(null);
-      return;
-    }
-    setPlanValidationJson(JSON.stringify(res.validation, null, 2));
-    await loadBundle();
-    await loadMessages(selectedThreadId);
-  }
-
-  async function onDecidePlanApproval(
-    decision: "approved" | "rejected"
-  ): Promise<void> {
-    if (
-      bundle?.pendingApproval === null ||
-      bundle?.pendingApproval === undefined
-    ) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.decideApproval({
-      siteId,
-      approvalRequestId: bundle.pendingApproval.id,
-      decision
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    if (selectedThreadId !== null) {
-      await loadBundle();
-      await loadMessages(selectedThreadId);
-    }
-  }
-
-  async function onRequestNextAction(id: RequestNextActionId): Promise<void> {
-    switch (id) {
-      case "reply":
-        composerTextareaRef.current?.focus();
-        return;
-      case "generate_plan":
-        await onGeneratePlan();
-        return;
-      case "analyze_reference":
-        await onAnalyzeRequestVisualAnalysis();
-        return;
-      case "approve_analysis":
-        await onReviewRequestVisualAnalysis();
-        return;
-      case "approve_plan":
-        await onDecidePlanApproval("approved");
-        return;
-      case "run_plan":
-        await onRunPlan(false);
-        return;
-      case "generate_candidate":
-        if (lastRequestId !== null) {
-          await generateGutenbergV2Candidate(lastRequestId);
-        }
-        return;
-      case "approve_candidate":
-        if (gutenbergV2State?.candidate) {
-          await onDecideGutenbergV2Candidate(
-            gutenbergV2State.candidate.candidateId,
-            "approved"
-          );
-        }
-        return;
-      case "apply_update":
-        await onExecuteGutenbergV2Candidate();
-        return;
-      default:
-        return;
-    }
-  }
-
-  async function onAnalyzeRequestVisualAnalysis(): Promise<void> {
-    if (!selectedThreadId || bundle === null) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.analyzeRequestVisualAnalysis({
-      siteId,
-      threadId: selectedThreadId,
-      requestId: bundle.request.id
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    setPlanValidationJson(null);
-    await loadBundle();
-  }
-
-  async function onReviewRequestVisualAnalysis(): Promise<void> {
-    if (!selectedThreadId || bundle === null) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.reviewRequestVisualAnalysis({
-      siteId,
-      threadId: selectedThreadId,
-      requestId: bundle.request.id
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    await loadBundle();
-  }
-
-  async function onBuildPlannerContext(): Promise<void> {
-    if (!selectedThreadId) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.buildPlannerContext({
-      siteId,
-      threadId: selectedThreadId
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      setPlannerJson(null);
-      return;
-    }
-    setPlannerJson(JSON.stringify(res.context, null, 2));
-  }
-
-  async function onExecuteAction(
-    actionId: string,
-    dryRun: boolean
-  ): Promise<void> {
-    if (!bundle?.plan || lastRequestId === null) {
-      return;
-    }
-    const action = bundle.plan.proposedActions.find(
-      (candidate) => candidate.id === actionId
-    );
-    const requestInput =
-      action !== undefined
-        ? actionToMcpToolCall(action.type, action.input, true)?.arguments
-        : undefined;
-    setExecBusy(true);
-    setErr(null);
-    setLastExecHint(null);
-    setExecProgressLabel(`${dryRun ? "Running dry-run" : "Executing"}…`);
-    const res = await window.sitePilotDesktop.executePlanAction({
-      siteId,
-      requestId: lastRequestId,
-      planId: bundle.plan.id,
-      actionId,
-      dryRun
-    });
-    setExecBusy(false);
-    setExecProgressLabel(null);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    if (dryRun && action !== undefined) {
-      setDryRunPreview({
-        actionId,
-        actionType: action.type,
-        ...(res.toolName !== undefined ? { toolName: res.toolName } : {}),
-        ...(requestInput !== undefined ? { requestInput } : {}),
-        mcpResult: res.mcpResult
-      });
-    } else if (!dryRun) {
-      setDryRunPreview(null);
-    }
-    if (res.skipped) {
-      setLastExecHint(
-        `Skipped: ${res.mcpResult.reason as string} (${String(res.mcpResult.actionType)})`
-      );
-    } else if (res.reused) {
-      setLastExecHint("Reused completed execution (same idempotency key).");
-    } else {
-      setLastExecHint(
-        `${dryRun ? "Dry-run" : "Executed"}${res.toolName ? ` · ${res.toolName}` : ""} · ok`
-      );
-    }
-    await loadBundle();
-    if (selectedThreadId) {
-      await loadMessages(selectedThreadId);
-    }
-  }
-
-  async function onRunPlan(dryRun: boolean): Promise<void> {
-    if (!canRunPlanDirectly) {
-      setLastExecHint("Run actions individually below for this plan.");
-      return;
-    }
-    if (executableActions.length === 0) {
-      setLastExecHint("No executable actions are available.");
-      return;
-    }
-    for (const action of executableActions) {
-      await onExecuteAction(action.id, dryRun);
     }
   }
 
@@ -1178,10 +877,6 @@ export function ChatPage({
   }, [lastRequestId, loadBundle, loadMessages, selectedThreadId, siteId]);
 
   useEffect(() => {
-    setDryRunPreview(null);
-  }, [selectedThreadId, lastRequestId]);
-
-  useEffect(() => {
     return () => {
       if (debugCopyResetTimerRef.current !== null) {
         window.clearTimeout(debugCopyResetTimerRef.current);
@@ -1206,28 +901,7 @@ export function ChatPage({
   // `loading`/`!data` returns, where hooks would change the hook count.
   const composerState = composerCopy({
     isConversationMode,
-    bundle,
-    requestWorkflow
-  });
-  const {
-    canGeneratePlan,
-    visualAnalysisRequired,
-    visualAnalysisReadyForPlanning,
-    visualAnalysisStale,
-    isV2Workflow,
-    canGeneratePlanNow,
-    executionControlsLocked,
-    requestNextAction,
-    composerWorkflowIsSecondary,
-    showInChatApprove
-  } = deriveRequestView({
-    isConversationMode,
-    selectedThreadId,
-    bundle,
-    gutenbergV2State,
-    requestWorkflow,
-    canRunPlanDirectly,
-    openQuestionCount: openQuestions.length
+    bundle
   });
   const pageCopy = modePageCopy(mode);
   const developerToolsEnabled = uiPreferences?.developerToolsEnabled ?? false;
@@ -1248,17 +922,7 @@ export function ChatPage({
     ...(err ? [`Error: ${err}`] : []),
     ...(activityLabel ? [`Activity: ${activityLabel}`] : []),
     ...(execProgressLabel ? [`Execution: ${execProgressLabel}`] : []),
-    ...(lastExecHint ? [`Hint: ${lastExecHint}`] : []),
-    ...(visualAnalysisRequired &&
-    !visualAnalysisReadyForPlanning &&
-    requestWorkflow !== "gutenberg_v2" &&
-    gutenbergV2State === null
-      ? [
-          visualAnalysisStale
-            ? "Visual analysis: stale review artifact; re-run analysis before planning."
-            : "Visual analysis: required before planning."
-        ]
-      : [])
+    ...(lastExecHint ? [`Hint: ${lastExecHint}`] : [])
   ];
 
   const pendingAttachmentBytes = pendingAttachments.reduce(
@@ -1274,7 +938,6 @@ export function ChatPage({
       : 2;
   const showBuildingCandidate =
     busy &&
-    requestWorkflow === "gutenberg_v2" &&
     (gutenbergV2State === null || gutenbergV2State.state !== "review_ready");
   const selectedThreadMeta = threadTypeMeta(selectedThread?.type);
   const shownTarget = gutenbergV2State?.target ?? null;
@@ -1312,7 +975,6 @@ export function ChatPage({
             developerToolsEnabled,
             preserveOriginalImageUploads,
             busy,
-            execBusy,
             activityLabel,
             execProgressLabel,
             lastExecHint,
@@ -1323,10 +985,7 @@ export function ChatPage({
             requestPrompt,
             pendingAttachments,
             developerMessages,
-            bundle,
-            planValidationJson,
-            plannerJson,
-            dryRunPreview
+            bundle
           }),
           null,
           2
@@ -1460,18 +1119,12 @@ export function ChatPage({
                 )}
 
                 <Composer
-                  siteId={siteId}
                   copy={composerState}
                   isConversationMode={isConversationMode}
                   busy={busy}
                   showSubmitSpinner={busy && applyingSince === null}
                   hasGutenbergV2State={gutenbergV2State !== null}
                   gutenbergV2TargetValid={gutenbergV2Target !== null}
-                  requestWorkflow={requestWorkflow}
-                  onRequestWorkflowChange={(workflow) => {
-                    workflowInitializedRef.current = true;
-                    setRequestWorkflow(workflow);
-                  }}
                   gutenbergV2Operation={gutenbergV2Operation}
                   onGutenbergV2OperationChange={setGutenbergV2Operation}
                   gutenbergV2PostType={gutenbergV2PostType}
@@ -1511,11 +1164,7 @@ export function ChatPage({
                       )
                     );
                   }}
-                  submitIsSecondary={composerWorkflowIsSecondary}
                   onSubmit={() => void onSubmitPrompt()}
-                  showOpenApprovals={
-                    Boolean(bundle?.pendingApproval) && !showInChatApprove
-                  }
                 />
               </div>
 
@@ -1557,50 +1206,18 @@ export function ChatPage({
                       <details className="review-disclosure review-details">
                         <summary>Request details and attachments</summary>
                   {bundle ? (
-                    <RequestPanel
-                      bundle={bundle}
-                      requestNextAction={requestNextAction}
-                      isV2Workflow={isV2Workflow}
-                      busy={busy}
-                      execBusy={execBusy}
-                      execProgressLabel={execProgressLabel}
-                      canGeneratePlan={canGeneratePlan}
-                      canGeneratePlanNow={canGeneratePlanNow}
-                      executionControlsLocked={executionControlsLocked}
-                      visualAnalysisRequired={visualAnalysisRequired}
-                      visualAnalysisStale={visualAnalysisStale}
-                      openQuestions={openQuestions}
-                      dryRunPreview={dryRunPreview}
-                      onNextAction={(id) => void onRequestNextAction(id)}
-                      onRejectPlan={() => void onDecidePlanApproval("rejected")}
-                      onDryRunPlan={() => void onRunPlan(true)}
-                      onAnalyzeReference={() =>
-                        void onAnalyzeRequestVisualAnalysis()
-                      }
-                      onReviewReference={() =>
-                        void onReviewRequestVisualAnalysis()
-                      }
-                      onClearDryRun={() => setDryRunPreview(null)}
-                    />
+                    <RequestPanel bundle={bundle} />
                   ) : null}
 
                   {developerToolsEnabled ? (
                     <DeveloperPanel
                       bundle={bundle}
                       busy={busy}
-                      execBusy={execBusy}
-                      executionControlsLocked={executionControlsLocked}
                       debugCopyLabel={debugCopyLabel}
                       developerMessages={developerMessages}
                       pendingAttachmentCount={pendingAttachments.length}
                       pendingAttachmentBytes={pendingAttachmentBytes}
-                      planValidationJson={planValidationJson}
-                      plannerJson={plannerJson}
                       onCopyDebugLog={() => void onCopyDebugLog()}
-                      onExecuteAction={(actionId, dryRun) =>
-                        void onExecuteAction(actionId, dryRun)
-                      }
-                      onBuildPlannerContext={() => void onBuildPlannerContext()}
                     />
                   ) : null}
                       </details>
@@ -1637,50 +1254,18 @@ export function ChatPage({
                     </section>
                   ) : null}
                   {bundle ? (
-                    <RequestPanel
-                      bundle={bundle}
-                      requestNextAction={requestNextAction}
-                      isV2Workflow={isV2Workflow}
-                      busy={busy}
-                      execBusy={execBusy}
-                      execProgressLabel={execProgressLabel}
-                      canGeneratePlan={canGeneratePlan}
-                      canGeneratePlanNow={canGeneratePlanNow}
-                      executionControlsLocked={executionControlsLocked}
-                      visualAnalysisRequired={visualAnalysisRequired}
-                      visualAnalysisStale={visualAnalysisStale}
-                      openQuestions={openQuestions}
-                      dryRunPreview={dryRunPreview}
-                      onNextAction={(id) => void onRequestNextAction(id)}
-                      onRejectPlan={() => void onDecidePlanApproval("rejected")}
-                      onDryRunPlan={() => void onRunPlan(true)}
-                      onAnalyzeReference={() =>
-                        void onAnalyzeRequestVisualAnalysis()
-                      }
-                      onReviewReference={() =>
-                        void onReviewRequestVisualAnalysis()
-                      }
-                      onClearDryRun={() => setDryRunPreview(null)}
-                    />
+                    <RequestPanel bundle={bundle} />
                   ) : null}
 
                   {developerToolsEnabled ? (
                     <DeveloperPanel
                       bundle={bundle}
                       busy={busy}
-                      execBusy={execBusy}
-                      executionControlsLocked={executionControlsLocked}
                       debugCopyLabel={debugCopyLabel}
                       developerMessages={developerMessages}
                       pendingAttachmentCount={pendingAttachments.length}
                       pendingAttachmentBytes={pendingAttachmentBytes}
-                      planValidationJson={planValidationJson}
-                      plannerJson={plannerJson}
                       onCopyDebugLog={() => void onCopyDebugLog()}
-                      onExecuteAction={(actionId, dryRun) =>
-                        void onExecuteAction(actionId, dryRun)
-                      }
-                      onBuildPlannerContext={() => void onBuildPlannerContext()}
                     />
                   ) : null}
                     </div>

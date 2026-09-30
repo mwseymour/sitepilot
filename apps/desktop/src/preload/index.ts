@@ -57,23 +57,10 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.ingestThreadMessage, request),
   answerClarification: (request) =>
     invokeIpc(ipcChannels.answerClarification, request),
-  buildPlannerContext: (request) =>
-    invokeIpc(ipcChannels.buildPlannerContext, request),
-  analyzeRequestVisualAnalysis: (request) =>
-    invokeIpc(ipcChannels.analyzeRequestVisualAnalysis, request),
-  reviewRequestVisualAnalysis: (request) =>
-    invokeIpc(ipcChannels.reviewRequestVisualAnalysis, request),
-  generateActionPlan: (request) =>
-    invokeIpc(ipcChannels.generateActionPlan, request),
-  listPendingApprovals: (request) =>
-    invokeIpc(ipcChannels.listPendingApprovals, request),
-  decideApproval: (request) => invokeIpc(ipcChannels.decideApproval, request),
   listAuditEntries: (request) =>
     invokeIpc(ipcChannels.listAuditEntries, request),
   getRequestBundle: (request) =>
     invokeIpc(ipcChannels.getRequestBundle, request),
-  executePlanAction: (request) =>
-    invokeIpc(ipcChannels.executePlanAction, request),
   gutenbergV2GenerateCandidate: (request) =>
     invokeIpc(ipcChannels.gutenbergV2GenerateCandidate, request),
   gutenbergV2DecideCandidate: (request) =>
@@ -101,8 +88,6 @@ const desktopApi: SitePilotDesktopApi = {
     invokeIpc(ipcChannels.settingsClearProviderSecret, request),
   setPlannerPreferences: (request) =>
     invokeIpc(ipcChannels.settingsSetPlannerPreferences, request),
-  setSitePlannerSettings: (request) =>
-    invokeIpc(ipcChannels.settingsSetSitePlannerSettings, request),
   setUiPreferences: (request) =>
     invokeIpc(ipcChannels.settingsSetUiPreferences, request),
   clearSiteSigningSecret: (request) =>

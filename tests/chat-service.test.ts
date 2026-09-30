@@ -177,41 +177,6 @@ describe("chat service request revision", () => {
     });
   });
 
-  it("does not invalidate the current workflow state for simple confirmation replies", async () => {
-    const { amendRequestForThread } = await import(
-      "../apps/desktop/src/main/chat-service.js"
-    );
-    db.repositories.requests.getById.mockResolvedValue({
-      ...request,
-      status: "drafted"
-    });
-
-    const result = await amendRequestForThread(
-      site.id as never,
-      thread.id as never,
-      request.id as never,
-      "ok go"
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.request.status).toBe("drafted");
-    expect(result.request.userPrompt).toBe(request.userPrompt);
-    expect(db.repositories.requests.save).not.toHaveBeenCalled();
-    expect(db.repositories.chatMessages.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        author: { kind: "assistant" },
-        body: expect.objectContaining({
-          value: expect.stringContaining(
-            "Nothing changed. Next: run the plan from the request panel."
-          )
-        })
-      })
-    );
-  });
-
   it("skips duplicate consecutive system messages", async () => {
     const existingSystemMessage = {
       id: "msg-system-1",

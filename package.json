@@ -20,7 +20,6 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e:setup": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/setup.ts",
-    "test:e2e": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run.ts",
     "test:e2e:smoke": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run-suite.ts smoke",
     "test:e2e:content": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run-suite.ts content",
     "test:e2e:all": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/run-suite.ts all",
@@ -33,7 +32,6 @@
     "test:e2e:v2-long-post": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-long-post.ts",
     "test:e2e:v2-onboarding": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-onboarding.ts",
     "test:e2e:mcp": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-mcp.ts",
-    "test:e2e:open-report": "tsx tests/e2e/open-report.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate:v2-block-manifest": "tsx scripts/generate-v2-block-manifest.ts"

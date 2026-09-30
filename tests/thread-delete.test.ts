@@ -29,7 +29,9 @@ afterEach(() => {
 async function openSiteDatabase() {
   const directory = mkdtempSync(join(tmpdir(), "sitepilot-thread-delete-"));
   temporaryDirectories.push(directory);
-  const database = initializeDatabase({ filePath: join(directory, "sitepilot.sqlite") });
+  const database = initializeDatabase({
+    filePath: join(directory, "sitepilot.sqlite")
+  });
   configureRuntimeContext({ userDataPath: directory, database });
   const workspace: Workspace = {
     id: "workspace-1" as Workspace["id"],
@@ -63,17 +65,20 @@ async function createRequestThread(siteId: SiteId) {
   const request = await createTypedRequestForThread(
     siteId,
     thread.thread.id,
-    "Make a draft",
-    undefined,
-    "gutenberg_v2"
+    "Make a draft"
   );
   if (!request.ok) throw new Error(request.message);
   return { threadId: thread.thread.id, requestId: request.request.id };
 }
 
-function count(database: Awaited<ReturnType<typeof openSiteDatabase>>["database"], table: string): number {
+function count(
+  database: Awaited<ReturnType<typeof openSiteDatabase>>["database"],
+  table: string
+): number {
   return (
-    database.connection.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }
+    database.connection.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
+      n: number;
+    }
   ).n;
 }
 

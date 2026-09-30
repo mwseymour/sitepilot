@@ -17,7 +17,6 @@
     { "path": "../../packages/provider-adapters" },
     { "path": "../../packages/gutenberg-worker" },
     { "path": "../../packages/repositories" },
-    { "path": "../../packages/services" },
-    { "path": "../../packages/validation" }
+    { "path": "../../packages/services" }
   ]
 }

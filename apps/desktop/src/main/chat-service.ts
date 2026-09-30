@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  ActionPlan as ContractActionPlan,
-  ImageAttachmentPayload
-} from "@sitepilot/contracts";
+import type { ImageAttachmentPayload } from "@sitepilot/contracts";
 import type {
   AuditEntryId,
   ChatMessage,
@@ -11,18 +8,11 @@ import type {
   ClarificationRound,
   ChatMessageId,
   ChatThreadId,
-  ClarificationRoundId,
   Request,
   RequestId,
   SiteId
 } from "@sitepilot/domain";
-import {
-  analyzeClarification,
-  canResolveActionViaPostLookup,
-  mergeRevisedRequestPrompt,
-  requestVisualAnalysisIsCurrent
-} from "@sitepilot/services";
-import { actionToMcpToolCall } from "@sitepilot/services/mcp-action-map";
+import { mergeRevisedRequestPrompt } from "@sitepilot/services";
 import {
   createAnthropicChatClient,
   createOpenAiChatClient
@@ -151,36 +141,6 @@ async function mergeFollowUpIntoRequestPrompt(
   }
 }
 
-function isSimpleRequestConfirmation(text: string): boolean {
-  const normalized = text
-    .trim()
-    .toLowerCase()
-    .replace(/[!?.,]+/g, "")
-    .replace(/\s+/g, " ");
-
-  return [
-    "ok",
-    "okay",
-    "ok go",
-    "go",
-    "go ahead",
-    "yes",
-    "yes go",
-    "yep",
-    "sure",
-    "do it",
-    "run it",
-    "execute",
-    "proceed",
-    "please proceed",
-    "start",
-    "ship it",
-    "publish",
-    "dry run",
-    "dry-run"
-  ].includes(normalized);
-}
-
 async function saveAssistantThreadMessage(input: {
   threadId: ChatThreadId;
   siteId: SiteId;
@@ -201,41 +161,17 @@ async function saveAssistantThreadMessage(input: {
   });
 }
 
-function countRunnableActions(plan: ContractActionPlan | null): number {
-  if (!plan) {
-    return 0;
-  }
-  return plan.proposedActions.filter(
-    (action: ContractActionPlan["proposedActions"][number]) =>
-      actionToMcpToolCall(action.type, action.input, true) !== null ||
-      canResolveActionViaPostLookup(action.type, action.input)
-  ).length;
-}
-
 async function createRequestRecordForThread(input: {
   siteId: SiteId;
   thread: ChatThread;
   userPrompt: string;
   attachments?: ImageAttachmentPayload[];
-  contentEngine?: "gutenberg_v2";
 }): Promise<CreateRequestResult> {
   const db = getDatabase();
-  const isGutenbergV2 = input.contentEngine === "gutenberg_v2";
-  // Gutenberg v2 requests carry an explicit operation and target, so v1's
-  // target/outcome clarification questions do not apply to them.
-  const analysis = isGutenbergV2
-    ? { needsClarification: false, questions: [] as string[] }
-    : analyzeClarification({
-        userPrompt: input.userPrompt,
-        ...(input.attachments !== undefined
-          ? { attachments: input.attachments }
-          : {})
-      });
-
   const ts = nowIso();
-  const status: Request["status"] = analysis.needsClarification
-    ? "clarifying"
-    : "new";
+  // Requests carry an explicit v2 operation and target, so there is nothing to
+  // clarify up front.
+  const status: Request["status"] = "new";
 
   const request: Request = {
     id: randomUUID() as RequestId,
@@ -279,67 +215,7 @@ async function createRequestRecordForThread(input: {
   };
   await db.repositories.chatMessages.save(userMessage);
 
-  if (!analysis.needsClarification && !isGutenbergV2) {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId: input.thread.id,
-      siteId: input.siteId,
-      author: { kind: "assistant" },
-      body: {
-        format: "plain_text",
-        value: "Request captured. Next: generate a plan from the request panel."
-      },
-      requestId: request.id,
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
-
-  let clarificationRound: ClarificationRound | undefined;
-
-  if (analysis.needsClarification) {
-    clarificationRound = {
-      id: randomUUID() as ClarificationRoundId,
-      requestId: request.id,
-      siteId: input.siteId,
-      questions: analysis.questions,
-      answers: [],
-      createdAt: ts,
-      updatedAt: ts
-    };
-    await db.repositories.clarificationRounds.save(clarificationRound);
-
-    await db.repositories.auditEntries.append({
-      id: randomUUID() as AuditEntryId,
-      siteId: input.siteId,
-      requestId: request.id,
-      eventType: "clarification_requested",
-      actor: { kind: "assistant" },
-      metadata: { questionCount: analysis.questions.length },
-      createdAt: ts,
-      updatedAt: ts
-    });
-
-    const clarifyBody = `More detail is needed before planning:\n${analysis.questions
-      .map((q: string, i: number) => `${i + 1}. ${q}`)
-      .join("\n")}`;
-
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId: input.thread.id,
-      siteId: input.siteId,
-      author: { kind: "assistant" },
-      body: { format: "plain_text", value: clarifyBody },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
-
   await saveThreadUpdatedAt(input.thread, ts);
-
-  if (clarificationRound !== undefined) {
-    return { ok: true, request, clarificationRound };
-  }
   return { ok: true, request };
 }
 
@@ -424,17 +300,6 @@ async function buildThreadReply(
     };
   }
 
-  const plan =
-    request.latestPlanId !== undefined
-      ? await db.repositories.actionPlans.getById(request.latestPlanId)
-      : null;
-  const runnableCount = countRunnableActions(plan);
-  const normalized = text.trim().toLowerCase();
-  const asksToRun =
-    /(^|\b)(do it|run it|execute|ship it|go ahead|start|publish|dry run|dry-run)(\b|$)/i.test(
-      normalized
-    );
-
   switch (request.status) {
     case "awaiting_approval":
       return {
@@ -443,28 +308,9 @@ async function buildThreadReply(
           "This request is still waiting for approval. Open Approvals to unlock execution."
       };
     case "approved":
-      if (runnableCount === 0) {
-        return {
-          requestId: request.id,
-          text:
-            "This plan is approved, but I cannot run it yet because none of its actions map to an MCP tool."
-        };
-      }
-      if (asksToRun) {
-        return {
-          requestId: request.id,
-          text:
-            runnableCount === 1
-              ? "Nothing new to add. Next: run the plan from the request panel."
-              : "Nothing new to add. Next: run each action from the request panel."
-        };
-      }
       return {
         requestId: request.id,
-        text:
-          runnableCount === 1
-            ? "Note saved. Next: run the plan from the request panel."
-            : "Note saved. Next: run each action from the request panel."
+        text: "This request is approved. Apply it from the request panel."
       };
     case "executing":
       return {
@@ -481,26 +327,9 @@ async function buildThreadReply(
     default:
       return {
         requestId: request.id,
-        text: requestUsesGutenbergV2(request.id)
-          ? "Note saved on this request."
-          : "Note saved. Next: generate a plan from the request panel."
+        text: "Note saved on this request."
       };
   }
-}
-
-/** v2 requests are built by the native editor path, not a v1 plan. */
-function requestUsesGutenbergV2(requestId: string): boolean {
-  // Some callers (and tests) run with repositories only, no raw connection.
-  const connection = getDatabase().connection as
-    | ReturnType<typeof getDatabase>["connection"]
-    | undefined;
-  if (!connection) return false;
-  const row = connection
-    .prepare<{ requestId: string }, { engine: string | null }>(
-      "SELECT content_engine AS engine FROM requests WHERE id = @requestId"
-    )
-    .get({ requestId });
-  return row?.engine === "gutenberg_v2";
 }
 
 export type ChatThreadsResult =
@@ -945,8 +774,7 @@ export async function createTypedRequestForThread(
   siteId: SiteId,
   threadId: ChatThreadId,
   userPrompt: string,
-  attachments?: ImageAttachmentPayload[],
-  contentEngine?: "gutenberg_v2"
+  attachments?: ImageAttachmentPayload[]
 ): Promise<CreateRequestResult> {
   const gate = await requireActiveSite(siteId);
   if (!gate.ok) {
@@ -960,8 +788,7 @@ export async function createTypedRequestForThread(
     siteId,
     thread: t.thread,
     userPrompt,
-    ...(attachments !== undefined ? { attachments } : {}),
-    ...(contentEngine !== undefined ? { contentEngine } : {})
+    ...(attachments !== undefined ? { attachments } : {})
   });
 }
 
@@ -1052,21 +879,9 @@ export async function answerClarificationForRequest(
     request.attachments,
     attachments
   );
-  const analysis = analyzeClarification({
-    userPrompt: mergedPrompt,
-    ...(mergedRequestAttachments !== undefined
-      ? { attachments: mergedRequestAttachments }
-      : {})
-  });
-
-  let clarificationRound: ClarificationRound | undefined;
-  let nextStatus: Request["status"] = analysis.needsClarification
-    ? "clarifying"
-    : "new";
-
   const updatedRequest: Request = {
     ...request,
-    status: nextStatus,
+    status: "new",
     userPrompt: mergedPrompt,
     ...(mergedRequestAttachments !== undefined
       ? { attachments: mergedRequestAttachments }
@@ -1074,66 +889,18 @@ export async function answerClarificationForRequest(
     updatedAt: ts
   };
   await db.repositories.requests.save(updatedRequest);
-
-  if (analysis.needsClarification) {
-    clarificationRound = {
-      id: randomUUID() as ClarificationRoundId,
-      requestId,
-      siteId,
-      questions: analysis.questions,
-      answers: [],
-      createdAt: ts,
-      updatedAt: ts
-    };
-    await db.repositories.clarificationRounds.save(clarificationRound);
-    await db.repositories.auditEntries.append({
-      id: randomUUID() as AuditEntryId,
-      siteId,
-      requestId,
-      eventType: "clarification_requested",
-      actor: { kind: "assistant" },
-      metadata: { questionCount: analysis.questions.length },
-      createdAt: ts,
-      updatedAt: ts
-    });
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      requestId,
-      author: { kind: "assistant" },
-      body: {
-        format: "plain_text",
-        value: `Thanks. I still need a bit more detail:\n${analysis.questions
-          .map((q: string, i: number) => `${i + 1}. ${q}`)
-          .join("\n")}`
-      },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  } else {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      requestId,
-      author: { kind: "assistant" },
-      body: {
-        format: "plain_text",
-        value: requestUsesGutenbergV2(requestId)
-          ? "Answer recorded."
-          : "Answer recorded. Next: generate a plan from the request panel."
-      },
-      createdAt: ts,
-      updatedAt: ts
-    });
-  }
+  await db.repositories.chatMessages.save({
+    id: randomUUID() as ChatMessageId,
+    threadId,
+    siteId,
+    requestId,
+    author: { kind: "assistant" },
+    body: { format: "plain_text", value: "Answer recorded." },
+    createdAt: ts,
+    updatedAt: ts
+  });
 
   await saveThreadUpdatedAt(t.thread, ts);
-
-  if (clarificationRound !== undefined) {
-    return { ok: true, request: updatedRequest, clarificationRound };
-  }
   return { ok: true, request: updatedRequest };
 }
 
@@ -1206,48 +973,6 @@ export async function amendRequestForThread(
     request.attachments,
     attachments
   );
-  const existingPlan =
-    request.latestPlanId !== undefined
-      ? await db.repositories.actionPlans.getById(request.latestPlanId)
-      : null;
-  const runnableCount = countRunnableActions(existingPlan);
-  const existingVisualAnalysis =
-    await db.repositories.requestVisualAnalyses.getByRequestId(request.id);
-  const keepsExistingWorkflowState =
-    (attachments === undefined || attachments.length === 0) &&
-    isSimpleRequestConfirmation(trimmed) &&
-    (request.latestPlanId !== undefined ||
-      requestVisualAnalysisIsCurrent(
-        request.updatedAt,
-        existingVisualAnalysis
-      ));
-
-  if (keepsExistingWorkflowState) {
-    await db.repositories.chatMessages.save({
-      id: randomUUID() as ChatMessageId,
-      threadId,
-      siteId,
-      requestId,
-      author: { kind: "assistant" },
-      body: {
-        format: "plain_text",
-        value:
-          request.latestPlanId !== undefined
-            ? runnableCount === 1
-              ? "Nothing changed. Next: run the plan from the request panel."
-              : runnableCount > 1
-                ? "Nothing changed. Next: run each action from the request panel."
-                : "Nothing changed. The current request and plan are unchanged."
-            : "Nothing changed. The current request and plan are unchanged."
-      },
-      createdAt: ts,
-      updatedAt: ts
-    });
-
-    await saveThreadUpdatedAt(t.thread, ts);
-    return { ok: true, request };
-  }
-
   const mergedPrompt = await mergeFollowUpIntoRequestPrompt(
     request.userPrompt,
     trimmed
@@ -1279,9 +1004,7 @@ export async function amendRequestForThread(
     author: { kind: "assistant" },
     body: {
       format: "plain_text",
-      value: requestUsesGutenbergV2(requestId)
-        ? "Request updated to include that change."
-        : "Request updated to include that change. Next: generate a plan from the request panel."
+      value: "Request updated to include that change."
     },
     createdAt: ts,
     updatedAt: ts

@@ -43,13 +43,12 @@ import {
   configureRuntimeContext,
   resetRuntimeContext
 } from "../../apps/desktop/src/main/runtime-context.js";
-import { saveSitePlannerSettings } from "../../apps/desktop/src/main/settings-service.js";
 
 import {
   E2E_ADMIN_USERNAME,
-  E2E_BASE_URL,
-  E2E_REGISTRATION_CODE
+  E2E_BASE_URL
 } from "./config.js";
+import { currentRegistrationCode } from "./registration.js";
 import { createFileSecureStorage } from "./file-secure-storage.js";
 
 const EXACT_TEST_URL = "https://test.localhost:8890/";
@@ -160,7 +159,7 @@ async function main(): Promise<void> {
       wordpressUsername: E2E_ADMIN_USERNAME,
       workspaceId: "workspace-1",
       environment: "development",
-      registrationCode: E2E_REGISTRATION_CODE
+      registrationCode: await currentRegistrationCode()
     });
     if (!("site" in registration)) {
       throw new Error(
@@ -174,10 +173,6 @@ async function main(): Promise<void> {
       ...site,
       activationStatus: "active",
       updatedAt: new Date().toISOString()
-    });
-    await saveSitePlannerSettings(secureStorage, siteId, {
-      bypassApprovalRequests: false,
-      gutenbergV2Enabled: true
     });
 
     const host = await startLocalMcpHttpServer({

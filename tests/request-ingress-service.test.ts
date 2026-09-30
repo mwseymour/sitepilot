@@ -31,10 +31,6 @@ vi.mock("../apps/desktop/src/main/gutenberg-v2-chat-service.js", () => ({
   hasGutenbergV2RequestMapping: vi.fn()
 }));
 
-vi.mock("../apps/desktop/src/main/plan-generation-service.js", () => ({
-  generateActionPlanForRequest: vi.fn()
-}));
-
 import {
   amendRequestForThread,
   answerClarificationForRequest,
@@ -45,7 +41,6 @@ import {
   continueGutenbergV2AfterFollowUp,
   hasGutenbergV2RequestMapping
 } from "../apps/desktop/src/main/gutenberg-v2-chat-service.js";
-import { generateActionPlanForRequest } from "../apps/desktop/src/main/plan-generation-service.js";
 import {
   ingestRequestThreadMessage,
   selectOpenRequestForFollowUp
@@ -281,43 +276,6 @@ describe("ingestRequestThreadMessage", () => {
         note: "Take one carrot away."
       })
     );
-    expect(generateActionPlanForRequest).not.toHaveBeenCalled();
-  });
-
-  it("regenerates a v1 plan when a follow-up changes a request that already has one", async () => {
-    db.repositories.requests.listByThreadId.mockResolvedValue([
-      makeRequest({ status: "drafted", latestPlanId: "plan-1" as never })
-    ]);
-    (amendRequestForThread as Mock).mockResolvedValue({
-      ok: true,
-      request: makeRequest({
-        status: "new",
-        latestPlanId: "plan-1" as never
-      })
-    });
-    (generateActionPlanForRequest as Mock).mockResolvedValue({
-      ok: true,
-      plan: { id: "plan-2" },
-      validation: { kind: "pass" }
-    });
-
-    const result = await ingestRequestThreadMessage({
-      siteId: site.id as never,
-      threadId: thread.id as never,
-      text: "Use a heading instead of a list."
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      outcome: "amended",
-      continued: true,
-      plan: { id: "plan-2" }
-    });
-    expect(generateActionPlanForRequest).toHaveBeenCalledWith(
-      site.id,
-      thread.id,
-      "request-1"
-    );
   });
 
   it("does not regenerate after a confirmation that leaves the request unchanged", async () => {
@@ -343,7 +301,6 @@ describe("ingestRequestThreadMessage", () => {
       outcome: "amended",
       continued: false
     });
-    expect(generateActionPlanForRequest).not.toHaveBeenCalled();
     expect(continueGutenbergV2AfterFollowUp).not.toHaveBeenCalled();
   });
 });

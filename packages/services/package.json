@@ -7,7 +7,6 @@
     "@sitepilot/contracts": "0.1.0",
     "@sitepilot/domain": "0.1.0",
     "@sitepilot/provider-adapters": "0.1.0",
-    "@sitepilot/validation": "0.1.0",
     "better-sqlite3": "^12.9.0"
   },
   "devDependencies": {
@@ -18,10 +17,6 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./mcp-action-map": {
-      "types": "./dist/mcp-action-map.d.ts",
-      "default": "./dist/mcp-action-map.js"
-    },
     "./post-target-resolution": {
       "types": "./dist/post-target-resolution.d.ts",
       "default": "./dist/post-target-resolution.js"
@@ -29,10 +24,6 @@
     "./read-tool-registry": {
       "types": "./dist/read-tool-registry.d.ts",
       "default": "./dist/read-tool-registry.js"
-    },
-    "./request-visual-analysis": {
-      "types": "./dist/request-visual-analysis.d.ts",
-      "default": "./dist/request-visual-analysis.js"
     }
   },
   "scripts": {

@@ -62,17 +62,7 @@ export {
   fallbackMergedRequestPrompt,
   mergeRevisedRequestPrompt
 } from "./request-revision-merge.js";
-export { analyzeClarification } from "./clarification-engine.js";
-export type { ClarificationAnalysis } from "./clarification-engine.js";
-export { buildPlannerContext } from "./planner-context.js";
-export type { BuildPlannerContextInput } from "./planner-context.js";
 export { extractJsonObject } from "./json-extract.js";
-export {
-  buildLlmActionPlan,
-  buildStubActionPlan
-} from "./generate-action-plan.js";
-export { actionToMcpToolCall } from "./mcp-action-map.js";
-export type { McpToolCall } from "./mcp-action-map.js";
 export {
   actionSupportsPostLookup,
   buildPostLookupArguments,
@@ -80,14 +70,6 @@ export {
   findNumericPostId,
   resolvePostIdFromLookupResult
 } from "./post-target-resolution.js";
-export {
-  enrichActionPlanWithPostLookupFromContext,
-  inferPostLookupHintsFromCorpus
-} from "./plan-post-lookup-enrichment.js";
-export {
-  requestNeedsVisualAnalysisReview,
-  requestVisualAnalysisIsCurrent
-} from "./request-visual-analysis.js";
 export type {
   SecretKey,
   SecretNamespace,

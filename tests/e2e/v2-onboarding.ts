@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { SiteId } from "@sitepilot/domain";
+import type { SiteConfigId, SiteId } from "@sitepilot/domain";
 import { initializeDatabase } from "@sitepilot/repositories";
 
 import { getDatabase } from "../../apps/desktop/src/main/app-database.js";
@@ -30,7 +30,11 @@ import { registerE2ESite } from "./registration.js";
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const EXACT_TEST_URL = "https://test.localhost:8890/";
-const REQUIRED_TOOLS = ["sitepilot-find-posts", "sitepilot-get-post", "sitepilot-site-discovery"];
+const REQUIRED_TOOLS = [
+  "sitepilot-find-posts",
+  "sitepilot-get-post",
+  "sitepilot-site-discovery"
+];
 // The v1 write abilities were removed in plugin 0.2.0. Content changes only go
 // through the signed v2 routes.
 const REMOVED_WRITE_TOOLS = [
@@ -52,7 +56,9 @@ async function main(): Promise<void> {
     E2E_BASE_URL === EXACT_TEST_URL,
     `Refusing onboarding E2E against ${E2E_BASE_URL}. Expected exactly ${EXACT_TEST_URL}`
   );
-  const runtimeDir = mkdtempSync(join(tmpdir(), "sitepilot-v2-onboarding-e2e-"));
+  const runtimeDir = mkdtempSync(
+    join(tmpdir(), "sitepilot-v2-onboarding-e2e-")
+  );
   const database = initializeDatabase({
     filePath: join(runtimeDir, "sitepilot.sqlite")
   });
@@ -68,7 +74,9 @@ async function main(): Promise<void> {
 
     const registration = await registerE2ESite("SitePilot onboarding E2E");
     if (!registration.ok) {
-      throw new Error(`Registration failed (${registration.code}): ${registration.message}`);
+      throw new Error(
+        `Registration failed (${registration.code}): ${registration.message}`
+      );
     }
     const siteId = registration.site.id as SiteId;
     const registered = await database.repositories.sites.getById(siteId);
@@ -80,7 +88,9 @@ async function main(): Promise<void> {
 
     const discovery = await refreshDiscoveryForSite(siteId);
     if (!discovery.ok) {
-      throw new Error(`Discovery failed (${discovery.code}): ${discovery.message}`);
+      throw new Error(
+        `Discovery failed (${discovery.code}): ${discovery.message}`
+      );
     }
     const discovered = discovery.snapshot.summary["discovery"] as
       | { post_types?: Record<string, unknown> }
@@ -95,12 +105,20 @@ async function main(): Promise<void> {
     if (!draft.ok) {
       throw new Error(`Config draft failed (${draft.code}): ${draft.message}`);
     }
-    const activation = await confirmSiteConfigActivation(siteId, draft.siteConfig.id);
+    const activation = await confirmSiteConfigActivation(
+      siteId,
+      draft.siteConfig.id as SiteConfigId
+    );
     if (!activation.ok) {
-      throw new Error(`Activation failed (${activation.code}): ${activation.message}`);
+      throw new Error(
+        `Activation failed (${activation.code}): ${activation.message}`
+      );
     }
     const activated = await database.repositories.sites.getById(siteId);
-    assert(activated?.activationStatus === "active", "Confirming the config did not activate the site.");
+    assert(
+      activated?.activationStatus === "active",
+      "Confirming the config did not activate the site."
+    );
 
     const diagnostics = await runConnectivityDiagnostics(siteId);
     assert(
@@ -108,24 +126,33 @@ async function main(): Promise<void> {
       `Connectivity diagnostics failed: ${JSON.stringify(diagnostics.checks)}`
     );
     const toolNames = diagnostics.checks.mcpTools.toolNames;
-    const missingTools = REQUIRED_TOOLS.filter((name) => !toolNames.includes(name));
+    const missingTools = REQUIRED_TOOLS.filter(
+      (name) => !toolNames.includes(name)
+    );
     assert(
       missingTools.length === 0,
       `The plugin MCP server is missing ${missingTools.join(", ")}. It listed: ${toolNames.join(", ")}`
     );
 
-    const exposedWriteTools = REMOVED_WRITE_TOOLS.filter((name) => toolNames.includes(name));
+    const exposedWriteTools = REMOVED_WRITE_TOOLS.filter((name) =>
+      toolNames.includes(name)
+    );
     assert(
       exposedWriteTools.length === 0,
       `The plugin MCP server still exposes v1 write tools: ${exposedWriteTools.join(", ")}. Is the site's plugin copy up to date?`
     );
 
-    const protocolResponse = await fetchSiteUrl(`${E2E_BASE_URL}wp-json/sitepilot/v1/protocol`);
+    const protocolResponse = await fetchSiteUrl(
+      `${E2E_BASE_URL}wp-json/sitepilot/v1/protocol`
+    );
     const protocol = (await protocolResponse.json()) as {
       mcp?: { registered?: boolean | null; issue?: string | null };
       v2?: { enabled?: boolean };
     };
-    assert(protocol.v2?.enabled === true, "The plugin reports that v2 is disabled.");
+    assert(
+      protocol.v2?.enabled === true,
+      "The plugin reports that v2 is disabled."
+    );
     assert(
       protocol.mcp?.registered === true,
       `The plugin reports its MCP server is not registered (${protocol.mcp?.issue ?? "no issue given"}).`

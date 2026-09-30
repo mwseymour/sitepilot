@@ -1,7 +1,6 @@
 import { app, dialog, ipcMain } from "electron";
 
 import {
-  actionPlanSchema,
   ipcChannels,
   ipcContracts,
   requestSchema,
@@ -11,8 +10,6 @@ import {
 } from "@sitepilot/contracts";
 import type {
   ActionId,
-  ActionPlanId,
-  ApprovalRequestId,
   ChatThreadId,
   Request,
   RequestId,
@@ -22,10 +19,6 @@ import type {
   WorkspaceId
 } from "@sitepilot/domain";
 
-import {
-  decideApprovalForSite,
-  listPendingApprovalsForSite
-} from "./approval-workflow-service.js";
 import { listAuditEntriesForSite } from "./audit-query-service.js";
 import {
   amendRequestForThread,
@@ -50,13 +43,7 @@ import {
   getSiteWorkspaceState,
   saveSiteConfigDocument
 } from "./site-workspace-service.js";
-import { buildPlannerContextForThread } from "./planner-context-service.js";
-import { generateActionPlanForRequest } from "./plan-generation-service.js";
 import { readProviderStatus } from "./provider-status-service.js";
-import {
-  analyzeRequestVisualAnalysis,
-  reviewRequestVisualAnalysis
-} from "./request-visual-analysis-service.js";
 import { registerSiteWithWordPress } from "./register-site.js";
 import { getRequestBundleForThread } from "./request-bundle-service.js";
 import {
@@ -66,7 +53,6 @@ import {
 } from "./site-activity-service.js";
 import { ingestRequestThreadMessage } from "./request-ingress-service.js";
 import { getCompatibilityPayload } from "./compatibility-info.js";
-import { executePlanAction } from "./execution-orchestrator-service.js";
 import { buildSiteExportBundle } from "./export-site-service.js";
 import { applySiteImportBundle } from "./import-site-service.js";
 import {
@@ -81,7 +67,6 @@ import {
   reindexCoreBlocks,
   setWordPressCoreSourcePath,
   setPlannerPreferences,
-  setSitePlannerSettings,
   setUiPreferences,
   setProviderSecret
 } from "./settings-service.js";
@@ -361,9 +346,6 @@ export function registerIpcHandlers(): void {
         : {}),
       ...(request.gutenbergV2Target !== undefined
         ? { gutenbergV2Target: request.gutenbergV2Target }
-        : {}),
-      ...(request.alwaysContinue !== undefined
-        ? { alwaysContinue: request.alwaysContinue }
         : {})
     });
     if (!result.ok) {
@@ -389,10 +371,6 @@ export function registerIpcHandlers(): void {
       ...(result.gutenbergV2State !== undefined
         ? { gutenbergV2State: result.gutenbergV2State }
         : {}),
-      ...(result.plan !== undefined ? { plan: result.plan } : {}),
-      ...(result.validation !== undefined
-        ? { validation: result.validation }
-        : {})
     });
   });
 
@@ -414,88 +392,6 @@ export function registerIpcHandlers(): void {
       ...(result.clarificationRound !== undefined
         ? { clarificationRound: result.clarificationRound }
         : {})
-    });
-  });
-
-  ipcMain.handle(ipcChannels.buildPlannerContext, async (_event, payload) => {
-    const request = parseRequest(ipcChannels.buildPlannerContext, payload);
-    const result = await buildPlannerContextForThread(
-      request.siteId as SiteId,
-      request.threadId as ChatThreadId
-    );
-    return parseResponse(ipcChannels.buildPlannerContext, result);
-  });
-
-  ipcMain.handle(
-    ipcChannels.analyzeRequestVisualAnalysis,
-    async (_event, payload) => {
-      const request = parseRequest(
-        ipcChannels.analyzeRequestVisualAnalysis,
-        payload
-      );
-      const result = await analyzeRequestVisualAnalysis({
-        siteId: request.siteId as SiteId,
-        threadId: request.threadId as ChatThreadId,
-        requestId: request.requestId as RequestId
-      });
-      return parseResponse(ipcChannels.analyzeRequestVisualAnalysis, result);
-    }
-  );
-
-  ipcMain.handle(
-    ipcChannels.reviewRequestVisualAnalysis,
-    async (_event, payload) => {
-      const request = parseRequest(
-        ipcChannels.reviewRequestVisualAnalysis,
-        payload
-      );
-      const result = await reviewRequestVisualAnalysis({
-        siteId: request.siteId as SiteId,
-        threadId: request.threadId as ChatThreadId,
-        requestId: request.requestId as RequestId
-      });
-      return parseResponse(ipcChannels.reviewRequestVisualAnalysis, result);
-    }
-  );
-
-  ipcMain.handle(ipcChannels.generateActionPlan, async (_event, payload) => {
-    const request = parseRequest(ipcChannels.generateActionPlan, payload);
-    const result = await generateActionPlanForRequest(
-      request.siteId as SiteId,
-      request.threadId as ChatThreadId,
-      request.requestId as RequestId
-    );
-    return parseResponse(ipcChannels.generateActionPlan, result);
-  });
-
-  ipcMain.handle(ipcChannels.listPendingApprovals, async (_event, payload) => {
-    const request = parseRequest(ipcChannels.listPendingApprovals, payload);
-    const result = await listPendingApprovalsForSite(request.siteId as SiteId);
-    return parseResponse(ipcChannels.listPendingApprovals, result);
-  });
-
-  ipcMain.handle(ipcChannels.decideApproval, async (_event, payload) => {
-    const request = parseRequest(ipcChannels.decideApproval, payload);
-    const result = await decideApprovalForSite({
-      siteId: request.siteId as SiteId,
-      approvalRequestId: request.approvalRequestId as ApprovalRequestId,
-      decision: request.decision,
-      ...(request.note !== undefined ? { note: request.note } : {})
-    });
-    if (!result.ok) {
-      return parseResponse(ipcChannels.decideApproval, result);
-    }
-    const a = result.approval;
-    return parseResponse(ipcChannels.decideApproval, {
-      ok: true,
-      approval: {
-        id: a.id,
-        requestId: a.requestId,
-        planId: a.planId,
-        siteId: a.siteId,
-        status: a.status,
-        ...(a.expiresAt !== undefined ? { expiresAt: a.expiresAt } : {})
-      }
     });
   });
 
@@ -583,66 +479,7 @@ export function registerIpcHandlers(): void {
     return parseResponse(ipcChannels.getRequestBundle, {
       ok: true,
       request: contractRequestPayload(bundle.request),
-      plan: bundle.plan === null ? null : actionPlanSchema.parse(bundle.plan),
-      visualAnalysis: bundle.visualAnalysis,
-      pendingApproval:
-        bundle.pendingApproval === null
-          ? null
-          : {
-              id: bundle.pendingApproval.id,
-              requestId: bundle.pendingApproval.requestId,
-              planId: bundle.pendingApproval.planId,
-              siteId: bundle.pendingApproval.siteId,
-              status: bundle.pendingApproval.status,
-              ...(bundle.pendingApproval.expiresAt !== undefined
-                ? { expiresAt: bundle.pendingApproval.expiresAt }
-                : {})
-            },
-      lastExecution:
-        bundle.lastExecution === null
-          ? null
-          : {
-              id: bundle.lastExecution.id,
-              status: bundle.lastExecution.status,
-              idempotencyKey: bundle.lastExecution.idempotencyKey,
-              ...(bundle.lastExecution.toolInvocation !== undefined
-                ? { toolInvocation: bundle.lastExecution.toolInvocation }
-                : {}),
-              ...(bundle.lastExecution.completedAt !== undefined
-                ? { completedAt: bundle.lastExecution.completedAt }
-                : {})
-            }
-    });
-  });
-
-  ipcMain.handle(ipcChannels.executePlanAction, async (_event, payload) => {
-    const req = parseRequest(ipcChannels.executePlanAction, payload);
-    const result = await executePlanAction({
-      siteId: req.siteId as SiteId,
-      requestId: req.requestId as RequestId,
-      planId: req.planId as ActionPlanId,
-      actionId: req.actionId as ActionId,
-      dryRun: req.dryRun,
-      ...(req.idempotencyKey !== undefined
-        ? { idempotencyKey: req.idempotencyKey }
-        : {})
-    });
-    if (!result.ok) {
-      return parseResponse(ipcChannels.executePlanAction, result);
-    }
-    return parseResponse(ipcChannels.executePlanAction, {
-      ok: true,
-      dryRun: result.dryRun,
-      mcpResult: result.mcpResult,
-      ...(result.skipped !== undefined ? { skipped: result.skipped } : {}),
-      ...(result.reused !== undefined ? { reused: result.reused } : {}),
-      ...(result.toolName !== undefined ? { toolName: result.toolName } : {}),
-      ...(result.executionRunId !== undefined
-        ? { executionRunId: result.executionRunId }
-        : {}),
-      ...(result.toolInvocationId !== undefined
-        ? { toolInvocationId: result.toolInvocationId }
-        : {})
+      legacyV1: bundle.legacyV1
     });
   });
 
@@ -819,20 +656,6 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(
-    ipcChannels.settingsSetSitePlannerSettings,
-    async (_event, payload) => {
-      const req = parseRequest(
-        ipcChannels.settingsSetSitePlannerSettings,
-        payload
-      );
-      const result = await setSitePlannerSettings({
-        siteId: req.siteId as SiteId,
-        settings: req.settings
-      });
-      return parseResponse(ipcChannels.settingsSetSitePlannerSettings, result);
-    }
-  );
 
   ipcMain.handle(
     ipcChannels.settingsSetUiPreferences,

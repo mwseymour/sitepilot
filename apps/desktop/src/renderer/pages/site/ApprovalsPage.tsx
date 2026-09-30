@@ -5,13 +5,8 @@ import {
   useState,
   type ReactElement
 } from "react";
-import { Link } from "react-router-dom";
 
-import type {
-  ipcChannels,
-  ApprovalSummary,
-  IpcResponse
-} from "@sitepilot/contracts";
+import type { ipcChannels, IpcResponse } from "@sitepilot/contracts";
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import {
@@ -20,9 +15,6 @@ import {
 } from "./GutenbergV2CandidatePanel.js";
 import { useAppBusy } from "../../button-loading.js";
 
-const SHOW_V1_APPROVALS = false;
-
-type ApprovalRow = ApprovalSummary;
 type GutenbergV2PendingResponse = IpcResponse<
   typeof ipcChannels.gutenbergV2ListPendingCandidates
 >;
@@ -33,35 +25,26 @@ type GutenbergV2PendingCandidate = Extract<
 
 export function ApprovalsPage(): ReactElement | null {
   const { siteId, data, loading } = useSiteWorkspace();
-  const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [v2Candidates, setV2Candidates] = useState<
     GutenbergV2PendingCandidate[]
   >([]);
   const [err, setErr] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [lastThreadId, setLastThreadId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useAppBusy(busy);
 
   const load = useCallback(async () => {
-    const [res, v2Res] = await Promise.all([
-      window.sitePilotDesktop.listPendingApprovals({ siteId }),
-      window.sitePilotDesktop.gutenbergV2ListPendingCandidates({ siteId })
-    ]);
-    const errors: string[] = [];
-    if (!res.ok) {
-      errors.push(res.message);
-      setApprovals([]);
-    } else {
-      setApprovals(res.approvals);
-    }
+    const v2Res =
+      await window.sitePilotDesktop.gutenbergV2ListPendingCandidates({
+        siteId
+      });
     if (!v2Res.ok) {
-      errors.push(v2Res.message);
+      setErr(v2Res.message);
       setV2Candidates([]);
-    } else {
-      setV2Candidates(v2Res.candidates);
+      return;
     }
-    setErr(errors.length > 0 ? errors.join(" ") : null);
+    setErr(null);
+    setV2Candidates(v2Res.candidates);
   }, [siteId]);
 
   useEffect(() => {
@@ -70,35 +53,6 @@ export function ApprovalsPage(): ReactElement | null {
     }
     void load();
   }, [data, load]);
-
-  async function onDecide(
-    approvalRequestId: string,
-    decision: "approved" | "rejected" | "revision_requested"
-  ): Promise<void> {
-    setBusy(true);
-    setErr(null);
-    setMessage(null);
-    const res = await window.sitePilotDesktop.decideApproval({
-      siteId,
-      approvalRequestId,
-      decision
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    const approval = approvals.find((row) => row.id === approvalRequestId);
-    setLastThreadId(approval?.threadId ?? null);
-    setMessage(
-      decision === "approved"
-        ? "Approval recorded. Open Chat to use the plan controls."
-        : decision === "revision_requested"
-          ? "Revision requested. Open Chat to update the request or regenerate the plan."
-          : "Approval rejected."
-    );
-    await load();
-  }
 
   async function onDecideV2(
     candidate: GutenbergV2PendingCandidate,
@@ -202,25 +156,13 @@ export function ApprovalsPage(): ReactElement | null {
     );
   }
 
-  // v1 plan approvals remain in the codebase but are no longer shown; the
-  // native editor candidates are the only approval flow in the UI.
-  const visibleApprovals = SHOW_V1_APPROVALS ? approvals : [];
-
   return (
     <article className="panel-card">
       <h1>Approvals</h1>
       <p className="lede">
-        Pending items for high-risk or policy-gated plans. Decisions are
-        recorded in the immutable audit log.
+        Updates waiting for a decision. Decisions are recorded in the audit log.
       </p>
-      {message ? (
-        <p className="success-note">
-          {message}{" "}
-          {lastThreadId ? (
-            <Link to={`/site/${siteId}/requests`}>Open requests</Link>
-          ) : null}
-        </p>
-      ) : null}
+      {message ? <p className="success-note">{message}</p> : null}
       {err ? <p className="workspace-error">{err}</p> : null}
       <div className="approvals-toolbar">
         <button
@@ -232,7 +174,7 @@ export function ApprovalsPage(): ReactElement | null {
           Refresh
         </button>
       </div>
-      {visibleApprovals.length === 0 && v2Candidates.length === 0 ? (
+      {v2Candidates.length === 0 ? (
         <p className="muted">No pending approvals for this site.</p>
       ) : (
         <>
@@ -241,7 +183,7 @@ export function ApprovalsPage(): ReactElement | null {
               <h2>Native editor candidates</h2>
               <p className="muted small-print">
                 Every candidate is tied to its exact compiled content and needs
-                an explicit decision, even when approval bypass is enabled.
+                an explicit decision.
               </p>
               <ul className="approval-list">
                 {v2Candidates.map((candidate) => (
@@ -261,57 +203,6 @@ export function ApprovalsPage(): ReactElement | null {
                 ))}
               </ul>
             </section>
-          ) : null}
-          {visibleApprovals.length > 0 ? (
-            <ul className="approval-list">
-              {visibleApprovals.map((a) => (
-                <li key={a.id} className="approval-card">
-                  <header>
-                    <span className="approval-id">
-                      {a.requestPrompt ?? "Approval request"}
-                    </span>
-                  </header>
-                  <p className="muted small-print">
-                    Request {a.requestId}
-                    {" · "}
-                    Plan {a.planId}
-                    {a.expiresAt ? (
-                      <>
-                        {" "}
-                        · expires{" "}
-                        <time dateTime={a.expiresAt}>{a.expiresAt}</time>
-                      </>
-                    ) : null}
-                  </p>
-                  <div className="approval-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-small"
-                      disabled={busy}
-                      onClick={() => void onDecide(a.id, "approved")}
-                    >
-                      Approve plan
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      disabled={busy}
-                      onClick={() => void onDecide(a.id, "revision_requested")}
-                    >
-                      Request revision
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      disabled={busy}
-                      onClick={() => void onDecide(a.id, "rejected")}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
           ) : null}
         </>
       )}

@@ -9,7 +9,6 @@
   "references": [
     { "path": "../contracts" },
     { "path": "../domain" },
-    { "path": "../provider-adapters" },
-    { "path": "../validation" }
+    { "path": "../provider-adapters" }
   ]
 }

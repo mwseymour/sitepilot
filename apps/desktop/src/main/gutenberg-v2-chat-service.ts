@@ -430,36 +430,6 @@ function claimV2Request(mapping: Mapping): boolean {
   }
 }
 
-export function claimV1RequestEngine(
-  siteId: SiteId,
-  requestId: RequestId
-): boolean {
-  const connection = getOptionalConnection();
-  // Lightweight planner-service test doubles do not model SQLite. Production
-  // always supplies a connection, where this is the atomic ownership guard.
-  if (!connection) return true;
-  const result = connection
-    .prepare(
-      `UPDATE requests SET content_engine = 'v1', updated_at = @updatedAt
-       WHERE id = @requestId AND site_id = @siteId AND content_engine IS NULL
-         AND latest_plan_id IS NULL AND latest_execution_run_id IS NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM gutenberg_v2_request_executions v2
-           WHERE v2.request_id = requests.id AND v2.site_id = requests.site_id
-         )`
-    )
-    .run({ siteId, requestId, updatedAt: nowIso() });
-  if (result.changes === 1) return true;
-  const row = connection
-    .prepare<
-      { siteId: string; requestId: string },
-      { contentEngine: string | null }
-    >(`SELECT content_engine AS contentEngine FROM requests WHERE id = @requestId AND site_id = @siteId`)
-    .get({ siteId, requestId });
-  if (row?.contentEngine !== "v1") return false;
-  return !hasGutenbergV2RequestMapping(siteId, requestId);
-}
-
 export function hasGutenbergV2RequestMapping(
   siteId: SiteId,
   requestId: RequestId

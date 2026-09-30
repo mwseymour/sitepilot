@@ -12,7 +12,6 @@ import type {
   IpcResponse,
   PlannerPreferencesPayload,
   SiteCustomBlockSupportEntry,
-  SitePlannerSettings,
   UiPreferences
 } from "@sitepilot/contracts";
 import {
@@ -23,10 +22,6 @@ import {
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import { useAppBusy } from "../../button-loading.js";
-
-// The native editor workflow is always on; its per-site toggle is retired
-// and hidden (the setting is still read for stored-settings compatibility).
-const SHOW_RETIRED_V2_TOGGLE = false;
 
 type SettingsStateResponse = IpcResponse<typeof ipcChannels.settingsGetState>;
 type CoreBlockIndex = NonNullable<
@@ -153,8 +148,6 @@ export function SiteSettingsPage(): ReactElement | null {
   const [uiPreferences, setUiPreferences] = useState<UiPreferences | null>(
     null
   );
-  const [sitePlannerSettings, setSitePlannerSettings] =
-    useState<SitePlannerSettings | null>(null);
   const [coreBlockIndex, setCoreBlockIndex] = useState<CoreBlockIndex | null>(
     null
   );
@@ -231,12 +224,6 @@ export function SiteSettingsPage(): ReactElement | null {
     setErr(null);
     setPlanner(state.planner);
     setUiPreferences(state.uiPreferences);
-    setSitePlannerSettings(
-      state.sitePlannerSettings ?? {
-        bypassApprovalRequests: false,
-        gutenbergV2Enabled: false
-      }
-    );
     setHasSecret(state.siteHasSigningSecret ?? false);
     setCoreBlockIndex(state.coreBlockIndex ?? null);
     setWordPressCoreSourcePath(state.wordpressCoreSourcePath ?? null);
@@ -323,25 +310,6 @@ export function SiteSettingsPage(): ReactElement | null {
       return;
     }
     setHint("Workspace planner preferences saved.");
-    await load();
-  }
-
-  async function onSaveSitePlannerSettings(): Promise<void> {
-    if (!sitePlannerSettings) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    const res = await window.sitePilotDesktop.setSitePlannerSettings({
-      siteId,
-      settings: sitePlannerSettings
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.message);
-      return;
-    }
-    setHint("Site approval bypass setting saved.");
     await load();
   }
 
@@ -526,63 +494,6 @@ export function SiteSettingsPage(): ReactElement | null {
             onClick={() => void onSaveWorkspacePlanner()}
           >
             Save workspace planner preferences
-          </button>
-        </section>
-      ) : null}
-
-      {sitePlannerSettings ? (
-        <section className="settings-site-section">
-          <h2>Approvals (site)</h2>
-          <p className="muted small-print">
-            Lets this site skip approval queues when plan validation would
-            otherwise require operator approval.
-          </p>
-          <label className="settings-field settings-checkbox">
-            <input
-              className="settings-checkbox-input"
-              type="checkbox"
-              checked={sitePlannerSettings.bypassApprovalRequests}
-              disabled={busy}
-              onChange={(e) => {
-                setSitePlannerSettings({
-                  ...sitePlannerSettings,
-                  bypassApprovalRequests: e.target.checked
-                });
-              }}
-            />
-            <span>Approval bypass</span>
-          </label>
-          {SHOW_RETIRED_V2_TOGGLE ? (
-            <>
-              <label className="settings-field settings-checkbox">
-                <input
-                  className="settings-checkbox-input"
-                  type="checkbox"
-                  checked={sitePlannerSettings.gutenbergV2Enabled}
-                  disabled={busy}
-                  onChange={(e) => {
-                    setSitePlannerSettings({
-                      ...sitePlannerSettings,
-                      gutenbergV2Enabled: e.target.checked
-                    });
-                  }}
-                />
-                <span>Enable native editor candidate workflow</span>
-              </label>
-              <p className="muted small-print">
-                When enabled, Chat can generate a Gutenberg v2 candidate for an
-                explicitly selected post operation. Every candidate still needs
-                a review decision before it can run.
-              </p>
-            </>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void onSaveSitePlannerSettings()}
-          >
-            Save site settings
           </button>
         </section>
       ) : null}
