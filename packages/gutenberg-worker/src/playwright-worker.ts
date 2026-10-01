@@ -1447,9 +1447,18 @@ body *:has(${captureSelector}) {
           timeout: this.#jobTimeoutMs
         });
         if (!response?.ok()) {
+          // Say what refused it: the plugin's own message, a host's block
+          // page and a login redirect all look different here.
+          const said = response
+            ? ((await page.locator("body").innerText().catch(() => ""))
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 200))
+            : "";
+          const landedOn = response ? new URL(response.url()).pathname : "";
           throw new GutenbergV2WorkerError(
             "editor_unavailable",
-            `The destination editor did not load successfully${response ? ` (HTTP ${response.status()})` : ""}.`,
+            `The destination editor did not load successfully${response ? ` (HTTP ${response.status()} at ${landedOn}${said ? `: "${said}"` : ""})` : ""}.`,
             true
           );
         }
