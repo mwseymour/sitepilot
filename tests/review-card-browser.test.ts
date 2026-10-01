@@ -68,6 +68,8 @@ describe("the review card", () => {
                 _meta: { "sitepilot/approval": { ticket: "ticket-1234567890abcdef" } }
               }
             });
+          } else if (message.method === "tools/call" && message.params?.name === "request_status") {
+            reply({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify({ state: "completed" }) }] } });
           } else if (message.method === "tools/call") {
             (window as unknown as { called: unknown }).called = message.params;
             reply({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "Approved. SitePilot is applying it to the site now." }] } });
@@ -86,6 +88,8 @@ describe("the review card", () => {
       name: "decide_from_card",
       arguments: { site_id: "site-1", request_id: "thread-1", ticket: "ticket-1234567890abcdef", decision: "approve" }
     });
+    // Then it follows the apply until SitePilot says it's done.
+    await card.getByText("Done. Written to the site and verified.").waitFor({ timeout: 15_000 });
     expect(errors).toEqual([]);
     await page.close();
   }, 30_000);
