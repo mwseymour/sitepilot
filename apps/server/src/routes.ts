@@ -73,9 +73,13 @@ export type RoutesDependencies = {
   };
 };
 
-/** Where sign-in returns to, when it isn't the app: only the OAuth consent page. */
+/**
+ * Where sign-in may return to, when it isn't the app: the OAuth consent page,
+ * and the request and preview links MCP clients hand out.
+ */
 const RETURN_COOKIE = "sp_return";
-const RETURN_PATH = /^\/oauth\/consent\?request=[A-Za-z0-9_-]+$/;
+const RETURN_PATH =
+  /^\/(?:oauth\/consent\?request=[A-Za-z0-9_-]+|requests\/[A-Za-z0-9-]+\/(?:open|artifacts\/[A-Za-z0-9_-]+))$/;
 
 const WORKSPACE_ID = "workspace-1";
 
@@ -115,10 +119,13 @@ export function createRoutes(deps: RoutesDependencies) {
     return deps.auth.userForSession(parseCookies(request.headers.cookie)[SESSION_COOKIE]);
   }
 
-  /** Signed in, or sent to the sign-in page. */
+  /** Signed in, or sent to sign in (and back, for a link worth returning to). */
   async function requireUser(request: IncomingMessage, response: ServerResponse) {
     const user = await currentUser(request);
-    if (!user) redirect(response, "/");
+    if (!user) {
+      const path = request.url ?? "/";
+      redirect(response, RETURN_PATH.test(path) ? `/auth/wordpress/start?return=${encodeURIComponent(path)}` : "/");
+    }
     return user;
   }
 
@@ -485,10 +492,20 @@ export function createRoutes(deps: RoutesDependencies) {
     if (path === "/requests" && (method === "GET" || method === "POST")) {
       return requests(request, response, user).then(() => true);
     }
-    const match = /^\/requests\/([A-Za-z0-9-]+)(?:\/(decision|reply|artifacts\/([A-Za-z0-9_-]+)))?$/.exec(path);
+    const match = /^\/requests\/([A-Za-z0-9-]+)(?:\/(decision|reply|open|artifacts\/([A-Za-z0-9_-]+)))?$/.exec(path);
     if (match) {
       const [, requestId, action, artifactId] = match as unknown as [string, string, string | undefined, string | undefined];
       if (!action && method === "GET") return showRequest(response, user, requestId).then(() => true);
+      if (action === "open" && method === "GET") {
+        // A link from an MCP client: the request in the app, or the simple page.
+        redirect(
+          response,
+          deps.app?.available
+            ? `/#/site/${encodeURIComponent(user.siteId)}/chat?thread=${encodeURIComponent(requestId)}`
+            : `/requests/${encodeURIComponent(requestId)}`
+        );
+        return true;
+      }
       if (action === "decision" && method === "POST") return decide(request, response, user, requestId).then(() => true);
       if (action === "reply" && method === "POST") return reply(request, response, user, requestId).then(() => true);
       if (artifactId && method === "GET") return artifact(response, user, requestId, artifactId).then(() => true);

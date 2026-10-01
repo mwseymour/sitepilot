@@ -77,6 +77,11 @@ export type DesktopMcpBackendOptions = {
   siteScope: "all" | readonly string[];
   /** Where people approve; the hosted server names its own address. */
   approvalHint?: string;
+  /** Links into the hosted app, for a request and its review artifacts. */
+  links?: {
+    request(siteId: string, requestId: string): string;
+    artifact(siteId: string, requestId: string, artifactId: string): string;
+  };
 };
 
 function nowIso(): string {
@@ -392,7 +397,10 @@ export function createDesktopMcpBackend(
             },
             reviewArtifacts: candidate.reviewArtifacts.map((artifact) => ({
               id: artifact.id,
-              kind: artifact.kind
+              kind: artifact.kind,
+              ...(options.links
+                ? { url: options.links.artifact(siteId, threadId, artifact.id) }
+                : {})
             }))
           }
         : {}),
@@ -408,6 +416,9 @@ export function createDesktopMcpBackend(
         : {}),
       ...(state === "awaiting_approval" || state === "approved"
         ? { approvalHint: options.approvalHint ?? APPROVAL_HINT }
+        : {}),
+      ...(options.links
+        ? { reviewUrl: options.links.request(siteId, threadId) }
         : {}),
       ...(failure === undefined && v2?.failure && state !== "completed"
         ? {
@@ -740,7 +751,15 @@ export function createDesktopMcpBackend(
           artifactId
         });
         if (!read.ok) return fail(read.code, read.message);
-        return { ok: true, artifact: read.artifact };
+        return {
+          ok: true,
+          artifact: {
+            ...read.artifact,
+            ...(options.links
+              ? { url: options.links.artifact(siteId, requestId, artifactId) }
+              : {})
+          }
+        };
       });
     },
 

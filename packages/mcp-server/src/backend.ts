@@ -83,7 +83,8 @@ export type McpRequestStatus = {
     seo?: Array<{ label: string; value: string }>;
     featuredImage?: string;
   };
-  reviewArtifacts?: Array<{ id: string; kind: string }>;
+  /** On the hosted server, each links to the artifact (needs sign-in). */
+  reviewArtifacts?: Array<{ id: string; kind: string; url?: string }>;
   result?: { postId?: number; editUrl?: string };
   /**
    * Why the request stopped, in sitepilot.error/v1 terms. When `retryable` is
@@ -92,6 +93,8 @@ export type McpRequestStatus = {
   failure?: { code: string; cause: string; retryable: boolean; message: string };
   /** Where a person approves the change. */
   approvalHint?: string;
+  /** On the hosted server: opens the request in SitePilot (needs sign-in). */
+  reviewUrl?: string;
   recentMessages: McpThreadMessage[];
   updatedAt: string;
 };
@@ -110,6 +113,8 @@ export type McpReviewArtifact = {
   kind: "preview" | "structure_diff";
   mimeType: string;
   dataBase64: string;
+  /** On the hosted server: the artifact in SitePilot (needs sign-in). */
+  url?: string;
 };
 
 /**

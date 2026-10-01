@@ -121,7 +121,15 @@ const connecting = connectWithRetry({
     const auth = new AuthStore(connected.database.sql);
     const backend = createDesktopMcpBackend({
       siteScope: "all",
-      approvalHint: `Open SitePilot at ${publicUrl.origin}, open the request and approve it there. MCP clients cannot approve.`
+      approvalHint: `Open the request in SitePilot (reviewUrl) to see the preview and approve it there. MCP clients cannot approve.`,
+      links: {
+        request: (_siteId, requestId) => new URL(`/requests/${encodeURIComponent(requestId)}/open`, publicUrl).toString(),
+        artifact: (_siteId, requestId, artifactId) =>
+          new URL(
+            `/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactId)}`,
+            publicUrl
+          ).toString()
+      }
     });
     const app = createAppShell({ appVersion: info.version });
     const mcpUrl = new URL("/mcp", publicUrl.origin);

@@ -355,6 +355,18 @@ async function main(): Promise<void> {
       await requesterContext.close();
     }
 
+    // The links MCP clients hand out open the request in the app, and send
+    // someone signed out to sign in first.
+    const threadId = new URL(requestUrl.replace("/#/", "/")).searchParams.get("thread") ?? "";
+    await page.goto(`${SERVER}/requests/${threadId}/open`);
+    await page.waitForURL(new RegExp(`chat\\?thread=${threadId}`));
+    const signedOutLink = await fetch(`${SERVER}/requests/${threadId}/open`, { redirect: "manual" });
+    assert(
+      signedOutLink.status === 303 &&
+        signedOutLink.headers.get("location") === `/auth/wordpress/start?return=${encodeURIComponent(`/requests/${threadId}/open`)}`,
+      `A signed-out request link went to ${signedOutLink.headers.get("location")}.`
+    );
+
     const postId = E2E_WP_PATH
       ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${title}`, "--field=ID"], {
           cwd: E2E_WP_PATH,

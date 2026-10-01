@@ -550,7 +550,7 @@ export function createSitePilotMcpServer(
     {
       title: "Request status",
       description:
-        "Where a request is: preparing_preview, needs_your_reply, awaiting_approval, approved, applying, completed, rejected or needs_attention, with a plain summary, the change list and review artifact IDs. Only completed means the change was written and verified.",
+        "Where a request is: preparing_preview, needs_your_reply, awaiting_approval, approved, applying, completed, rejected or needs_attention, with a plain summary, the change list and review artifact IDs. Only completed means the change was written and verified. On the hosted server, reviewUrl opens the request in SitePilot and each artifact has a url: give the person these links to see the preview and approve.",
       inputSchema: {
         site_id: siteIdParameter,
         request_id: requestIdParameter
@@ -591,13 +591,23 @@ export function createSitePilotMcpServer(
         if (!result.ok) return failure(result.code, result.message);
         const { artifact } = result;
         if (artifact.mimeType.startsWith("image/")) {
+          // Some clients show images to the model only: the link lets the
+          // person see it too.
           return {
             content: [
               {
                 type: "image",
                 data: artifact.dataBase64,
                 mimeType: artifact.mimeType
-              }
+              },
+              ...(artifact.url
+                ? [
+                    {
+                      type: "text" as const,
+                      text: `The person can open this preview in SitePilot (signing in if asked): ${artifact.url}`
+                    }
+                  ]
+                : [])
             ]
           };
         }

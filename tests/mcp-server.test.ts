@@ -145,6 +145,28 @@ describe("SitePilot MCP server", () => {
     expect(preview.structuredContent).toMatchObject({ code: "forbidden" });
   });
 
+  it("adds the hosted link to a preview, so the person can see it too", async () => {
+    const backend = fakeBackend();
+    backend.getReviewArtifact.mockResolvedValueOnce({
+      ok: true as const,
+      artifact: {
+        id: "preview-0",
+        kind: "preview" as const,
+        mimeType: "image/png",
+        dataBase64: "iVBORw0KGgo=",
+        url: "https://sitepilot.example/requests/thread-1/artifacts/preview-0"
+      }
+    } as never);
+    const client = await connect(backend);
+    const result = await client.callTool({
+      name: "get_review_artifact",
+      arguments: { request_id: "thread-1", artifact_id: "preview-0" }
+    });
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content.map((part) => part.type)).toEqual(["image", "text"]);
+    expect(content[1]?.text).toContain("https://sitepilot.example/requests/thread-1/artifacts/preview-0");
+  });
+
   it("asks for a site_id when more than one site is available", async () => {
     const backend = fakeBackend([
       { siteId: "site-1", name: "One", baseUrl: "https://one.test" },
