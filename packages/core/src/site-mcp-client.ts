@@ -1,9 +1,11 @@
 import { McpHttpClient } from "@sitepilot/mcp-client";
 import type { SiteId } from "@sitepilot/domain";
+import { siteRestUrl } from "@sitepilot/plugin-protocol";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
 import { createSignedMcpFetch } from "./signed-fetch.js";
+import { ensureSiteRestRoot } from "./site-site-context.js";
 
 export type SiteMcpClientResult =
   | { ok: true; client: McpHttpClient }
@@ -34,8 +36,8 @@ export async function createMcpClientForSite(
     };
   }
   const secret = Buffer.from(secretB64, "base64");
-  const base = site.baseUrl.replace(/\/+$/, "");
-  const mcpUrl = `${base}/wp-json/sitepilot/mcp`;
+  await ensureSiteRestRoot(site.baseUrl);
+  const mcpUrl = siteRestUrl(site.baseUrl, "sitepilot/mcp");
   const signedFetch = createSignedMcpFetch({
     sharedSecret: secret,
     siteId,

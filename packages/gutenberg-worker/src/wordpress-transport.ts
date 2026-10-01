@@ -34,7 +34,7 @@ import {
   type GutenbergV2BlockFixtureStatus,
   type GutenbergV2BlockUsage
 } from "@sitepilot/contracts";
-import { signSitePilotHmacRequest } from "@sitepilot/plugin-protocol";
+import { signSitePilotHmacRequest, siteRestUrl } from "@sitepilot/plugin-protocol";
 import type {
   GutenbergV2MediaBindingTransport,
   GutenbergV2WordPressTransport
@@ -328,8 +328,7 @@ export class SignedWordPressV2Transport
     payload: unknown
   ): Promise<unknown> {
     const endpoint = new URL(
-      `wp-json/sitepilot/v2/${endpointName}`,
-      this.#siteUrl
+      siteRestUrl(this.#siteUrl.href, `sitepilot/v2/${endpointName}`)
     );
     if (endpoint.origin !== this.#siteUrl.origin) {
       throw new GutenbergV2WorkerError(

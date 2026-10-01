@@ -27,3 +27,10 @@ export type {
   ValidateSignedRequestOptions,
   ValidateSignedRequestResult
 } from "./validate.js";
+export {
+  knowsSiteRestRoot,
+  protocolDiscoveryUrl,
+  rememberSiteRestRoot,
+  restRootFromProtocol,
+  siteRestUrl
+} from "./rest-root.js";

@@ -10,7 +10,11 @@ import { McpHttpClient } from "@sitepilot/mcp-client";
 import {
   compareProtocolCompatibility,
   fingerprintSharedSecret,
-  parseSiteRegistration
+  parseSiteRegistration,
+  protocolDiscoveryUrl,
+  rememberSiteRestRoot,
+  restRootFromProtocol,
+  siteRestUrl
 } from "@sitepilot/plugin-protocol";
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
@@ -65,9 +69,8 @@ export async function registerSiteWithWordPress(
 ): Promise<RegisterSiteResponse> {
   try {
     const base = normalizeBaseUrl(request.baseUrl);
-    const protocolRes = await fetchSiteUrl(
-      `${base}/wp-json/sitepilot/v1/protocol`
-    );
+    // Reachable on any permalink setting; it also says where the REST API is.
+    const protocolRes = await fetchSiteUrl(protocolDiscoveryUrl(base));
     if (!protocolRes.ok) {
       return {
         ok: false,
@@ -78,6 +81,8 @@ export async function registerSiteWithWordPress(
 
     const protocolJson: unknown = await protocolRes.json();
     const protocol = protocolMetadataSchema.safeParse(protocolJson);
+    const restRoot = restRootFromProtocol(protocolJson);
+    if (restRoot) rememberSiteRestRoot(base, restRoot);
     if (!protocol.success) {
       return {
         ok: false,
@@ -124,7 +129,7 @@ export async function registerSiteWithWordPress(
     });
 
     const registerRes = await fetchSiteUrl(
-      `${base}/wp-json/sitepilot/v1/register`,
+      siteRestUrl(base, "sitepilot/v1/register"),
       {
         method: "POST",
         headers: {
@@ -202,7 +207,7 @@ export async function registerSiteWithWordPress(
     await db.repositories.sites.save(site);
     await db.repositories.siteConnections.save(connection);
 
-    const mcpUrl = `${base}/wp-json/${protocol.data.mcp_namespace}/${protocol.data.mcp_route}`;
+    const mcpUrl = siteRestUrl(base, `${protocol.data.mcp_namespace}/${protocol.data.mcp_route}`);
     const signedFetch = createSignedMcpFetch({
       sharedSecret: secret,
       siteId,

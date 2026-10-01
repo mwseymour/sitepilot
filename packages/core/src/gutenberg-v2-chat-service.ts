@@ -31,6 +31,11 @@ import {
   createOpenAiChatClient
 } from "@sitepilot/provider-adapters";
 import type { SqlConnection } from "@sitepilot/sql";
+import {
+  protocolDiscoveryUrl,
+  rememberSiteRestRoot,
+  restRootFromProtocol
+} from "@sitepilot/plugin-protocol";
 import { z } from "zod";
 
 import { getDatabase } from "./app-database.js";
@@ -327,11 +332,14 @@ async function assertV2Enabled(
       : { ok: false, code: "gutenberg_v2_destination_disabled", message: V2_DISABLED_MESSAGE };
   }
   try {
-    const response = await fetchSiteUrl(
-      `${site.baseUrl.replace(/\/+$/, "")}/wp-json/sitepilot/v1/protocol`,
-      { signal: AbortSignal.timeout(15_000) }
-    );
-    const body = protocolSchema.safeParse(await response.json());
+    // Reachable on any permalink setting; it also says where the REST API is.
+    const response = await fetchSiteUrl(protocolDiscoveryUrl(site.baseUrl), {
+      signal: AbortSignal.timeout(15_000)
+    });
+    const json: unknown = await response.json();
+    const restRoot = restRootFromProtocol(json);
+    if (restRoot) rememberSiteRestRoot(site.baseUrl, restRoot);
+    const body = protocolSchema.safeParse(json);
     if (response.ok && body.success && !body.data.v2.enabled) {
       return { ok: false, code: "gutenberg_v2_destination_disabled", message: V2_DISABLED_MESSAGE };
     }

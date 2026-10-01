@@ -3,7 +3,10 @@ import type {
   ConnectivityDiagnosticsResult
 } from "@sitepilot/contracts";
 import { McpHttpError } from "@sitepilot/mcp-client";
-import { compareProtocolCompatibility } from "@sitepilot/plugin-protocol";
+import {
+  compareProtocolCompatibility,
+  siteRestUrl
+} from "@sitepilot/plugin-protocol";
 
 import {
   createMcpClientForSite,
@@ -59,7 +62,7 @@ async function missingSigningHeaders(
 ): Promise<string[] | undefined> {
   try {
     const response = await fetchSiteUrl(
-      `${base}/wp-json/sitepilot/v1/echo-headers`,
+      siteRestUrl(base, "sitepilot/v1/echo-headers"),
       {
         headers: Object.fromEntries(
           SIGNING_HEADERS.map((name) => [name, "diagnostic"])
@@ -107,7 +110,7 @@ export async function runConnectivityDiagnostics(
 
   const healthStarted = Date.now();
   try {
-    const healthRes = await fetchSiteUrl(`${base}/wp-json/sitepilot/v1/health`, {
+    const healthRes = await fetchSiteUrl(siteRestUrl(base, "sitepilot/v1/health"), {
       signal: AbortSignal.timeout(15_000)
     });
     const latencyMs = Date.now() - healthStarted;

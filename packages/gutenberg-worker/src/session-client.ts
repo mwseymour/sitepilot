@@ -8,7 +8,7 @@ import {
   type GutenbergV2EditorSessionRequest,
   type GutenbergV2EditorSessionResponse
 } from "@sitepilot/contracts";
-import { signSitePilotHmacRequest } from "@sitepilot/plugin-protocol";
+import { signSitePilotHmacRequest, siteRestUrl } from "@sitepilot/plugin-protocol";
 import type { BrowserContext } from "playwright";
 
 import {
@@ -120,10 +120,9 @@ export class WordPressEditorSessionClient implements GutenbergV2EditorSessionPro
         false
       );
     }
-    const endpoint = new URL(
-      this.#endpointPath ?? "wp-json/sitepilot/v2/editor-sessions",
-      this.#siteUrl
-    );
+    const endpoint = this.#endpointPath
+      ? new URL(this.#endpointPath, this.#siteUrl)
+      : new URL(siteRestUrl(this.#siteUrl.href, "sitepilot/v2/editor-sessions"));
     sameOrigin(this.#siteUrl, endpoint.href, "Editor-session endpoint");
     const body = JSON.stringify(parsedRequest);
     const bodyBuffer = Buffer.from(body, "utf8");

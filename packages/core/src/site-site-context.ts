@@ -2,6 +2,13 @@ import { z } from "zod";
 
 import type { Site, SiteConnection } from "@sitepilot/domain";
 import { McpHttpClient } from "@sitepilot/mcp-client";
+import {
+  knowsSiteRestRoot,
+  protocolDiscoveryUrl,
+  rememberSiteRestRoot,
+  restRootFromProtocol,
+  siteRestUrl
+} from "@sitepilot/plugin-protocol";
 
 import { getDatabase } from "./app-database.js";
 import { getSecureStorage } from "./app-secure-storage.js";
@@ -69,6 +76,7 @@ export async function loadRegisteredSiteContext(
   }
 
   const secret = Buffer.from(secretB64, "base64");
+  await ensureSiteRestRoot(site.baseUrl);
   return { ok: true, site, connection, secret };
 }
 
@@ -82,7 +90,8 @@ export async function fetchProtocolMetadata(
   const started = Date.now();
   let protocolRes: Response;
   try {
-    protocolRes = await fetchSiteUrl(`${base}/wp-json/sitepilot/v1/protocol`, {
+    // Reachable on any permalink setting; it also says where the REST API is.
+    protocolRes = await fetchSiteUrl(protocolDiscoveryUrl(base), {
       signal: AbortSignal.timeout(15_000)
     });
   } catch (e) {
@@ -119,6 +128,8 @@ export async function fetchProtocolMetadata(
       message: "Unexpected protocol metadata"
     };
   }
+  const restRoot = restRootFromProtocol(json);
+  if (restRoot) rememberSiteRestRoot(base, restRoot);
 
   return { ok: true, data: parsed.data, latencyMs };
 }
@@ -144,7 +155,7 @@ export async function createMcpClientForSite(
   }
 
   const base = normalizeBaseUrl(site.baseUrl);
-  const mcpUrl = `${base}/wp-json/${proto.data.mcp_namespace}/${proto.data.mcp_route}`;
+  const mcpUrl = siteRestUrl(base, `${proto.data.mcp_namespace}/${proto.data.mcp_route}`);
   const signedFetch = createSignedMcpFetch({
     sharedSecret: secret,
     siteId,
@@ -156,4 +167,13 @@ export async function createMcpClientForSite(
   });
 
   return { ok: true, client, mcpUrl, protocol: proto.data };
+}
+
+/**
+ * Learns where the site's REST API lives, once per process, so REST URLs
+ * built afterwards are right. A site that can't be reached keeps /wp-json/.
+ */
+export async function ensureSiteRestRoot(baseUrl: string): Promise<void> {
+  if (knowsSiteRestRoot(baseUrl)) return;
+  await fetchProtocolMetadata(baseUrl);
 }
