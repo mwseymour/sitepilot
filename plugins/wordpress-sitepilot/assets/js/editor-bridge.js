@@ -2492,6 +2492,7 @@
     // Only media placed in blocks renders in the canvas; a featured image
     // (postFields.featuredMediaRef) is not part of the content.
     const renderedRefs = blockMediaRefs(input.intent);
+    const imageDeadline = Date.now() + 10000;
     const videos = Array.from(
       imageRoot.querySelectorAll ? imageRoot.querySelectorAll("video") : []
     );
@@ -2512,19 +2513,29 @@
         }
         continue;
       }
-      const renderedImage = images.find(
-        (candidate) =>
-          candidate.getAttribute("src") === mapping.dataUrl ||
-          candidate.src === mapping.dataUrl
-      );
-      if (
-        !renderedImage ||
-        !renderedImage.complete ||
-        renderedImage.naturalWidth < 1
-      ) {
-        throw new Error(
-          `media_changed: preview image ${mapping.ref} did not load.`
+      // The canvas can place an image after the wait above, and a busy
+      // browser can take a while to decode one: look again until it loads.
+      for (;;) {
+        const renderedImage = Array.from(
+          imageRoot.querySelectorAll ? imageRoot.querySelectorAll("img") : []
+        ).find(
+          (candidate) =>
+            candidate.getAttribute("src") === mapping.dataUrl ||
+            candidate.src === mapping.dataUrl
         );
+        if (
+          renderedImage &&
+          renderedImage.complete &&
+          renderedImage.naturalWidth > 0
+        ) {
+          break;
+        }
+        if (Date.now() > imageDeadline) {
+          throw new Error(
+            `media_changed: preview image ${mapping.ref} did not load.`
+          );
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       }
     }
     await settledLayout(imageRoot, blocks);

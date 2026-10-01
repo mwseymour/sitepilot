@@ -19,6 +19,7 @@ import {
 } from "@sitepilot/contracts";
 
 import type { GutenbergV2MediaService } from "./gutenberg-v2-content-service.js";
+import type { StoredFileMirror } from "./stored-file-mirror.js";
 import { GutenbergV2ServiceError } from "./gutenberg-v2-content-service.js";
 import {
   hashGutenbergV2Bytes,
@@ -105,12 +106,15 @@ export function detectGutenbergV2MediaType(
 
 export class FileGutenbergV2StagedAssetStore implements GutenbergV2StagedAssetStore {
   readonly #rootDirectory: string;
+  readonly #mirror: StoredFileMirror | undefined;
 
-  public constructor(rootDirectory: string) {
+  /** With a mirror, staged media outlives this disk (the hosted server's container). */
+  public constructor(rootDirectory: string, mirror?: StoredFileMirror) {
     if (rootDirectory.trim().length === 0) {
       throw new TypeError("A private staged media directory is required.");
     }
     this.#rootDirectory = resolve(rootDirectory);
+    this.#mirror = mirror;
   }
 
   public async stage(input: {
@@ -175,6 +179,7 @@ export class FileGutenbergV2StagedAssetStore implements GutenbergV2StagedAssetSt
         if (error.code !== "ENOENT") throw error;
       });
     }
+    await this.#mirror?.put(fileName, bytes);
     return {
       stagedAssetId,
       checksum,
@@ -197,9 +202,15 @@ export class FileGutenbergV2StagedAssetStore implements GutenbergV2StagedAssetSt
         "The staged media identity does not match its immutable checksum."
       );
     }
+    // The checks below cover a mirrored copy too.
     const bytes = await this.#readPath(
       join(this.#rootDirectory, input.stagedAssetId)
-    );
+    ).catch(async (error: NodeJS.ErrnoException) => {
+      const copy =
+        error.code === "ENOENT" ? await this.#mirror?.get(input.stagedAssetId) : null;
+      if (!copy) throw error;
+      return copy;
+    });
     if (
       bytes.byteLength !== input.byteLength ||
       hashGutenbergV2Bytes(bytes) !== input.checksum ||

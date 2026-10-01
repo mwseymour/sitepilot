@@ -402,6 +402,18 @@ CREATE TABLE used_sign_in_nonces (
   expires_at TEXT NOT NULL
 );
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "004_stored_files",
+    description:
+      "A durable copy of review previews and staged media, which the container's disk loses on every deploy.",
+    sql: `
+CREATE TABLE stored_files (
+  key TEXT PRIMARY KEY,
+  data BYTEA NOT NULL,
+  created_at TEXT NOT NULL
+);
+${REVOKE_API_ROLES}`
   }
 ];
 

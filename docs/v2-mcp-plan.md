@@ -39,10 +39,12 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
     - Site setup calls need the admin role. Approving and applying need a WordPress role that can publish, as on the desktop.
   - Simple server-rendered pages remain at `/requests` as a fallback: the request list, a new-request form, the review page with previews, and approve or reject. Approve applies at once there, the Phase 0 recommendation. Sign-in, connecting the site and the account page (tokens) are server-rendered too.
   - The Playwright worker runs in the same container, with headless Chromium in the image. The planner key comes from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; the Copilot adapter is still the gate for production.
-  - Not done: Supabase Storage for review artifacts and staged media (they're files on the container's disk), signed review links, and a separate worker service.
+  - Review files and staged media are written to the container's disk and copied to Postgres (`stored_files`, migration 004), so a deploy doesn't lose the previews of requests waiting for approval. Nothing removes old copies yet.
+  - Not done: Supabase Storage for large media, signed review links, and a separate worker service.
 - **Phase 6 (in part):**
   - Sign in with WordPress (6.1): the plugin's confirm page and signed, two-minute, one-use assertion, returned only to the callback the client registered. Roles come from WordPress capabilities at every sign-in.
   - Remote MCP at `/mcp` with a personal token from the account page (`claude mcp add --transport http …`). Each session acts as the token's owner.
+  - Roles follow WordPress capabilities: anyone who can publish (authors, editors, admins) approves; contributors request. The hosted E2E checks that a contributor is refused approving, applying and site setup.
   - Not done: OAuth 2.1 for claude.ai connectors. Personal tokens cover Claude Code and Codex until then.
 - **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers:
   - connecting the site;

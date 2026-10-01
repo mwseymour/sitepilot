@@ -8,7 +8,10 @@ import type {
 } from "@sitepilot/contracts";
 import { canonicalGutenbergV2Json } from "@sitepilot/services";
 
-import type { GutenbergV2ReviewArtifact } from "@sitepilot/services";
+import type {
+  GutenbergV2ReviewArtifact,
+  StoredFileMirror
+} from "@sitepilot/services";
 
 export interface GutenbergV2ReviewArtifactStore {
   write(input: {
@@ -24,11 +27,14 @@ export interface GutenbergV2ReviewArtifactStore {
 
 export class FileGutenbergV2ReviewArtifactStore implements GutenbergV2ReviewArtifactStore {
   readonly #rootDirectory: string;
+  readonly #mirror: StoredFileMirror | undefined;
 
-  public constructor(rootDirectory: string) {
+  /** With a mirror, files outlive this disk (the hosted server's container). */
+  public constructor(rootDirectory: string, mirror?: StoredFileMirror) {
     if (rootDirectory.trim().length === 0)
       throw new TypeError("A private review artifact directory is required.");
     this.#rootDirectory = resolve(rootDirectory);
+    this.#mirror = mirror;
   }
 
   public async write(input: {
@@ -70,7 +76,8 @@ export class FileGutenbergV2ReviewArtifactStore implements GutenbergV2ReviewArti
       capabilityFingerprint: input.capabilityFingerprint
     })}\n`;
     await this.#writeImmutable(
-      join(directory, "structure.json"),
+      key,
+      "structure.json",
       Buffer.from(structure, "utf8")
     );
     if (input.screenshots.length !== 2) {
@@ -84,7 +91,7 @@ export class FileGutenbergV2ReviewArtifactStore implements GutenbergV2ReviewArti
         .update(screenshot.data)
         .digest("hex");
       const name = `preview-${screenshot.viewport}-${screenshotHash}.png`;
-      await this.#writeImmutable(join(directory, name), screenshot.data);
+      await this.#writeImmutable(key, name, screenshot.data);
       previewRefs.push(`artifact://gutenberg-v2/${key}/${name}`);
     }
     return {
@@ -99,10 +106,20 @@ export class FileGutenbergV2ReviewArtifactStore implements GutenbergV2ReviewArti
         reference
       );
     if (!match) throw new TypeError("Invalid Gutenberg v2 artifact reference.");
-    return readFile(join(this.#rootDirectory, match[1]!, match[2]!));
+    const [, key, name] = match as unknown as [string, string, string];
+    try {
+      return await readFile(join(this.#rootDirectory, key, name));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !this.#mirror)
+        throw error;
+      const copy = await this.#mirror.get(`${key}/${name}`);
+      if (!copy) throw error;
+      return copy;
+    }
   }
 
-  async #writeImmutable(path: string, data: Buffer): Promise<void> {
+  async #writeImmutable(key: string, name: string, data: Buffer): Promise<void> {
+    const path = join(this.#rootDirectory, key, name);
     try {
       await writeFile(path, data, { flag: "wx", mode: 0o600 });
     } catch (error) {
@@ -113,5 +130,6 @@ export class FileGutenbergV2ReviewArtifactStore implements GutenbergV2ReviewArti
           "A review artifact reference collided with different immutable content."
         );
     }
+    await this.#mirror?.put(`${key}/${name}`, data);
   }
 }

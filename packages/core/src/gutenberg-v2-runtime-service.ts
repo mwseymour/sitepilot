@@ -6,6 +6,7 @@ import {
   type GutenbergV2ExecutionJournal,
   SqlGutenbergV2ApprovalStore,
   SqlGutenbergV2ExecutionJournal,
+  SqlStoredFileMirror,
   type GutenbergV2StagedAssetStore
 } from "@sitepilot/services";
 import type {
@@ -89,8 +90,17 @@ export async function createGutenbergV2DesktopRuntime(
   }
 
   const root = getArtifactRoot();
+  const { sql } = getDatabase();
+  // The hosted server's disk is lost on every deploy: keep a copy of review
+  // files and staged media in its database. The desktop's disk lasts.
+  const mirror = (namespace: string) =>
+    sql.dialect === "postgres"
+      ? new SqlStoredFileMirror(sql, `${namespace}/${siteId}`)
+      : undefined;
+  const reviewMirror = mirror("review");
   const stagedAssets = new FileGutenbergV2StagedAssetStore(
-    join(root, "staged-media", siteId)
+    join(root, "staged-media", siteId),
+    mirror("staged-media")
   );
   if (testRuntimeFactory) {
     return {
@@ -116,6 +126,7 @@ export async function createGutenbergV2DesktopRuntime(
     sharedSecret: context.secret,
     stagedAssets,
     reviewArtifactDirectory: join(root, "review", siteId),
+    ...(reviewMirror ? { reviewArtifactMirror: reviewMirror } : {}),
     maxConcurrentJobs: 1,
     jobTimeoutMs: 120_000,
     fetchImplementation: fetchSiteUrl,
@@ -123,9 +134,9 @@ export async function createGutenbergV2DesktopRuntime(
   };
   const signed = createSignedGutenbergV2Runtime(options);
   const artifacts = new FileGutenbergV2ReviewArtifactStore(
-    join(root, "review", siteId)
+    join(root, "review", siteId),
+    reviewMirror
   );
-  const { sql } = getDatabase();
   const journal = new SqlGutenbergV2ExecutionJournal(sql);
   return {
     ok: true,

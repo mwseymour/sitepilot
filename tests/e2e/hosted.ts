@@ -7,6 +7,9 @@
  * 3. Create a personal MCP token and use the MCP server with it.
  * 4. Make a request in the app (the desktop interface, served by the
  *    server), approve and apply it there, and see it in WordPress.
+ * 5. Sign in as a WordPress contributor (can edit, can't publish): a
+ *    requester, refused approving and site setup. (Needs wp-cli, for the
+ *    test user's password.)
  *
  * Needs SITEPILOT_TEST_POSTGRES_URL (the local Docker Postgres), an OpenAI
  * key for the planner, and SITEPILOT_E2E_WP_PATH for fresh registration codes.
@@ -186,6 +189,59 @@ async function main(): Promise<void> {
       .catch(async (error: unknown) => {
         throw new Error(`Applying didn't finish (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
       });
+    // 5. A contributor can request but not approve, apply or change setup.
+    // (Editors and authors can publish, so they approve.)
+    if (E2E_WP_PATH) {
+      const requester = "sitepilot-e2e-contributor";
+      const requesterPassword = randomBytes(18).toString("base64url");
+      const wp = (...args: string[]) =>
+        execFileSync("wp", args, { cwd: E2E_WP_PATH, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      let requesterExists = true;
+      try {
+        wp("user", "get", requester, "--field=ID");
+      } catch {
+        requesterExists = false;
+      }
+      if (requesterExists) wp("user", "update", requester, `--user_pass=${requesterPassword}`, "--role=contributor", "--skip-email");
+      else wp("user", "create", requester, "sitepilot-e2e-contributor@example.test", "--role=contributor", `--user_pass=${requesterPassword}`);
+      const requesterContext = await browser.newContext({ ignoreHTTPSErrors: true });
+      const requesterPage = await requesterContext.newPage();
+      await requesterPage.goto(`${SERVER}/auth/wordpress/start`);
+      await requesterPage.waitForURL(/wp-login\.php/);
+      await requesterPage.fill("#user_login", requester);
+      await requesterPage.fill("#user_pass", requesterPassword);
+      await requesterPage.click("#wp-submit");
+      await requesterPage.getByRole("button", { name: "Continue" }).click();
+      await requesterPage.waitForURL(/#\/site\/[^/]+\/overview$/);
+      const siteId = /#\/site\/([^/]+)\//.exec(requesterPage.url())?.[1] ?? "";
+      const answers = await requesterPage.evaluate(
+        async (calls) =>
+          Promise.all(
+            calls.map(async ([channel, body]) => {
+              const response = await fetch(`/api/ipc/${channel}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(body)
+              });
+              return `${response.status} ${((await response.json()) as { code?: string }).code ?? "ok"}`;
+            })
+          ),
+        [
+          ["gutenbergV2.decideCandidate", { siteId, requestId: "r", candidateId: "c", decision: "approved" }],
+          ["gutenbergV2.executeCandidate", { siteId, requestId: "r" }],
+          ["site.confirmConfig", { siteId }],
+          ["site.list", {}]
+        ] as Array<[string, Record<string, string>]>
+      );
+      assert(
+        JSON.stringify(answers) === JSON.stringify(["200 forbidden", "200 forbidden", "403 forbidden", "200 ok"]),
+        `A contributor's calls answered ${JSON.stringify(answers)}.`
+      );
+      await requesterPage.goto(`${SERVER}/account`);
+      assert((await requesterPage.content()).includes("someone who can publish approves them"), "The contributor isn't a requester.");
+      await requesterContext.close();
+    }
+
     const postId = E2E_WP_PATH
       ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${title}`, "--field=ID"], {
           cwd: E2E_WP_PATH,

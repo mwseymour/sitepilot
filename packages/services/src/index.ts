@@ -105,3 +105,7 @@ export {
   SECRETS_TABLE_SQL,
   parseSecretsKey
 } from "./sql-secure-storage.js";
+export {
+  SqlStoredFileMirror,
+  type StoredFileMirror
+} from "./stored-file-mirror.js";

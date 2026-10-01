@@ -8,7 +8,8 @@ import {
 
 import {
   DurableGutenbergV2MediaService,
-  type GutenbergV2StagedAssetStore
+  type GutenbergV2StagedAssetStore,
+  type StoredFileMirror
 } from "@sitepilot/services";
 
 import {
@@ -34,6 +35,8 @@ export type SignedGutenbergV2RuntimeOptions = Pick<
   clientId: string;
   sharedSecret: Buffer;
   reviewArtifactDirectory: string;
+  /** A durable copy of review artifacts, for hosts whose disk doesn't last. */
+  reviewArtifactMirror?: StoredFileMirror;
   stagedAssets: GutenbergV2StagedAssetStore;
   fetchImplementation?: typeof fetch;
 };
@@ -80,7 +83,8 @@ export function createSignedGutenbergV2Runtime(
     siteUrl: options.siteUrl,
     sessionProvider,
     reviewArtifacts: new FileGutenbergV2ReviewArtifactStore(
-      options.reviewArtifactDirectory
+      options.reviewArtifactDirectory,
+      options.reviewArtifactMirror
     ),
     previewMedia,
     ...(options.browserFactory === undefined
