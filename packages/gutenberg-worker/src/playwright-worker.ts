@@ -1220,7 +1220,9 @@ body *:has(${captureSelector}) {
       ) {
         throw new GutenbergV2WorkerError(
           "media_changed",
-          `Bound media ${item.ref} is unavailable or exceeds the 10 MB verification limit.`,
+          response.status() < 200 || response.status() >= 300
+            ? `Bound media ${item.ref} answered HTTP ${response.status()} at ${new URL(item.url).pathname}.`
+            : `Bound media ${item.ref} exceeds the 10 MB verification limit.`,
           false
         );
       }

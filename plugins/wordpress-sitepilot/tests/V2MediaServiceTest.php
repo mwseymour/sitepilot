@@ -27,4 +27,21 @@ final class V2MediaServiceTest extends TestCase {
 		$this->assertFalse( $method->invoke( null, 'video/mp4', 'video/quicktime' ) );
 		$this->assertFalse( $method->invoke( null, 'video/quicktime', 'video/quicktime' ) );
 	}
+
+	public function test_installed_media_is_readable_like_other_uploads(): void {
+		$folder = sys_get_temp_dir() . '/sitepilot-media-' . bin2hex( random_bytes( 4 ) );
+		mkdir( $folder, 0755 );
+		// tempnam() makes owner-only files, which a separate web server user can't serve.
+		$file = (string) tempnam( $folder, '.sitepilot-v2-' );
+		$this->assertSame( 0600, fileperms( $file ) & 0777 );
+
+		$method = new ReflectionMethod( Media_Service::class, 'make_readable_like_uploads' );
+		$method->setAccessible( true );
+		$method->invoke( null, $file );
+		clearstatcache();
+
+		$this->assertSame( 0644, fileperms( $file ) & 0777 );
+		unlink( $file );
+		rmdir( $folder );
+	}
 }

@@ -397,6 +397,18 @@ final class Media_Service {
 		);
 	}
 
+	/**
+	 * Gives an installed file the permissions WordPress gives uploads: its
+	 * folder's, without execute bits. tempnam() creates files only their owner
+	 * can read, and where the web server isn't the PHP user (shared hosting)
+	 * the image then answers 403.
+	 */
+	private static function make_readable_like_uploads( string $file ): void {
+		$folder = @stat( dirname( $file ) );
+		$perms  = is_array( $folder ) ? ( $folder['mode'] & 0000666 ) : 0644;
+		@chmod( $file, $perms );
+	}
+
 	/** @param array<string, mixed> $intent @return array<string, mixed>|\WP_Error */
 	private static function staged_mapping( string $ref, array $intent, string $binary ) {
 		global $wpdb;
@@ -426,6 +438,8 @@ final class Media_Service {
 				}
 			}
 		}
+		// Also repairs a file installed before this existed.
+		self::make_readable_like_uploads( $file );
 		if ( ! is_readable( $file ) || ! hash_equals( (string) $intent['checksum'], (string) hash_file( 'sha256', $file ) ) ) {
 			return self::error( 'media_changed', 'The staged media file conflicts with its durable identity.', 409 );
 		}
