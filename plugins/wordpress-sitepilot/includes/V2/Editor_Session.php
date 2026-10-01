@@ -311,14 +311,28 @@ final class Editor_Session {
 	}
 
 	/**
-	 * @param array<string, mixed> $data Post data.
+	 * Records the block editor creates the first time anyone opens it on a
+	 * site: the theme's user global styles and the fallback navigation. On a
+	 * new site that first open can be SitePilot's, so these may be created.
+	 */
+	private const EDITOR_SETUP_POST_TYPES = array( 'wp_global_styles', 'wp_navigation' );
+
+	/**
+	 * @param array<string, mixed> $data    Post data.
+	 * @param array<string, mixed> $postarr Raw post data.
+	 * @param array<string, mixed> $unsanitized Unsanitized post data.
+	 * @param bool                 $update  Whether an existing post is updated.
 	 * @return array<string, mixed>
 	 */
-	public static function block_post_write( array $data ): array {
-		if ( self::current() !== null ) {
-			wp_die( esc_html__( 'The SitePilot preparation session cannot write posts.', 'sitepilot' ), '', array( 'response' => 403 ) );
+	public static function block_post_write( array $data, array $postarr = array(), array $unsanitized = array(), bool $update = false ): array {
+		unset( $postarr, $unsanitized );
+		if ( self::current() === null ) {
+			return $data;
 		}
-		return $data;
+		if ( ! $update && in_array( (string) ( $data['post_type'] ?? '' ), self::EDITOR_SETUP_POST_TYPES, true ) ) {
+			return $data;
+		}
+		wp_die( esc_html__( 'The SitePilot preparation session cannot write posts.', 'sitepilot' ), '', array( 'response' => 403 ) );
 	}
 
 	/** @return mixed */
