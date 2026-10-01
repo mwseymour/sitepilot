@@ -87,9 +87,12 @@ function takeTicket(id: string): ApprovalTicket | null {
 const OPERATION_LABELS: Record<string, string> = {
   create_draft: "New draft",
   edit: "Edit",
+  apply_operations: "Edit",
   replace: "Replace the content",
+  replace_content: "Replace the content",
   publish: "Publish",
-  unpublish: "Unpublish"
+  unpublish: "Unpublish",
+  set_status: "Change the post's status (only its status changes)"
 };
 
 const CARD_STATE: Record<string, { label: string; summary: string }> = {
