@@ -18,7 +18,10 @@ export type {
   McpThreadSummary,
   SitePilotMcpBackend
 } from "./backend.js";
-export { clientSourceFromName } from "./client-source.js";
+export {
+  HOSTED_APP_CLIENT_NAME,
+  clientSourceFromName
+} from "./client-source.js";
 export { startLocalMcpHttpServer } from "./http-host.js";
 export type {
   LocalMcpHttpServer,

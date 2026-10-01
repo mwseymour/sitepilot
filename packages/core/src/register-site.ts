@@ -56,6 +56,8 @@ export type RegisterSiteRequest = {
   workspaceId?: string;
   environment?: Site["environment"];
   trustedAppOrigin?: string;
+  /** Hosted clients: where Sign in with WordPress sends people back. */
+  signInCallbackUrl?: string;
 };
 
 export async function registerSiteWithWordPress(
@@ -115,7 +117,10 @@ export async function registerSiteWithWordPress(
       siteName: request.siteName,
       siteBaseUrl: base,
       environment: request.environment ?? "production",
-      sharedSecretBase64
+      sharedSecretBase64,
+      ...(request.signInCallbackUrl
+        ? { signInCallbackUrl: request.signInCallbackUrl }
+        : {})
     });
 
     const registerRes = await fetchSiteUrl(

@@ -16,8 +16,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@sitepilot/core": "0.1.0",
+    "@sitepilot/domain": "0.1.0",
+    "@sitepilot/mcp-server": "0.1.0",
     "@sitepilot/repositories": "0.1.0",
+    "@sitepilot/services": "0.1.0",
+    "@sitepilot/sql": "0.1.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {

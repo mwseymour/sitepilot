@@ -4,6 +4,15 @@ import type { ReadToolDefinition } from "@sitepilot/services/read-tool-registry"
 export type McpCaller = {
   /** `clientInfo.name` from the MCP initialize request, when sent. */
   clientName?: string;
+  /**
+   * The signed-in person, on the hosted server. Without it the caller is the
+   * desktop operator with request-only rights.
+   */
+  actor?: {
+    userProfileId: string;
+    appRole: string;
+    siteRoles: string[];
+  };
 };
 
 export type McpResult<T> =

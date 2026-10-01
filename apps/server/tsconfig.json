@@ -9,6 +9,10 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../../packages/core" },
-    { "path": "../../packages/repositories" }
+    { "path": "../../packages/domain" },
+    { "path": "../../packages/mcp-server" },
+    { "path": "../../packages/repositories" },
+    { "path": "../../packages/services" },
+    { "path": "../../packages/sql" }
   ]
 }

@@ -3,15 +3,24 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { createDesktopMcpBackend } from "@sitepilot/core/mcp-backend";
 import { configureRuntimeContext } from "@sitepilot/core/runtime-context";
 import {
   EncryptedSqlSecureStorage,
-  parseSecretsKey
+  parseSecretsKey,
+  type SecureStorage
 } from "@sitepilot/services";
 
-import { createRequestHandler, serverInfoFromEnvironment } from "./app.js";
+import {
+  createRequestHandler,
+  serverInfoFromEnvironment,
+  type Routes,
+  type SecretsStatus
+} from "./app.js";
+import { AuthStore } from "./auth.js";
 import { connectWithRetry, type DatabaseStatus } from "./database.js";
-import type { SecretsStatus } from "./app.js";
+import { createHostedMcpHandler } from "./mcp.js";
+import { createRoutes } from "./routes.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8080", 10);
 const info = serverInfoFromEnvironment();
@@ -25,9 +34,38 @@ let secretsStatus: SecretsStatus = process.env.SITEPILOT_SECRETS_KEY
     : "invalid_key"
   : "not_configured";
 const shutdownController = new AbortController();
+let routes: Routes | null = null;
+
+// The address people and WordPress reach this server at. Railway sets
+// RAILWAY_PUBLIC_DOMAIN once the service has a domain.
+const publicUrl = new URL(
+  process.env.SITEPILOT_PUBLIC_URL ??
+    (process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `http://localhost:${port}`)
+);
+
+/**
+ * Planner keys can come from the environment (OPENAI_API_KEY,
+ * ANTHROPIC_API_KEY) instead of being saved through the app.
+ */
+function withProviderKeysFromEnvironment(storage: SecureStorage): SecureStorage {
+  const fromEnvironment: Record<string, string | undefined> = {
+    openai: process.env.OPENAI_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY
+  };
+  const envValue = (key: { namespace: string; keyId: string }) =>
+    key.namespace === "provider" ? fromEnvironment[key.keyId] : undefined;
+  return {
+    get: async (key) => envValue(key) ?? storage.get(key),
+    has: async (key) => envValue(key) !== undefined || storage.has(key),
+    set: (key, value) => storage.set(key, value),
+    delete: (key) => storage.delete(key)
+  };
+}
 
 const server = createServer(
-  createRequestHandler(info, () => databaseStatus, () => secretsStatus)
+  createRequestHandler(info, () => databaseStatus, () => secretsStatus, () => routes)
 );
 
 // "::" accepts IPv4 and IPv6. Railway's private network is IPv6-only.
@@ -57,13 +95,25 @@ const connecting = connectWithRetry({
     database: connected.database,
     ...(secretsKey
       ? {
-          secureStorage: new EncryptedSqlSecureStorage(
-            connected.database.sql,
-            secretsKey
+          secureStorage: withProviderKeysFromEnvironment(
+            new EncryptedSqlSecureStorage(connected.database.sql, secretsKey)
           )
         }
       : {})
   });
+  // The app needs somewhere to keep site secrets before it can serve.
+  if (secretsKey) {
+    const auth = new AuthStore(connected.database.sql);
+    const backend = createDesktopMcpBackend({ siteScope: "all" });
+    routes = createRoutes({
+      publicUrl,
+      allowedSiteUrl: process.env.SITEPILOT_SITE_URL ? new URL(process.env.SITEPILOT_SITE_URL) : null,
+      auth,
+      backend,
+      mcp: createHostedMcpHandler({ auth, backend, version: info.version })
+    });
+    console.log(`Serving the app at ${publicUrl.origin}.`);
+  }
   if (secretsKey) secretsStatus = "ok";
   console.log(
     secretsStatus === "ok"

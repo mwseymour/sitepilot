@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace SitePilot;
 
 use SitePilot\Admin\Settings_Page;
+use SitePilot\Auth\WordPress_Sign_In;
 use SitePilot\Mcp\Abilities_Registrar;
 use SitePilot\Mcp\Mcp_Permission;
 use SitePilot\Mcp\Mcp_Status;
@@ -46,6 +47,7 @@ final class Plugin {
 		add_action( 'shutdown', array( Signed_Request_Verifier::class, 'reset_request_context' ), 999 );
 		Nonce_Ledger::register_hooks();
 		Approval_Proof::register_hooks();
+		WordPress_Sign_In::register_hooks();
 		Mcp_Permission::register_hooks();
 
 		if ( class_exists( \WP\MCP\Core\McpAdapter::class ) ) {

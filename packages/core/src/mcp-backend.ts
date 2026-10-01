@@ -101,7 +101,9 @@ function failureOf(
 
 function callContextFor(caller: McpCaller, tool: string): CallContext {
   return {
-    actor: { ...DEFAULT_OPERATOR, siteRoles: LOCAL_MCP_SITE_ROLES },
+    actor: caller.actor
+      ? (caller.actor as CallContext["actor"])
+      : { ...DEFAULT_OPERATOR, siteRoles: LOCAL_MCP_SITE_ROLES },
     source: clientSourceFromName(caller.clientName),
     tool
   };

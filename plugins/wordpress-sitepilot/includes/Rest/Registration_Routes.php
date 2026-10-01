@@ -61,6 +61,7 @@ final class Registration_Routes {
 		$site_base_url      = isset( $params['siteBaseUrl'] ) ? (string) $params['siteBaseUrl'] : '';
 		$environment        = isset( $params['environment'] ) ? (string) $params['environment'] : '';
 		$secret_b64         = isset( $params['sharedSecretBase64'] ) ? (string) $params['sharedSecretBase64'] : '';
+		$sign_in_callback   = isset( $params['signInCallbackUrl'] ) ? (string) $params['signInCallbackUrl'] : '';
 
 		if ( $site_id === '' || $workspace_id === '' || $trusted_origin === '' || $client_id === '' ) {
 			return Error_Contract::error( 'sitepilot_', 'invalid_payload', __( 'Missing required registration fields.', 'sitepilot' ), 400 );
@@ -77,6 +78,11 @@ final class Registration_Routes {
 		$allowed_env = array( 'production', 'staging', 'development' );
 		if ( ! in_array( $environment, $allowed_env, true ) ) {
 			return Error_Contract::error( 'sitepilot_', 'invalid_environment', __( 'Invalid environment value.', 'sitepilot' ), 400 );
+		}
+
+		// Sign in with WordPress only ever sends a user back here.
+		if ( '' !== $sign_in_callback && ! \SitePilot\Auth\WordPress_Sign_In::is_allowed_callback( $sign_in_callback ) ) {
+			return Error_Contract::error( 'sitepilot_', 'invalid_payload', __( 'The sign-in callback must be an https URL, or http on localhost.', 'sitepilot' ), 400 );
 		}
 
 		$secret_raw = base64_decode( $secret_b64, true );
@@ -119,6 +125,7 @@ final class Registration_Routes {
 				'user_id'       => $user_id,
 				'name'          => sanitize_text_field( $site_name ),
 				'registered_at' => time(),
+				...( '' !== $sign_in_callback ? array( 'sign_in_callback' => $sign_in_callback ) : array() ),
 			)
 		);
 

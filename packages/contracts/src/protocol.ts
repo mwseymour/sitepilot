@@ -42,7 +42,9 @@ export const siteRegistrationHandshakeRequestSchema = z.object({
   siteName: z.string().min(1),
   siteBaseUrl: urlSchema,
   environment: siteEnvironmentSchema,
-  sharedSecretBase64: z.string().min(1)
+  sharedSecretBase64: z.string().min(1),
+  /** Where Sign in with WordPress returns people. Hosted clients only. */
+  signInCallbackUrl: urlSchema.optional()
 });
 
 export const signedRequestHeadersSchema = z.object({

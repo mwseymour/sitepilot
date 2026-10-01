@@ -359,6 +359,49 @@ CREATE TABLE secrets (
   PRIMARY KEY (namespace, key_id)
 );
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "003_hosted_sign_in",
+    description:
+      "Sign in with WordPress: linked WordPress users, browser sessions, MCP tokens and used sign-in nonces.",
+    sql: `
+CREATE TABLE wordpress_identities (
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  wordpress_user_id INTEGER NOT NULL,
+  user_profile_id TEXT NOT NULL REFERENCES user_profiles(id),
+  login TEXT NOT NULL,
+  email TEXT,
+  display_name TEXT NOT NULL,
+  app_role TEXT NOT NULL,
+  site_roles_json TEXT NOT NULL,
+  last_sign_in_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (site_id, wordpress_user_id)
+);
+CREATE TABLE web_sessions (
+  token_hash TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  FOREIGN KEY (site_id, wordpress_user_id) REFERENCES wordpress_identities(site_id, wordpress_user_id)
+);
+CREATE TABLE api_tokens (
+  token_hash TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT,
+  FOREIGN KEY (site_id, wordpress_user_id) REFERENCES wordpress_identities(site_id, wordpress_user_id)
+);
+CREATE TABLE used_sign_in_nonces (
+  nonce TEXT PRIMARY KEY,
+  expires_at TEXT NOT NULL
+);
+${REVOKE_API_ROLES}`
   }
 ];
 

@@ -19,6 +19,7 @@ The MCP tools only read: `find-posts`, `get-post`, `site-discovery` and `ping`. 
   - `/sitepilot/v2/render-check` (`render_check_v1`) renders a saved post in-process, so SitePilot can roll back an edit that breaks the page.
   - Signed approvals (`approval_proof_v1`). A client can register an Ed25519 approval key through `/sitepilot/v2/approval-key`. From then on, every v2 write from that client needs an approval signed with that key. The approval must be bound to the exact change, last at most 30 minutes and be used once. Commit receipts record who approved each write.
   - A media upload whose file type check fails leaves no file behind.
+  - Sign in with WordPress (`wordpress_sign_in_v1`) for hosted SitePilot. A client that registered with a `signInCallbackUrl` (https, or http on localhost) can send people to `admin-post.php?action=sitepilot_sign_in`. After the normal WordPress login and a confirmation, the plugin returns them to that callback only, with a two-minute assertion of who they are and what they can do, signed with the client's shared secret.
 
 ## Requirements
 

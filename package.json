@@ -35,7 +35,8 @@
     "test:e2e:mcp": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/v2-mcp.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "generate:v2-block-manifest": "tsx scripts/generate-v2-block-manifest.ts"
+    "generate:v2-block-manifest": "tsx scripts/generate-v2-block-manifest.ts",
+    "test:e2e:hosted": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/hosted.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",

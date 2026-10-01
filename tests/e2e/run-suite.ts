@@ -72,10 +72,21 @@ const longPost: Step = {
       : "set OPENAI_API_KEY or openAiApiKey in .sitepilot-e2e.local.json"
 };
 
+const hosted: Step = {
+  script: "hosted",
+  skipReason: () =>
+    !process.env.SITEPILOT_TEST_POSTGRES_URL
+      ? "set SITEPILOT_TEST_POSTGRES_URL to the local test Postgres (docker start sitepilot-pg-test)"
+      : !E2E_OPENAI_API_KEY
+        ? "set OPENAI_API_KEY or openAiApiKey in .sitepilot-e2e.local.json"
+        : needsWpPath(),
+  env: wpPathEnv
+};
+
 const SUITES: Record<string, Step[]> = {
   smoke: [onboarding, chat],
   content: [onboarding, chat, engine, mcp, renderCheck],
-  all: [onboarding, chat, engine, mcp, renderCheck, status, seo, acf, longPost]
+  all: [onboarding, chat, engine, mcp, renderCheck, status, seo, acf, longPost, hosted]
 };
 
 type Outcome = {

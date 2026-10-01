@@ -15,6 +15,12 @@ COPY . .
 RUN npm ci --ignore-scripts --include=dev \
   && npx tsc -b apps/server/tsconfig.json
 
+# The worker that builds previews and applies changes drives headless
+# Chromium. Installed where the unprivileged user can read it.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 npx playwright install --with-deps --only-shell chromium \
+  && rm -rf /var/lib/apt/lists/*
+
 USER node
 EXPOSE 8080
 CMD ["node", "apps/server/dist/index.js"]

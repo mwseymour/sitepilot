@@ -52,10 +52,17 @@ function sendJson(
   response.end(method === "HEAD" ? undefined : text);
 }
 
+/** The app's own routes; true when one handled the request. */
+export type Routes = (
+  request: IncomingMessage,
+  response: ServerResponse
+) => Promise<boolean>;
+
 export function createRequestHandler(
   info: ServerInfo,
   databaseStatus: () => DatabaseStatus = () => ({ status: "not_configured" }),
-  secretsStatus: () => SecretsStatus = () => "not_configured"
+  secretsStatus: () => SecretsStatus = () => "not_configured",
+  routes: () => Routes | null = () => null
 ): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -81,17 +88,46 @@ export function createRequestHandler(
       );
       return;
     }
-    // sitepilot.error/v1, like every other SitePilot error.
-    sendJson(
-      response,
-      404,
-      {
-        code: "not_found",
-        cause: "not_found",
-        retryable: false,
-        message: "SitePilot's server has no route here."
-      },
-      request.method
-    );
+    const appRoutes = routes();
+    if (appRoutes) {
+      appRoutes(request, response)
+        .then((handled) => {
+          if (!handled) notFound(response, request.method);
+        })
+        .catch((error: unknown) => {
+          console.log(`Request to ${path} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+          if (!response.headersSent) {
+            sendJson(response, 500, { code: "internal_error", cause: "internal", retryable: true, message: "SitePilot hit an error. Try again." }, request.method);
+          } else {
+            response.end();
+          }
+        });
+      return;
+    }
+    if (path !== "/healthz") {
+      sendJson(
+        response,
+        503,
+        { code: "editor_unavailable", cause: "host_environment", retryable: true, message: "SitePilot is still starting up." },
+        request.method
+      );
+      return;
+    }
+    notFound(response, request.method);
   };
+}
+
+function notFound(response: ServerResponse, method: string | undefined): void {
+  // sitepilot.error/v1, like every other SitePilot error.
+  sendJson(
+    response,
+    404,
+    {
+      code: "not_found",
+      cause: "not_found",
+      retryable: false,
+      message: "SitePilot's server has no route here."
+    },
+    method
+  );
 }

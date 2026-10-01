@@ -112,7 +112,7 @@ final class Protocol_Routes {
 				'mcp_route'      => 'mcp',
 				'mcp'            => Mcp_Status::for_protocol(),
 				// What this plugin supports, so the desktop only uses what's here.
-				'features'       => array( Error_Contract::FEATURE, 'render_check_v1', Approval_Proof::FEATURE ),
+				'features'       => array( Error_Contract::FEATURE, 'render_check_v1', Approval_Proof::FEATURE, 'wordpress_sign_in_v1' ),
 				'v2'             => array(
 					'enabled'        => Feature::enabled(),
 					'bridge_version' => Feature::BRIDGE_VERSION,

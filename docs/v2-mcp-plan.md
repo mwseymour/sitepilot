@@ -1,6 +1,6 @@
 # SitePilot MCP server and Slack plan
 
-Status: the local stage (Phases 1 to 4) was implemented on 29 September 2026, with Phase 2 in part; Phases 5 to 9 are proposed. The design is in [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server), and the [v2 roadmap](./v2-roadmap.md#mcp-server) lists this as one item. This document turns that design into phases with exit conditions.
+Status: the local stage (Phases 1 to 4) was implemented on 29 September 2026, with Phase 2 in part. A first hosted slice (parts of Phases 5 and 6) followed on 30 September and 1 October; see [Delivered on 1 October 2026](#delivered-on-1-october-2026). Phases 7 to 9 are proposed. The design is in [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server), and the [v2 roadmap](./v2-roadmap.md#mcp-server) lists this as one item. This document turns that design into phases with exit conditions.
 
 Scope: the SitePilot MCP server, the clients that use it (Claude Code, Claude Desktop, claude.ai connectors, Codex and the Slack app), and the hosted backend they need. The Copilot provider spike and the WordPress browser-authentication gate are prerequisites owned by other workstreams. This plan only records where they block it.
 
@@ -25,6 +25,23 @@ Scope: the SitePilot MCP server, the clients that use it (Claude Code, Claude De
   - `npm run test:e2e:mcp` (`tests/e2e/v2-mcp.ts`) passes against the MAMP site. It connects as Codex over HTTP and covers a lookup, a Conversation, a request reaching `awaiting_approval`, a PNG review screenshot, the approval being refused from the MCP context and allowed from the desktop's, `completed` with the post ID, `list_threads` by source, and the audit entries. Unit tests are in `tests/mcp-server.test.ts` and `tests/call-context.test.ts`.
   - Not done: a source badge in the desktop thread lists (the data is there), a `sitepilot://` deep link to the review, and the stdio bridge. Claude Code and Codex connect over HTTP; Claude Desktop uses `mcp-remote`.
   - Not yet checked by hand from real Claude Code and Codex sessions.
+
+## Delivered on 1 October 2026
+
+The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It runs the same services as the desktop, which now live in `packages/core`. The desktop app stays standalone on SQLite.
+
+- **Phase 5 (in part):**
+  - Postgres storage behind the same repositories as SQLite (`@sitepilot/sql`), in a `sitepilot` schema the Supabase REST API doesn't expose. Migrations run at startup under an advisory lock.
+  - Encrypted secrets: site secrets, approval keys and provider keys, AES-256-GCM under `SITEPILOT_SECRETS_KEY`.
+  - Connecting a site with its registration code (`/sites/connect`). One site per deployment.
+  - Server-rendered pages: the request list, a new-request form, the review page with previews and change list, and approve or reject. Approve applies at once, the Phase 0 recommendation.
+  - The Playwright worker runs in the same container, with headless Chromium in the image. The planner key comes from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; the Copilot adapter is still the gate for production.
+  - Not done: Supabase Storage for review artifacts and staged media (they're files on the container's disk), signed review links, and a separate worker service.
+- **Phase 6 (in part):**
+  - Sign in with WordPress (6.1): the plugin's confirm page and signed, two-minute, one-use assertion, returned only to the callback the client registered. Roles come from WordPress capabilities at every sign-in.
+  - Remote MCP at `/mcp` with a personal token from the account page (`claude mcp add --transport http …`). Each session acts as the token's owner.
+  - Not done: OAuth 2.1 for claude.ai connectors. Personal tokens cover Claude Code and Codex until then.
+- **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers connecting, signing in through a real browser, a token, MCP lookups, and a web request through approval to a draft in WordPress.
 
 ## Goals
 

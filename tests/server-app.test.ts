@@ -49,13 +49,13 @@ describe("SitePilot server", () => {
     });
   });
 
-  it("refuses other routes with sitepilot.error/v1", async () => {
+  it("answers everything else with sitepilot.error/v1 until the app is ready", async () => {
     const base = await start();
-    const missing = await fetch(`${base}/mcp`, { method: "POST" });
-    expect(missing.status).toBe(404);
-    expect(await missing.json()).toMatchObject({
-      code: "not_found",
-      retryable: false
+    const starting = await fetch(`${base}/mcp`, { method: "POST" });
+    expect(starting.status).toBe(503);
+    expect(await starting.json()).toMatchObject({
+      code: "editor_unavailable",
+      retryable: true
     });
     expect((await fetch(`${base}/healthz`, { method: "POST" })).status).toBe(404);
   });
