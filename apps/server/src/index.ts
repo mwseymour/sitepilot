@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { createDesktopMcpBackend } from "@sitepilot/core/mcp-backend";
 import { configureRuntimeContext } from "@sitepilot/core/runtime-context";
 import {
@@ -10,6 +11,7 @@ import {
   parseSecretsKey,
   type SecureStorage
 } from "@sitepilot/services";
+import type { SqlConnection } from "@sitepilot/sql";
 
 import {
   createRequestHandler,
@@ -20,6 +22,7 @@ import {
 import { AuthStore } from "./auth.js";
 import { connectWithRetry, type DatabaseStatus } from "./database.js";
 import { createHostedMcpHandler } from "./mcp.js";
+import { createOAuthEndpoints, SitePilotOAuthProvider } from "./oauth.js";
 import { createAppShell } from "./app-shell.js";
 import { createRoutes } from "./routes.js";
 
@@ -63,6 +66,17 @@ function withProviderKeysFromEnvironment(storage: SecureStorage): SecureStorage 
     set: (key, value) => storage.set(key, value),
     delete: (key) => storage.delete(key)
   };
+}
+
+/** OAuth for remote MCP clients. The spec needs an https issuer, or localhost. */
+function createOAuth(sql: SqlConnection, auth: AuthStore, mcpUrl: URL) {
+  try {
+    const provider = new SitePilotOAuthProvider({ sql, auth, mcpUrl });
+    return { provider, endpoints: createOAuthEndpoints({ provider, publicUrl, mcpUrl }) };
+  } catch (error) {
+    console.log(`OAuth is off: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 const server = createServer(
@@ -110,13 +124,21 @@ const connecting = connectWithRetry({
       approvalHint: `Open SitePilot at ${publicUrl.origin}, open the request and approve it there. MCP clients cannot approve.`
     });
     const app = createAppShell({ appVersion: info.version });
+    const mcpUrl = new URL("/mcp", publicUrl.origin);
+    const oauth = createOAuth(connected.database.sql, auth, mcpUrl);
     routes = createRoutes({
       publicUrl,
       allowedSiteUrl: process.env.SITEPILOT_SITE_URL ? new URL(process.env.SITEPILOT_SITE_URL) : null,
       auth,
       backend,
-      mcp: createHostedMcpHandler({ auth, backend, version: info.version }),
-      app
+      mcp: createHostedMcpHandler({
+        auth,
+        backend,
+        version: info.version,
+        ...(oauth ? { oauth: oauth.provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) } : {})
+      }),
+      app,
+      ...(oauth ? { oauth } : {})
     });
     console.log(
       `Serving the app at ${publicUrl.origin}${app.available ? "" : " (simple pages; the desktop interface build isn't present)"}.`

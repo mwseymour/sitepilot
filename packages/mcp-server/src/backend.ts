@@ -13,6 +13,11 @@ export type McpCaller = {
     appRole: string;
     siteRoles: string[];
   };
+  /**
+   * OAuth scopes the person allowed this client (read, request, review).
+   * Without them, as with personal tokens, every tool is available.
+   */
+  scopes?: readonly string[];
 };
 
 export type McpResult<T> =

@@ -414,6 +414,62 @@ CREATE TABLE stored_files (
   created_at TEXT NOT NULL
 );
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "005_oauth",
+    description:
+      "OAuth 2.1 for remote MCP clients such as claude.ai: registered clients, pending authorizations, one-use codes, remembered consent and tokens.",
+    sql: `
+CREATE TABLE oauth_clients (
+  client_id TEXT PRIMARY KEY,
+  client_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE oauth_pending (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+  params_json TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE TABLE oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+  site_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  scopes TEXT NOT NULL,
+  code_challenge TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  resource TEXT,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  FOREIGN KEY (site_id, wordpress_user_id) REFERENCES wordpress_identities(site_id, wordpress_user_id)
+);
+CREATE TABLE oauth_consents (
+  site_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+  scopes TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (site_id, wordpress_user_id, client_id),
+  FOREIGN KEY (site_id, wordpress_user_id) REFERENCES wordpress_identities(site_id, wordpress_user_id)
+);
+CREATE TABLE oauth_tokens (
+  token_hash TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  grant_id TEXT NOT NULL,
+  client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+  site_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  scopes TEXT NOT NULL,
+  resource TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  revoked_at TEXT,
+  FOREIGN KEY (site_id, wordpress_user_id) REFERENCES wordpress_identities(site_id, wordpress_user_id)
+);
+CREATE INDEX oauth_tokens_grant ON oauth_tokens (grant_id);
+${REVOKE_API_ROLES}`
   }
 ];
 

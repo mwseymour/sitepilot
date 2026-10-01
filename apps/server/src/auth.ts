@@ -280,6 +280,17 @@ export class AuthStore {
     return token;
   }
 
+  /** The linked WordPress user, with the role from their latest sign-in. */
+  public async userFor(siteId: string, wordpressUserId: number): Promise<SignedInUser | null> {
+    const row = await this.sql
+      .prepare<{ siteId: string; wordpressUserId: number }, IdentityRow>(
+        `SELECT ${IDENTITY_COLUMNS} FROM wordpress_identities i
+         WHERE i.site_id = @siteId AND i.wordpress_user_id = @wordpressUserId`
+      )
+      .get({ siteId, wordpressUserId });
+    return row ? toUser(row) : null;
+  }
+
   public async userForApiToken(token: string): Promise<SignedInUser | null> {
     const tokenHash = hashToken(token);
     const row = await this.sql

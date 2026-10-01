@@ -44,13 +44,24 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
 - **Phase 6 (in part):**
   - Sign in with WordPress (6.1): the plugin's confirm page and signed, two-minute, one-use assertion, returned only to the callback the client registered. Roles come from WordPress capabilities at every sign-in.
   - Remote MCP at `/mcp` with a personal token from the account page (`claude mcp add --transport http …`). Each session acts as the token's owner.
+  - OAuth 2.1 for remote MCP clients such as claude.ai and Claude Desktop (`apps/server/src/oauth.ts`, migration 005). It follows the MCP authorization spec:
+    - discovery: `/mcp` answers 401 with `resource_metadata`, then `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`;
+    - open dynamic client registration, with https redirect URIs or http on localhost;
+    - PKCE (S256), and codes that work once and last 10 minutes;
+    - access tokens last 1 hour; refresh tokens last 30 days, rotate on each use, and end the whole grant if a used one comes back;
+    - tokens are bound to `/mcp` (RFC 8707);
+    - revocation.
+  - The MCP SDK's router serves those endpoints. The SitePilot provider sends `/authorize` through Sign in with WordPress and a consent page, remembered per app until its scopes change or it's disconnected.
+  - Scopes: `read` (lookups, threads, conversations, status), `request` (`create_request`, `add_to_request`) and `review` (`get_review_artifact`). They narrow what a connection can do on top of the person's WordPress role.
+  - The audit's `source` comes from the registered client (claude.ai is known by its callback), not the MCP handshake. The account page lists connected apps with Disconnect. `/mcp` allows 120 calls a minute per person.
   - Roles follow WordPress capabilities: anyone who can publish (authors, editors, admins) approves; contributors request. The hosted E2E checks that a contributor is refused approving, applying and site setup.
-  - Not done: OAuth 2.1 for claude.ai connectors. Personal tokens cover Claude Code and Codex until then.
+  - Not done: the admin area (role overrides, unlinking and revoking for other people), and per-site rate limits.
 - **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers:
   - connecting the site;
   - signing in through a real browser;
   - the app's API refusing desktop-only and signed-out calls;
   - a token and MCP lookups;
+  - an OAuth connection, as claude.ai makes one: discovery, registration, sign-in and consent in a browser, a scoped token (a lookup works, `create_request` is refused), one-use codes, remembered consent, refresh, and Disconnect;
   - a request in the app through review, approval and apply, to a draft in WordPress.
 
 ## Goals

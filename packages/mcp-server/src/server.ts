@@ -41,6 +41,13 @@ export function sitePilotMcpToolNames(): string[] {
   ];
 }
 
+/** The OAuth scope each tool needs. Lookups and everything unlisted need read. */
+const TOOL_SCOPES: Record<string, "read" | "request" | "review"> = {
+  create_request: "request",
+  add_to_request: "request",
+  get_review_artifact: "review"
+};
+
 const MAX_TEXT_RESULT_CHARS = 40_000;
 
 const UNTRUSTED_NOTICE =
@@ -214,8 +221,15 @@ export function createSitePilotMcpServer(
     const audit: { siteId?: string } = {};
     let result: CallToolResult;
     let code: string | undefined;
+    const scope = TOOL_SCOPES[tool] ?? "read";
     try {
-      result = await fn(caller, audit);
+      result =
+        caller.scopes && !caller.scopes.includes(scope)
+          ? failure(
+              "forbidden",
+              `This connection wasn't allowed the "${scope}" scope. Reconnect SitePilot and allow it.`
+            )
+          : await fn(caller, audit);
     } catch (error) {
       result = failure(
         "internal_error",

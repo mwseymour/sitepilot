@@ -39,9 +39,11 @@ import {
   send,
   sendHtml
 } from "./http.js";
+import { clientDisplayName, isOAuthPath, type SitePilotOAuthProvider } from "./oauth.js";
 import {
   accountPage,
   connectPage,
+  consentPage,
   homePage,
   layout,
   messagePage,
@@ -64,7 +66,16 @@ export type RoutesDependencies = {
   mcp: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   /** The desktop app's interface, when its build is present. */
   app?: AppShell;
+  /** OAuth 2.1 for remote MCP clients (oauth.ts). */
+  oauth?: {
+    provider: SitePilotOAuthProvider;
+    endpoints: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
+  };
 };
+
+/** Where sign-in returns to, when it isn't the app: only the OAuth consent page. */
+const RETURN_COOKIE = "sp_return";
+const RETURN_PATH = /^\/oauth\/consent\?request=[A-Za-z0-9_-]+$/;
 
 const WORKSPACE_ID = "workspace-1";
 
@@ -124,16 +135,21 @@ export function createRoutes(deps: RoutesDependencies) {
     sendHtml(response, 200, homePage({ siteName: site?.name ?? null }));
   }
 
-  async function startSignIn(response: ServerResponse) {
+  async function startSignIn(response: ServerResponse, url: URL) {
     const site = await connectedSite();
     if (!site) return redirect(response, "/");
+    const returnTo = url.searchParams.get("return") ?? "";
     const state = randomBytes(24).toString("base64url");
     const target = new URL("/wp-admin/admin-post.php", site.baseUrl);
     target.searchParams.set("action", "sitepilot_sign_in");
     target.searchParams.set("site_id", site.id);
     target.searchParams.set("state", state);
     redirect(response, target.toString(), [
-      cookie(STATE_COOKIE, `${state}.${site.id}`, { maxAgeSeconds: STATE_TTL_SECONDS, secure })
+      cookie(STATE_COOKIE, `${state}.${site.id}`, { maxAgeSeconds: STATE_TTL_SECONDS, secure }),
+      cookie(RETURN_COOKIE, RETURN_PATH.test(returnTo) ? encodeURIComponent(returnTo) : "", {
+        maxAgeSeconds: RETURN_PATH.test(returnTo) ? STATE_TTL_SECONDS : 0,
+        secure
+      })
     ]);
   }
 
@@ -167,7 +183,12 @@ export function createRoutes(deps: RoutesDependencies) {
     }
     const user = await deps.auth.linkIdentity({ assertion, workspaceId: site.workspaceId });
     const token = await deps.auth.createSession(user);
-    redirect(response, "/", [clearState, sessionCookie(token, SESSION_TTL_SECONDS)]);
+    const returnTo = decodeURIComponent(parseCookies(request.headers.cookie)[RETURN_COOKIE] ?? "");
+    redirect(response, RETURN_PATH.test(returnTo) ? returnTo : "/", [
+      clearState,
+      cookie(RETURN_COOKIE, "", { maxAgeSeconds: 0, secure }),
+      sessionCookie(token, SESSION_TTL_SECONDS)
+    ]);
   }
 
   async function connectSite(request: IncomingMessage, response: ServerResponse, user: SignedInUser | null) {
@@ -228,6 +249,43 @@ export function createRoutes(deps: RoutesDependencies) {
     );
   }
 
+  /** An app asking to connect: sign in first, then allow or not (remembered per app). */
+  async function consent(request: IncomingMessage, response: ServerResponse, url: URL, provider: SitePilotOAuthProvider) {
+    const form = request.method === "POST" ? await readForm(request) : null;
+    const requestId = (form ? form.get("request") : url.searchParams.get("request")) ?? "";
+    const pending = /^[A-Za-z0-9_-]+$/.test(requestId) ? await provider.pending(requestId) : null;
+    if (!pending) {
+      return sendHtml(
+        response,
+        400,
+        messagePage("Connection expired", "This connection request has expired or was already answered. Start connecting again from your app.")
+      );
+    }
+    const user = await currentUser(request);
+    if (!user) {
+      return redirect(response, `/auth/wordpress/start?return=${encodeURIComponent(`/oauth/consent?request=${requestId}`)}`);
+    }
+    if (request.method === "GET") {
+      if (await provider.hasConsent(user, pending)) return redirect(response, await provider.approve(user, pending));
+      const redirectTo = new URL(pending.params.redirectUri);
+      return sendHtml(
+        response,
+        200,
+        consentPage({
+          user,
+          requestId,
+          clientName: clientDisplayName(pending.client),
+          redirectHost: redirectTo.host,
+          scopes: pending.params.scopes
+        }),
+        [],
+        [redirectTo.origin]
+      );
+    }
+    const allow = form?.get("decision") === "allow";
+    redirect(response, allow ? await provider.approve(user, pending) : await provider.deny(pending));
+  }
+
   async function account(request: IncomingMessage, response: ServerResponse, user: SignedInUser) {
     let newToken: string | undefined;
     if (request.method === "POST") {
@@ -240,6 +298,7 @@ export function createRoutes(deps: RoutesDependencies) {
       accountPage({
         user,
         tokens: await deps.auth.listApiTokens(user),
+        apps: deps.oauth ? await deps.oauth.provider.connectedApps(user) : [],
         mcpUrl: new URL("/mcp", deps.publicUrl).toString(),
         ...(newToken ? { newToken } : {})
       })
@@ -357,13 +416,22 @@ export function createRoutes(deps: RoutesDependencies) {
       await deps.mcp(request, response);
       return true;
     }
+    // Called by apps and their servers, not these pages: PKCE and client
+    // checks protect them, not cookies.
+    if (deps.oauth && isOAuthPath(path)) {
+      await deps.oauth.endpoints(request, response);
+      return true;
+    }
     // Every form post must come from these pages.
     if (method === "POST" && !isSameOrigin(request, deps.publicUrl)) {
       send(response, 403, "Cross-site form posts aren't allowed.", { "content-type": "text/plain" });
       return true;
     }
     if (path === "/" && method === "GET") return home(request, response).then(() => true);
-    if (path === "/auth/wordpress/start" && method === "GET") return startSignIn(response).then(() => true);
+    if (path === "/auth/wordpress/start" && method === "GET") return startSignIn(response, url).then(() => true);
+    if (deps.oauth && path === "/oauth/consent" && (method === "GET" || method === "POST")) {
+      return consent(request, response, url, deps.oauth.provider).then(() => true);
+    }
     if (path === "/auth/wordpress/callback" && method === "GET") {
       return finishSignIn(request, response, url).then(() => true);
     }
@@ -402,6 +470,12 @@ export function createRoutes(deps: RoutesDependencies) {
       return account(request, response, user).then(() => true);
     }
     if (path === "/account/tokens" && method === "POST") return account(request, response, user).then(() => true);
+    const disconnect = /^\/account\/apps\/([0-9a-f-]{36})\/disconnect$/.exec(path);
+    if (disconnect && method === "POST" && deps.oauth) {
+      await deps.oauth.provider.disconnect(user, disconnect[1] as string);
+      redirect(response, "/account");
+      return true;
+    }
     const revoke = /^\/account\/tokens\/([a-f0-9]{64})\/revoke$/.exec(path);
     if (revoke && method === "POST") {
       await deps.auth.revokeApiToken(user, revoke[1] as string);

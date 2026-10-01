@@ -23,9 +23,11 @@
     "@sitepilot/repositories": "0.1.0",
     "@sitepilot/services": "0.1.0",
     "@sitepilot/sql": "0.1.0",
+    "express": "^5.2.1",
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/pg": "^8.15.5"
   }
 }

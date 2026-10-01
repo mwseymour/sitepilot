@@ -4,7 +4,9 @@
  *
  * 1. Connect the site with a fresh registration code.
  * 2. Sign in with WordPress in a real browser (login, confirm, back).
- * 3. Create a personal MCP token and use the MCP server with it.
+ * 3. Create a personal MCP token and use the MCP server with it. Then
+ *    connect over OAuth as claude.ai does: discovery, registration, sign-in
+ *    and consent, scoped tokens, refresh, and disconnecting.
  * 4. Make a request in the app (the desktop interface, served by the
  *    server), approve and apply it there, and see it in WordPress.
  * 5. Sign in as a WordPress contributor (can edit, can't publish): a
@@ -16,8 +18,9 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { execFileSync } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -64,6 +67,7 @@ async function main(): Promise<void> {
   const databaseUrl = new URL(database.url);
   const output: string[] = [];
   let server: ChildProcess | undefined;
+  let callbackServer: Server | undefined;
   const browser = await chromium.launch({ headless: true });
   try {
     server = spawn(process.execPath, ["apps/server/dist/index.js"], {
@@ -147,7 +151,7 @@ async function main(): Promise<void> {
     assert((await page.content()).includes("You can approve changes"), "The admin can't approve.");
     await page.fill("#label", "Hosted E2E");
     await page.getByRole("button", { name: "Create token" }).click();
-    const token = (await page.locator("pre").first().innerText()).trim();
+    const token = (await page.locator("pre").filter({ hasText: /^spt_/ }).first().innerText()).trim();
     assert(/^spt_/.test(token), "No MCP token was shown.");
     const client = new Client({ name: "codex-hosted-e2e", version: "1.0.0" });
     await client.connect(
@@ -166,6 +170,115 @@ async function main(): Promise<void> {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
     });
     assert(refused.status === 401, "An unknown MCP token wasn't refused.");
+
+    // 3b. OAuth, as claude.ai connects.
+    const unauthenticated = await fetch(`${SERVER}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+    });
+    const challenge = unauthenticated.headers.get("www-authenticate") ?? "";
+    const resourceMetadataUrl = /resource_metadata="([^"]+)"/.exec(challenge)?.[1];
+    assert(unauthenticated.status === 401 && resourceMetadataUrl, `/mcp doesn't point to its OAuth metadata: ${challenge}`);
+    const resourceMetadata = (await (await fetch(resourceMetadataUrl)).json()) as {
+      resource: string;
+      authorization_servers: string[];
+    };
+    assert(resourceMetadata.resource === `${SERVER}/mcp`, `Wrong protected resource: ${JSON.stringify(resourceMetadata)}`);
+    const serverMetadata = (await (
+      await fetch(new URL("/.well-known/oauth-authorization-server", resourceMetadata.authorization_servers[0]))
+    ).json()) as { authorization_endpoint: string; token_endpoint: string; registration_endpoint: string };
+    const callback = "http://127.0.0.1:18999/callback";
+    const registration = await fetch(serverMetadata.registration_endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Claude E2E",
+        redirect_uris: [callback],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"]
+      })
+    });
+    const { client_id: clientId } = (await registration.json()) as { client_id: string };
+    assert(registration.status === 201 && clientId, `Registration failed (${registration.status}).`);
+    const verifier = randomBytes(32).toString("base64url");
+    const authorizeUrl = new URL(serverMetadata.authorization_endpoint);
+    authorizeUrl.search = new URLSearchParams({
+      response_type: "code",
+      client_id: clientId,
+      redirect_uri: callback,
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge_method: "S256",
+      state: "e2e-state",
+      scope: "read review",
+      resource: `${SERVER}/mcp`
+    }).toString();
+    // The app's callback: the browser just has to arrive there.
+    callbackServer = createServer((_request, response) => response.end("connected"));
+    await new Promise<void>((resolve) => callbackServer!.listen(18999, "127.0.0.1", resolve));
+    await page.goto(authorizeUrl.toString());
+    assert((await page.content()).includes("Connect Claude E2E to SitePilot?"), "No consent page.");
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+    await page.waitForURL(/^http:\/\/127\.0\.0\.1:18999\/callback/);
+    const returned = new URL(page.url());
+    const code = returned.searchParams.get("code") ?? "";
+    assert(returned.searchParams.get("state") === "e2e-state" && code, `Bad callback: ${page.url()}`);
+    const tokenRequest = (body: Record<string, string>) =>
+      fetch(serverMetadata.token_endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: clientId, ...body })
+      });
+    const exchanged = await tokenRequest({
+      grant_type: "authorization_code",
+      code,
+      code_verifier: verifier,
+      redirect_uri: callback,
+      resource: `${SERVER}/mcp`
+    });
+    const tokens = (await exchanged.json()) as { access_token: string; refresh_token: string; scope: string };
+    assert(exchanged.ok && /^spa_/.test(tokens.access_token) && tokens.scope === "read review", `Token exchange: ${JSON.stringify(tokens)}`);
+    const replayed = await tokenRequest({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: callback });
+    assert(replayed.status === 400, "An authorization code worked twice.");
+    const oauthClient = new Client({ name: "claude-ai-e2e", version: "1.0.0" });
+    await oauthClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${SERVER}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${tokens.access_token}` } }
+      })
+    );
+    const oauthSites = await oauthClient.callTool({ name: "list_sites", arguments: {} });
+    assert(!oauthSites.isError, `list_sites over OAuth failed: ${JSON.stringify(oauthSites.content).slice(0, 300)}`);
+    const unscoped = await oauthClient.callTool({
+      name: "create_request",
+      arguments: { text: "Write a post.", target: { operation: "create_draft", post_type: "post" } }
+    });
+    assert(
+      unscoped.isError && JSON.stringify(unscoped.structuredContent).includes("forbidden"),
+      "create_request ran without the request scope."
+    );
+    await oauthClient.close();
+    // Consent is remembered: connecting again goes straight back to the app.
+    await page.goto(authorizeUrl.toString());
+    await page.waitForURL(/^http:\/\/127\.0\.0\.1:18999\/callback/);
+    const refreshed = (await (await tokenRequest({ grant_type: "refresh_token", refresh_token: tokens.refresh_token })).json()) as {
+      access_token: string;
+    };
+    assert(/^spa_/.test(refreshed.access_token ?? ""), "Refreshing didn't give a new access token.");
+    await page.goto(`${SERVER}/account`);
+    assert((await page.content()).includes("Claude E2E"), "The account page doesn't list the connected app.");
+    await page.getByRole("button", { name: "Disconnect" }).first().click();
+    await page.waitForURL(`${SERVER}/account`);
+    const disconnected = await fetch(`${SERVER}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${refreshed.access_token}`
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+    });
+    assert(disconnected.status === 401, `A disconnected app's token still works (${disconnected.status}).`);
 
     // 4. A request in the app, approved and applied there.
     const title = `AUTOMATED-TEST-HOSTED-${randomUUID().slice(0, 8)}`;
@@ -258,6 +371,7 @@ async function main(): Promise<void> {
     throw error;
   } finally {
     await browser.close();
+    callbackServer?.close();
     server?.kill("SIGTERM");
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     await database.drop().catch(() => undefined);

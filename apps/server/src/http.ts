@@ -83,12 +83,13 @@ export function sendHtml(
   response: ServerResponse,
   status: number,
   body: string,
-  cookies: string[] = []
+  cookies: string[] = [],
+  /** Origins a form here may end up at: Chrome applies form-action to redirects too. */
+  formActionOrigins: string[] = []
 ): void {
   send(response, status, body, {
     "content-type": "text/html; charset=utf-8",
-    "content-security-policy":
-      "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "content-security-policy": `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action ${["'self'", ...formActionOrigins].join(" ")}; frame-ancestors 'none'; base-uri 'none'`,
     ...(cookies.length > 0 ? { "set-cookie": cookies } : {})
   });
 }

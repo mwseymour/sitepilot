@@ -5,6 +5,7 @@ import type {
 
 import type { ApiTokenSummary, SignedInUser } from "./auth.js";
 import { escapeHtml as e } from "./http.js";
+import { SCOPE_DESCRIPTIONS, type ConnectedApp, type OAuthScope } from "./oauth.js";
 
 /** Server-rendered pages: no scripts, every value escaped. */
 
@@ -76,6 +77,7 @@ export function connectPage(input: { error?: string; values?: Record<string, str
 export function accountPage(input: {
   user: SignedInUser;
   tokens: ApiTokenSummary[];
+  apps: ConnectedApp[];
   newToken?: string;
   mcpUrl: string;
 }): string {
@@ -93,8 +95,22 @@ export function accountPage(input: {
     `<h1>${e(user.displayName)}</h1>
      <p>Signed in with WordPress as <strong>${e(user.login)}</strong>${user.email ? ` (${e(user.email)})` : ""}.
        Role: <strong>${e(user.appRole)}</strong>. ${canApprove ? "You can approve changes." : "You can make requests; someone who can publish approves them."}</p>
-     <h2>Claude and Codex</h2>
-     <p>Use SitePilot from Claude Code or Codex with a personal token. Tokens act as you; revoke one you no longer use.</p>
+     <h2>Connected apps</h2>
+     <p>To use SitePilot from claude.ai or Claude Desktop, add a custom connector with this address, then sign in when it asks:</p>
+     <pre>${e(input.mcpUrl)}</pre>
+     ${
+       input.apps.length > 0
+         ? `<table><thead><tr><th>App</th><th>Allowed</th><th>Connected</th><th>Last used</th><th></th></tr></thead><tbody>${input.apps
+             .map(
+               (app) => `<tr><td>${e(app.clientName)}</td><td>${e(app.scopes.join(", "))}</td><td>${e(app.connectedAt.slice(0, 10))}</td>
+                 <td>${e(app.lastUsedAt?.slice(0, 16).replace("T", " ") ?? "Not yet")}</td>
+                 <td><form class="inline" method="post" action="/account/apps/${e(app.grantId)}/disconnect"><button class="secondary" type="submit">Disconnect</button></form></td></tr>`
+             )
+             .join("")}</tbody></table>`
+         : `<p class="muted">No apps connected yet.</p>`
+     }
+     <h2>Personal tokens</h2>
+     <p>For Claude Code or Codex without signing in, use a personal token. Tokens act as you; revoke one you no longer use.</p>
      ${
        input.newToken
          ? `<div class="card"><p><strong>Copy this token now.</strong> It won't be shown again.</p><pre>${e(input.newToken)}</pre>
@@ -225,6 +241,31 @@ export function requestPage(input: {
          : ""
      }
      ${messages ? `<h2>History</h2>${messages}` : ""}`,
+    input.user
+  );
+}
+
+/** Asks whether an app may use SitePilot as this person. */
+export function consentPage(input: {
+  user: SignedInUser;
+  requestId: string;
+  clientName: string;
+  redirectHost: string;
+  scopes: OAuthScope[];
+}): string {
+  return layout(
+    "Connect an app",
+    `<h1>Connect ${e(input.clientName)} to SitePilot?</h1>
+     <p>${e(input.clientName)} (returning to <strong>${e(input.redirectHost)}</strong>) is asking to use SitePilot as
+       <strong>${e(input.user.displayName)}</strong> (${e(input.user.login)}), with your WordPress role. It will be able to:</p>
+     <ul>${input.scopes.map((scope) => `<li>${e(SCOPE_DESCRIPTIONS[scope])}</li>`).join("")}</ul>
+     <p class="muted">It can't approve, apply or publish anything: changes still need a person to approve them in SitePilot.
+       You can disconnect it on your account page.</p>
+     <form method="post" action="/oauth/consent" class="card">
+       <input type="hidden" name="request" value="${e(input.requestId)}">
+       <button type="submit" name="decision" value="allow">Allow</button>
+       <button class="secondary" type="submit" name="decision" value="deny">Don't allow</button>
+     </form>`,
     input.user
   );
 }

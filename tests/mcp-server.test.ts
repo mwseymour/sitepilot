@@ -116,6 +116,35 @@ describe("SitePilot MCP server", () => {
     );
   });
 
+  it("only runs the tools an OAuth connection's scopes allow", async () => {
+    const backend = fakeBackend();
+    const server = createSitePilotMcpServer({
+      backend,
+      version: "test",
+      caller: () => ({ clientName: "claude.ai", scopes: ["read"] })
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "something-else", version: "1.0.0" });
+    await client.connect(clientTransport);
+
+    const lookup = await client.callTool({ name: "find_posts", arguments: { search: "pricing" } });
+    expect(lookup.isError).toBeFalsy();
+    const refused = await client.callTool({
+      name: "create_request",
+      arguments: { text: "Write a post.", target: { operation: "create_draft", post_type: "post" } }
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.structuredContent).toMatchObject({ code: "forbidden" });
+    expect(textOf(refused)).toContain('"request" scope');
+    expect(backend.createRequest).not.toHaveBeenCalled();
+    const preview = await client.callTool({
+      name: "get_review_artifact",
+      arguments: { request_id: "thread-1", artifact_id: "preview-0" }
+    });
+    expect(preview.structuredContent).toMatchObject({ code: "forbidden" });
+  });
+
   it("asks for a site_id when more than one site is available", async () => {
     const backend = fakeBackend([
       { siteId: "site-1", name: "One", baseUrl: "https://one.test" },

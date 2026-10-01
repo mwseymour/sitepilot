@@ -632,6 +632,15 @@ export class PlaywrightGutenbergV2Worker implements GutenbergV2Worker {
             contentHeight: 0
           };
         }
+        // The canvas can swap its document while the capture settles, leaving
+        // no body for a moment: a missing element counts as no padding. (In an
+        // array, so the bundler doesn't name it with a helper the page lacks.)
+        const paddingBottomOf = [
+          (target: unknown): number =>
+            target && frameDocument?.defaultView
+              ? Number.parseFloat(frameDocument.defaultView.getComputedStyle(target).paddingBottom) || 0
+              : 0
+        ][0]!;
         const captureSelector = isIframe
           ? 'iframe[name="editor-canvas"], iframe.editor-canvas__iframe'
           : "#sitepilot-v2-preview, .editor-styles-wrapper, .block-editor-block-list__layout";
@@ -706,15 +715,8 @@ ${captureSelector}, ${captureSelector} * {
           ".block-editor-block-list__layout.is-root-container, .editor-styles-wrapper"
         );
         const initialPadding = Math.max(
-          Number.parseFloat(
-            frameDocument?.defaultView?.getComputedStyle(
-              initialPaddingTarget ?? frameDocument.body
-            ).paddingBottom ?? "0"
-          ) || 0,
-          Number.parseFloat(
-            frameDocument?.defaultView?.getComputedStyle(frameDocument.body)
-              .paddingBottom ?? "0"
-          ) || 0
+          paddingBottomOf(initialPaddingTarget ?? frameDocument?.body),
+          paddingBottomOf(frameDocument?.body)
         );
         let requestedHeight = frameDocument
           ? Math.ceil(initialContentBottom + initialPadding)
@@ -848,15 +850,8 @@ body *:has(${captureSelector}) {
             ".block-editor-block-list__layout.is-root-container, .editor-styles-wrapper"
           );
           const nextPadding = Math.max(
-            Number.parseFloat(
-              frameDocument?.defaultView?.getComputedStyle(
-                nextPaddingTarget ?? frameDocument.body
-              ).paddingBottom ?? "0"
-            ) || 0,
-            Number.parseFloat(
-              frameDocument?.defaultView?.getComputedStyle(frameDocument.body)
-                .paddingBottom ?? "0"
-            ) || 0
+            paddingBottomOf(nextPaddingTarget ?? frameDocument?.body),
+            paddingBottomOf(frameDocument?.body)
           );
           const nextHeight = frameDocument
             ? Math.ceil(nextContentBottom + nextPadding)
@@ -903,15 +898,8 @@ body *:has(${captureSelector}) {
           ".block-editor-block-list__layout.is-root-container, .editor-styles-wrapper"
         );
         const finalPadding = Math.max(
-          Number.parseFloat(
-            frameDocument?.defaultView?.getComputedStyle(
-              finalPaddingTarget ?? frameDocument.body
-            ).paddingBottom ?? "0"
-          ) || 0,
-          Number.parseFloat(
-            frameDocument?.defaultView?.getComputedStyle(frameDocument.body)
-              .paddingBottom ?? "0"
-          ) || 0
+          paddingBottomOf(finalPaddingTarget ?? frameDocument?.body),
+          paddingBottomOf(frameDocument?.body)
         );
         const finalContentHeight = frameDocument
           ? Math.ceil(finalContentBottom + finalPadding)
