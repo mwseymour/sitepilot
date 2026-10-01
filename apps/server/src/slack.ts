@@ -433,7 +433,10 @@ export function createSlackApp(deps: {
     if (event.type === "message" && !isDirect && !existing) return;
     if (!text) return;
     const user = await linkedUser(teamId, event.user);
-    if (!user) return askToConnect(teamId, event.channel, event.user, isDirect, event.thread_ts ?? (isDirect ? undefined : event.ts));
+    if (!user) {
+      console.log("Slack: not connected yet; sending the connect link.");
+      return askToConnect(teamId, event.channel, event.user, isDirect, event.thread_ts ?? (isDirect ? undefined : event.ts));
+    }
     const { attachments, skipped } = await attachmentsOf(event);
     const threadTs = existing?.threadTs ?? event.thread_ts ?? event.ts;
     if (skipped.length > 0) {
@@ -708,6 +711,10 @@ export function createSlackApp(deps: {
         nowSeconds: Math.floor(Date.now() / 1000)
       })
     ) {
+      const skew = Math.floor(Date.now() / 1000) - Number(header("x-slack-request-timestamp"));
+      console.log(
+        `Slack event refused: ${!deps.config ? "Slack isn't configured" : `signature didn't match SLACK_SIGNING_SECRET (clock skew ${Number.isFinite(skew) ? skew : "?"}s)`}.`
+      );
       send(response, 401, "Not from Slack.", { "content-type": "text/plain" });
       return;
     }
@@ -716,6 +723,7 @@ export function createSlackApp(deps: {
     if (header("x-slack-retry-num")) return;
     const event = parsed.event as Record<string, unknown> | undefined;
     if (parsed.type !== "event_callback" || !event) return;
+    console.log(`Slack event: ${String(event.type)}${event.subtype ? `/${String(event.subtype)}` : ""} in ${String(event.channel_type ?? "channel")}.`);
     void (async () => {
       if (!botUserId) {
         const identity = await slack("auth.test", {}).catch(() => null);
@@ -730,6 +738,7 @@ export function createSlackApp(deps: {
   async function handleInteractions(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const body = await verified(request);
     if (body === null) {
+      console.log("Slack action refused: signature didn't match SLACK_SIGNING_SECRET, or Slack isn't configured.");
       send(response, 401, "Not from Slack.", { "content-type": "text/plain" });
       return;
     }
