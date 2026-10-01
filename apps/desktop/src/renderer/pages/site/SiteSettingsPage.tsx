@@ -22,6 +22,7 @@ import {
 
 import { useSiteWorkspace } from "../../site-workspace/site-workspace-context.js";
 import { useAppBusy } from "../../button-loading.js";
+import { isHostedApp } from "../../hosted.js";
 
 type SettingsStateResponse = IpcResponse<typeof ipcChannels.settingsGetState>;
 type CoreBlockIndex = NonNullable<
@@ -399,6 +400,8 @@ export function SiteSettingsPage(): ReactElement | null {
     return null;
   }
 
+  const hosted = isHostedApp();
+
   if (data.site.activationStatus !== "active") {
     return (
       <article className="panel-card gate-card">
@@ -415,30 +418,35 @@ export function SiteSettingsPage(): ReactElement | null {
     <article className="panel-card site-settings-page">
       <h1>Site settings</h1>
       <p className="lede">
-        Plugin signing secret, workspace planner overrides, and data export /
-        import for this site.
+        {hosted
+          ? "Workspace planner overrides and preferences for this site."
+          : "Plugin signing secret, workspace planner overrides, and data export / import for this site."}
       </p>
-      <p className="small-print">
-        <Link to="/settings">Global provider keys</Link>
-      </p>
+      {hosted ? null : (
+        <p className="small-print">
+          <Link to="/settings">Global provider keys</Link>
+        </p>
+      )}
       {err ? <p className="workspace-error">{err}</p> : null}
       {hint ? <p className="workspace-note small-print">{hint}</p> : null}
 
-      <section className="settings-site-section">
-        <h2>Plugin trust</h2>
-        <p className="muted small-print">
-          Signing secret present:{" "}
-          {hasSecret === null ? "…" : hasSecret ? "yes" : "no"}
-        </p>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={busy || hasSecret !== true}
-          onClick={() => void onForgetSecret()}
-        >
-          Forget site signing secret
-        </button>
-      </section>
+      {hosted ? null : (
+        <section className="settings-site-section">
+          <h2>Plugin trust</h2>
+          <p className="muted small-print">
+            Signing secret present:{" "}
+            {hasSecret === null ? "…" : hasSecret ? "yes" : "no"}
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy || hasSecret !== true}
+            onClick={() => void onForgetSecret()}
+          >
+            Forget site signing secret
+          </button>
+        </section>
+      )}
 
       {planner ? (
         <section className="settings-site-section">
@@ -551,292 +559,305 @@ export function SiteSettingsPage(): ReactElement | null {
         </section>
       ) : null}
 
-      <details className="settings-site-section settings-site-section-wide settings-disclosure">
-        <summary>
-          <span>
-            <strong>Supported blocks</strong>
-            <small>
-              WordPress core block indexing, execution coverage, and gap report
-            </small>
-          </span>
-        </summary>
-        <div className="settings-disclosure-content">
-          <p className="muted small-print">
-            Reference list:{" "}
-            <a
-              href={WORDPRESS_CORE_BLOCK_REFERENCE_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              WordPress Core Blocks Reference
-            </a>
-            . Snapshot source:{" "}
-            <code>{coreBlockIndex?.sourceRoot ?? "wordpress-core/"}</code>.
-          </p>
-          <p className="muted small-print">
-            SitePilot indexes the local WordPress snapshot to discover core
-            block metadata. The Gutenberg v2 engine writes the blocks listed as
-            executable, building each one in the site's own editor. Every other
-            block is kept unchanged when SitePilot edits a post that contains
-            it.
-          </p>
-          <label className="settings-field">
-            <span>WordPress core source folder</span>
-            <input
-              type="text"
-              value={wordpressCoreSourcePath ?? ""}
-              placeholder="/path/to/wordpress-core"
-              disabled={busy}
-              onChange={(e) => {
-                setWordPressCoreSourcePath(e.target.value);
-              }}
-            />
-          </label>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() => void onChooseWordPressCoreSourcePath()}
-            >
-              Choose folder…
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() => void onSaveWordPressCoreSourcePath()}
-            >
-              Save source folder
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() => void onReindexCoreBlocks()}
-            >
-              Re-index block structures
-            </button>
-          </div>
-          {coreBlockIndex ? (
-            <>
+      {hosted ? null : (
+        <>
+          <details className="settings-site-section settings-site-section-wide settings-disclosure">
+            <summary>
+              <span>
+                <strong>Supported blocks</strong>
+                <small>
+                  WordPress core block indexing, execution coverage, and gap
+                  report
+                </small>
+              </span>
+            </summary>
+            <div className="settings-disclosure-content">
               <p className="muted small-print">
-                Indexed {coreBlockIndex.indexedBlockCount} blocks from WordPress{" "}
-                {coreBlockIndex.wordpressVersion ?? "unknown"} on{" "}
-                {new Date(coreBlockIndex.generatedAt).toLocaleString()}.
+                Reference list:{" "}
+                <a
+                  href={WORDPRESS_CORE_BLOCK_REFERENCE_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  WordPress Core Blocks Reference
+                </a>
+                . Snapshot source:{" "}
+                <code>{coreBlockIndex?.sourceRoot ?? "wordpress-core/"}</code>.
               </p>
-              <details open>
-                <summary>Executable ({executableBlocks.length})</summary>
-                <ul className="small-print">
-                  {executableBlocks.map((entry) => (
-                    <li key={entry.name}>
-                      <strong>{entry.name}</strong>{" "}
-                      <span className="muted">[{entry.source}]</span>:{" "}
-                      {entry.reason}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-              <details>
-                <summary>Indexed only ({indexedOnlyBlocks.length})</summary>
-                <ul className="small-print">
-                  {indexedOnlyBlocks.map((entry) => (
-                    <li key={entry.name}>
-                      <strong>{entry.name}</strong>: {entry.reason}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-              <details open>
-                <summary>Gap Report ({indexedOnlyBlocks.length})</summary>
-                <p className="muted small-print">
-                  Complexity is heuristic. It reflects render files, PHP
-                  registration, placement rules, inner-block allowances, and
-                  attribute/support count so we can see where serializer work is
-                  likely to be shallow or expensive.
-                </p>
-                <p className="muted small-print">
-                  Simple: {simpleGaps.length}. Medium: {mediumGaps.length}.
-                  Complex: {complexGaps.length}.
-                </p>
-                <p className="muted small-print">
-                  Standalone: {standaloneGaps.length}. Container:{" "}
-                  {containerGaps.length}. Child-only: {childOnlyGaps.length}.
-                  Placement-restricted: {placementRestrictedGaps.length}.
-                </p>
-                <details>
-                  <summary>Structural Roles</summary>
-                  <div className="settings-role-grid small-print">
-                    <div>
-                      <strong>Standalone</strong>
-                      <p className="muted">
-                        No child allowance and no placement restriction.
-                      </p>
-                      <p>
-                        {standaloneGaps.map((entry) => entry.name).join(", ")}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Container</strong>
-                      <p className="muted">
-                        Explicitly allows direct child blocks.
-                      </p>
-                      <p>
-                        {containerGaps.map((entry) => entry.name).join(", ")}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Child-only</strong>
-                      <p className="muted">
-                        Must live under specific parent blocks.
-                      </p>
-                      <p>
-                        {childOnlyGaps.map((entry) => entry.name).join(", ")}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Placement-restricted</strong>
-                      <p className="muted">
-                        Constrained by ancestor rules or mixed placement logic.
-                      </p>
-                      <p>
-                        {placementRestrictedGaps
-                          .map((entry) => entry.name)
-                          .join(", ")}
-                      </p>
-                    </div>
-                  </div>
-                </details>
-                <div className="settings-gap-table-wrap">
-                  <table className="settings-gap-table small-print">
-                    <thead>
-                      <tr>
-                        <th>Block</th>
-                        <th>Role</th>
-                        <th>Complexity</th>
-                        <th>Signals</th>
-                        <th>Inner</th>
-                        <th>Placement</th>
-                        <th>Attrs</th>
-                        <th>Supports</th>
-                        <th>Files</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {indexedOnlyBlocks.map((entry) => (
-                        <tr key={entry.name}>
-                          <td>
-                            <strong>{entry.name}</strong>
-                          </td>
-                          <td>{structuralRoleLabel(entry)}</td>
-                          <td>{complexityLabel(entry)}</td>
-                          <td>{blockSignals(entry)}</td>
-                          <td>
-                            {entry.canContainInnerBlocks
-                              ? `children: ${entry.allowedBlocks.length}`
-                              : entry.likelyUsesInnerBlocks
-                                ? "likely"
-                                : "no"}
-                          </td>
-                          <td>
-                            {entry.hasParentRestriction
-                              ? `parent: ${entry.parent.length}`
-                              : entry.hasAncestorRestriction
-                                ? `ancestor: ${entry.ancestor.length}`
-                                : "none"}
-                          </td>
-                          <td>{entry.attributes.length}</td>
-                          <td>{entry.supports.length}</td>
-                          <td>
-                            <code>{entry.metadataPath}</code>
-                            {entry.renderPath ? (
-                              <>
-                                , <code>{entry.renderPath}</code>
-                              </>
-                            ) : null}
-                            {entry.phpRegistrationPath ? (
-                              <>
-                                , <code>{entry.phpRegistrationPath}</code>
-                              </>
-                            ) : null}
-                          </td>
-                        </tr>
+              <p className="muted small-print">
+                SitePilot indexes the local WordPress snapshot to discover core
+                block metadata. The Gutenberg v2 engine writes the blocks listed
+                as executable, building each one in the site's own editor. Every
+                other block is kept unchanged when SitePilot edits a post that
+                contains it.
+              </p>
+              <label className="settings-field">
+                <span>WordPress core source folder</span>
+                <input
+                  type="text"
+                  value={wordpressCoreSourcePath ?? ""}
+                  placeholder="/path/to/wordpress-core"
+                  disabled={busy}
+                  onChange={(e) => {
+                    setWordPressCoreSourcePath(e.target.value);
+                  }}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => void onChooseWordPressCoreSourcePath()}
+                >
+                  Choose folder…
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => void onSaveWordPressCoreSourcePath()}
+                >
+                  Save source folder
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy}
+                  onClick={() => void onReindexCoreBlocks()}
+                >
+                  Re-index block structures
+                </button>
+              </div>
+              {coreBlockIndex ? (
+                <>
+                  <p className="muted small-print">
+                    Indexed {coreBlockIndex.indexedBlockCount} blocks from
+                    WordPress {coreBlockIndex.wordpressVersion ?? "unknown"} on{" "}
+                    {new Date(coreBlockIndex.generatedAt).toLocaleString()}.
+                  </p>
+                  <details open>
+                    <summary>Executable ({executableBlocks.length})</summary>
+                    <ul className="small-print">
+                      {executableBlocks.map((entry) => (
+                        <li key={entry.name}>
+                          <strong>{entry.name}</strong>{" "}
+                          <span className="muted">[{entry.source}]</span>:{" "}
+                          {entry.reason}
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-              {coreBlockIndex.missingReferenceBlocks.length > 0 ? (
-                <details>
-                  <summary>
-                    Missing From Snapshot (
-                    {coreBlockIndex.missingReferenceBlocks.length})
-                  </summary>
-                  <p className="muted small-print">
-                    {coreBlockIndex.missingReferenceBlocks.join(", ")}
-                  </p>
-                </details>
-              ) : null}
-              {coreBlockIndex.additionalSnapshotBlocks.length > 0 ? (
-                <details>
-                  <summary>
-                    Additional Snapshot Blocks (
-                    {coreBlockIndex.additionalSnapshotBlocks.length})
-                  </summary>
-                  <p className="muted small-print">
-                    {coreBlockIndex.additionalSnapshotBlocks.join(", ")}
-                  </p>
-                </details>
-              ) : null}
-            </>
-          ) : (
-            <p className="muted small-print">
-              No cached WordPress core block index found yet. Add or update the
-              local <code>wordpress-core/</code> snapshot and run re-index.
-            </p>
-          )}
-        </div>
-      </details>
+                    </ul>
+                  </details>
+                  <details>
+                    <summary>Indexed only ({indexedOnlyBlocks.length})</summary>
+                    <ul className="small-print">
+                      {indexedOnlyBlocks.map((entry) => (
+                        <li key={entry.name}>
+                          <strong>{entry.name}</strong>: {entry.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                  <details open>
+                    <summary>Gap Report ({indexedOnlyBlocks.length})</summary>
+                    <p className="muted small-print">
+                      Complexity is heuristic. It reflects render files, PHP
+                      registration, placement rules, inner-block allowances, and
+                      attribute/support count so we can see where serializer
+                      work is likely to be shallow or expensive.
+                    </p>
+                    <p className="muted small-print">
+                      Simple: {simpleGaps.length}. Medium: {mediumGaps.length}.
+                      Complex: {complexGaps.length}.
+                    </p>
+                    <p className="muted small-print">
+                      Standalone: {standaloneGaps.length}. Container:{" "}
+                      {containerGaps.length}. Child-only: {childOnlyGaps.length}
+                      . Placement-restricted: {placementRestrictedGaps.length}.
+                    </p>
+                    <details>
+                      <summary>Structural Roles</summary>
+                      <div className="settings-role-grid small-print">
+                        <div>
+                          <strong>Standalone</strong>
+                          <p className="muted">
+                            No child allowance and no placement restriction.
+                          </p>
+                          <p>
+                            {standaloneGaps
+                              .map((entry) => entry.name)
+                              .join(", ")}
+                          </p>
+                        </div>
+                        <div>
+                          <strong>Container</strong>
+                          <p className="muted">
+                            Explicitly allows direct child blocks.
+                          </p>
+                          <p>
+                            {containerGaps
+                              .map((entry) => entry.name)
+                              .join(", ")}
+                          </p>
+                        </div>
+                        <div>
+                          <strong>Child-only</strong>
+                          <p className="muted">
+                            Must live under specific parent blocks.
+                          </p>
+                          <p>
+                            {childOnlyGaps
+                              .map((entry) => entry.name)
+                              .join(", ")}
+                          </p>
+                        </div>
+                        <div>
+                          <strong>Placement-restricted</strong>
+                          <p className="muted">
+                            Constrained by ancestor rules or mixed placement
+                            logic.
+                          </p>
+                          <p>
+                            {placementRestrictedGaps
+                              .map((entry) => entry.name)
+                              .join(", ")}
+                          </p>
+                        </div>
+                      </div>
+                    </details>
+                    <div className="settings-gap-table-wrap">
+                      <table className="settings-gap-table small-print">
+                        <thead>
+                          <tr>
+                            <th>Block</th>
+                            <th>Role</th>
+                            <th>Complexity</th>
+                            <th>Signals</th>
+                            <th>Inner</th>
+                            <th>Placement</th>
+                            <th>Attrs</th>
+                            <th>Supports</th>
+                            <th>Files</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {indexedOnlyBlocks.map((entry) => (
+                            <tr key={entry.name}>
+                              <td>
+                                <strong>{entry.name}</strong>
+                              </td>
+                              <td>{structuralRoleLabel(entry)}</td>
+                              <td>{complexityLabel(entry)}</td>
+                              <td>{blockSignals(entry)}</td>
+                              <td>
+                                {entry.canContainInnerBlocks
+                                  ? `children: ${entry.allowedBlocks.length}`
+                                  : entry.likelyUsesInnerBlocks
+                                    ? "likely"
+                                    : "no"}
+                              </td>
+                              <td>
+                                {entry.hasParentRestriction
+                                  ? `parent: ${entry.parent.length}`
+                                  : entry.hasAncestorRestriction
+                                    ? `ancestor: ${entry.ancestor.length}`
+                                    : "none"}
+                              </td>
+                              <td>{entry.attributes.length}</td>
+                              <td>{entry.supports.length}</td>
+                              <td>
+                                <code>{entry.metadataPath}</code>
+                                {entry.renderPath ? (
+                                  <>
+                                    , <code>{entry.renderPath}</code>
+                                  </>
+                                ) : null}
+                                {entry.phpRegistrationPath ? (
+                                  <>
+                                    , <code>{entry.phpRegistrationPath}</code>
+                                  </>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                  {coreBlockIndex.missingReferenceBlocks.length > 0 ? (
+                    <details>
+                      <summary>
+                        Missing From Snapshot (
+                        {coreBlockIndex.missingReferenceBlocks.length})
+                      </summary>
+                      <p className="muted small-print">
+                        {coreBlockIndex.missingReferenceBlocks.join(", ")}
+                      </p>
+                    </details>
+                  ) : null}
+                  {coreBlockIndex.additionalSnapshotBlocks.length > 0 ? (
+                    <details>
+                      <summary>
+                        Additional Snapshot Blocks (
+                        {coreBlockIndex.additionalSnapshotBlocks.length})
+                      </summary>
+                      <p className="muted small-print">
+                        {coreBlockIndex.additionalSnapshotBlocks.join(", ")}
+                      </p>
+                    </details>
+                  ) : null}
+                </>
+              ) : (
+                <p className="muted small-print">
+                  No cached WordPress core block index found yet. Add or update
+                  the local <code>wordpress-core/</code> snapshot and run
+                  re-index.
+                </p>
+              )}
+            </div>
+          </details>
 
-      <section className="settings-site-section settings-site-section-wide">
-        <h2>Export &amp; import</h2>
-        <p className="muted small-print">
-          Bundle includes site metadata, config versions, and audit history.
-          Import appends audits and missing config versions; it does not remove
-          existing rows.
-        </p>
-        <div className="settings-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void onExport()}
-          >
-            Download export
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            Import bundle…
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) {
-                void onImportFile(f);
-              }
-            }}
-          />
-        </div>
-      </section>
+          <section className="settings-site-section settings-site-section-wide">
+            <h2>Export &amp; import</h2>
+            <p className="muted small-print">
+              Bundle includes site metadata, config versions, and audit history.
+              Import appends audits and missing config versions; it does not
+              remove existing rows.
+            </p>
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => void onExport()}
+              >
+                Download export
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                Import bundle…
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json,.json"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) {
+                    void onImportFile(f);
+                  }
+                }}
+              />
+            </div>
+          </section>
+        </>
+      )}
     </article>
   );
 }

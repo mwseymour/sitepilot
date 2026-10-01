@@ -13,7 +13,8 @@ COPY . .
 # The workspace installs as a whole. Install scripts are skipped: the server
 # needs none of the desktop's native modules or downloads.
 RUN npm ci --ignore-scripts --include=dev \
-  && npx tsc -b apps/server/tsconfig.json
+  && npx tsc -b apps/server/tsconfig.json \
+  && npm run build:renderer -w @sitepilot/desktop
 
 # The worker that builds previews and applies changes drives headless
 # Chromium. Installed where the unprivileged user can read it.

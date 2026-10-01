@@ -6,6 +6,7 @@ import type {
   UiPreferences
 } from "@sitepilot/contracts";
 import { useAppBusy } from "../button-loading.js";
+import { isHostedApp } from "../hosted.js";
 import { McpServerSettings } from "./McpServerSettings.js";
 
 export function SettingsPage(): ReactElement {
@@ -131,14 +132,17 @@ export function SettingsPage(): ReactElement {
     await load();
   }
 
+  const hosted = isHostedApp();
+
   return (
     <main className="app-shell home-shell settings-shell">
       <section className="hero-card">
         <p className="eyebrow">SitePilot</p>
         <h1>Settings</h1>
         <p className="lede">
-          Provider keys stay in OS-backed secure storage; the renderer never
-          receives secret values back from the app.
+          {hosted
+            ? "Provider keys are set on the server. Personal tokens for Claude and Codex are on your account page."
+            : "Provider keys stay in OS-backed secure storage; the renderer never receives secret values back from the app."}
         </p>
         <Link className="btn btn-secondary btn-small" to="/">
           ← Sites
@@ -215,6 +219,8 @@ export function SettingsPage(): ReactElement {
         )}
       </section>
 
+{hosted ? null : (
+        <>
       <section className="panel-card settings-card">
         <h2>OpenAI API key</h2>
         <input
@@ -279,6 +285,9 @@ export function SettingsPage(): ReactElement {
         </div>
       </section>
 
+        </>
+      )}
+
       {planner ? (
         <section className="panel-card settings-card settings-card-wide">
           <h2>Planner defaults</h2>
@@ -337,7 +346,20 @@ export function SettingsPage(): ReactElement {
         </section>
       ) : null}
 
-      <McpServerSettings />
+      {hosted ? (
+        <section className="panel-card settings-card">
+          <h2>Claude and Codex</h2>
+          <p className="muted small-print">
+            Connect Claude Code or Codex to this SitePilot with a personal
+            token.
+          </p>
+          <a className="btn btn-secondary" href="/account">
+            Account and tokens
+          </a>
+        </section>
+      ) : (
+        <McpServerSettings />
+      )}
     </main>
   );
 }

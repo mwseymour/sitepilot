@@ -34,14 +34,22 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
   - Postgres storage behind the same repositories as SQLite (`@sitepilot/sql`), in a `sitepilot` schema the Supabase REST API doesn't expose. Migrations run at startup under an advisory lock.
   - Encrypted secrets: site secrets, approval keys and provider keys, AES-256-GCM under `SITEPILOT_SECRETS_KEY`.
   - Connecting a site with its registration code (`/sites/connect`). One site per deployment.
-  - Server-rendered pages: the request list, a new-request form, the review page with previews and change list, and approve or reject. Approve applies at once, the Phase 0 recommendation.
+  - The app is the desktop interface, served by the server. The same React build runs in Electron and in the browser. In the browser it calls the same IPC handlers (`packages/core/src/ipc-handlers.ts`) over `POST /api/ipc/:channel`. Each call needs a signed-in session from the same origin, and runs as that person.
+    - Desktop-only calls are refused, and hidden in the interface: adding sites, provider keys, the local MCP server, export and import.
+    - Site setup calls need the admin role. Approving and applying need a WordPress role that can publish, as on the desktop.
+  - Simple server-rendered pages remain at `/requests` as a fallback: the request list, a new-request form, the review page with previews, and approve or reject. Approve applies at once there, the Phase 0 recommendation. Sign-in, connecting the site and the account page (tokens) are server-rendered too.
   - The Playwright worker runs in the same container, with headless Chromium in the image. The planner key comes from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; the Copilot adapter is still the gate for production.
   - Not done: Supabase Storage for review artifacts and staged media (they're files on the container's disk), signed review links, and a separate worker service.
 - **Phase 6 (in part):**
   - Sign in with WordPress (6.1): the plugin's confirm page and signed, two-minute, one-use assertion, returned only to the callback the client registered. Roles come from WordPress capabilities at every sign-in.
   - Remote MCP at `/mcp` with a personal token from the account page (`claude mcp add --transport http …`). Each session acts as the token's owner.
   - Not done: OAuth 2.1 for claude.ai connectors. Personal tokens cover Claude Code and Codex until then.
-- **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers connecting, signing in through a real browser, a token, MCP lookups, and a web request through approval to a draft in WordPress.
+- **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers:
+  - connecting the site;
+  - signing in through a real browser;
+  - the app's API refusing desktop-only and signed-out calls;
+  - a token and MCP lookups;
+  - a request in the app through review, approval and apply, to a draft in WordPress.
 
 ## Goals
 

@@ -12,6 +12,7 @@ import {
 import type { SiteSummary } from "@sitepilot/contracts";
 
 import { modePageCopy } from "../chat-workflow.js";
+import { isHostedApp } from "../hosted.js";
 import { activationLabel } from "../site-labels.js";
 import { chatPathFor, formatWhen, targetLabel, threadStatus } from "../status.js";
 import { ThemeToggle } from "../theme/theme.js";
@@ -184,12 +185,27 @@ function SiteSwitcher({
             </Link>
           ))}
           <div className="rail-menu-divider" />
-          <Link role="menuitem" className="rail-menu-item" to="/">
-            All sites
-          </Link>
-          <Link role="menuitem" className="rail-menu-item" to="/sites/new">
-            Add a site
-          </Link>
+          {isHostedApp() ? (
+            <>
+              <a role="menuitem" className="rail-menu-item" href="/account">
+                Account and tokens
+              </a>
+              <form method="post" action="/auth/sign-out">
+                <button type="submit" role="menuitem" className="rail-menu-item">
+                  Sign out
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <Link role="menuitem" className="rail-menu-item" to="/">
+                All sites
+              </Link>
+              <Link role="menuitem" className="rail-menu-item" to="/sites/new">
+                Add a site
+              </Link>
+            </>
+          )}
         </div>
       ) : null}
     </div>

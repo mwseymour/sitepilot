@@ -5,7 +5,8 @@
  * 1. Connect the site with a fresh registration code.
  * 2. Sign in with WordPress in a real browser (login, confirm, back).
  * 3. Create a personal MCP token and use the MCP server with it.
- * 4. Make a request on the web page, approve it there, and see it applied.
+ * 4. Make a request in the app (the desktop interface, served by the
+ *    server), approve and apply it there, and see it in WordPress.
  *
  * Needs SITEPILOT_TEST_POSTGRES_URL (the local Docker Postgres), an OpenAI
  * key for the planner, and SITEPILOT_E2E_WP_PATH for fresh registration codes.
@@ -115,8 +116,28 @@ async function main(): Promise<void> {
     await page.fill("#user_pass", E2E_ADMIN_PASSWORD);
     await page.click("#wp-submit");
     await page.getByRole("button", { name: "Continue" }).click();
-    await page.waitForURL(`${SERVER}/requests`);
-    assert((await page.content()).includes("Make a request"), "Signed in, but can't make requests.");
+    // The app opens on the one connected site.
+    await page.waitForURL(/#\/site\/[^/]+\/overview$/);
+    const placeholder = page.getByPlaceholder(/Add Sunday hours/);
+    await placeholder.waitFor();
+
+    // The app's API: signed in, same origin, and no desktop-only calls.
+    // No named functions in evaluate: tsx would wrap them in a helper the page lacks.
+    const refusals = await page.evaluate(async (channels) =>
+      Promise.all(
+        channels.map(async (channel) =>
+          (await fetch(`/api/ipc/${channel}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status
+        )
+      ),
+      ["site.list", "site.register"]
+    );
+    assert(refusals[0] === 200 && refusals[1] === 404, `The app API answered ${JSON.stringify(refusals)}.`);
+    const signedOut = await fetch(`${SERVER}/api/ipc/site.list`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: SERVER },
+      body: "{}"
+    });
+    assert(signedOut.status === 401, "The app API answered without a session.");
 
     // 3. A personal MCP token, then the MCP server.
     await page.goto(`${SERVER}/account`);
@@ -143,37 +164,28 @@ async function main(): Promise<void> {
     });
     assert(refused.status === 401, "An unknown MCP token wasn't refused.");
 
-    // 4. A request on the web, approved there and applied.
+    // 4. A request in the app, approved and applied there.
     const title = `AUTOMATED-TEST-HOSTED-${randomUUID().slice(0, 8)}`;
-    await page.goto(`${SERVER}/requests`);
-    await page.fill("#text", `Create a short draft post titled "${title}" with one paragraph saying the hosted SitePilot test ran.`);
-    await page.getByRole("button", { name: "Make a request" }).click();
-    await page.waitForURL(/\/requests\/[A-Za-z0-9-]+$/);
+    await page.goto(`${SERVER}/`);
+    await placeholder.fill(`Create a short draft post titled "${title}" with one paragraph saying the hosted SitePilot test ran.`);
+    await page.getByRole("button", { name: /Start request/ }).click();
+    await page.waitForURL(/chat\?thread=/);
+    await page.getByRole("button", { name: /^Send/ }).click();
     const requestUrl = page.url();
-    await waitFor(
-      "the preview",
-      async () => {
-        await page.goto(requestUrl);
-        const text = await page.content();
-        if (text.includes("Needs attention")) throw new Error(`The request needs attention: ${await page.locator("main").innerText()}`);
-        return text.includes("Approve and apply") ? true : null;
-      },
-      6 * 60_000
-    ).catch(async (error: unknown) => {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${await page.locator("main").innerText().catch(() => "")}`);
+    const approve = page.getByRole("button", { name: "Approve this update" });
+    await approve.waitFor({ timeout: 6 * 60_000 }).catch(async (error: unknown) => {
+      throw new Error(`No preview to approve (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
     });
-    assert((await page.locator("img.preview").count()) > 0, "The review page shows no preview.");
-    await page.getByRole("button", { name: "Approve and apply" }).click();
-    await waitFor(
-      "the change to be applied",
-      async () => {
-        await page.goto(requestUrl);
-        const text = await page.locator("main").innerText();
-        if (text.includes("Needs attention")) throw new Error(`Applying failed: ${text}`);
-        return text.includes("Done") ? true : null;
-      },
-      6 * 60_000
-    );
+    await approve.click();
+    await page.getByRole("button", { name: "Apply this update to the site" }).click();
+    await page
+      .getByText("Completed and verified")
+      .filter({ visible: true })
+      .first()
+      .waitFor({ timeout: 6 * 60_000 })
+      .catch(async (error: unknown) => {
+        throw new Error(`Applying didn't finish (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
+      });
     const postId = E2E_WP_PATH
       ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${title}`, "--field=ID"], {
           cwd: E2E_WP_PATH,

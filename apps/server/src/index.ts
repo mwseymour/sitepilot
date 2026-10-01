@@ -20,6 +20,7 @@ import {
 import { AuthStore } from "./auth.js";
 import { connectWithRetry, type DatabaseStatus } from "./database.js";
 import { createHostedMcpHandler } from "./mcp.js";
+import { createAppShell } from "./app-shell.js";
 import { createRoutes } from "./routes.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8080", 10);
@@ -104,15 +105,22 @@ const connecting = connectWithRetry({
   // The app needs somewhere to keep site secrets before it can serve.
   if (secretsKey) {
     const auth = new AuthStore(connected.database.sql);
-    const backend = createDesktopMcpBackend({ siteScope: "all" });
+    const backend = createDesktopMcpBackend({
+      siteScope: "all",
+      approvalHint: `Open SitePilot at ${publicUrl.origin}, open the request and approve it there. MCP clients cannot approve.`
+    });
+    const app = createAppShell({ appVersion: info.version });
     routes = createRoutes({
       publicUrl,
       allowedSiteUrl: process.env.SITEPILOT_SITE_URL ? new URL(process.env.SITEPILOT_SITE_URL) : null,
       auth,
       backend,
-      mcp: createHostedMcpHandler({ auth, backend, version: info.version })
+      mcp: createHostedMcpHandler({ auth, backend, version: info.version }),
+      app
     });
-    console.log(`Serving the app at ${publicUrl.origin}.`);
+    console.log(
+      `Serving the app at ${publicUrl.origin}${app.available ? "" : " (simple pages; the desktop interface build isn't present)"}.`
+    );
   }
   if (secretsKey) secretsStatus = "ok";
   console.log(

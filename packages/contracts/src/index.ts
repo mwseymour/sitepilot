@@ -350,3 +350,4 @@ export {
   sitePilotErrorSchema
 } from "./errors.js";
 export type { AuthFailureReason, ErrorCause, SitePilotError } from "./errors.js";
+export { createSitePilotDesktopApi } from "./desktop-api.js";

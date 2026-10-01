@@ -450,18 +450,23 @@ export function friendlyDecision(input: {
   decision: "approved" | "rejected" | "revision_requested" | "withdrawn";
   target: GutenbergV2ReportTarget;
   note?: string;
+  applyingNow?: boolean;
 }): string {
   const note =
     input.note === undefined || input.note.trim().length === 0
       ? null
       : clip(input.note);
+  const withNote = (lead: string) =>
+    note === null ? `${lead}.` : `${lead}: ${note}${/[.!?…]$/.test(note) ? "" : "."}`;
   switch (input.decision) {
     case "approved":
-      return `Approved. Apply the update when you're ready; nothing on the site changes until then.`;
+      return input.applyingNow
+        ? "Approved. SitePilot is applying the update now."
+        : `Approved. Apply the update when you're ready; nothing on the site changes until then.`;
     case "rejected":
-      return `Rejected${note === null ? "" : `: ${note}`}. Nothing on the site was changed.`;
+      return `${withNote("Rejected")} Nothing on the site was changed.`;
     case "revision_requested":
-      return `Changes requested${note === null ? "" : `: ${note}`}. A revised version is being prepared; nothing on the site was changed.`;
+      return `${withNote("Changes requested")} A revised version is being prepared; nothing on the site was changed.`;
     case "withdrawn":
       return `The approval was withdrawn because you asked for another change. A revised version is being prepared; nothing on the site was changed.`;
   }

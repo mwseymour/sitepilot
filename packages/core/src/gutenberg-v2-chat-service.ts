@@ -1221,6 +1221,8 @@ export async function decideGutenbergV2Candidate(input: {
   candidateId: string;
   decision: "approved" | "rejected" | "revision_requested";
   note?: string;
+  /** The caller applies straight after approving (the hosted app). */
+  applyingNow?: boolean;
 }) {
   // Asking for a revision is part of the request conversation; approving or
   // rejecting is a reviewer's decision.
@@ -1294,7 +1296,8 @@ export async function decideGutenbergV2Candidate(input: {
       friendlyDecision({
         decision: input.decision,
         target: mapping.target,
-        ...(input.note === undefined ? {} : { note: input.note })
+        ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.applyingNow ? { applyingNow: true } : {})
       }),
       decisionReport({
         decision: input.decision,

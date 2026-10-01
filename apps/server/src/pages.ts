@@ -25,7 +25,7 @@ img.preview{max-width:100%;border:1px solid var(--line);border-radius:6px}code,p
 
 export function layout(title: string, body: string, user?: SignedInUser | null): string {
   const nav = user
-    ? `<a href="/requests">Requests</a><a href="/account">${e(user.displayName)}</a>
+    ? `<a href="/">Open SitePilot</a><a href="/account">${e(user.displayName)}</a>
        <form class="inline" method="post" action="/auth/sign-out"><button class="secondary" type="submit">Sign out</button></form>`
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -121,6 +121,29 @@ const STATE_LABELS: Record<string, string> = {
   needs_attention: "Needs attention"
 };
 
+/** The MCP summaries name MCP tools; the page says what to do here. */
+const PAGE_SUMMARIES: Record<string, string> = {
+  preparing_preview: "SitePilot is planning the change and building a preview. Refresh in a moment.",
+  needs_your_reply: "SitePilot needs an answer before it can continue. Reply below.",
+  awaiting_approval: "The preview is ready. Approve it, or ask for a change below.",
+  approved: "Approved. SitePilot is applying the change.",
+  applying: "SitePilot is writing the change to the site and verifying it. Refresh in a moment.",
+  completed: "The change was written to the site and verified.",
+  rejected: "Rejected. Nothing was written to the site.",
+  needs_attention: "This request needs attention. See the latest message below."
+};
+
+const OPERATION_LABELS: Record<string, string> = {
+  create_draft: "New draft",
+  apply_operations: "Edit",
+  edit: "Edit",
+  replace_content: "Replace the content",
+  replace: "Replace the content",
+  set_status: "Change the status",
+  publish: "Publish",
+  unpublish: "Unpublish"
+};
+
 export function requestsPage(input: {
   user: SignedInUser;
   threads: McpThreadSummary[];
@@ -169,13 +192,13 @@ export function requestPage(input: {
     status.title,
     `<p><a href="/requests">← Requests</a></p>
      <h1>${e(status.title)}</h1>
-     <p><span class="state">${e(STATE_LABELS[status.state] ?? status.state)}</span> ${e(status.summary)}</p>
+     <p><span class="state">${e(STATE_LABELS[status.state] ?? status.state)}</span> ${e(PAGE_SUMMARIES[status.state] ?? status.summary)}</p>
      ${input.notice ? `<p class="card">${e(input.notice)}</p>` : ""}
      ${status.question ? `<div class="card"><strong>SitePilot asks:</strong> ${e(status.question)}</div>` : ""}
-     ${status.failure ? `<p class="error">${e(status.failure.message)}</p>` : ""}
+     ${status.failure && status.state === "needs_attention" ? `<p class="error">${e(status.failure.message)}</p>` : ""}
      ${
        changes
-         ? `<div class="card"><h2>The change</h2><p>${e(changes.operation)}${changes.title ? `: <strong>${e(changes.title)}</strong>` : ""}</p>
+         ? `<div class="card"><h2>The change</h2><p>${e(OPERATION_LABELS[changes.operation] ?? changes.operation)}${changes.title ? `: <strong>${e(changes.title)}</strong>` : ""}</p>
             ${changes.excerpt ? `<p class="muted">${e(changes.excerpt)}</p>` : ""}
             ${(changes.seo ?? []).map((item) => `<p>${e(item.label)}: ${e(item.value)}</p>`).join("")}
             ${changes.featuredImage ? `<p>Featured image: ${e(changes.featuredImage)}</p>` : ""}</div>`

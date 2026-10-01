@@ -1,14 +1,16 @@
 import { useEffect, useState, type ReactElement } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 
 import type { SiteSummary } from "@sitepilot/contracts";
 
+import { isHostedApp } from "../hosted.js";
 import { activationLabel } from "../site-labels.js";
 import { ThemeToggle } from "../theme/theme.js";
 
 export function HomePage(): ReactElement {
   const [sites, setSites] = useState<SiteSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const hosted = isHostedApp();
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +31,11 @@ export function HomePage(): ReactElement {
     };
   }, []);
 
+  // The hosted app manages one site: open it.
+  if (hosted && sites.length === 1 && sites[0]) {
+    return <Navigate to={`/site/${sites[0].id}/overview`} replace />;
+  }
+
   return (
     <main className="app-shell home-shell">
       <section className="hero-card">
@@ -40,9 +47,15 @@ export function HomePage(): ReactElement {
           enabled.
         </p>
         <div className="action-row">
-          <Link className="btn btn-primary" to="/sites/new">
-            Add site
-          </Link>
+          {hosted ? (
+            <a className="btn btn-secondary btn-small" href="/account">
+              Account and tokens
+            </a>
+          ) : (
+            <Link className="btn btn-primary" to="/sites/new">
+              Add site
+            </Link>
+          )}
           <Link className="btn btn-secondary btn-small" to="/settings">
             App settings
           </Link>
@@ -54,12 +67,21 @@ export function HomePage(): ReactElement {
         {sites.length === 0 ? (
           <article className="status-card">
             <h2>No sites yet</h2>
-            <p>
-              Register a WordPress site to see it listed here.
-            </p>
-            <Link className="btn btn-primary" to="/sites/new">
-              Add your first site
-            </Link>
+            {hosted ? (
+              <>
+                <p>Connect the WordPress site this SitePilot manages.</p>
+                <a className="btn btn-primary" href="/sites/connect">
+                  Connect the site
+                </a>
+              </>
+            ) : (
+              <>
+                <p>Register a WordPress site to see it listed here.</p>
+                <Link className="btn btn-primary" to="/sites/new">
+                  Add your first site
+                </Link>
+              </>
+            )}
           </article>
         ) : (
           sites.map((s) => (

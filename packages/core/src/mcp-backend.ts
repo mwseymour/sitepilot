@@ -75,6 +75,8 @@ type BackgroundJob =
 export type DesktopMcpBackendOptions = {
   /** The sites this client may use, or "all" for every active site. */
   siteScope: "all" | readonly string[];
+  /** Where people approve; the hosted server names its own address. */
+  approvalHint?: string;
 };
 
 function nowIso(): string {
@@ -405,7 +407,7 @@ export function createDesktopMcpBackend(
           }
         : {}),
       ...(state === "awaiting_approval" || state === "approved"
-        ? { approvalHint: APPROVAL_HINT }
+        ? { approvalHint: options.approvalHint ?? APPROVAL_HINT }
         : {}),
       ...(failure === undefined && v2?.failure && state !== "completed"
         ? {

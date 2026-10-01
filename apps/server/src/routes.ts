@@ -20,6 +20,7 @@ import {
   type SitePilotMcpBackend
 } from "@sitepilot/mcp-server";
 
+import type { AppShell } from "./app-shell.js";
 import {
   AuthStore,
   SESSION_COOKIE,
@@ -61,6 +62,8 @@ export type RoutesDependencies = {
   auth: AuthStore;
   backend: SitePilotMcpBackend;
   mcp: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
+  /** The desktop app's interface, when its build is present. */
+  app?: AppShell;
 };
 
 const WORKSPACE_ID = "workspace-1";
@@ -113,7 +116,10 @@ export function createRoutes(deps: RoutesDependencies) {
   }
 
   async function home(request: IncomingMessage, response: ServerResponse) {
-    if (await currentUser(request)) return redirect(response, "/requests");
+    if (await currentUser(request)) {
+      if (deps.app?.available) return void deps.app.serveFile(response, "/");
+      return redirect(response, "/requests");
+    }
     const site = await connectedSite();
     sendHtml(response, 200, homePage({ siteName: site?.name ?? null }));
   }
@@ -161,7 +167,7 @@ export function createRoutes(deps: RoutesDependencies) {
     }
     const user = await deps.auth.linkIdentity({ assertion, workspaceId: site.workspaceId });
     const token = await deps.auth.createSession(user);
-    redirect(response, "/requests", [clearState, sessionCookie(token, SESSION_TTL_SECONDS)]);
+    redirect(response, "/", [clearState, sessionCookie(token, SESSION_TTL_SECONDS)]);
   }
 
   async function connectSite(request: IncomingMessage, response: ServerResponse, user: SignedInUser | null) {
@@ -313,7 +319,8 @@ export function createRoutes(deps: RoutesDependencies) {
         siteId,
         requestId: latest.id as RequestId,
         candidateId,
-        decision
+        decision,
+        applyingNow: decision === "approved"
       });
       if (!("state" in decided)) return { ok: false as const, message: decided.message };
       if (decision === "approved") {
@@ -336,7 +343,7 @@ export function createRoutes(deps: RoutesDependencies) {
     if (!result.ok) return send(response, 404, "Not found", { "content-type": "text/plain" });
     send(response, 200, Buffer.from(result.artifact.dataBase64, "base64"), {
       "content-type": result.artifact.mimeType,
-      "cache-control": "private, max-age=300"
+      "cache-control": "no-store"
     });
   }
 
@@ -367,6 +374,23 @@ export function createRoutes(deps: RoutesDependencies) {
     }
     if (path === "/sites/connect" && (method === "GET" || method === "POST")) {
       return connectSite(request, response, await currentUser(request)).then(() => true);
+    }
+    if (deps.app && path.startsWith("/assets/") && method === "GET") {
+      if (!deps.app.serveFile(response, path)) send(response, 404, "Not found", { "content-type": "text/plain" });
+      return true;
+    }
+    const ipc = /^\/api\/ipc\/([A-Za-z0-9.]+)$/.exec(path);
+    if (deps.app && ipc && method === "POST") {
+      const user = await currentUser(request);
+      if (!user) {
+        send(response, 401, JSON.stringify({ ok: false, code: "signed_out", message: "Sign in again with WordPress." }), {
+          "content-type": "application/json"
+        });
+        return true;
+      }
+      const app = deps.app;
+      await asHostedUser(user, () => app.handleIpc(request, response, ipc[1] as string, user));
+      return true;
     }
 
     const signedIn = path === "/account" || path === "/requests" || path.startsWith("/account/") || path.startsWith("/requests/");
