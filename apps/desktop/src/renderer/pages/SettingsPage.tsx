@@ -32,7 +32,7 @@ export function SettingsPage(): ReactElement {
       window.sitePilotDesktop.getCompatibilityInfo()
     ]);
     setCompat(
-      `App ${c.appVersion} · Electron ${c.electronVersion} · protocol ${c.sitepilotProtocolVersion} (plugins ≥ ${c.minPluginProtocolVersion})`
+      `App ${c.appVersion} · ${isHostedApp() ? "hosted" : `Electron ${c.electronVersion}`} · protocol ${c.sitepilotProtocolVersion} (plugins ≥ ${c.minPluginProtocolVersion})`
     );
     if (!state.ok) {
       setErr(state.message);
