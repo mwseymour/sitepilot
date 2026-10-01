@@ -15,6 +15,7 @@ import type {
 import { isMcpToolError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import {
   clientSourceFromName,
+  type McpAttachment,
   type McpCaller,
   type McpRequestState,
   type McpRequestStatus,
@@ -461,6 +462,7 @@ export function createDesktopMcpBackend(
       threadId: string;
       text: string;
       target: GutenbergV2Target;
+      attachments?: McpAttachment[];
     }
   ): void {
     jobs.set(input.threadId, { status: "running", startedAt: nowIso() });
@@ -469,7 +471,8 @@ export function createDesktopMcpBackend(
         siteId: input.siteId as SiteId,
         threadId: input.threadId as ChatThreadId,
         text: input.text,
-        gutenbergV2Target: input.target
+        gutenbergV2Target: input.target,
+        ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {})
       })
     )
       .then((result) => {
@@ -637,7 +640,7 @@ export function createDesktopMcpBackend(
       });
     },
 
-    createRequest({ siteId, text, target, title }, caller) {
+    createRequest({ siteId, text, target, title, attachments }, caller) {
       const context = callContextFor(caller, "create_request");
       return runWithCallContext(context, async () => {
         const allowed = assertCallerMay("request");
@@ -653,13 +656,14 @@ export function createDesktopMcpBackend(
           siteId,
           threadId: created.thread.id,
           text,
-          target: toV2Target(target)
+          target: toV2Target(target),
+          ...(attachments ? { attachments } : {})
         });
         return buildStatus(siteId, created.thread.id);
       });
     },
 
-    addToRequest({ siteId, requestId, text }, caller) {
+    addToRequest({ siteId, requestId, text, attachments }, caller) {
       const context = callContextFor(caller, "add_to_request");
       return runWithCallContext(context, async () => {
         const allowed = assertCallerMay("request");
@@ -693,7 +697,8 @@ export function createDesktopMcpBackend(
           siteId,
           threadId: requestId,
           text,
-          target: { operation: "create_draft", postType }
+          target: { operation: "create_draft", postType },
+          ...(attachments ? { attachments } : {})
         });
         return buildStatus(siteId, requestId);
       });

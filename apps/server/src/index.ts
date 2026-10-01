@@ -24,6 +24,7 @@ import { connectWithRetry, type DatabaseStatus } from "./database.js";
 import { createHostedMcpHandler } from "./mcp.js";
 import { createOAuthEndpoints, SitePilotOAuthProvider } from "./oauth.js";
 import { createReviewLinks } from "./review-links.js";
+import { createSlackApp } from "./slack.js";
 import { createAppShell } from "./app-shell.js";
 import { createRoutes } from "./routes.js";
 
@@ -129,6 +130,25 @@ const connecting = connectWithRetry({
       chatApproval: true
     });
     const app = createAppShell({ appVersion: info.version });
+    const slackBotToken = process.env.SLACK_BOT_TOKEN?.trim();
+    const slackSigningSecret = process.env.SLACK_SIGNING_SECRET?.trim();
+    const slack = createSlackApp({
+      sql: connected.database.sql,
+      auth,
+      backend,
+      publicUrl,
+      secretsKey,
+      config:
+        slackBotToken && slackSigningSecret
+          ? {
+              botToken: slackBotToken,
+              signingSecret: slackSigningSecret,
+              ...(process.env.SLACK_API_URL ? { apiBaseUrl: process.env.SLACK_API_URL } : {})
+            }
+          : null
+    });
+    slack.start();
+    console.log(slack.enabled ? "Slack: on." : "Slack: off. Set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET to turn it on.");
     const mcpUrl = new URL("/mcp", publicUrl.origin);
     const oauth = createOAuth(connected.database.sql, auth, mcpUrl);
     routes = createRoutes({
@@ -145,6 +165,7 @@ const connecting = connectWithRetry({
       }),
       app,
       reviewLinks,
+      slack,
       ...(oauth ? { oauth } : {})
     });
     console.log(

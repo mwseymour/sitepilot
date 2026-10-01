@@ -470,6 +470,36 @@ CREATE TABLE oauth_tokens (
 );
 CREATE INDEX oauth_tokens_grant ON oauth_tokens (grant_id);
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "006_slack",
+    description:
+      "The Slack app: Slack users linked to WordPress users by Sign in with WordPress, and the Slack threads that follow each request.",
+    sql: `
+CREATE TABLE slack_links (
+  team_id TEXT NOT NULL,
+  slack_user_id TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (team_id, slack_user_id),
+  FOREIGN KEY (site_id, wordpress_user_id) REFERENCES wordpress_identities(site_id, wordpress_user_id)
+);
+CREATE TABLE slack_threads (
+  team_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  thread_ts TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  wordpress_user_id INTEGER NOT NULL,
+  last_notice TEXT,
+  open INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (team_id, channel_id, thread_ts)
+);
+CREATE INDEX slack_threads_open ON slack_threads (open);
+${REVOKE_API_ROLES}`
   }
 ];
 

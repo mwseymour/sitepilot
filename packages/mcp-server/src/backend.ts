@@ -83,7 +83,7 @@ export type McpRequestStatus = {
     seo?: Array<{ label: string; value: string }>;
     featuredImage?: string;
   };
-  /** On the hosted server, each links to the artifact (needs sign-in). */
+  /** On the hosted server, each has a signed link that opens without signing in. */
   reviewArtifacts?: Array<{ id: string; kind: string; url?: string }>;
   result?: { postId?: number; editUrl?: string };
   /**
@@ -93,8 +93,6 @@ export type McpRequestStatus = {
   failure?: { code: string; cause: string; retryable: boolean; message: string };
   /** Where a person approves the change. */
   approvalHint?: string;
-  /** On the hosted server: opens the request in SitePilot (needs sign-in). */
-  reviewUrl?: string;
   recentMessages: McpThreadMessage[];
   updatedAt: string;
 };
@@ -113,7 +111,7 @@ export type McpReviewArtifact = {
   kind: "preview" | "structure_diff";
   mimeType: string;
   dataBase64: string;
-  /** On the hosted server: the artifact in SitePilot (needs sign-in). */
+  /** On the hosted server: a signed link that opens without signing in. */
   url?: string;
 };
 
@@ -147,11 +145,13 @@ export interface SitePilotMcpBackend {
       text: string;
       target: McpRequestTarget;
       title?: string;
+      /** Images or videos to use, from apps that carry files (Slack). */
+      attachments?: McpAttachment[];
     },
     caller: McpCaller
   ): Promise<McpResult<{ status: McpRequestStatus }>>;
   addToRequest(
-    input: { siteId: string; requestId: string; text: string },
+    input: { siteId: string; requestId: string; text: string; attachments?: McpAttachment[] },
     caller: McpCaller
   ): Promise<McpResult<{ status: McpRequestStatus }>>;
   requestStatus(
@@ -201,5 +201,13 @@ export interface SitePilotMcpBackend {
   ): Promise<McpResult<{ status: McpRequestStatus }>>;
 }
 
+/** An image or video for a request, as the desktop composer sends one. */
+export type McpAttachment = {
+  fileName: string;
+  mediaType: string;
+  sizeBytes: number;
+  dataUrl: string;
+};
+
 /** Where the person gave their decision, for the audit trail. */
-export type McpApprovalChannel = "approval_prompt" | "review_card";
+export type McpApprovalChannel = "approval_prompt" | "review_card" | "slack_button";

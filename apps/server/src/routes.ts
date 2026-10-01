@@ -41,6 +41,7 @@ import {
 } from "./http.js";
 import { clientDisplayName, isOAuthPath, type SitePilotOAuthProvider } from "./oauth.js";
 import type { ReviewLinks } from "./review-links.js";
+import type { SlackApp } from "./slack.js";
 import {
   accountPage,
   connectPage,
@@ -69,6 +70,8 @@ export type RoutesDependencies = {
   app?: AppShell;
   /** Signed preview links that open without signing in (review-links.ts). */
   reviewLinks?: ReviewLinks;
+  /** The Slack app (slack.ts). */
+  slack?: SlackApp;
   /** OAuth 2.1 for remote MCP clients (oauth.ts). */
   oauth?: {
     provider: SitePilotOAuthProvider;
@@ -76,9 +79,9 @@ export type RoutesDependencies = {
   };
 };
 
-/** Where sign-in returns to, when it isn't the app: only the OAuth consent page. */
+/** Where sign-in returns to, when it isn't the app: the OAuth consent page and Slack's connect page. */
 const RETURN_COOKIE = "sp_return";
-const RETURN_PATH = /^\/oauth\/consent\?request=[A-Za-z0-9_-]+$/;
+const RETURN_PATH = /^\/(?:oauth\/consent\?request=[A-Za-z0-9_-]+|slack\/connect\?token=[A-Za-z0-9_.-]+)$/;
 
 const WORKSPACE_ID = "workspace-1";
 
@@ -305,6 +308,7 @@ export function createRoutes(deps: RoutesDependencies) {
         user,
         tokens: await deps.auth.listApiTokens(user),
         apps: deps.oauth ? await deps.oauth.provider.connectedApps(user) : [],
+        slackAccounts: deps.slack?.enabled ? await deps.slack.linkedSlackAccounts(user) : null,
         mcpUrl: new URL("/mcp", deps.publicUrl).toString(),
         ...(newToken ? { newToken } : {})
       })
@@ -445,6 +449,15 @@ export function createRoutes(deps: RoutesDependencies) {
       await deps.oauth.endpoints(request, response);
       return true;
     }
+    // Slack's servers: they sign each request instead.
+    if (deps.slack && path === "/slack/events" && method === "POST") {
+      await deps.slack.handleEvents(request, response);
+      return true;
+    }
+    if (deps.slack && path === "/slack/interactions" && method === "POST") {
+      await deps.slack.handleInteractions(request, response);
+      return true;
+    }
     // Every form post must come from these pages.
     if (method === "POST" && !isSameOrigin(request, deps.publicUrl)) {
       send(response, 403, "Cross-site form posts aren't allowed.", { "content-type": "text/plain" });
@@ -452,6 +465,16 @@ export function createRoutes(deps: RoutesDependencies) {
     }
     if (path === "/" && method === "GET") return home(request, response).then(() => true);
     if (path === "/auth/wordpress/start" && method === "GET") return startSignIn(response, url).then(() => true);
+    if (deps.slack && path === "/slack/connect" && (method === "GET" || method === "POST")) {
+      const user = await currentUser(request);
+      if (!user) {
+        const back = `/slack/connect?token=${url.searchParams.get("token") ?? ""}`;
+        redirect(response, RETURN_PATH.test(back) ? `/auth/wordpress/start?return=${encodeURIComponent(back)}` : "/");
+        return true;
+      }
+      await deps.slack.connectPage(request, response, user, url.searchParams.get("token") ?? "", (title, body) => layout(title, body, user));
+      return true;
+    }
     if (deps.oauth && path === "/oauth/consent" && (method === "GET" || method === "POST")) {
       return consent(request, response, url, deps.oauth.provider).then(() => true);
     }
@@ -497,6 +520,11 @@ export function createRoutes(deps: RoutesDependencies) {
       return account(request, response, user).then(() => true);
     }
     if (path === "/account/tokens" && method === "POST") return account(request, response, user).then(() => true);
+    if (path === "/account/slack/disconnect" && method === "POST" && deps.slack) {
+      await deps.slack.disconnect(user);
+      redirect(response, "/account");
+      return true;
+    }
     const disconnect = /^\/account\/apps\/([0-9a-f-]{36})\/disconnect$/.exec(path);
     if (disconnect && method === "POST" && deps.oauth) {
       await deps.oauth.provider.disconnect(user, disconnect[1] as string);

@@ -9,6 +9,9 @@
  *    and consent, scoped tokens, refresh, and disconnecting.
  * 4. Make a request in the app (the desktop interface, served by the
  *    server), approve and apply it there, and see it in WordPress.
+ * 4c. Slack, against a stand-in for Slack's API: connecting, a request in a
+ *    thread with its previews and buttons, a typed "approved" doing nothing,
+ *    and Approve applying it.
  * 5. Sign in as a WordPress contributor (can edit, can't publish): a
  *    requester, refused approving and site setup. (Needs wp-cli, for the
  *    test user's password.)
@@ -18,7 +21,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -69,8 +72,30 @@ async function main(): Promise<void> {
   const output: string[] = [];
   let server: ChildProcess | undefined;
   let callbackServer: Server | undefined;
+  // A stand-in for Slack's Web API and response URLs: records what SitePilot sends.
+  const slackCalls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const slackSigningSecret = randomBytes(16).toString("hex");
+  let slackTs = 1_000;
+  const slackApi = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8");
+      const method = (request.url ?? "").replace(/^\/(?:api\/)?/, "");
+      const form = (request.headers["content-type"] ?? "").startsWith("application/x-www-form-urlencoded");
+      slackCalls.push({
+        method,
+        body: !text ? {} : form ? Object.fromEntries(new URLSearchParams(text)) : (JSON.parse(text) as Record<string, unknown>)
+      });
+      const extra =
+        method === "auth.test" ? { user_id: "UBOT" } : method === "users.info" ? { user: { real_name: "E2E Slack person" } } : {};
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ ok: true, ts: `${(slackTs += 1)}.000100`, ...extra }));
+    });
+  });
   const browser = await chromium.launch({ headless: true });
   try {
+    await new Promise<void>((resolve) => slackApi.listen(18997, "127.0.0.1", resolve));
     server = spawn(process.execPath, ["apps/server/dist/index.js"], {
       env: {
         ...process.env,
@@ -81,6 +106,9 @@ async function main(): Promise<void> {
         SITEPILOT_SECRETS_KEY: randomBytes(32).toString("base64"),
         DATABASE_URL: databaseUrl.toString(),
         OPENAI_API_KEY: E2E_OPENAI_API_KEY,
+        SLACK_BOT_TOKEN: "xoxb-e2e",
+        SLACK_SIGNING_SECRET: slackSigningSecret,
+        SLACK_API_URL: "http://127.0.0.1:18997/api/",
         NODE_TLS_REJECT_UNAUTHORIZED: "0"
       },
       stdio: ["ignore", "pipe", "pipe"]
@@ -374,6 +402,117 @@ async function main(): Promise<void> {
       : "(no wp-cli)";
     assert(promptPostId !== "", "The prompt-approved draft isn't in WordPress.");
 
+    // 4c. Slack.
+    const slackPost = (path: string, body: string, contentType: string) => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      return fetch(`${SERVER}${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": contentType,
+          "x-slack-request-timestamp": timestamp,
+          "x-slack-signature": `v0=${createHmac("sha256", slackSigningSecret).update(`v0:${timestamp}:${body}`).digest("hex")}`
+        },
+        body
+      });
+    };
+    const slackEvent = (event: Record<string, unknown>) =>
+      slackPost("/slack/events", JSON.stringify({ type: "event_callback", team_id: "T_E2E", event }), "application/json");
+    const slackSent = (label: string, match: (call: { method: string; body: Record<string, unknown> }) => boolean, timeoutMs: number) =>
+      waitFor(label, async () => slackCalls.find(match) ?? null, timeoutMs);
+    const verification = (await (
+      await fetch(`${SERVER}/slack/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "url_verification", challenge: "e2e-challenge" })
+      })
+    ).json()) as { challenge?: string };
+    assert(verification.challenge === "e2e-challenge", "Slack's URL check wasn't answered.");
+    const unsignedSlack = await fetch(`${SERVER}/slack/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "event_callback", team_id: "T_E2E", event: { type: "app_mention", user: "U_E2E", text: "hi", channel: "C_E2E", ts: "1.1" } })
+    });
+    assert(unsignedSlack.status === 401, "An unsigned Slack event was accepted.");
+    // Someone not yet connected gets a link only they can see.
+    await slackEvent({ type: "app_mention", user: "U_E2E", text: "<@UBOT> hello", channel: "C_E2E", ts: "100.000001" });
+    const connectPrompt = await slackSent("the connect link", (call) => call.method === "chat.postEphemeral" && call.body.user === "U_E2E", 30_000);
+    const connectUrl = /"url":"([^"]+)"/.exec(JSON.stringify(connectPrompt.body.blocks))?.[1] ?? "";
+    assert(connectUrl.startsWith(`${SERVER}/slack/connect?token=`), `No connect link: ${JSON.stringify(connectPrompt.body)}`);
+    await page.goto(connectUrl);
+    assert((await page.content()).includes("Connect Slack to SitePilot?"), "No Slack connect page.");
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByText("Go back to Slack").waitFor();
+    // A request in a thread: its review, with previews and buttons.
+    const slackTitle = `AUTOMATED-TEST-HOSTED-SLACK-${randomUUID().slice(0, 8)}`;
+    await slackEvent({
+      type: "app_mention",
+      user: "U_E2E",
+      text: `<@UBOT> Create a short draft post titled "${slackTitle}" with one sentence saying the Slack test ran.`,
+      channel: "C_E2E",
+      ts: "200.000001"
+    });
+    await slackSent(
+      "SitePilot's reply in the thread",
+      (call) => call.method === "chat.postMessage" && call.body.thread_ts === "200.000001" && String(call.body.text).startsWith("On it"),
+      30_000
+    );
+    const slackReview = await slackSent(
+      "the review in Slack",
+      (call) =>
+        call.method === "chat.postMessage" &&
+        call.body.thread_ts === "200.000001" &&
+        JSON.stringify(call.body.blocks ?? []).includes('"action_id":"approve"'),
+      6 * 60_000
+    );
+    const reviewBlocks = slackReview.body.blocks as Array<{ type: string; image_url?: string; elements?: Array<{ action_id?: string; value?: string }> }>;
+    const slackImage = reviewBlocks.find((block) => block.type === "image")?.image_url ?? "";
+    assert((await fetch(slackImage)).ok, `Slack's preview image didn't load: ${slackImage}`);
+    // Typing "approved" in the thread does nothing.
+    await slackEvent({
+      type: "message",
+      channel_type: "channel",
+      user: "U_E2E",
+      text: "approved",
+      channel: "C_E2E",
+      ts: "200.000500",
+      thread_ts: "200.000001"
+    });
+    await slackSent(
+      "the typed-approval reply",
+      (call) => call.method === "chat.postMessage" && String(call.body.text).startsWith("Typing doesn't approve"),
+      30_000
+    );
+    // Clicking Approve applies it.
+    const approveValue = reviewBlocks.find((block) => block.type === "actions")?.elements?.find((button) => button.action_id === "approve")?.value;
+    await slackPost(
+      "/slack/interactions",
+      new URLSearchParams({
+        payload: JSON.stringify({
+          type: "block_actions",
+          team: { id: "T_E2E" },
+          user: { id: "U_E2E" },
+          channel: { id: "C_E2E" },
+          message: { ts: "9999.000001", thread_ts: "200.000001", blocks: reviewBlocks },
+          response_url: "http://127.0.0.1:18997/response/approve",
+          actions: [{ action_id: "approve", value: approveValue }]
+        })
+      }).toString(),
+      "application/x-www-form-urlencoded"
+    );
+    await slackSent("the approved review", (call) => call.method === "response/approve" && String(call.body.text).startsWith("Approved by"), 60_000);
+    await slackSent(
+      "Done in Slack",
+      (call) => call.method === "chat.postMessage" && call.body.thread_ts === "200.000001" && String(call.body.text).startsWith("Done."),
+      6 * 60_000
+    );
+    const slackPostId = E2E_WP_PATH
+      ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${slackTitle}`, "--field=ID"], {
+          cwd: E2E_WP_PATH,
+          encoding: "utf8"
+        }).trim()
+      : "(no wp-cli)";
+    assert(slackPostId !== "", "The Slack-approved draft isn't in WordPress.");
+
     // 5. A contributor can request but not approve, apply or change setup.
     // (Editors and authors can publish, so they approve.)
     if (E2E_WP_PATH) {
@@ -437,7 +576,14 @@ async function main(): Promise<void> {
     console.log("Hosted E2E passed.");
     console.log(
       JSON.stringify(
-        { request: requestUrl, title, postId, promptPostId, manualCleanup: `Delete drafts ${postId} and ${promptPostId} from the MAMP site.` },
+        {
+          request: requestUrl,
+          title,
+          postId,
+          promptPostId,
+          slackPostId,
+          manualCleanup: `Delete drafts ${postId}, ${promptPostId} and ${slackPostId} from the MAMP site.`
+        },
         null,
         2
       )
@@ -448,6 +594,7 @@ async function main(): Promise<void> {
   } finally {
     await browser.close();
     callbackServer?.close();
+    slackApi.close();
     server?.kill("SIGTERM");
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     await database.drop().catch(() => undefined);

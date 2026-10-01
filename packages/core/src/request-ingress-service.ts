@@ -44,6 +44,11 @@ const OPEN_FOLLOW_UP_STATUS_SET = new Set<RequestStatus>(
 const APPROVAL_LIKE_REPLY =
   /^\s*(?:(?:yes|ok|okay|sure)[,!.]?\s+)?(?:approve[ds]?|approval|approve and apply|apply(?: it)?|publish(?: it)?|go ahead|lgtm|looks good|ship it)(?:\s+(?:it|this|that))?[\s.!]*$/i;
 
+/** True for a reply that only says to go ahead: it never approves. */
+export function isTypedApproval(text: string): boolean {
+  return APPROVAL_LIKE_REPLY.test(text);
+}
+
 export const TYPED_APPROVAL_REPLY =
   "Typing doesn't approve a change. Use the Approve button on the review, or approve when SitePilot asks you in your chat app. Nothing was changed.";
 

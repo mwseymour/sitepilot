@@ -647,7 +647,7 @@ export function createSitePilotMcpServer(
     {
       title: "Request status",
       description:
-        "Where a request is: preparing_preview, needs_your_reply, awaiting_approval, approved, applying, completed, rejected or needs_attention, with a plain summary, the change list and review artifact IDs. Only completed means the change was written and verified. On the hosted server, reviewUrl opens the request in SitePilot and each artifact has a url: give the person these links to see the preview and approve.",
+        "Where a request is: preparing_preview, needs_your_reply, awaiting_approval, approved, applying, completed, rejected or needs_attention, with a plain summary, the change list and review artifact IDs. Only completed means the change was written and verified. On the hosted server, each review artifact has a url that opens without signing in for 24 hours: give the person these links to see the previews.",
       inputSchema: {
         site_id: siteIdParameter,
         request_id: requestIdParameter

@@ -8,6 +8,7 @@ export type { CreateSitePilotMcpServerOptions } from "./server.js";
 export { MCP_REQUEST_STATES } from "./backend.js";
 export type {
   McpApprovalChannel,
+  McpAttachment,
   McpCaller,
   McpRequestState,
   McpRequestStatus,

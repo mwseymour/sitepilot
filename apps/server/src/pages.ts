@@ -78,6 +78,8 @@ export function accountPage(input: {
   user: SignedInUser;
   tokens: ApiTokenSummary[];
   apps: ConnectedApp[];
+  /** Linked Slack accounts, or null when the Slack app isn't set up. */
+  slackAccounts?: number | null;
   newToken?: string;
   mcpUrl: string;
 }): string {
@@ -108,6 +110,16 @@ export function accountPage(input: {
              )
              .join("")}</tbody></table>`
          : `<p class="muted">No apps connected yet.</p>`
+     }
+     ${
+       input.slackAccounts === null || input.slackAccounts === undefined
+         ? ""
+         : `<h2>Slack</h2>${
+             input.slackAccounts > 0
+               ? `<p>Your Slack account is connected: mention @SitePilot in Slack to make a request.</p>
+                  <form method="post" action="/account/slack/disconnect"><button class="secondary" type="submit">Disconnect Slack</button></form>`
+               : `<p class="muted">Not connected. Mention @SitePilot in Slack, and it will give you a link to connect.</p>`
+           }`
      }
      <h2>Personal tokens</h2>
      <p>For Claude Code or Codex without signing in, use a personal token. Tokens act as you; revoke one you no longer use.</p>
