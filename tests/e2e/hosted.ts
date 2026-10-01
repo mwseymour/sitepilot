@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
 import { createTestPostgresDatabase } from "../postgres-test-database.js";
@@ -292,6 +293,11 @@ async function main(): Promise<void> {
     await approve.waitFor({ timeout: 6 * 60_000 }).catch(async (error: unknown) => {
       throw new Error(`No preview to approve (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
     });
+    // Typing "approved" approves nothing: it says to use the button.
+    await page.getByPlaceholder(/Describe the change/).fill("approved");
+    await page.getByRole("button", { name: /Update request/ }).click();
+    await page.getByText("Typing doesn't approve a change").first().waitFor({ timeout: 60_000 });
+    assert(await approve.isEnabled(), "Typing \"approved\" changed the review.");
     await approve.click();
     await page.getByRole("button", { name: "Apply this update to the site" }).click();
     await page
@@ -302,6 +308,72 @@ async function main(): Promise<void> {
       .catch(async (error: unknown) => {
         throw new Error(`Applying didn't finish (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
       });
+    // 4b. Approval from a chat app's own prompt, as Codex asks: a request over
+    // MCP, a signed preview link, then the person's answer applies it.
+    const promptTitle = `AUTOMATED-TEST-HOSTED-PROMPT-${randomUUID().slice(0, 8)}`;
+    let prompted = "";
+    const codex = new Client({ name: "codex", version: "1.0.0" }, { capabilities: { elicitation: {} } });
+    codex.setRequestHandler(ElicitRequestSchema, async (request) => {
+      prompted = request.params.message;
+      return { action: "accept", content: { decision: "approve" } };
+    });
+    await codex.connect(
+      new StreamableHTTPClientTransport(new URL(`${SERVER}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } }
+      })
+    );
+    const json = (result: Awaited<ReturnType<Client["callTool"]>>) =>
+      JSON.parse((result.content as Array<{ text: string }>).at(-1)?.text ?? "{}") as {
+        requestId?: string;
+        state?: string;
+        reviewArtifacts?: Array<{ kind: string; url?: string }>;
+      };
+    const promptRequest = json(
+      await codex.callTool({
+        name: "create_request",
+        arguments: {
+          text: `Create a short draft post titled "${promptTitle}" with one sentence saying the chat approval test ran.`,
+          target: { operation: "create_draft", post_type: "post" }
+        }
+      })
+    );
+    assert(promptRequest.requestId, "create_request gave no request ID.");
+    const waiting = await waitFor(
+      "the MCP request's preview",
+      async () => {
+        const status = json(await codex.callTool({ name: "request_status", arguments: { request_id: promptRequest.requestId } }));
+        if (status.state === "needs_attention") throw new Error(`The MCP request needs attention: ${JSON.stringify(status)}`);
+        return status.state === "awaiting_approval" ? status : null;
+      },
+      6 * 60_000
+    );
+    const previewLink = waiting.reviewArtifacts?.find((artifact) => artifact.kind === "preview")?.url ?? "";
+    const preview = await fetch(previewLink);
+    assert(
+      preview.ok && (preview.headers.get("content-type") ?? "").startsWith("image/"),
+      `The signed preview link didn't open without signing in (${preview.status} ${previewLink}).`
+    );
+    assert((await fetch(`${previewLink}x`)).status === 404, "An altered preview link worked.");
+    const asked = await codex.callTool({ name: "ask_to_approve", arguments: { request_id: promptRequest.requestId } });
+    assert(!asked.isError && prompted.includes(promptTitle), `ask_to_approve: ${JSON.stringify(asked.content).slice(0, 400)}`);
+    await waitFor(
+      "the prompt-approved change to be applied",
+      async () => {
+        const status = json(await codex.callTool({ name: "request_status", arguments: { request_id: promptRequest.requestId } }));
+        if (status.state === "needs_attention") throw new Error(`Applying failed: ${JSON.stringify(status)}`);
+        return status.state === "completed" ? true : null;
+      },
+      6 * 60_000
+    );
+    await codex.close();
+    const promptPostId = E2E_WP_PATH
+      ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${promptTitle}`, "--field=ID"], {
+          cwd: E2E_WP_PATH,
+          encoding: "utf8"
+        }).trim()
+      : "(no wp-cli)";
+    assert(promptPostId !== "", "The prompt-approved draft isn't in WordPress.");
+
     // 5. A contributor can request but not approve, apply or change setup.
     // (Editors and authors can publish, so they approve.)
     if (E2E_WP_PATH) {
@@ -355,18 +427,6 @@ async function main(): Promise<void> {
       await requesterContext.close();
     }
 
-    // The links MCP clients hand out open the request in the app, and send
-    // someone signed out to sign in first.
-    const threadId = new URL(requestUrl.replace("/#/", "/")).searchParams.get("thread") ?? "";
-    await page.goto(`${SERVER}/requests/${threadId}/open`);
-    await page.waitForURL(new RegExp(`chat\\?thread=${threadId}`));
-    const signedOutLink = await fetch(`${SERVER}/requests/${threadId}/open`, { redirect: "manual" });
-    assert(
-      signedOutLink.status === 303 &&
-        signedOutLink.headers.get("location") === `/auth/wordpress/start?return=${encodeURIComponent(`/requests/${threadId}/open`)}`,
-      `A signed-out request link went to ${signedOutLink.headers.get("location")}.`
-    );
-
     const postId = E2E_WP_PATH
       ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${title}`, "--field=ID"], {
           cwd: E2E_WP_PATH,
@@ -376,7 +436,11 @@ async function main(): Promise<void> {
     assert(postId !== "", "The approved draft isn't in WordPress.");
     console.log("Hosted E2E passed.");
     console.log(
-      JSON.stringify({ request: requestUrl, title, postId, manualCleanup: `Delete draft ${postId} from the MAMP site.` }, null, 2)
+      JSON.stringify(
+        { request: requestUrl, title, postId, promptPostId, manualCleanup: `Delete drafts ${postId} and ${promptPostId} from the MAMP site.` },
+        null,
+        2
+      )
     );
   } catch (error) {
     console.error(output.join("").slice(-4_000));

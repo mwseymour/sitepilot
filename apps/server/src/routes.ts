@@ -40,6 +40,7 @@ import {
   sendHtml
 } from "./http.js";
 import { clientDisplayName, isOAuthPath, type SitePilotOAuthProvider } from "./oauth.js";
+import type { ReviewLinks } from "./review-links.js";
 import {
   accountPage,
   connectPage,
@@ -66,6 +67,8 @@ export type RoutesDependencies = {
   mcp: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   /** The desktop app's interface, when its build is present. */
   app?: AppShell;
+  /** Signed preview links that open without signing in (review-links.ts). */
+  reviewLinks?: ReviewLinks;
   /** OAuth 2.1 for remote MCP clients (oauth.ts). */
   oauth?: {
     provider: SitePilotOAuthProvider;
@@ -73,13 +76,9 @@ export type RoutesDependencies = {
   };
 };
 
-/**
- * Where sign-in may return to, when it isn't the app: the OAuth consent page,
- * and the request and preview links MCP clients hand out.
- */
+/** Where sign-in returns to, when it isn't the app: only the OAuth consent page. */
 const RETURN_COOKIE = "sp_return";
-const RETURN_PATH =
-  /^\/(?:oauth\/consent\?request=[A-Za-z0-9_-]+|requests\/[A-Za-z0-9-]+\/(?:open|artifacts\/[A-Za-z0-9_-]+))$/;
+const RETURN_PATH = /^\/oauth\/consent\?request=[A-Za-z0-9_-]+$/;
 
 const WORKSPACE_ID = "workspace-1";
 
@@ -283,7 +282,7 @@ export function createRoutes(deps: RoutesDependencies) {
           requestId,
           clientName: clientDisplayName(pending.client),
           redirectHost: redirectTo.host,
-          scopes: pending.params.scopes
+          scopes: provider.grantableScopes(user, pending)
         }),
         [],
         [redirectTo.origin]
@@ -401,6 +400,23 @@ export function createRoutes(deps: RoutesDependencies) {
     redirect(response, `/requests/${encodeURIComponent(threadId)}`);
   }
 
+  /** A signed preview link: no sign-in, until it expires. */
+  async function reviewLinkImage(response: ServerResponse, links: ReviewLinks, token: string) {
+    const target = links.verify(token);
+    if (!target) return send(response, 404, "This preview link has expired or isn't valid.", { "content-type": "text/plain; charset=utf-8" });
+    const result = await deps.backend.getReviewArtifact(target, {
+      clientName: HOSTED_APP_CLIENT_NAME,
+      actor: { userProfileId: "review-link", appRole: "read_only_auditor", siteRoles: ["audit_only"] }
+    });
+    if (!result.ok || !result.artifact.mimeType.startsWith("image/")) {
+      return send(response, 404, "That preview isn't available any more.", { "content-type": "text/plain; charset=utf-8" });
+    }
+    send(response, 200, Buffer.from(result.artifact.dataBase64, "base64"), {
+      "content-type": result.artifact.mimeType,
+      "cache-control": "no-store"
+    });
+  }
+
   async function artifact(response: ServerResponse, user: SignedInUser, requestId: string, artifactId: string) {
     const result = await deps.backend.getReviewArtifact(
       { siteId: user.siteId, requestId, artifactId },
@@ -450,6 +466,10 @@ export function createRoutes(deps: RoutesDependencies) {
     if (path === "/sites/connect" && (method === "GET" || method === "POST")) {
       return connectSite(request, response, await currentUser(request)).then(() => true);
     }
+    const reviewLink = /^\/r\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(path);
+    if (deps.reviewLinks && reviewLink && method === "GET") {
+      return reviewLinkImage(response, deps.reviewLinks, reviewLink[1] as string).then(() => true);
+    }
     if (deps.app && path.startsWith("/assets/") && method === "GET") {
       if (!deps.app.serveFile(response, path)) send(response, 404, "Not found", { "content-type": "text/plain" });
       return true;
@@ -492,20 +512,10 @@ export function createRoutes(deps: RoutesDependencies) {
     if (path === "/requests" && (method === "GET" || method === "POST")) {
       return requests(request, response, user).then(() => true);
     }
-    const match = /^\/requests\/([A-Za-z0-9-]+)(?:\/(decision|reply|open|artifacts\/([A-Za-z0-9_-]+)))?$/.exec(path);
+    const match = /^\/requests\/([A-Za-z0-9-]+)(?:\/(decision|reply|artifacts\/([A-Za-z0-9_-]+)))?$/.exec(path);
     if (match) {
       const [, requestId, action, artifactId] = match as unknown as [string, string, string | undefined, string | undefined];
       if (!action && method === "GET") return showRequest(response, user, requestId).then(() => true);
-      if (action === "open" && method === "GET") {
-        // A link from an MCP client: the request in the app, or the simple page.
-        redirect(
-          response,
-          deps.app?.available
-            ? `/#/site/${encodeURIComponent(user.siteId)}/chat?thread=${encodeURIComponent(requestId)}`
-            : `/requests/${encodeURIComponent(requestId)}`
-        );
-        return true;
-      }
       if (action === "decision" && method === "POST") return decide(request, response, user, requestId).then(() => true);
       if (action === "reply" && method === "POST") return reply(request, response, user, requestId).then(() => true);
       if (artifactId && method === "GET") return artifact(response, user, requestId, artifactId).then(() => true);

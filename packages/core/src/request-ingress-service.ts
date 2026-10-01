@@ -11,6 +11,7 @@ import type {
 import {
   amendRequestForThread,
   answerClarificationForRequest,
+  appendSystemChatMessage,
   createTypedRequestForThread,
   postChatMessage,
   type CreateRequestResult
@@ -34,6 +35,17 @@ export const OPEN_FOLLOW_UP_STATUSES = [
 const OPEN_FOLLOW_UP_STATUS_SET = new Set<RequestStatus>(
   OPEN_FOLLOW_UP_STATUSES
 );
+
+/**
+ * A reply that only says to go ahead ("approve", "approved", "apply it",
+ * "lgtm"). Typing never approves: approval is the Approve button, or the
+ * person's answer when SitePilot asks them in a chat app.
+ */
+const APPROVAL_LIKE_REPLY =
+  /^\s*(?:(?:yes|ok|okay|sure)[,!.]?\s+)?(?:approve[ds]?|approval|approve and apply|apply(?: it)?|publish(?: it)?|go ahead|lgtm|looks good|ship it)(?:\s+(?:it|this|that))?[\s.!]*$/i;
+
+export const TYPED_APPROVAL_REPLY =
+  "Typing doesn't approve a change. Use the Approve button on the review, or approve when SitePilot asks you in your chat app. Nothing was changed.";
 
 export type IngestThreadOutcome =
   | "created"
@@ -267,6 +279,16 @@ export async function ingestRequestThreadMessage(input: {
             : {}),
         })
       );
+    }
+
+    if (
+      (openRequest.status === "awaiting_approval" || openRequest.status === "approved") &&
+      APPROVAL_LIKE_REPLY.test(trimmed)
+    ) {
+      const posted = await postChatMessage(input.siteId, input.threadId, trimmed, attachments);
+      if (!posted.ok) return posted;
+      await appendSystemChatMessage(input.siteId, input.threadId, TYPED_APPROVAL_REPLY, openRequest.id);
+      return { ok: true, outcome: "noted", request: openRequest, continued: false };
     }
 
     const amended = fromCreateResult(

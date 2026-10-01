@@ -40,6 +40,8 @@ import {
   postChatMessage
 } from "./chat-service.js";
 import {
+  decideGutenbergV2Candidate,
+  executeGutenbergV2Candidate,
   getGutenbergV2RequestState,
   getGutenbergV2ReviewArtifact,
   type GutenbergV2Target
@@ -77,11 +79,15 @@ export type DesktopMcpBackendOptions = {
   siteScope: "all" | readonly string[];
   /** Where people approve; the hosted server names its own address. */
   approvalHint?: string;
-  /** Links into the hosted app, for a request and its review artifacts. */
+  /** Links to review artifacts that open without signing in (hosted). */
   links?: {
-    request(siteId: string, requestId: string): string;
     artifact(siteId: string, requestId: string, artifactId: string): string;
   };
+  /**
+   * Lets a person approve from a chat app, by answering the app's prompt or
+   * the review card (hosted). The model can't approve; see approvalSubject.
+   */
+  chatApproval?: boolean;
 };
 
 function nowIso(): string {
@@ -282,6 +288,19 @@ export function createDesktopMcpBackend(
     return runWithCallContext(callContextFor(caller, tool), fn);
   }
 
+  /** The newest request in a request thread. */
+  async function latestRequest(siteId: string, threadId: string) {
+    const loaded = await loadRequestThread(siteId, threadId);
+    if (!loaded.ok) return loaded;
+    const requests = [
+      ...(await getDatabase().repositories.requests.listByThreadId(loaded.thread.id))
+    ].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const request = requests.at(-1);
+    return request
+      ? { ok: true as const, request }
+      : fail("request_not_found", "This thread has no request yet.");
+  }
+
   async function loadRequestThread(siteId: string, threadId: string) {
     if (!inScope(siteId)) return fail("site_not_found", "Site not available.");
     const thread = await getDatabase().repositories.chatThreads.getById(
@@ -417,9 +436,7 @@ export function createDesktopMcpBackend(
       ...(state === "awaiting_approval" || state === "approved"
         ? { approvalHint: options.approvalHint ?? APPROVAL_HINT }
         : {}),
-      ...(options.links
-        ? { reviewUrl: options.links.request(siteId, threadId) }
-        : {}),
+
       ...(failure === undefined && v2?.failure && state !== "completed"
         ? {
             failure: failureOf(v2.failure.code, v2.failure.message)
@@ -731,6 +748,66 @@ export function createDesktopMcpBackend(
         return { ok: true, threads };
       });
     },
+
+    ...(options.chatApproval
+      ? {
+          approvalSubject: ({ siteId, requestId }: { siteId: string; requestId: string }, caller: McpCaller) =>
+            scoped("approval_subject", caller, async () => {
+              const latest = await latestRequest(siteId, requestId);
+              if (!latest.ok) return latest;
+              const state = await getGutenbergV2RequestState({
+                siteId: siteId as SiteId,
+                requestId: latest.request.id
+              });
+              const candidateId = state.ok ? state.state?.candidate?.candidateId : undefined;
+              const built = await buildStatus(siteId, requestId);
+              if (!built.ok) return built;
+              if (!candidateId || built.status.state !== "awaiting_approval") {
+                return fail(
+                  "not_awaiting_approval",
+                  "There's no preview waiting for approval on this request. Check request_status."
+                );
+              }
+              return { ok: true as const, candidateId, status: built.status };
+            }),
+          decideForPerson: (
+            input: {
+              siteId: string;
+              requestId: string;
+              candidateId: string;
+              decision: "approve" | "reject";
+              note?: string;
+              channel: string;
+            },
+            caller: McpCaller
+          ) =>
+            scoped(input.channel, caller, async () => {
+              const allowed = assertCallerMay("approve");
+              if (!allowed.ok) return allowed;
+              const latest = await latestRequest(input.siteId, input.requestId);
+              if (!latest.ok) return latest;
+              const requestId = latest.request.id as RequestId;
+              // The candidate the person saw: a newer preview needs a new answer.
+              const decided = await decideGutenbergV2Candidate({
+                siteId: input.siteId as SiteId,
+                requestId,
+                candidateId: input.candidateId,
+                decision: input.decision === "approve" ? "approved" : "rejected",
+                ...(input.note ? { note: input.note } : {}),
+                ...(input.decision === "approve" ? { applyingNow: true } : {})
+              });
+              if (!("state" in decided)) return fail(decided.code, decided.message);
+              if (input.decision === "approve") {
+                // Applying takes a minute; request_status shows its progress.
+                const work = executeGutenbergV2Candidate({ siteId: input.siteId as SiteId, requestId })
+                  .catch((error: unknown) => console.log(`Applying ${requestId} failed: ${String(error)}`))
+                  .finally(() => running.delete(work));
+                running.add(work);
+              }
+              return buildStatus(input.siteId, input.requestId);
+            })
+        }
+      : {}),
 
     getReviewArtifact({ siteId, requestId, artifactId }, caller) {
       return scoped("get_review_artifact", caller, async () => {

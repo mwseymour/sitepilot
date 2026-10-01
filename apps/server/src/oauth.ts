@@ -32,13 +32,14 @@ import { hashToken, randomToken, type AuthStore, type SignedInUser } from "./aut
  * approve, apply or publish.
  */
 
-export const OAUTH_SCOPES = ["read", "request", "review"] as const;
+export const OAUTH_SCOPES = ["read", "request", "review", "approve"] as const;
 export type OAuthScope = (typeof OAUTH_SCOPES)[number];
 
 export const SCOPE_DESCRIPTIONS: Record<OAuthScope, string> = {
   read: "Look up posts and pages, and see your requests and conversations",
   request: "Make requests and ask for changes to them",
-  review: "See review previews"
+  review: "See review previews",
+  approve: "Approve, apply and publish changes, only when you confirm in the app's own prompt or on the review card"
 };
 
 const ACCESS_TTL_SECONDS = 60 * 60;
@@ -196,11 +197,17 @@ export class SitePilotOAuthProvider implements OAuthServerProvider {
       .get({ siteId: user.siteId, wordpressUserId: user.wordpressUserId, clientId: pending.client.client_id });
     if (!row) return false;
     const allowed = parseScopes(row.scopes);
-    return pending.params.scopes.every((scope) => allowed.includes(scope));
+    return this.grantableScopes(user, pending).every((scope) => allowed.includes(scope));
+  }
+
+  /** The scopes this person can actually allow: approve only if they can publish. */
+  public grantableScopes(user: SignedInUser, pending: PendingAuthorization): OAuthScope[] {
+    return pending.params.scopes.filter((scope) => scope !== "approve" || user.siteRoles.includes("approve"));
   }
 
   /** Allows the request: remembers consent and returns the client's redirect with a one-use code. */
   public async approve(user: SignedInUser, pending: PendingAuthorization): Promise<string> {
+    const scopes = this.grantableScopes(user, pending);
     const code = randomToken();
     const now = new Date().toISOString();
     await this.#sql.transaction(async (tx) => {
@@ -216,7 +223,7 @@ export class SitePilotOAuthProvider implements OAuthServerProvider {
           clientId: pending.client.client_id,
           siteId: user.siteId,
           wordpressUserId: user.wordpressUserId,
-          scopes: pending.params.scopes.join(" "),
+          scopes: scopes.join(" "),
           codeChallenge: pending.params.codeChallenge,
           redirectUri: pending.params.redirectUri,
           resource: pending.params.resource ?? null,
@@ -232,7 +239,7 @@ export class SitePilotOAuthProvider implements OAuthServerProvider {
           siteId: user.siteId,
           wordpressUserId: user.wordpressUserId,
           clientId: pending.client.client_id,
-          scopes: pending.params.scopes.join(" "),
+          scopes: scopes.join(" "),
           now
         });
     });

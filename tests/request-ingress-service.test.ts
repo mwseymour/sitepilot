@@ -23,6 +23,7 @@ vi.mock("../packages/core/src/chat-service.js", () => ({
   createTypedRequestForThread: vi.fn(),
   amendRequestForThread: vi.fn(),
   answerClarificationForRequest: vi.fn(),
+  appendSystemChatMessage: vi.fn(),
   postChatMessage: vi.fn()
 }));
 
@@ -34,6 +35,7 @@ vi.mock("../packages/core/src/gutenberg-v2-chat-service.js", () => ({
 import {
   amendRequestForThread,
   answerClarificationForRequest,
+  appendSystemChatMessage,
   createTypedRequestForThread,
   postChatMessage
 } from "../packages/core/src/chat-service.js";
@@ -42,6 +44,7 @@ import {
   hasGutenbergV2RequestMapping
 } from "../packages/core/src/gutenberg-v2-chat-service.js";
 import {
+  TYPED_APPROVAL_REPLY,
   ingestRequestThreadMessage,
   selectOpenRequestForFollowUp
 } from "../packages/core/src/request-ingress-service.js";
@@ -302,5 +305,27 @@ describe("ingestRequestThreadMessage", () => {
       continued: false
     });
     expect(continueGutenbergV2AfterFollowUp).not.toHaveBeenCalled();
+  });
+
+  it("never approves from a typed reply: it says to use the Approve button and changes nothing", async () => {
+    db.repositories.requests.listByThreadId.mockResolvedValue([makeRequest({ status: "awaiting_approval" })]);
+    (postChatMessage as Mock).mockResolvedValue({ ok: true, message: {} });
+
+    for (const text of ["approved", "Approve", "yes, approve it", "ok apply it", "LGTM!"]) {
+      const result = await ingestRequestThreadMessage({ siteId: site.id as never, threadId: thread.id as never, text });
+      expect(result).toMatchObject({ ok: true, outcome: "noted", continued: false });
+    }
+    expect(amendRequestForThread).not.toHaveBeenCalled();
+    expect(continueGutenbergV2AfterFollowUp).not.toHaveBeenCalled();
+    expect(appendSystemChatMessage).toHaveBeenCalledWith(site.id, thread.id, TYPED_APPROVAL_REPLY, "request-1");
+
+    // A real change request on a waiting preview still revises it.
+    (amendRequestForThread as Mock).mockResolvedValue({ ok: true, request: makeRequest({ status: "drafted" }) });
+    const revised = await ingestRequestThreadMessage({
+      siteId: site.id as never,
+      threadId: thread.id as never,
+      text: "Approved, but make the heading shorter"
+    });
+    expect(revised).toMatchObject({ ok: true, outcome: "amended" });
   });
 });

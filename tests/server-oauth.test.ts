@@ -94,7 +94,7 @@ describe.skipIf(!TEST_POSTGRES_URL)("hosted OAuth", () => {
     expect(clientDisplayName(client)).toBe("claude.ai");
 
     const pending = await authorize(provider, client);
-    expect(pending.params.scopes).toEqual(["read", "request", "review"]);
+    expect(pending.params.scopes).toEqual(["read", "request", "review", "approve"]);
     expect(await provider.hasConsent(user, pending)).toBe(false);
     const code = codeFrom(await provider.approve(user, pending));
     // The pending request is answered once.
@@ -102,19 +102,32 @@ describe.skipIf(!TEST_POSTGRES_URL)("hosted OAuth", () => {
 
     expect(await provider.challengeForAuthorizationCode(client, code)).toBe("challenge-abc");
     const tokens = await provider.exchangeAuthorizationCode(client, code, undefined, pending.params.redirectUri, MCP_URL);
-    expect(tokens).toMatchObject({ token_type: "bearer", expires_in: 3600, scope: "read request review" });
+    expect(tokens).toMatchObject({ token_type: "bearer", expires_in: 3600, scope: "read request review approve" });
     expect(tokens.access_token).toMatch(/^spa_/);
     expect(tokens.refresh_token).toMatch(/^spr_/);
     await expect(provider.exchangeAuthorizationCode(client, code)).rejects.toThrow(/unknown, used or expired/);
 
     const caller = await provider.callerForAccessToken(tokens.access_token);
-    expect(caller).toMatchObject({ user: { userProfileId: user.userProfileId }, scopes: ["read", "request", "review"], clientName: "claude.ai" });
+    expect(caller).toMatchObject({
+      user: { userProfileId: user.userProfileId },
+      scopes: ["read", "request", "review", "approve"],
+      clientName: "claude.ai"
+    });
     expect(await provider.callerForAccessToken("spa_not-a-real-token")).toBeNull();
 
     // Consent is remembered for these scopes, and the app shows on the account page.
     expect(await provider.hasConsent(user, await authorize(provider, client, ["read"]))).toBe(true);
     const [app] = await provider.connectedApps(user);
-    expect(app).toMatchObject({ clientName: "claude.ai", scopes: ["read", "request", "review"] });
+    expect(app).toMatchObject({ clientName: "claude.ai", scopes: ["read", "request", "review", "approve"] });
+  });
+
+  it("never grants approve to someone who can't publish", async () => {
+    const { provider, user, client } = await setup();
+    const contributor = { ...user, siteRoles: ["request", "edit_drafts"] as typeof user.siteRoles };
+    const pending = await authorize(provider, client);
+    expect(provider.grantableScopes(contributor, pending)).toEqual(["read", "request", "review"]);
+    const tokens = await provider.exchangeAuthorizationCode(client, codeFrom(await provider.approve(contributor, pending)));
+    expect(tokens.scope).toBe("read request review");
   });
 
   it("rotates refresh tokens, and ends the grant when a used one comes back", async () => {
@@ -153,7 +166,7 @@ describe.skipIf(!TEST_POSTGRES_URL)("hosted OAuth", () => {
     // Disconnecting forgets the consent, so the next connection asks again.
     expect(await provider.hasConsent(user, await authorize(provider, client))).toBe(false);
 
-    await expect(authorize(provider, client, ["read", "approve"])).rejects.toThrow(/Unknown scope/);
+    await expect(authorize(provider, client, ["read", "admin"])).rejects.toThrow(/Unknown scope/);
     await expect(
       provider.authorize(
         client,

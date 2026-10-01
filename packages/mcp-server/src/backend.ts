@@ -176,4 +176,30 @@ export interface SitePilotMcpBackend {
     input: { tool: string; siteId?: string; ok: boolean; code?: string },
     caller: McpCaller
   ): Promise<void>;
+  /**
+   * Approving from a chat app (hosted only). The preview a person is asked
+   * about: the request's current candidate, waiting for approval.
+   */
+  approvalSubject?(
+    input: { siteId: string; requestId: string },
+    caller: McpCaller
+  ): Promise<McpResult<{ candidateId: string; status: McpRequestStatus }>>;
+  /**
+   * The person's own decision, given in a prompt the chat app showed them or
+   * on the review card, never by the model. Approving applies the change.
+   */
+  decideForPerson?(
+    input: {
+      siteId: string;
+      requestId: string;
+      candidateId: string;
+      decision: "approve" | "reject";
+      note?: string;
+      channel: McpApprovalChannel;
+    },
+    caller: McpCaller
+  ): Promise<McpResult<{ status: McpRequestStatus }>>;
 }
+
+/** Where the person gave their decision, for the audit trail. */
+export type McpApprovalChannel = "approval_prompt" | "review_card";

@@ -55,6 +55,13 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
   - Scopes: `read` (lookups, threads, conversations, status), `request` (`create_request`, `add_to_request`) and `review` (`get_review_artifact`). They narrow what a connection can do on top of the person's WordPress role.
   - The audit's `source` comes from the registered client (claude.ai is known by its callback), not the MCP handshake. The account page lists connected apps with Disconnect. `/mcp` allows 120 calls a minute per person.
   - Roles follow WordPress capabilities: anyone who can publish (authors, editors, admins) approves; contributors request. The hosted E2E checks that a contributor is refused approving, applying and site setup.
+  - Approving from chat apps, on the hosted server (decided 1 October 2026). Only the person's own answer approves, in a channel the model can't write to:
+    - `ask_to_approve` asks the person in the app's own prompt (MCP elicitation): Codex, Claude Code. SitePilot shows what changes, with links to the previews.
+    - `show_review` shows claude.ai's inline review card (MCP Apps), with the desktop and mobile previews and Approve and apply / Reject buttons. The buttons call `decide_from_card`, which only the card can call, with a one-use ticket. The ticket is for that preview and that person, and lasts 30 minutes.
+    - Approving applies at once. Publishing and unpublishing are their own requests, approved the same way.
+    - It needs the `approve` OAuth scope, which the consent page offers only to people who can publish. The decision is audited with its channel (`approval_prompt` or `review_card`) and signed with the site's approval key as before.
+    - A chat message such as "approved" never approves: in the hosted app, on the desktop and over MCP, it gets a pointer to the Approve button and the preview isn't rebuilt.
+    - Preview links are signed and open without signing in, for 24 hours (`/r/<token>`). They're in `request_status`, in the approval prompt and in `get_review_artifact`.
   - Not done: the admin area (role overrides, unlinking and revoking for other people), and per-site rate limits.
 - **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers:
   - connecting the site;

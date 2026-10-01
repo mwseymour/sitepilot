@@ -23,6 +23,7 @@ import { AuthStore } from "./auth.js";
 import { connectWithRetry, type DatabaseStatus } from "./database.js";
 import { createHostedMcpHandler } from "./mcp.js";
 import { createOAuthEndpoints, SitePilotOAuthProvider } from "./oauth.js";
+import { createReviewLinks } from "./review-links.js";
 import { createAppShell } from "./app-shell.js";
 import { createRoutes } from "./routes.js";
 
@@ -119,17 +120,13 @@ const connecting = connectWithRetry({
   // The app needs somewhere to keep site secrets before it can serve.
   if (secretsKey) {
     const auth = new AuthStore(connected.database.sql);
+    const reviewLinks = createReviewLinks({ secretsKey, publicUrl });
     const backend = createDesktopMcpBackend({
       siteScope: "all",
-      approvalHint: `Open the request in SitePilot (reviewUrl) to see the preview and approve it there. MCP clients cannot approve.`,
-      links: {
-        request: (_siteId, requestId) => new URL(`/requests/${encodeURIComponent(requestId)}/open`, publicUrl).toString(),
-        artifact: (_siteId, requestId, artifactId) =>
-          new URL(
-            `/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactId)}`,
-            publicUrl
-          ).toString()
-      }
+      approvalHint:
+        "Show the person the review card (show_review) or ask them with ask_to_approve; only their answer there approves. You can't approve for them.",
+      links: { artifact: (siteId, requestId, artifactId) => reviewLinks.url({ siteId, requestId, artifactId }) },
+      chatApproval: true
     });
     const app = createAppShell({ appVersion: info.version });
     const mcpUrl = new URL("/mcp", publicUrl.origin);
@@ -143,9 +140,11 @@ const connecting = connectWithRetry({
         auth,
         backend,
         version: info.version,
-        ...(oauth ? { oauth: oauth.provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) } : {})
+        ...(oauth ? { oauth: oauth.provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) } : {}),
+        reviewCard: { resourceDomains: [publicUrl.origin] }
       }),
       app,
+      reviewLinks,
       ...(oauth ? { oauth } : {})
     });
     console.log(

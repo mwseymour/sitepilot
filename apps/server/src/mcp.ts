@@ -60,6 +60,8 @@ export function createHostedMcpHandler(input: {
   oauth?: SitePilotOAuthProvider;
   /** Where clients discover how to sign in (RFC 9728), sent with every 401. */
   resourceMetadataUrl?: string;
+  /** The review card for apps that show MCP Apps, and where its images load from. */
+  reviewCard?: { resourceDomains: string[] };
 }) {
   const sessions = new Map<string, Session>();
   const windows = new Map<string, { startedAt: number; count: number }>();
@@ -104,6 +106,7 @@ export function createHostedMcpHandler(input: {
     server = createSitePilotMcpServer({
       backend: input.backend,
       version: input.version,
+      ...(input.reviewCard ? { reviewCard: input.reviewCard } : {}),
       caller: () => {
         // An OAuth client is named by its registration, not its handshake.
         const clientName = principal.clientName ?? server?.server.getClientVersion()?.name;
