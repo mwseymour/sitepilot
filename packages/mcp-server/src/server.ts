@@ -698,7 +698,7 @@ export function createSitePilotMcpServer(
                 ? [
                     {
                       type: "text" as const,
-                      text: `The person can open this preview in SitePilot (signing in if asked): ${artifact.url}`
+                      text: `The person can open this preview here, without signing in, for 24 hours: ${artifact.url}`
                     }
                   ]
                 : [])
