@@ -360,9 +360,14 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
 
 ## Next steps
 
-1. **Try categories and tags live:** for example "tag post N with X" in the app or claude.ai. Check that review shows the tags, and that WordPress has them after apply.
-2. **Verified live on 2 October:** `/admin/people` lists the user, with WordPress role Admin, two claude.ai grants, Slack, and two browser sessions. The older claude.ai grant, without `approve`, is from before the reconnect, and the user can disconnect it. `5e8aa4a` fixed "last used not yet" (now 2026-10-02 10:08 and 2026-10-01 15:50) and the 404 at `/admin`, both checked live.
-3. **Note:** on 2 October the user uploaded the plugin zip a few minutes before the server deploy finished. Any request that failed in that gap can simply be retried. Next time, deploy first.
+1. **Upload `~/Downloads/wordpress-sitepilot-new-terms.zip`** (built from `07e4b4a`, after that commit is live on Railway). It adds creating new categories and tags, and makes `find-posts` "any" leave out attachments. Until then, the live plugin refuses a change that creates a term ("A requested … term doesn't exist"), and everything else works.
+2. **Try in Slack:**
+   - "what is the last post I created?" (a conversation);
+   - "add a table below the image" (it asks which post);
+   - "post 102: add a table below the image";
+   - in a request's thread, "I meant post 91" (Move buttons);
+   - "tag post 102 with Mountains" (shows "Mountains (new)").
+3. **Note:** on 2 October the user uploaded a plugin zip a few minutes before the server deploy finished. Deploy first, then upload.
 4. **Roadmap, next:**
    - categories and tags, what's left: a setting to turn new terms off, custom taxonomies, more than 100 terms, and showing the terms before the change in review;
    - target resolution from the message in the app and over MCP (Slack has it; the app still uses the Post ID field);
