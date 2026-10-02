@@ -120,6 +120,49 @@ describe.skipIf(!TEST_POSTGRES_URL)("hosted sign-in store", () => {
     expect(await auth.userForSession(session)).toBeNull();
   });
 
+  it("lets a site admin set someone's role, or turn SitePilot off for them", async () => {
+    const auth = await store();
+    const assertion = assertionFields as unknown as SignInAssertion;
+    const user = (await auth.linkIdentity({ assertion, workspaceId: "workspace-1" }))!;
+    const session = await auth.createSession(user);
+    const token = await auth.createApiToken(user, "Codex");
+
+    expect(await auth.setRoleOverride(user, "requester", "Ada Admin")).toBe(true);
+    expect(await auth.userForSession(session)).toMatchObject({ appRole: "requester", roleSetByAdmin: true });
+    expect((await auth.userForApiToken(token))?.siteRoles).not.toContain("approve");
+    // Signing in again refreshes the WordPress role, and the admin's still wins.
+    expect(await auth.linkIdentity({ assertion, workspaceId: "workspace-1" })).toMatchObject({ appRole: "requester" });
+    expect(await auth.listPeople("site-1")).toEqual([
+      expect.objectContaining({ login: "ann", wordpressRole: "approver", roleOverride: "requester", roleOverrideBy: "Ada Admin" })
+    ]);
+
+    // No access: every way in stops, signing in again included.
+    await auth.setRoleOverride(user, "none", "Ada Admin");
+    expect(await auth.userForSession(session)).toBeNull();
+    expect(await auth.userForApiToken(token)).toBeNull();
+    expect(await auth.userFor("site-1", 42)).toBeNull();
+    expect(await auth.linkIdentity({ assertion, workspaceId: "workspace-1" })).toBeNull();
+
+    // Back to the role from WordPress.
+    await auth.setRoleOverride(user, null, "Ada Admin");
+    const restored = await auth.userForSession(session);
+    expect(restored).toMatchObject({ appRole: "approver" });
+    expect(restored?.roleSetByAdmin).toBeUndefined();
+
+    // WordPress administrators stay admins.
+    const admin = (await auth.linkIdentity({
+      assertion: { ...assertion, user: { ...assertion.user, id: 7, login: "ada" }, capabilities: { manage_options: true } },
+      workspaceId: "workspace-1"
+    }))!;
+    expect(await auth.setRoleOverride(admin, "none", "Someone")).toBe(false);
+    expect((await auth.userFor("site-1", 7))?.appRole).toBe("admin");
+
+    // Signing someone out everywhere ends their sessions, not their tokens.
+    expect(await auth.endSessionsFor(user)).toBe(1);
+    expect(await auth.userForSession(session)).toBeNull();
+    expect(await auth.userForApiToken(token)).not.toBeNull();
+  });
+
   it("accepts each sign-in nonce once", async () => {
     const auth = await store();
     const expiresAt = Math.floor(Date.now() / 1000) + 120;

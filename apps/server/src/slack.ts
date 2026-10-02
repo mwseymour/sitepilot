@@ -5,7 +5,7 @@ import { isTypedApproval } from "@sitepilot/core/request-ingress-service";
 import type { McpAttachment, McpCaller, McpRequestStatus, SitePilotMcpBackend } from "@sitepilot/mcp-server";
 import type { SqlConnection } from "@sitepilot/sql";
 
-import type { AuthStore, SignedInUser } from "./auth.js";
+import type { AuthStore, PersonRef, SignedInUser } from "./auth.js";
 import { escapeHtml as e, readBody, send, sendHtml } from "./http.js";
 
 /**
@@ -285,13 +285,14 @@ export function createSlackApp(deps: {
     sendHtml(response, 200, page("Connected", "<h1>Connected</h1><p>Go back to Slack and mention @SitePilot again.</p>"));
   }
 
-  async function disconnect(user: SignedInUser): Promise<void> {
-    await deps.sql
+  async function disconnect(user: PersonRef): Promise<number> {
+    const result = await deps.sql
       .prepare(`DELETE FROM slack_links WHERE site_id = @siteId AND wordpress_user_id = @wordpressUserId`)
       .run({ siteId: user.siteId, wordpressUserId: user.wordpressUserId });
+    return result.changes;
   }
 
-  async function linkedSlackAccounts(user: SignedInUser): Promise<number> {
+  async function linkedSlackAccounts(user: PersonRef): Promise<number> {
     const row = await deps.sql
       .prepare<{ siteId: string; wordpressUserId: number }, { count: number }>(
         `SELECT COUNT(*) AS count FROM slack_links WHERE site_id = @siteId AND wordpress_user_id = @wordpressUserId`

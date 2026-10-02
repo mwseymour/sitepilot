@@ -107,5 +107,6 @@ export {
 } from "./sql-secure-storage.js";
 export {
   SqlStoredFileMirror,
+  pruneStoredFiles,
   type StoredFileMirror
 } from "./stored-file-mirror.js";

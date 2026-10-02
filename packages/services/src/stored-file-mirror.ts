@@ -40,3 +40,15 @@ export class SqlStoredFileMirror implements StoredFileMirror {
     return row ? Buffer.from(row.data) : null;
   }
 }
+
+/**
+ * Deletes mirrored files written before the cutoff, and says how many. A
+ * request still open past then loses its preview only if the disk copy is
+ * gone too, and the app then asks for a fresh preview before deciding.
+ */
+export async function pruneStoredFiles(sql: SqlConnection, olderThan: Date): Promise<number> {
+  const result = await sql
+    .prepare(`DELETE FROM stored_files WHERE created_at < @cutoff`)
+    .run({ cutoff: olderThan.toISOString() });
+  return result.changes;
+}

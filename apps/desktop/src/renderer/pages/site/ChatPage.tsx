@@ -309,12 +309,14 @@ export function ChatPage({
     setMessageFilter("all");
   }, [selectedThreadId]);
 
-  const loadBundle = useCallback(async () => {
+  // Callers that just learned the request (sending a message) pass it: their
+  // copy of this callback still has the request from before.
+  const loadBundle = useCallback(async (requestId: string | null = lastRequestId) => {
     if (isConversationMode) {
       setBundle(null);
       return;
     }
-    if (!selectedThreadId || lastRequestId === null) {
+    if (!selectedThreadId || requestId === null) {
       setBundle(null);
       return;
     }
@@ -322,7 +324,7 @@ export function ChatPage({
     const res = await window.sitePilotDesktop.getRequestBundle({
       siteId,
       threadId,
-      requestId: lastRequestId
+      requestId
     });
     if (currentThreadRef.current !== threadId) return;
     if (!res.ok) {
@@ -699,6 +701,7 @@ export function ChatPage({
       gutenbergV2Target
     });
     setBusy(false);
+    const requestId = res.request?.id ?? lastRequestId;
     if (res.request) {
       setLastRequestId(res.request.id);
       // The message is saved on the request even when the follow-on
@@ -711,7 +714,7 @@ export function ChatPage({
       setErr(res.message);
       await loadMessages(selectedThreadId);
       await loadThreads();
-      await loadBundle();
+      await loadBundle(requestId);
       return;
     }
 
@@ -725,7 +728,7 @@ export function ChatPage({
     }
     await loadMessages(selectedThreadId);
     await loadThreads();
-    await loadBundle();
+    await loadBundle(requestId);
   }
 
   const handleComposerKeyDown = useCallback(

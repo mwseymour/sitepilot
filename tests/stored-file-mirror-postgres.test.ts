@@ -8,7 +8,8 @@ import { FileGutenbergV2ReviewArtifactStore } from "@sitepilot/gutenberg-worker"
 import { initializePostgresDatabase } from "@sitepilot/repositories";
 import {
   FileGutenbergV2StagedAssetStore,
-  SqlStoredFileMirror
+  SqlStoredFileMirror,
+  pruneStoredFiles
 } from "@sitepilot/services";
 
 import {
@@ -88,5 +89,19 @@ describe.skipIf(!TEST_POSTGRES_URL)("Postgres file mirror", () => {
     await expect(
       new FileGutenbergV2StagedAssetStore(directory(), mirror).read({ ...staged, checksum: "c".repeat(64) })
     ).rejects.toThrow();
+  });
+
+  it("prunes files older than the cutoff and keeps newer ones", async () => {
+    const sql = await database();
+    const mirror = new SqlStoredFileMirror(sql, "review/site-1");
+    await mirror.put("old.png", PNG);
+    await mirror.put("new.png", PNG);
+    await sql
+      .prepare(`UPDATE stored_files SET created_at = @createdAt WHERE key = @key`)
+      .run({ createdAt: "2026-01-01T00:00:00.000Z", key: "review/site-1/old.png" });
+
+    expect(await pruneStoredFiles(sql, new Date("2026-06-01T00:00:00.000Z"))).toBe(1);
+    expect(await mirror.get("old.png")).toBeNull();
+    expect(await mirror.get("new.png")).toEqual(PNG);
   });
 });

@@ -13,7 +13,9 @@
  *    thread with its previews and buttons, a typed "approved" doing nothing,
  *    and Approve applying it.
  * 5. Sign in as a WordPress contributor (can edit, can't publish): a
- *    requester, refused approving and site setup. (Needs wp-cli, for the
+ *    requester, refused approving and site setup. Then the admin area: the
+ *    contributor can't open it; the admin makes them an approver, turns
+ *    their access off and back, and revokes a token. (Needs wp-cli, for the
  *    test user's password.)
  *
  * Needs SITEPILOT_TEST_POSTGRES_URL (the local Docker Postgres), an OpenAI
@@ -322,7 +324,12 @@ async function main(): Promise<void> {
       throw new Error(`No preview to approve (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
     });
     // Typing "approved" approves nothing: it says to use the button.
-    await page.getByPlaceholder(/Describe the change/).fill("approved");
+    await page
+      .getByPlaceholder(/Describe the change/)
+      .fill("approved")
+      .catch(async (error: unknown) => {
+        throw new Error(`No reply box under the preview (${String(error)}):\n${(await page.locator("body").innerText()).slice(-1_500)}`);
+      });
     await page.getByRole("button", { name: /Update request/ }).click();
     await page.getByText("Typing doesn't approve a change").first().waitFor({ timeout: 60_000 });
     assert(await approve.isEnabled(), "Typing \"approved\" changed the review.");
@@ -605,7 +612,46 @@ async function main(): Promise<void> {
       );
       await requesterPage.goto(`${SERVER}/account`);
       assert((await requesterPage.content()).includes("someone who can publish approves them"), "The contributor isn't a requester.");
+
+      // 5b. The admin area: only admins open it, and a role set there applies at once.
+      const adminArea = await requesterPage.goto(`${SERVER}/admin/people`);
+      assert(adminArea?.status() === 403, `A contributor opened the admin area (${adminArea?.status()}).`);
+      const requesterId = wp("user", "get", requester, "--field=ID");
+      await page.goto(`${SERVER}/admin/people`);
+      const requesterCard = page.locator(`#person-${requesterId}`);
+      assert((await requesterCard.innerText()).includes("WordPress role: Requester"), "The admin area doesn't list the contributor.");
+      const submitted = (button: ReturnType<typeof page.getByRole>) =>
+        Promise.all([
+          page.waitForResponse((response) => response.url() === `${SERVER}/admin/people` && response.request().method() === "GET"),
+          button.click()
+        ]);
+      const setRole = async (role: string) => {
+        await requesterCard.locator("select[name=role]").selectOption(role);
+        await submitted(requesterCard.getByRole("button", { name: "Save role" }));
+      };
+      await setRole("approver");
+      await requesterPage.goto(`${SERVER}/account`);
+      const promoted = await requesterPage.content();
+      assert(promoted.includes("You can approve changes") && promoted.includes("set by a site admin"), "The approver role didn't apply.");
+      await setRole("none");
+      await requesterPage.goto(`${SERVER}/account`);
+      assert(
+        requesterPage.url() === `${SERVER}/` && (await requesterPage.content()).includes("Sign in with WordPress"),
+        `No access still let the contributor in (${requesterPage.url()}).`
+      );
+      await setRole("wordpress");
+      await requesterPage.goto(`${SERVER}/account`);
+      assert((await requesterPage.content()).includes("someone who can publish approves them"), "The contributor's WordPress role didn't come back.");
       await requesterContext.close();
+      // Revoking a token there stops it at once.
+      const adminId = wp("user", "get", E2E_ADMIN_USERNAME, "--field=ID");
+      await submitted(page.locator(`#person-${adminId} li`, { hasText: "Hosted E2E" }).getByRole("button", { name: "Revoke" }));
+      const revoked = await fetch(`${SERVER}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+      });
+      assert(revoked.status === 401, `A token revoked in the admin area still works (${revoked.status}).`);
     }
 
     const postId = E2E_WP_PATH

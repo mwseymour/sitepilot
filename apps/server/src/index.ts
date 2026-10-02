@@ -9,6 +9,7 @@ import { configureRuntimeContext } from "@sitepilot/core/runtime-context";
 import {
   EncryptedSqlSecureStorage,
   parseSecretsKey,
+  pruneStoredFiles,
   type SecureStorage
 } from "@sitepilot/services";
 import type { SqlConnection } from "@sitepilot/sql";
@@ -70,6 +71,17 @@ function withProviderKeysFromEnvironment(storage: SecureStorage): SecureStorage 
   };
 }
 
+/** Review previews and staged media are kept in the database for 30 days. */
+const STORED_FILE_DAYS = 30;
+
+function pruneOldStoredFiles(sql: SqlConnection): void {
+  void pruneStoredFiles(sql, new Date(Date.now() - STORED_FILE_DAYS * 24 * 60 * 60 * 1000))
+    .then((removed) => {
+      if (removed > 0) console.log(`Removed ${removed} stored file(s) older than ${STORED_FILE_DAYS} days.`);
+    })
+    .catch((error: unknown) => console.log(`Pruning stored files failed: ${String(error)}`));
+}
+
 /** OAuth for remote MCP clients. The spec needs an https issuer, or localhost. */
 function createOAuth(sql: SqlConnection, auth: AuthStore, mcpUrl: URL) {
   try {
@@ -107,6 +119,9 @@ const connecting = connectWithRetry({
   log: (message) => console.log(message)
 }).then((connected) => {
   if (!connected) return null;
+  // At startup, then daily for a container that stays up.
+  pruneOldStoredFiles(connected.database.sql);
+  setInterval(() => pruneOldStoredFiles(connected.database.sql), 24 * 60 * 60 * 1000).unref();
   configureRuntimeContext({
     userDataPath: dataDirectory,
     database: connected.database,
@@ -169,7 +184,7 @@ const connecting = connectWithRetry({
       ...(oauth ? { oauth } : {})
     });
     console.log(
-      `Serving the app at ${publicUrl.origin}${app.available ? "" : " (simple pages; the desktop interface build isn't present)"}.`
+      `Serving the app at ${publicUrl.origin}${app.available ? "" : " (the interface build isn't present, so only sign-in and account pages work)"}.`
     );
   }
   if (secretsKey) secretsStatus = "ok";

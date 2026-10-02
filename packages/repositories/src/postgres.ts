@@ -500,6 +500,16 @@ CREATE TABLE slack_threads (
 );
 CREATE INDEX slack_threads_open ON slack_threads (open);
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "007_role_overrides",
+    description:
+      "The admin area: a role a site admin sets for someone, which wins over the one from their WordPress capabilities.",
+    sql: `
+ALTER TABLE wordpress_identities ADD COLUMN role_override TEXT;
+ALTER TABLE wordpress_identities ADD COLUMN role_override_by TEXT;
+ALTER TABLE wordpress_identities ADD COLUMN role_override_at TEXT;
+${REVOKE_API_ROLES}`
   }
 ];
 

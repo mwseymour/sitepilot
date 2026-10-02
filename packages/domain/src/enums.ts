@@ -109,7 +109,8 @@ export const auditEventTypes = [
   "config_updated",
   "site_registered",
   "discovery_refreshed",
-  "mcp_tool_called"
+  "mcp_tool_called",
+  "access_changed"
 ] as const;
 export type AuditEventType = (typeof auditEventTypes)[number];
 

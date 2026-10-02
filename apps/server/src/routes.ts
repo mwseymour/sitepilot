@@ -1,33 +1,27 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { getDatabase } from "@sitepilot/core/app-database";
 import { getSecureStorage } from "@sitepilot/core/app-secure-storage";
 import { runWithCallContext } from "@sitepilot/core/call-context";
 import { refreshDiscoveryForSite } from "@sitepilot/core/discovery-service";
-import {
-  decideGutenbergV2Candidate,
-  executeGutenbergV2Candidate,
-  getGutenbergV2RequestState
-} from "@sitepilot/core/gutenberg-v2-chat-service";
 import { registerSiteWithWordPress } from "@sitepilot/core/register-site";
 import { generateAndPersistSiteConfigDraft } from "@sitepilot/core/site-config-draft";
 import { confirmSiteConfigActivation } from "@sitepilot/core/site-workspace-service";
-import type { ChatThreadId, RequestId, SiteConfigId, SiteId } from "@sitepilot/domain";
-import {
-  HOSTED_APP_CLIENT_NAME,
-  type McpCaller,
-  type SitePilotMcpBackend
-} from "@sitepilot/mcp-server";
+import type { SiteConfigId, SiteId } from "@sitepilot/domain";
+import { HOSTED_APP_CLIENT_NAME, type SitePilotMcpBackend } from "@sitepilot/mcp-server";
 
 import type { AppShell } from "./app-shell.js";
 import {
-  AuthStore,
+  type AuthStore,
+  isRoleOverride,
   SESSION_COOKIE,
   SESSION_TTL_SECONDS,
   STATE_COOKIE,
   STATE_TTL_SECONDS,
   verifySignInAssertion,
+  type Person,
+  type PersonRef,
   type SignedInUser
 } from "./auth.js";
 import {
@@ -49,8 +43,7 @@ import {
   homePage,
   layout,
   messagePage,
-  requestPage,
-  requestsPage
+  peoplePage
 } from "./pages.js";
 
 /** The hosted app's pages and sign-in, over the shared SitePilot services. */
@@ -96,13 +89,6 @@ async function connectedSite() {
   return sites[0] ?? null;
 }
 
-function callerFor(user: SignedInUser): McpCaller {
-  return {
-    clientName: HOSTED_APP_CLIENT_NAME,
-    actor: { userProfileId: user.userProfileId, appRole: user.appRole, siteRoles: user.siteRoles }
-  };
-}
-
 function asHostedUser<T>(user: SignedInUser, work: () => Promise<T>): Promise<T> {
   return runWithCallContext(
     {
@@ -139,9 +125,18 @@ export function createRoutes(deps: RoutesDependencies) {
   }
 
   async function home(request: IncomingMessage, response: ServerResponse) {
-    if (await currentUser(request)) {
+    const user = await currentUser(request);
+    if (user) {
       if (deps.app?.available) return void deps.app.serveFile(response, "/");
-      return redirect(response, "/requests");
+      return sendHtml(
+        response,
+        503,
+        messagePage(
+          "SitePilot isn't fully installed",
+          "This server was built without the app's interface. Rebuild it with npm run build:renderer -w @sitepilot/desktop.",
+          user
+        )
+      );
     }
     const site = await connectedSite();
     sendHtml(response, 200, homePage({ siteName: site?.name ?? null }));
@@ -194,6 +189,14 @@ export function createRoutes(deps: RoutesDependencies) {
       return fail("That sign-in link was already used.");
     }
     const user = await deps.auth.linkIdentity({ assertion, workspaceId: site.workspaceId });
+    if (!user) {
+      return sendHtml(
+        response,
+        403,
+        messagePage("No access", "A site admin has turned SitePilot off for your account. Ask them to turn it back on."),
+        [clearState, cookie(RETURN_COOKIE, "", { maxAgeSeconds: 0, secure })]
+      );
+    }
     const token = await deps.auth.createSession(user);
     const returnTo = decodeURIComponent(parseCookies(request.headers.cookie)[RETURN_COOKIE] ?? "");
     redirect(response, RETURN_PATH.test(returnTo) ? returnTo : "/", [
@@ -318,93 +321,75 @@ export function createRoutes(deps: RoutesDependencies) {
     );
   }
 
-  async function requests(request: IncomingMessage, response: ServerResponse, user: SignedInUser) {
-    const caller = callerFor(user);
-    const canRequest = user.siteRoles.includes("request");
-    if (request.method === "POST") {
-      if (!canRequest) return refuse(response, user, "Your WordPress role can't make requests.");
-      const form = await readForm(request);
-      const postId = Number.parseInt(form.get("postId") ?? "", 10);
-      const created = await deps.backend.createRequest(
-        {
-          siteId: user.siteId,
-          text: (form.get("text") ?? "").trim(),
-          target: Number.isInteger(postId) && postId > 0
-            ? { operation: "edit", postType: "post", postId }
-            : { operation: "create_draft", postType: "post" }
-        },
-        caller
-      );
-      if (!created.ok) return sendHtml(response, 400, messagePage("Request not made", created.message, user));
-      return redirect(response, `/requests/${encodeURIComponent(created.status.requestId)}`);
-    }
-    const listed = await deps.backend.listThreads({ siteId: user.siteId, kind: "request", limit: 50 }, caller);
-    sendHtml(
-      response,
-      200,
-      requestsPage({ user, threads: listed.ok ? listed.threads : [], canRequest })
-    );
-  }
-
-  async function showRequest(response: ServerResponse, user: SignedInUser, requestId: string, notice?: string) {
-    const status = await deps.backend.requestStatus({ siteId: user.siteId, requestId }, callerFor(user));
-    if (!status.ok) return sendHtml(response, 404, messagePage("Request not found", status.message, user));
-    sendHtml(
-      response,
-      200,
-      requestPage({
-        user,
-        status: status.status,
-        canApprove: user.siteRoles.includes("approve"),
-        canReply: user.siteRoles.includes("request"),
-        ...(notice ? { notice } : {})
+  /** The admin area: everyone's role, apps, tokens and Slack. */
+  async function people(response: ServerResponse, admin: SignedInUser) {
+    const listed = await deps.auth.listPeople(admin.siteId);
+    const withAccess = await Promise.all(
+      listed.map(async (person) => {
+        const ref: PersonRef = { siteId: admin.siteId, wordpressUserId: person.wordpressUserId };
+        return {
+          ...person,
+          tokens: await deps.auth.listApiTokens(ref),
+          apps: deps.oauth ? await deps.oauth.provider.connectedApps(ref) : [],
+          slackAccounts: deps.slack ? await deps.slack.linkedSlackAccounts(ref) : 0,
+          sessions: await deps.auth.activeSessionCount(ref)
+        };
       })
     );
+    sendHtml(response, 200, peoplePage({ user: admin, people: withAccess }));
   }
 
-  async function reply(request: IncomingMessage, response: ServerResponse, user: SignedInUser, requestId: string) {
-    if (!user.siteRoles.includes("request")) return refuse(response, user, "Your WordPress role can't make requests.");
-    const form = await readForm(request);
-    const result = await deps.backend.addToRequest(
-      { siteId: user.siteId, requestId, text: (form.get("text") ?? "").trim() },
-      callerFor(user)
-    );
-    if (!result.ok) return showRequest(response, user, requestId, result.message);
-    redirect(response, `/requests/${encodeURIComponent(requestId)}`);
-  }
-
-  /** Approve applies at once (MCP plan, Phase 0 recommendation). */
-  async function decide(request: IncomingMessage, response: ServerResponse, user: SignedInUser, threadId: string) {
-    if (!user.siteRoles.includes("approve")) {
-      return refuse(response, user, "Only people who can publish on the site can approve.");
-    }
-    const decision = (await readForm(request)).get("decision") === "approved" ? "approved" : "rejected";
-    const siteId = user.siteId as SiteId;
-    const requests = await getDatabase().repositories.requests.listByThreadId(threadId as ChatThreadId);
-    const latest = [...requests].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
-    if (!latest) return showRequest(response, user, threadId, "There's nothing to approve yet.");
-    const outcome = await asHostedUser(user, async () => {
-      const state = await getGutenbergV2RequestState({ siteId, requestId: latest.id as RequestId });
-      const candidateId = state.ok ? state.state?.candidate?.candidateId : undefined;
-      if (!candidateId) return { ok: false as const, message: "There's no preview to approve yet." };
-      const decided = await decideGutenbergV2Candidate({
-        siteId,
-        requestId: latest.id as RequestId,
-        candidateId,
-        decision,
-        applyingNow: decision === "approved"
-      });
-      if (!("state" in decided)) return { ok: false as const, message: decided.message };
-      if (decision === "approved") {
-        // Applying takes a minute or more; the page shows its progress.
-        void executeGutenbergV2Candidate({ siteId, requestId: latest.id as RequestId }).catch(
-          (error: unknown) => console.log(`Applying ${latest.id} failed: ${String(error)}`)
-        );
-      }
-      return { ok: true as const };
+  /** Records an admin's change to someone's access in the site's audit log. */
+  async function recordAccessChange(admin: SignedInUser, person: Person, change: string, detail: Record<string, string | number>) {
+    const now = new Date().toISOString();
+    await getDatabase().repositories.auditEntries.append({
+      id: randomUUID() as never,
+      siteId: admin.siteId as SiteId,
+      eventType: "access_changed",
+      actor: { userProfileId: admin.userProfileId as never, appRole: admin.appRole, siteRoles: admin.siteRoles, source: "hosted_app" },
+      metadata: { change, person: person.login, wordpressUserId: person.wordpressUserId, ...detail },
+      createdAt: now,
+      updatedAt: now
     });
-    if (!outcome.ok) return showRequest(response, user, threadId, outcome.message);
-    redirect(response, `/requests/${encodeURIComponent(threadId)}`);
+    console.log(`Access changed by ${admin.login}: ${change} for ${person.login}.`);
+  }
+
+  /** One change to someone's access, from the admin area. */
+  async function changeAccess(
+    request: IncomingMessage,
+    response: ServerResponse,
+    admin: SignedInUser,
+    wordpressUserId: number,
+    change: "role" | "app" | "token" | "slack" | "sign-out",
+    target = ""
+  ) {
+    const person = (await deps.auth.listPeople(admin.siteId)).find((each) => each.wordpressUserId === wordpressUserId);
+    if (!person) return sendHtml(response, 404, messagePage("Not found", "That person hasn't signed in to SitePilot.", admin));
+    const ref: PersonRef = { siteId: admin.siteId, wordpressUserId };
+    let detail: Record<string, string | number> | null = null;
+    if (change === "role") {
+      const value = (await readForm(request)).get("role") ?? "";
+      const override = value === "wordpress" ? null : isRoleOverride(value) ? value : undefined;
+      if (override === undefined) return refuse(response, admin, "Choose one of the roles.", 400);
+      if (person.wordpressRole === "admin") {
+        return refuse(response, admin, "WordPress administrators are always admins here. Change their role in WordPress.");
+      }
+      if (await deps.auth.setRoleOverride(ref, override, admin.displayName)) detail = { role: override ?? "wordpress" };
+    } else if (change === "app" && deps.oauth) {
+      const app = (await deps.oauth.provider.connectedApps(ref)).find((each) => each.grantId === target);
+      if (app && (await deps.oauth.provider.disconnect(ref, target))) detail = { app: app.clientName };
+    } else if (change === "token") {
+      const token = (await deps.auth.listApiTokens(ref)).find((each) => each.tokenHash === target);
+      if (token && (await deps.auth.revokeApiToken(ref, target))) detail = { token: token.label };
+    } else if (change === "slack" && deps.slack) {
+      const unlinked = await deps.slack.disconnect(ref);
+      if (unlinked > 0) detail = { slackAccounts: unlinked };
+    } else if (change === "sign-out") {
+      const ended = await deps.auth.endSessionsFor(ref);
+      if (ended > 0) detail = { sessions: ended };
+    }
+    if (detail) await recordAccessChange(admin, person, change, detail);
+    redirect(response, `/admin/people#person-${wordpressUserId}`);
   }
 
   /** A signed preview link: no sign-in, until it expires. */
@@ -418,18 +403,6 @@ export function createRoutes(deps: RoutesDependencies) {
     if (!result.ok || !result.artifact.mimeType.startsWith("image/")) {
       return send(response, 404, "That preview isn't available any more.", { "content-type": "text/plain; charset=utf-8" });
     }
-    send(response, 200, Buffer.from(result.artifact.dataBase64, "base64"), {
-      "content-type": result.artifact.mimeType,
-      "cache-control": "no-store"
-    });
-  }
-
-  async function artifact(response: ServerResponse, user: SignedInUser, requestId: string, artifactId: string) {
-    const result = await deps.backend.getReviewArtifact(
-      { siteId: user.siteId, requestId, artifactId },
-      callerFor(user)
-    );
-    if (!result.ok) return send(response, 404, "Not found", { "content-type": "text/plain" });
     send(response, 200, Buffer.from(result.artifact.dataBase64, "base64"), {
       "content-type": result.artifact.mimeType,
       "cache-control": "no-store"
@@ -518,7 +491,7 @@ export function createRoutes(deps: RoutesDependencies) {
       return true;
     }
 
-    const signedIn = path === "/account" || path === "/requests" || path.startsWith("/account/") || path.startsWith("/requests/");
+    const signedIn = path === "/account" || path.startsWith("/account/") || path === "/admin/people" || path.startsWith("/admin/");
     if (!signedIn) return false;
     const user = await requireUser(request, response);
     if (!user) return true;
@@ -544,16 +517,20 @@ export function createRoutes(deps: RoutesDependencies) {
       redirect(response, "/account");
       return true;
     }
-    if (path === "/requests" && (method === "GET" || method === "POST")) {
-      return requests(request, response, user).then(() => true);
-    }
-    const match = /^\/requests\/([A-Za-z0-9-]+)(?:\/(decision|reply|artifacts\/([A-Za-z0-9_-]+)))?$/.exec(path);
-    if (match) {
-      const [, requestId, action, artifactId] = match as unknown as [string, string, string | undefined, string | undefined];
-      if (!action && method === "GET") return showRequest(response, user, requestId).then(() => true);
-      if (action === "decision" && method === "POST") return decide(request, response, user, requestId).then(() => true);
-      if (action === "reply" && method === "POST") return reply(request, response, user, requestId).then(() => true);
-      if (artifactId && method === "GET") return artifact(response, user, requestId, artifactId).then(() => true);
+    if (path === "/admin/people" || path.startsWith("/admin/")) {
+      // WordPress administrators only: they prove it with the same sign-in.
+      if (user.appRole !== "admin") {
+        refuse(response, user, "Only the site's WordPress administrators can manage people here.");
+        return true;
+      }
+      if (path === "/admin/people" && method === "GET") return people(response, user).then(() => true);
+      const admin =
+        /^\/admin\/people\/(\d+)\/(?:(role|slack\/unlink|sign-out)|apps\/([0-9a-f-]{36})\/disconnect|tokens\/([a-f0-9]{64})\/revoke)$/.exec(path);
+      if (admin && method === "POST") {
+        const [, id, simple, grantId, tokenHash] = admin as unknown as [string, string, string | undefined, string | undefined, string | undefined];
+        const change = simple === "role" ? "role" : simple === "slack/unlink" ? "slack" : simple === "sign-out" ? "sign-out" : grantId ? "app" : "token";
+        return changeAccess(request, response, user, Number(id), change, grantId ?? tokenHash ?? "").then(() => true);
+      }
     }
     sendHtml(response, 404, layout("Not found", "<h1>Not found</h1>", user));
     return true;

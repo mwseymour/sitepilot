@@ -20,7 +20,7 @@ import type {
 import type { SqlConnection } from "@sitepilot/sql";
 import express from "express";
 
-import { hashToken, randomToken, type AuthStore, type SignedInUser } from "./auth.js";
+import { hashToken, randomToken, type AuthStore, type PersonRef, type SignedInUser } from "./auth.js";
 
 /**
  * OAuth 2.1 for remote MCP clients such as claude.ai, per the MCP
@@ -416,7 +416,7 @@ export class SitePilotOAuthProvider implements OAuthServerProvider {
   }
 
   /** Apps this person has connected, for the account page. */
-  public async connectedApps(user: SignedInUser): Promise<ConnectedApp[]> {
+  public async connectedApps(user: PersonRef): Promise<ConnectedApp[]> {
     const rows = await this.#sql
       .prepare<
         { siteId: string; wordpressUserId: number; now: string },
@@ -444,20 +444,21 @@ export class SitePilotOAuthProvider implements OAuthServerProvider {
   }
 
   /** Disconnects an app: ends its tokens and forgets the consent, so it asks again. */
-  public async disconnect(user: SignedInUser, grantId: string): Promise<void> {
+  public async disconnect(user: PersonRef, grantId: string): Promise<boolean> {
     const row = await this.#sql
       .prepare<{ grantId: string; siteId: string; wordpressUserId: number }, { clientId: string }>(
         `SELECT client_id AS "clientId" FROM oauth_tokens
          WHERE grant_id = @grantId AND site_id = @siteId AND wordpress_user_id = @wordpressUserId LIMIT 1`
       )
       .get({ grantId, siteId: user.siteId, wordpressUserId: user.wordpressUserId });
-    if (!row) return;
+    if (!row) return false;
     await this.#revokeGrant(grantId);
     await this.#sql
       .prepare(
         `DELETE FROM oauth_consents WHERE site_id = @siteId AND wordpress_user_id = @wordpressUserId AND client_id = @clientId`
       )
       .run({ siteId: user.siteId, wordpressUserId: user.wordpressUserId, clientId: row.clientId });
+    return true;
   }
 
   async #revokeGrant(grantId: string): Promise<void> {

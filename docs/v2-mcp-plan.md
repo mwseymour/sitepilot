@@ -37,9 +37,9 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
   - The app is the desktop interface, served by the server. The same React build runs in Electron and in the browser. In the browser it calls the same IPC handlers (`packages/core/src/ipc-handlers.ts`) over `POST /api/ipc/:channel`. Each call needs a signed-in session from the same origin, and runs as that person.
     - Desktop-only calls are refused, and hidden in the interface: adding sites, provider keys, the local MCP server, export and import.
     - Site setup calls need the admin role. Approving and applying need a WordPress role that can publish, as on the desktop.
-  - Simple server-rendered pages remain at `/requests` as a fallback: the request list, a new-request form, the review page with previews, and approve or reject. Approve applies at once there, the Phase 0 recommendation. Sign-in, connecting the site and the account page (tokens) are server-rendered too.
+  - Sign-in, connecting the site, the account page (tokens) and the admin area are server-rendered. The simple request pages that were at `/requests` were removed on 2 October 2026, since the app replaces them. A server built without the interface says so at `/`.
   - The Playwright worker runs in the same container, with headless Chromium in the image. The planner key comes from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; the Copilot adapter is still the gate for production.
-  - Review files and staged media are written to the container's disk and copied to Postgres (`stored_files`, migration 004), so a deploy doesn't lose the previews of requests waiting for approval. Nothing removes old copies yet.
+  - Review files and staged media are written to the container's disk and copied to Postgres (`stored_files`, migration 004), so a deploy doesn't lose the previews of requests waiting for approval. Copies older than 30 days are deleted at startup and daily.
   - Not done: Supabase Storage for large media, signed review links, and a separate worker service.
 - **Phase 6 (in part):**
   - Sign in with WordPress (6.1): the plugin's confirm page and signed, two-minute, one-use assertion, returned only to the callback the client registered. Roles come from WordPress capabilities at every sign-in.
@@ -62,7 +62,11 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
     - It needs the `approve` OAuth scope, which the consent page offers only to people who can publish. The decision is audited with its channel (`approval_prompt` or `review_card`) and signed with the site's approval key as before.
     - A chat message such as "approved" never approves: in the hosted app, on the desktop and over MCP, it gets a pointer to the Approve button and the preview isn't rebuilt.
     - Preview links are signed and open without signing in, for 24 hours (`/r/<token>`). They're in `request_status`, in the approval prompt and in `get_review_artifact`.
-  - Not done: the admin area (role overrides, unlinking and revoking for other people), and per-site rate limits.
+  - The admin area, at `/admin/people`, for the site's WordPress administrators (2 October 2026). It lists everyone who has signed in, with their WordPress role, connected apps, personal tokens, Slack link and app sessions.
+    - **Role override** (migration 007): approver, requester, read only, or no access, set per person. It wins over the WordPress role at every lookup (sessions, tokens, OAuth and Slack), so it applies at once. "No access" turns everything off, signing in included. WordPress administrators can't be overridden.
+    - **Disconnect an app, revoke a token, unlink Slack, or sign someone out everywhere.**
+    - Each change is recorded in the site's audit log as `access_changed`, with the admin as the actor.
+  - Not done: per-site rate limits.
 - **Phase 7 (in part), the Slack app** (`apps/server/src/slack.ts`, migration 006), running inside the hosted server rather than as a separate service:
   - **Starting a request:** mention @SitePilot in a channel, or DM it. Each request lives in its Slack thread, and replies in the thread revise it or answer SitePilot's questions. Images and MP4/WebM videos on a message go into the request (`files:read`, from Slack's file host only).
   - **Connecting:** people connect once with Sign in with WordPress. The link goes only to them (ephemeral in channels), and the connect page names the Slack account and the WordPress user it will act as.
