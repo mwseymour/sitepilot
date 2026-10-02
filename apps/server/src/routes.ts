@@ -491,6 +491,10 @@ export function createRoutes(deps: RoutesDependencies) {
       return true;
     }
 
+    if (path === "/admin" && method === "GET") {
+      redirect(response, "/admin/people");
+      return true;
+    }
     const signedIn = path === "/account" || path.startsWith("/account/") || path === "/admin/people" || path.startsWith("/admin/");
     if (!signedIn) return false;
     const user = await requireUser(request, response);

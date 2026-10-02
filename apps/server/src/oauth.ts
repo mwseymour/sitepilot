@@ -422,11 +422,16 @@ export class SitePilotOAuthProvider implements OAuthServerProvider {
         { siteId: string; wordpressUserId: number; now: string },
         { grantId: string; clientId: string; scopes: string; connectedAt: string; lastUsedAt: string | null }
       >(
-        `SELECT grant_id AS "grantId", MIN(client_id) AS "clientId", MAX(scopes) AS scopes,
+        // Grants with a live token, last used by any of their access tokens:
+        // those last an hour, so the live one alone is usually unused.
+        `SELECT grant_id AS "grantId", MIN(client_id) AS "clientId",
+           MAX(CASE WHEN revoked_at IS NULL AND expires_at > @now THEN scopes END) AS scopes,
            MIN(created_at) AS "connectedAt", MAX(CASE WHEN kind = 'access' THEN used_at END) AS "lastUsedAt"
          FROM oauth_tokens
-         WHERE site_id = @siteId AND wordpress_user_id = @wordpressUserId AND revoked_at IS NULL AND expires_at > @now
-         GROUP BY grant_id ORDER BY MIN(created_at) DESC`
+         WHERE site_id = @siteId AND wordpress_user_id = @wordpressUserId
+         GROUP BY grant_id
+         HAVING MAX(CASE WHEN revoked_at IS NULL AND expires_at > @now THEN 1 ELSE 0 END) = 1
+         ORDER BY MIN(created_at) DESC`
       )
       .all({ siteId: user.siteId, wordpressUserId: user.wordpressUserId, now: new Date().toISOString() });
     const apps: ConnectedApp[] = [];

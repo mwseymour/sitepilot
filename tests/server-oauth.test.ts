@@ -54,7 +54,7 @@ async function setup() {
     redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
     token_endpoint_auth_method: "none"
   } as never);
-  return { provider, user, client };
+  return { provider, user: user!, client, sql: database.sql };
 }
 
 /** Starts an authorization and returns the pending request it created. */
@@ -90,7 +90,7 @@ function codeFrom(redirect: string): string {
 
 describe.skipIf(!TEST_POSTGRES_URL)("hosted OAuth", () => {
   it("issues tokens for an allowed request, once per code, as the WordPress user", async () => {
-    const { provider, user, client } = await setup();
+    const { provider, user, client, sql } = await setup();
     expect(clientDisplayName(client)).toBe("claude.ai");
 
     const pending = await authorize(provider, client);
@@ -119,6 +119,11 @@ describe.skipIf(!TEST_POSTGRES_URL)("hosted OAuth", () => {
     expect(await provider.hasConsent(user, await authorize(provider, client, ["read"]))).toBe(true);
     const [app] = await provider.connectedApps(user);
     expect(app).toMatchObject({ clientName: "claude.ai", scopes: ["read", "request", "review", "approve"] });
+    expect(app?.lastUsedAt).not.toBeNull();
+    // Access tokens last an hour; the app still shows when it was last used.
+    await sql.prepare(`UPDATE oauth_tokens SET expires_at = @past WHERE kind = 'access'`).run({ past: "2026-01-01T00:00:00.000Z" });
+    const [later] = await provider.connectedApps(user);
+    expect(later).toMatchObject({ grantId: app!.grantId, lastUsedAt: app!.lastUsedAt, scopes: ["read", "request", "review", "approve"] });
   });
 
   it("never grants approve to someone who can't publish", async () => {
