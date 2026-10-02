@@ -1,11 +1,6 @@
 # Handoff: hosted SitePilot (Railway + Supabase)
 
-Updated 2 October 2026, about 12:30 BST. Branch: `main`. Last pushed commit: `7388582` (library alt text for new images). Committed locally, **not pushed** (waiting for the user's OK, see Next steps):
-
-- `4d07a82`: the branding session's logo commit. It also swept in `docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip` and `.phpunit.result.cache`.
-- `b89d57e`: the admin area, `/requests` removed, `stored_files` pruning and the composer fix.
-- `e88bd53`: `list_terms` and the tag filter.
-- The commit after it: categories and tags on posts (below).
+Updated 2 October 2026, about 14:00 BST. Branch: `main`, all pushed and deployed: `5e8aa4a` is live on Railway, with migration 007. The user pushed the branding commit `4d07a82` as it was, including the files it swept in (`docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip`, `.phpunit.result.cache`). The live plugin is the categories-and-tags zip, which the user uploaded on 2 October.
 
 ## Goal
 
@@ -151,7 +146,7 @@ The user decided: everything happens in the chat, with explicit consent, so type
 - **The Dockerfile** builds the server and the renderer (`npm run build:renderer -w @sitepilot/desktop`), and installs headless Chromium.
 - **The MCP approval hint** names the hosted app's address (the `approvalHint` option on `createDesktopMcpBackend`).
 
-### Admin area (`b89d57e`, not pushed yet)
+### Admin area (`b89d57e`, live)
 
 - **`/admin/people`**, for the site's WordPress administrators (`appRole === "admin"`, from `manage_options`). It's linked from the account page and the header of the server pages. The React app doesn't know the person's role, so it has no link of its own.
 - **What it lists:** everyone who has signed in (`wordpress_identities`), with their WordPress role, connected OAuth apps, personal tokens, Slack link and active app sessions.
@@ -171,14 +166,14 @@ The user decided: everything happens in the chat, with explicit consent, so type
 
 After Send, `onSubmitPrompt` reloaded the bundle with its stale `loadBundle`, whose `lastRequestId` was still null. That cleared the bundle the effect had just loaded, so a new request's composer showed "New request" instead of "Change this request". Whether it broke depended on timing. `loadBundle` now takes the request ID, and the send path passes the one it just got. The hosted E2E caught it.
 
-### Lookups: `list_terms` (`e88bd53`, plugin zip not yet on the live site)
+### Lookups: `list_terms` (`e88bd53`, live)
 
 - **Plugin:** `sitepilot/list-terms` (`includes/Mcp/Term_Query.php`), read-only. It lists a public taxonomy's terms (category by default, or `post_tag`): ID, slug, name, parent and count, with search, parent and a limit of 1–100. Private taxonomies are refused (`invalid_taxonomy`). It's listed in `Server_Registrar`.
 - **Tags:** `find-posts` and `get-post` take `tag`, and `get-post` returns `tag_slugs`.
 - **Registry:** a `list_terms` entry. The Conversations agent builds its tool list from every registry entry with a `conversationPromptLine` (`CONVERSATION_TOOL_NAMES` in `conversation-service.ts`), so a new lookup needs only a plugin ability and a registry entry.
 - **Rollout:** in the categories-and-tags zip (below).
 
-### Categories and tags on posts (committed after `e88bd53`, plugin zip not yet on the live site)
+### Categories and tags on posts (`c277e25`, live; not yet tried on the live site)
 
 The roadmap's write side, first cut: **existing terms only**, posts only.
 
@@ -214,7 +209,7 @@ The roadmap's write side, first cut: **existing terms only**, posts only.
 
 - Sign in with WordPress, and the editor write guard fix for `wp_global_styles` and `wp_navigation`, as before.
 - **New in `2ee894f`:** `assets/js/editor-bridge.js` checks again, for up to 10 seconds, that each preview image is placed and decoded. Before, it checked once and could fail with "preview image … did not load". This was seen once in the content suite.
-- **The live plugin** is the production zip of `7388582` (library alt), uploaded by the user on 2 October. `list_terms` and the branding need the next zip (above).
+- **The live plugin** is the production zip of `c277e25` (`list_terms`, categories and tags, and the branding), uploaded by the user on 2 October. Its editor bridge and `Post_Terms.php` were checked on the live site.
 
 ### Deployment (live)
 
@@ -290,7 +285,7 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
 
 ### Leave these alone
 
-- `docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip` and `.phpunit.result.cache` were all committed in `4d07a82` by the branding session, against the earlier rule. Ask the user before pushing that commit or removing them.
+- `docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip` and `.phpunit.result.cache` were committed in `4d07a82` by the branding session, and pushed with the user's OK. Ask before removing them from git.
 - `plugins/wordpress-sitepilot/.phpunit.result.cache` changes on every PHPUnit run. Leave it out of commits.
 - Commit the build-info files (`*.tsbuildinfo`); the user tracks them.
 - Dev scripts live in `.sitepilot-test-artifacts/hosted-dev/` (git-ignored):
@@ -347,9 +342,9 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
 
 ## Next steps
 
-1. **Push and deploy:** the user's OK to push `4d07a82`, `b89d57e` and `e88bd53` (the first carries the branding session's stray files). Then wait for `/healthz` to show the commit. Migration 007 runs at startup.
-2. **Check the admin area live** in the user's Chrome: `/admin/people` lists the user. The account page links to it.
-3. **Upload the plugin zip, only after the deploy:** `~/Downloads/wordpress-sitepilot-terms.zip`, for `list_terms`, categories and tags, and the branding. The order matters. The new plugin adds `terms` to the editor's capability and source snapshots, and the live server's strict schemas would refuse those until the categories-and-tags commit is deployed. A new server with the old plugin is fine. Then try "tag post N with X" live.
+1. **Try categories and tags live:** for example "tag post N with X" in the app or claude.ai. Check that review shows the tags, and that WordPress has them after apply.
+2. **Verified live on 2 October:** `/admin/people` lists the user, with WordPress role Admin, two claude.ai grants, Slack, and two browser sessions. The older claude.ai grant, without `approve`, is from before the reconnect, and the user can disconnect it. `5e8aa4a` fixed "last used not yet" (now 2026-10-02 10:08 and 2026-10-01 15:50) and the 404 at `/admin`, both checked live.
+3. **Note:** on 2 October the user uploaded the plugin zip a few minutes before the server deploy finished. Any request that failed in that gap can simply be retried. Next time, deploy first.
 4. **Roadmap, next:**
    - categories and tags, what's left: creating new terms (with a journal), custom taxonomies, more than 100 terms, and showing the terms before the change in review;
    - more lookups from the registry plan: `query_content`, `get_revisions`, `search_media`, `list_menus`, `find_block_usage`, and recording lookup gaps.
