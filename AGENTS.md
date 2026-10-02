@@ -1,6 +1,6 @@
 # Agent Test Rules
 
-When making code changes in this repository, run the smallest E2E suite that still matches the risk of the change.
+When making code changes in this repository, run the smallest E2E suite that still matches the risk of the change. The full suite takes the best part of an hour, so prefer the single script that covers the change (`npm run test:e2e:hosted` for the hosted server, OAuth, MCP over HTTP and Slack; `npm run test:e2e:v2` for the v2 engine; and so on). Run the full suite only before a release, or when the user asks for it.
 
 ## Default rule
 
@@ -47,7 +47,7 @@ Use the full suite for broader or cross-layer changes, including:
 - `npm run test:e2e:content`
   The smoke suite, plus the v2 engine suite (`v2-gutenberg`): compile, approve, commit, read back and roll back, preserved blocks, new blocks and history, with signed approvals that the site requires (a missing or tampered proof is refused). Also the local MCP server loop (`v2-mcp`): lookups, a conversation, a request, approval refused from MCP and allowed from the desktop. And the render check (`v2-render-check`): a draft that doesn't render is kept and failed, and an edit that breaks a post is rolled back.
 - `npm run test:e2e:all`
-  The content suite, plus publish and unpublish (`v2-status`), Yoast SEO fields (`v2-seo`), ACF blocks on the ACF test site (`v2-acf`), a real-model long post with images (`v2-long-post`), and the hosted server (`hosted`): connecting the site, Sign in with WordPress in a browser, a personal MCP token, an OAuth connection as claude.ai makes one (consent, scoped tokens, refresh, disconnect), a request in the app through approval and apply to a WordPress draft (typing "approved" approves nothing), a request over MCP approved from the app's own prompt with a signed preview link, the Slack app against a stand-in Slack API (connect, review, Approve, Publish), and a contributor refused approval.
+  The content suite, plus publish and unpublish (`v2-status`), Yoast SEO fields (`v2-seo`), ACF blocks on the ACF test site (`v2-acf`, which runs alongside the others), a real-model long post with images (`v2-long-post`, opt-in with `SITEPILOT_E2E_LONG_POST=1`, since it's slow and costs a model call), and the hosted server (`hosted`): connecting the site, Sign in with WordPress in a browser, a personal MCP token, an OAuth connection as claude.ai makes one (consent, scoped tokens, refresh, disconnect), a request in the app through approval and apply to a WordPress draft (typing "approved" approves nothing), a request over MCP approved from the app's own prompt with a signed preview link, the Slack app against a stand-in Slack API (connect, review, Approve, Publish), and a contributor refused approval.
 
 Each script also runs on its own, for example `npm run test:e2e:v2-chat` or `npm run test:e2e:mcp`.
 
