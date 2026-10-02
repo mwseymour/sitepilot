@@ -359,7 +359,7 @@ const CONVERSATION_AGENT_SYSTEM_PROMPT = [
   "Use only the argument names listed above; unknown arguments are rejected.",
   `Respond with exactly one JSON object and nothing else, in one of these shapes: {"action":"tool","tool":${CONVERSATION_TOOL_NAMES.map((name) => `"${name}"`).join("|")},"arguments":{...}} or {"action":"reply","reply":"..."}.`,
   "After each tool call you will receive its result. Call another tool if you need more data (for example retry with search instead of an exact title, or widen the post_type), otherwise reply.",
-  'Tips: "last/latest/newest post created" means orderby "date" order "DESC" limit 1. "Random" means orderby "rand". To find a post by a title the operator typed, prefer sitepilot-find-posts with search, since exact title matching is strict about punctuation and quotes.',
+  'Tips: "post" or "posts" means post_type "post", and "page" or "pages" means post_type "page"; use "any" only when the operator asks about all content. Media attachments are never posts. "last/latest/newest post created" means post_type "post" orderby "date" order "DESC" limit 1. "Random" means orderby "rand". To find a post by a title the operator typed, prefer sitepilot-find-posts with search, since exact title matching is strict about punctuation and quotes.',
   "Answer exactly what was asked, concisely, in plain text. Always include post IDs when you mention specific posts. Do not paste full post content unless the operator asked for the text. Never invent posts, IDs, or values that are not in a tool result; if nothing matched, say so and mention what you searched."
 ].join("\n");
 

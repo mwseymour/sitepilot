@@ -2,7 +2,8 @@
  * Categories and tags end to end, against the local test site.
  *
  * 1. Creates a draft with a category and a tag, and reads them back.
- * 2. Changes only the tags on that post (no content operations).
+ * 2. Changes only the tags on that post (no content operations), then adds
+ *    a new tag, which the plugin creates when it prepares the write.
  * 3. Refuses to write an approved change after someone changed the post's
  *    tags in WordPress.
  * 4. Rolls a committed change back to the exact previous terms.
@@ -36,6 +37,7 @@ import {
   SqliteGutenbergV2ExecutionJournal,
   buildLlmGutenbergV2Plan,
   createGutenbergV2ApprovalBinding,
+  GutenbergV2PlanClarification,
   hashGutenbergV2Value
 } from "@sitepilot/services";
 
@@ -258,6 +260,19 @@ async function main(): Promise<void> {
       `Tags-only edit is wrong: ${JSON.stringify(termIds(postId, "post_tag"))}`
     );
 
+    // 2b. A new tag, created when the approved write is prepared.
+    const newTagName = `SitePilot E2E New ${Date.now()}`;
+    await execute(await termsEdit(postId, { post_tag: [...bothTags, { name: newTagName, new: true }] }), "new-tag");
+    const newTagId = Number(wp("term", "list", "post_tag", `--name=${newTagName}`, "--field=term_id"));
+    assert(newTagId > 0, `The new tag "${newTagName}" wasn't created.`);
+    assert(
+      JSON.stringify(termIds(postId, "post_tag")) === JSON.stringify([...bothTags.map((tag) => tag.id), newTagId].sort((a, b) => a - b)),
+      `The new tag isn't on the post: ${JSON.stringify(termIds(postId, "post_tag"))}`
+    );
+    report.newTag = { name: newTagName, id: newTagId };
+    // Back to the two tags, for the steps below.
+    await execute(await termsEdit(postId, { post_tag: bothTags }), "tags-back");
+
     // 3. Someone changes the tags after approval: the write is refused.
     const stale = await compile(await termsEdit(postId, { post_tag: [walking] }), "stale");
     wp("post", "term", "remove", String(postId), "post_tag", String(walking.id), "--by=id");
@@ -331,15 +346,33 @@ async function main(): Promise<void> {
         postType: "post",
         postId
       });
-      const planned = await buildLlmGutenbergV2Plan({
-        request: `Add the tag "${lakes.name}" to this post, and also tag it "Definitely Not A Real Tag". Don't change anything else.`,
-        siteId: registration.siteId,
-        target: { operation: "apply_operations", source },
-        capabilities,
-        availableTerms: { category: [category], post_tag: [walking, lakes] },
-        client: createOpenAiChatClient(E2E_OPENAI_API_KEY),
-        model: process.env.SITEPILOT_TERMS_LLM_MODEL ?? "gpt-5.4-mini"
-      });
+      const llm = (request: string) =>
+        buildLlmGutenbergV2Plan({
+          request,
+          siteId: registration.siteId,
+          target: { operation: "apply_operations", source },
+          capabilities,
+          availableTerms: { category: [category], post_tag: [walking, lakes] },
+          client: createOpenAiChatClient(E2E_OPENAI_API_KEY),
+          model: process.env.SITEPILOT_TERMS_LLM_MODEL ?? "gpt-5.4-mini"
+        });
+      // A tag that doesn't exist is never added quietly: it's asked about, or shown as new.
+      const unknownTag = "SitePilot E2E Peaks";
+      let unknown: string;
+      try {
+        const tagged = (await llm(`Also tag this post "${unknownTag}". Don't change anything else.`)).plan;
+        const tags = "postFields" in tagged ? (tagged.postFields?.terms?.post_tag ?? []) : [];
+        assert(
+          tags.some((tag) => "new" in tag && tag.name === unknownTag),
+          `A missing tag wasn't asked about or shown as new: ${JSON.stringify(tags)}`
+        );
+        unknown = "proposed as a new tag";
+      } catch (error) {
+        if (!(error instanceof GutenbergV2PlanClarification)) throw error;
+        unknown = `asked: ${error.question}`;
+      }
+      report.llmUnknownTag = unknown;
+      const planned = await llm(`Add the tag "${lakes.name}" to this post. Don't change anything else.`);
       assert(
         planned.plan.operation === "apply_operations" && planned.plan.operations.length === 0,
         `The planner changed content for a tags-only request: ${JSON.stringify(planned.plan).slice(0, 600)}`

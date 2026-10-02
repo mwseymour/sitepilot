@@ -88,7 +88,10 @@ namespace {
 			public object $cap;
 
 			public function __construct( public string $name, public bool $public = true, public bool $hierarchical = false ) {
-				$this->cap = (object) array( 'assign_terms' => 'post_tag' === $name ? 'assign_post_tags' : 'assign_categories' );
+				$this->cap = (object) array(
+					'assign_terms' => 'post_tag' === $name ? 'assign_post_tags' : 'assign_categories',
+					'edit_terms'   => 'post_tag' === $name ? 'manage_post_tags' : 'manage_categories',
+				);
 			}
 		}
 	}
@@ -404,6 +407,25 @@ namespace {
 			}
 		}
 		return null;
+	}
+
+	function get_term_by( string $field, string $value, string $taxonomy ): WP_Term|false {
+		foreach ( $GLOBALS['sitepilot_test_terms'][ $taxonomy ] ?? array() as $term ) {
+			if ( 'name' === $field && 0 === strcasecmp( $term->name, $value ) ) {
+				return $term;
+			}
+		}
+		return false;
+	}
+
+	function wp_insert_term( string $name, string $taxonomy ): array|WP_Error {
+		$existing = get_term_by( 'name', $name, $taxonomy );
+		if ( $existing instanceof WP_Term ) {
+			return new WP_Error( 'term_exists', 'A term with that name exists.', $existing->term_id );
+		}
+		$id = 100 + count( $GLOBALS['sitepilot_test_terms'][ $taxonomy ] ?? array() ) + count( $GLOBALS['sitepilot_test_terms'] );
+		$GLOBALS['sitepilot_test_terms'][ $taxonomy ][] = new WP_Term( $id, sanitize_key( $name ), $name );
+		return array( 'term_id' => $id, 'term_taxonomy_id' => $id );
 	}
 
 	/** Assignments live in $GLOBALS['sitepilot_test_object_terms'][ $post_id ][ $taxonomy ] as term IDs. */

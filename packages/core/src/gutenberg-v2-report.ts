@@ -3,6 +3,7 @@ import {
   GUTENBERG_V2_SEO_FIELD_LABELS,
   GUTENBERG_V2_TAXONOMIES,
   GUTENBERG_V2_TAXONOMY_LABELS,
+  gutenbergV2TermLabel,
   type GutenbergV2CompiledCandidate,
   type GutenbergV2ExecutionResult,
   type GutenbergV2JobRecord,
@@ -81,7 +82,7 @@ function termLines(candidate: GutenbergV2CompiledCandidate): string[] {
     const list = terms[taxonomy];
     return list === undefined
       ? []
-      : [`${GUTENBERG_V2_TAXONOMY_LABELS[taxonomy]}: ${list.length === 0 ? "none" : clip(list.map((term) => term.name).join(", "))}`];
+      : [`${GUTENBERG_V2_TAXONOMY_LABELS[taxonomy]}: ${list.length === 0 ? "none" : clip(list.map(gutenbergV2TermLabel).join(", "))}`];
   });
 }
 

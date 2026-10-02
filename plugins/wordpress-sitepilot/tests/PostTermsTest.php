@@ -50,10 +50,38 @@ final class PostTermsTest extends TestCase {
 				'category' => array( array( 'id' => 3, 'name' => 'News & views' ) ),
 				'post_tag' => array( array( 'id' => 9, 'name' => 'Walking' ), array( 'id' => 10, 'name' => 'Lakes' ) ),
 			),
-			$after
+			$after['after']
 		);
+		$this->assertSame( array( 'post_tag' => array( array( 'id' => 9 ), array( 'id' => 10 ) ) ), $after['changes'] );
+		$this->assertSame( array(), $after['created'] );
 		// A new draft keeps WordPress's default category unless one is set.
-		$this->assertSame( array( array( 'id' => 1, 'name' => 'Uncategorized' ) ), Post_Terms::prepare( array( 'post_tag' => array( array( 'id' => 9 ) ) ), null )['category'] );
+		$this->assertSame( array( array( 'id' => 1, 'name' => 'Uncategorized' ) ), Post_Terms::prepare( array( 'post_tag' => array( array( 'id' => 9 ) ) ), null )['after']['category'] );
+	}
+
+	public function test_creates_a_new_term_once_and_reuses_one_that_exists(): void {
+		$change = array( 'post_tag' => array( array( 'id' => 9, 'name' => 'Walking' ), array( 'name' => 'Mountains', 'new' => true ) ) );
+
+		$first = Post_Terms::prepare( $change, 12 );
+		$this->assertIsArray( $first );
+		$this->assertCount( 1, $first['created'] );
+		$mountains = $first['created'][0];
+		$this->assertSame( array( 'Walking', 'Mountains' ), array_column( $first['after']['post_tag'], 'name' ) );
+
+		// A retry finds the term the first attempt made.
+		$again = Post_Terms::prepare( $change, 12 );
+		$this->assertSame( array(), $again['created'] );
+		$this->assertSame( array( array( 'id' => 9 ), array( 'id' => $mountains ) ), $again['changes']['post_tag'] );
+		// A "new" term that already exists is that term.
+		$this->assertSame( array(), Post_Terms::prepare( array( 'post_tag' => array( array( 'name' => 'lakes', 'new' => true ) ) ), 12 )['created'] );
+	}
+
+	public function test_creating_needs_permission_and_a_refused_change_creates_nothing(): void {
+		$GLOBALS['sitepilot_test_denied_caps'] = array( 'manage_post_tags' );
+		$this->assertIsString( Post_Terms::prepare( array( 'post_tag' => array( array( 'name' => 'Mountains', 'new' => true ) ) ), 12 ) );
+		$GLOBALS['sitepilot_test_denied_caps'] = array();
+		// The category change is refused, so the new tag isn't made either.
+		$this->assertIsString( Post_Terms::prepare( array( 'post_tag' => array( array( 'name' => 'Rivers', 'new' => true ) ), 'category' => array() ), 12 ) );
+		$this->assertFalse( get_term_by( 'name', 'Rivers', 'post_tag' ) );
 	}
 
 	public function test_refuses_unknown_terms_no_category_and_no_permission(): void {

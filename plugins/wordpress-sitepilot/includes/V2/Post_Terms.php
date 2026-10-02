@@ -12,8 +12,9 @@ namespace SitePilot\V2;
 
 /**
  * A post's terms are `{category: [{id, name}], post_tag: [...]}`, ordered by
- * term ID. A change names the whole set each changed taxonomy ends with.
- * Only existing terms are used; v2 never creates one.
+ * term ID. A change names the whole set each changed taxonomy ends with:
+ * existing terms by ID, and new ones by name, created when the approved
+ * write is prepared.
  */
 final class Post_Terms {
 
@@ -53,13 +54,17 @@ final class Post_Terms {
 	}
 
 	/**
-	 * Checks a requested change and returns the terms the post will end with:
-	 * every term must exist in its taxonomy, the service user must be able to
-	 * assign it, and a post keeps at least one category.
+	 * Checks a requested change, then makes any new terms it asked for, and
+	 * returns the terms the post will end with and the change by term ID.
+	 * Every existing term must exist in its taxonomy; the service user must be
+	 * able to assign terms, and to create them for a new one; a post keeps at
+	 * least one category. A new term whose name exists by now (a retry, or
+	 * someone made it meanwhile) is that term, never a duplicate. Runs when the
+	 * approved write is prepared, so nothing is created before approval.
 	 *
 	 * @param array<string, mixed> $changes  Requested sets, by taxonomy.
 	 * @param int|null             $post_id  The post, or null for a new draft.
-	 * @return array<string, list<array{id: int, name: string}>>|string The final terms, or why not.
+	 * @return array{after: array<string, list<array{id: int, name: string}>>, changes: array<string, list<array{id: int}>>, created: list<int>}|string
 	 */
 	public static function prepare( array $changes, ?int $post_id ) {
 		if ( array() === $changes ) {
@@ -72,6 +77,8 @@ final class Post_Terms {
 				'category' => self::refs( array_filter( array( get_term( (int) get_option( 'default_category' ), 'category' ) ) ) ),
 				'post_tag' => array(),
 			);
+		// Check everything first, so a refused change creates nothing.
+		$planned = array();
 		foreach ( $changes as $taxonomy => $refs ) {
 			if ( ! in_array( $taxonomy, self::TAXONOMIES, true ) || ! is_array( $refs ) ) {
 				return 'Only categories and tags can be set.';
@@ -80,21 +87,60 @@ final class Post_Terms {
 			if ( ! $object instanceof \WP_Taxonomy || ! current_user_can( (string) ( $object->cap->assign_terms ?? 'edit_posts' ) ) ) {
 				return "The SitePilot user can't assign {$taxonomy} terms.";
 			}
-			$terms = array();
+			$terms     = array();
+			$new_names = array();
 			foreach ( $refs as $ref ) {
+				if ( is_array( $ref ) && ! empty( $ref['new'] ) ) {
+					$name = trim( sanitize_text_field( (string) ( $ref['name'] ?? '' ) ) );
+					if ( '' === $name ) {
+						return "A new {$taxonomy} term has no name.";
+					}
+					$existing = get_term_by( 'name', $name, $taxonomy );
+					if ( $existing instanceof \WP_Term ) {
+						$terms[ (int) $existing->term_id ] = $existing;
+					} else {
+						$new_names[ strtolower( $name ) ] = $name;
+					}
+					continue;
+				}
 				$term = get_term( absint( is_array( $ref ) ? ( $ref['id'] ?? 0 ) : 0 ), $taxonomy );
 				if ( ! $term instanceof \WP_Term ) {
 					return "A requested {$taxonomy} term doesn't exist.";
 				}
 				$terms[ (int) $term->term_id ] = $term;
 			}
-			if ( 'category' === $taxonomy && array() === $terms ) {
+			if ( array() !== $new_names && ! current_user_can( (string) ( $object->cap->edit_terms ?? 'manage_categories' ) ) ) {
+				return "The SitePilot user can't create {$taxonomy} terms.";
+			}
+			if ( 'category' === $taxonomy && array() === $terms && array() === $new_names ) {
 				return 'A post keeps at least one category.';
 			}
-			ksort( $terms );
-			$after[ $taxonomy ] = self::refs( array_values( $terms ) );
+			$planned[ $taxonomy ] = array( 'terms' => $terms, 'new' => $new_names );
 		}
-		return $after;
+		$created = array();
+		$resolved = array();
+		foreach ( $planned as $taxonomy => $plan ) {
+			$terms = $plan['terms'];
+			foreach ( $plan['new'] as $name ) {
+				$inserted = wp_insert_term( $name, $taxonomy );
+				$term_id  = is_wp_error( $inserted )
+					// It exists after all: use it.
+					? absint( 'term_exists' === $inserted->get_error_code() ? $inserted->get_error_data() : 0 )
+					: absint( $inserted['term_id'] ?? 0 );
+				$term = $term_id > 0 ? get_term( $term_id, $taxonomy ) : null;
+				if ( ! $term instanceof \WP_Term ) {
+					return "SitePilot couldn't create the {$taxonomy} term “{$name}”.";
+				}
+				if ( ! is_wp_error( $inserted ) ) {
+					$created[] = $term_id;
+				}
+				$terms[ $term_id ] = $term;
+			}
+			ksort( $terms );
+			$after[ $taxonomy ]    = self::refs( array_values( $terms ) );
+			$resolved[ $taxonomy ] = array_map( static fn ( int $id ): array => array( 'id' => $id ), array_keys( $terms ) );
+		}
+		return array( 'after' => $after, 'changes' => $resolved, 'created' => $created );
 	}
 
 	/**

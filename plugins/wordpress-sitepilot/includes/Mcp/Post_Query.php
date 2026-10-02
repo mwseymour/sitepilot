@@ -47,7 +47,8 @@ final class Post_Query {
 		}
 
 		$args = array(
-			'post_type'           => 'any' === $post_type ? 'any' : $post_type,
+			// "any" is content: WordPress's own "any" includes media attachments.
+			'post_type'           => 'any' === $post_type ? self::content_types() : $post_type,
 			'post_status'         => 'any' === $status ? 'any' : $status,
 			'posts_per_page'      => $limit,
 			'orderby'             => $orderby,
@@ -187,6 +188,11 @@ final class Post_Query {
 		}
 
 		return self::format_post_result( $post );
+	}
+
+	/** @return list<string> Public post types other than media attachments. */
+	private static function content_types(): array {
+		return array_values( array_diff( get_post_types( array( 'public' => true ) ), array( 'attachment' ) ) );
 	}
 
 	/** A published post, or one the current user can edit. */

@@ -1,13 +1,29 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { getDatabase } from "@sitepilot/core/app-database";
 import { isTypedApproval } from "@sitepilot/core/request-ingress-service";
-import type { McpAttachment, McpCaller, McpRequestStatus, SitePilotMcpBackend } from "@sitepilot/mcp-server";
+import type {
+  McpAttachment,
+  McpCaller,
+  McpRequestStatus,
+  McpRequestTarget,
+  SitePilotMcpBackend
+} from "@sitepilot/mcp-server";
+import { findReadTool, sanitizeReadToolArguments } from "@sitepilot/services/read-tool-registry";
 import type { SqlConnection } from "@sitepilot/sql";
 
 import type { AuthStore, PersonRef, SignedInUser } from "./auth.js";
 import { escapeHtml as e, readBody, send, sendHtml } from "./http.js";
-import { routeChoice, routeSlackMessage } from "./slack-routing.js";
+import {
+  asksForLatest,
+  mentionedLinks,
+  mentionedPostId,
+  onlyPostIdIn,
+  routeChoice,
+  routeSlackMessage,
+  wantsNewPost
+} from "./slack-routing.js";
 
 /**
  * SitePilot in Slack: mention @SitePilot (or DM it) to ask about the site or
@@ -56,7 +72,8 @@ function md(value: string): string {
 
 type SlackBlock = Record<string, unknown>;
 
-type ThreadKind = "request" | "conversation" | "choosing";
+/** choosing: "a question or a change?"; choosing_post: "which post is this for?". */
+type ThreadKind = "request" | "conversation" | "choosing" | "choosing_post";
 
 type ThreadRow = {
   teamId: string;
@@ -66,11 +83,18 @@ type ThreadRow = {
   /** The SitePilot request, or the Conversation's thread ID; empty while choosing. */
   requestId: string;
   wordpressUserId: number;
+  /** For a request, the last update posted; for a conversation, its latest answer. */
   lastNotice: string | null;
   kind: ThreadKind;
-  /** While choosing: the message waiting for "a question or a change?". */
+  /** While choosing: the message waiting for an answer. */
   pendingText: string | null;
 };
+
+/** The post a change is for, worked out from the message. */
+type PostTarget =
+  | { kind: "existing"; target: McpRequestTarget & { postId: number }; label: string }
+  | { kind: "new" }
+  | { kind: "unknown"; problem?: string };
 
 const THREAD_COLUMNS = `team_id AS "teamId", channel_id AS "channelId", thread_ts AS "threadTs", site_id AS "siteId",
   request_id AS "requestId", wordpress_user_id AS "wordpressUserId", last_notice AS "lastNotice",
@@ -372,12 +396,16 @@ export function createSlackApp(deps: {
     user: SignedInUser;
     text: string;
     attachments: McpAttachment[];
+    /** The post to change; a new draft without one. */
+    post?: Extract<PostTarget, { kind: "existing" }>;
+    /** Said before "On it", for example that the request moved to another post. */
+    note?: string;
   }): Promise<void> {
     const created = await deps.backend.createRequest(
       {
         siteId: input.user.siteId,
         text: input.text,
-        target: { operation: "create_draft", postType: "post" },
+        target: input.post?.target ?? { operation: "create_draft", postType: "post" },
         ...(input.attachments.length > 0 ? { attachments: input.attachments } : {})
       },
       callerFor(input.user)
@@ -395,11 +423,95 @@ export function createSlackApp(deps: {
       wordpressUserId: input.user.wordpressUserId,
       kind: "request"
     });
+    // The post is named before anything is planned, so a wrong guess shows straight away.
     await slack("chat.postMessage", {
       channel: input.channel,
       thread_ts: input.threadTs,
-      text: "On it. SitePilot is planning the change and building a preview; it'll appear in this thread. Reply here to change anything."
+      text: `${input.note ? `${input.note} ` : ""}On it: ${input.post ? `changing ${input.post.label}` : "a new draft"}. SitePilot is planning the change and building a preview; it'll appear in this thread. Reply here to change anything.`
     });
+  }
+
+  /**
+   * Which post the message means: one it names ("post 102", its link), the
+   * latest post, or a new draft when it asks for new content. Anything else
+   * is unknown, and the thread asks rather than guessing.
+   */
+  /** Links to the site itself; a link elsewhere is content, not a post to change. */
+  async function siteLinks(user: SignedInUser, text: string): Promise<URL[]> {
+    const links = mentionedLinks(text);
+    if (links.length === 0) return [];
+    const site = await getDatabase().repositories.sites.getById(user.siteId as never);
+    const host = site ? new URL(site.baseUrl).host : null;
+    return links.filter((link) => link.host === host);
+  }
+
+  async function resolvePost(user: SignedInUser, text: string): Promise<PostTarget> {
+    if (wantsNewPost(text)) return { kind: "new" };
+    const getPost = findReadTool("get_post");
+    const findPosts = findReadTool("find_posts");
+    if (!getPost || !findPosts) return { kind: "unknown" };
+    const caller = callerFor(user);
+    const lookup = async (tool: NonNullable<typeof getPost>, args: Record<string, unknown>) => {
+      const found = await deps.backend.lookup({ siteId: user.siteId, tool, args: sanitizeReadToolArguments(tool, args) }, caller);
+      return found.ok ? (found.result as Record<string, unknown>) : null;
+    };
+    const id = mentionedPostId(text);
+    let args: Record<string, unknown> | null = id !== null ? { post_id: id } : null;
+    if (!args) {
+      // A link to the post: its slug is the last part of the address.
+      const slug = (await siteLinks(user, text))
+        .map((link) => link.pathname.split("/").filter(Boolean).at(-1) ?? "")
+        .find((part) => /^[a-z0-9-]+$/i.test(part));
+      if (slug) args = { slug, post_type: "any" };
+    }
+    if (!args) {
+      const latest = asksForLatest(text);
+      if (latest) {
+        const found = await lookup(findPosts, { post_type: latest, status: "any", orderby: "date", order: "DESC", limit: 1 });
+        const first = Array.isArray(found?.matches) ? (found.matches[0] as Record<string, unknown> | undefined) : undefined;
+        if (typeof first?.post_id === "number") args = { post_id: first.post_id };
+      }
+    }
+    if (!args) return { kind: "unknown" };
+    const post = await lookup(getPost, args);
+    if (!post || typeof post.post_id !== "number") {
+      return { kind: "unknown", problem: id !== null ? `SitePilot can't find post ${id}.` : "SitePilot couldn't find that post." };
+    }
+    if (post.post_type !== "post" && post.post_type !== "page") {
+      return { kind: "unknown", problem: `${post.post_id} is ${String(post.post_type)}, not a post or page.` };
+    }
+    const postType = post.post_type;
+    return {
+      kind: "existing",
+      target: { operation: "edit", postType, postId: post.post_id },
+      label: `${postType} ${post.post_id}${typeof post.post_title === "string" && post.post_title ? ` “${post.post_title}”` : ""}`
+    };
+  }
+
+  /** The post isn't clear: ask, and keep the message until it is. */
+  async function askWhichPost(input: ThreadStart, problem?: string): Promise<void> {
+    await saveThread({
+      teamId: input.teamId,
+      channelId: input.channel,
+      threadTs: input.threadTs,
+      siteId: input.user.siteId,
+      requestId: "",
+      wordpressUserId: input.user.wordpressUserId,
+      kind: "choosing_post",
+      pendingText: input.text
+    });
+    await slack("chat.postMessage", {
+      channel: input.channel,
+      thread_ts: input.threadTs,
+      text: `${problem ? `${problem} ` : ""}Which post is this for? Reply with its number (for example *post 102*) or its link, or *new* for a new draft.`
+    });
+  }
+
+  /** Starts a change once its post is known, or asks which post. */
+  async function startChange(input: ThreadStart, attachments: McpAttachment[]): Promise<void> {
+    const post = await resolvePost(input.user, input.text);
+    if (post.kind === "unknown") return askWhichPost(input, post.problem);
+    return startRequest({ ...input, attachments, ...(post.kind === "existing" ? { post } : {}) });
   }
 
   type ThreadStart = { teamId: string; channel: string; threadTs: string; user: SignedInUser; text: string };
@@ -453,6 +565,17 @@ export function createSlackApp(deps: {
       blocks: answerBlocks(created.answer, record),
       unfurl_links: false
     });
+    if (record) await rememberAnswer(input.teamId, input.channel, input.threadTs, created.answer);
+  }
+
+  /** A conversation keeps its latest answer, to suggest the post when a change comes up. */
+  async function rememberAnswer(teamId: string, channelId: string, threadTs: string, answer: string): Promise<void> {
+    await deps.sql
+      .prepare(
+        `UPDATE slack_threads SET last_notice = @answer, updated_at = @now
+         WHERE team_id = @teamId AND channel_id = @channelId AND thread_ts = @threadTs AND kind = 'conversation'`
+      )
+      .run({ teamId, channelId, threadTs, answer: answer.slice(0, 2_000), now: new Date().toISOString() });
   }
 
   /** The wording didn't say: ask, with a button for each. */
@@ -488,7 +611,12 @@ export function createSlackApp(deps: {
 
   /** Starts what a message turned out to be, in its thread. */
   async function startAs(kind: "conversation" | "request", input: ThreadStart, attachments: McpAttachment[] = []): Promise<void> {
-    return kind === "conversation" ? startConversation(input) : startRequest({ ...input, attachments });
+    return kind === "conversation" ? startConversation(input) : startChange(input, attachments);
+  }
+
+  /** The files on the message that started the thread, for a change decided later. */
+  async function rootAttachments(channel: string, threadTs: string): Promise<McpAttachment[]> {
+    return (await attachmentsOf({ channel, ts: threadTs }).catch(() => ({ attachments: [] as McpAttachment[] }))).attachments;
   }
 
   /** A reply in a thread SitePilot already answered. */
@@ -501,9 +629,30 @@ export function createSlackApp(deps: {
       // A new message instead of an answer: work that one out.
       return route.kind === "unsure" ? askWhich({ ...start, text: route.text }) : startAs(route.kind, { ...start, text: route.text }, attachments);
     }
+    if (row.kind === "choosing_post") {
+      const pending = { ...start, text: row.pendingText ?? text };
+      const files = attachments.length > 0 ? attachments : await rootAttachments(row.channelId, row.threadTs);
+      if (/^\s*(?:new|a new one|new (?:post|draft|page)|a new (?:post|draft|page))\s*[.!]?\s*$/i.test(text) || wantsNewPost(text)) {
+        return startRequest({ ...pending, attachments: files });
+      }
+      const post = await resolvePost(user, text);
+      if (post.kind === "existing") return startRequest({ ...pending, attachments: files, post });
+      if (post.kind === "new") return startRequest({ ...pending, attachments: files });
+      return askWhichPost(pending, post.problem ?? "SitePilot couldn't tell which post that is.");
+    }
     if (row.kind === "conversation") {
-      // A change asked for in a conversation becomes this thread's request.
-      if (route.kind === "request") return startRequest({ ...start, text: route.text, attachments });
+      // A change gets its own thread, so a request never inherits a conversation.
+      if (route.kind === "request") {
+        const postId = onlyPostIdIn(row.lastNotice ?? "");
+        await slack("chat.postMessage", {
+          channel: row.channelId,
+          thread_ts: row.threadTs,
+          text: `This thread only looks things up, so a change needs its own thread. Send it as a new message to SitePilot${
+            postId === null ? ", naming the post (for example *post 102*)" : `, for example: *post ${postId}: ${md(route.text.slice(0, 200))}*`
+          }.`
+        });
+        return;
+      }
       const asked = await deps.backend.ask({ siteId: row.siteId, threadId: row.requestId, question: text }, callerFor(user));
       await slack("chat.postMessage", {
         channel: row.channelId,
@@ -512,11 +661,115 @@ export function createSlackApp(deps: {
         ...(asked.ok ? { blocks: answerBlocks(asked.answer, false) } : {}),
         unfurl_links: false
       });
+      if (asked.ok) await rememberAnswer(row.teamId, row.channelId, row.threadTs, asked.answer);
       return;
     }
     // In a request's thread, "ask …" gets an answer without touching the request.
     if (route.kind === "conversation" && route.forced) return startConversation({ ...start, text: route.text }, false);
+    // Naming a different post asks to move the request there, rather than
+    // carrying on with the wrong one or guessing.
+    if (mentionedPostId(text) !== null || (await siteLinks(user, text)).length > 0) {
+      const asked = await proposeMove(row, user, text);
+      if (asked) return;
+    }
     return reply(row, user, text, attachments);
+  }
+
+  /** The post the request is for now: its target, or the draft it wrote. */
+  function currentPostOf(status: McpRequestStatus): number | undefined {
+    return status.target && "postId" in status.target ? status.target.postId : status.result?.postId;
+  }
+
+  /**
+   * A reply that names another post than the request's: ask whether to move
+   * the request there. False when it names the same post.
+   */
+  async function proposeMove(row: ThreadRow, user: SignedInUser, text: string): Promise<boolean> {
+    const current = await deps.backend.requestStatus({ siteId: row.siteId, requestId: row.requestId }, callerFor(user));
+    if (!current.ok) return false;
+    const post = await resolvePost(user, text);
+    if (post.kind === "new") return false;
+    if (post.kind === "unknown") {
+      await slack("chat.postMessage", {
+        channel: row.channelId,
+        thread_ts: row.threadTs,
+        text: `${post.problem ?? "SitePilot couldn't tell which post that is."} Nothing was changed; reply with the post's number or link.`
+      });
+      return true;
+    }
+    const currentPost = currentPostOf(current.status);
+    if (post.target.postId === currentPost) return false;
+    await setPending(row, text);
+    const value = JSON.stringify({ p: post.target.postId });
+    const now = currentPost ? `post ${currentPost}` : "a new draft";
+    await slack("chat.postMessage", {
+      channel: row.channelId,
+      thread_ts: row.threadTs,
+      text: `Move this request to ${post.label}? It's for ${now} now.`,
+      blocks: [
+        { type: "section", text: { type: "mrkdwn", text: `Move this request to *${md(post.label)}*? It's for ${now} now.` } },
+        {
+          type: "actions",
+          elements: [
+            { type: "button", text: { type: "plain_text", text: `Move to post ${post.target.postId}` }, style: "primary", action_id: "route_move", value },
+            { type: "button", text: { type: "plain_text", text: `Keep ${now}` }, action_id: "route_keep", value }
+          ]
+        }
+      ]
+    });
+    return true;
+  }
+
+  async function setPending(row: ThreadRow, text: string | null): Promise<void> {
+    await deps.sql
+      .prepare(
+        `UPDATE slack_threads SET pending_text = @text, updated_at = @now
+         WHERE team_id = @teamId AND channel_id = @channelId AND thread_ts = @threadTs`
+      )
+      .run({ teamId: row.teamId, channelId: row.channelId, threadTs: row.threadTs, text, now: new Date().toISOString() });
+  }
+
+  /**
+   * Starts the request again on another post, in this thread, with the
+   * person's messages so far, and rejects the old preview so it can't be
+   * applied by mistake.
+   */
+  async function moveRequest(row: ThreadRow, user: SignedInUser, text: string, post: Extract<PostTarget, { kind: "existing" }>): Promise<void> {
+    const caller = callerFor(user);
+    const current = await deps.backend.requestStatus({ siteId: row.siteId, requestId: row.requestId }, caller);
+    if (!current.ok) {
+      await slack("chat.postMessage", { channel: row.channelId, thread_ts: row.threadTs, text: `SitePilot couldn't move it: ${current.message}` });
+      return;
+    }
+    const status = current.status;
+    const currentPost = currentPostOf(status);
+    let withdrawn = "";
+    if (status.state === "awaiting_approval" || status.state === "preparing_preview") {
+      const subject = await deps.backend.approvalSubject?.({ siteId: row.siteId, requestId: row.requestId }, caller);
+      const rejected =
+        subject?.ok && user.siteRoles.includes("approve")
+          ? await deps.backend.decideForPerson?.(
+              { siteId: row.siteId, requestId: row.requestId, candidateId: subject.candidateId, decision: "reject", note: `Moved to ${post.label}.`, channel: "slack_button" },
+              caller
+            )
+          : undefined;
+      withdrawn = rejected?.ok
+        ? ` The earlier preview${currentPost ? ` for post ${currentPost}` : ""} was rejected, so it can't be applied.`
+        : ` The earlier preview${currentPost ? ` for post ${currentPost}` : ""} is still waiting: reject it if you don't need it.`;
+    }
+    // The whole request so far, with this correction, as the new request's text.
+    const earlier = status.recentMessages.filter((message) => message.from === "you").map((message) => message.text);
+    const fullText = [...earlier.filter((message) => message !== text), text].join("\n\n");
+    await startRequest({
+      teamId: row.teamId,
+      channel: row.channelId,
+      threadTs: row.threadTs,
+      user,
+      text: fullText,
+      attachments: await rootAttachments(row.channelId, row.threadTs),
+      post,
+      note: `Moving this to ${post.label}.${withdrawn}`
+    });
   }
 
   async function reply(row: ThreadRow, user: SignedInUser, text: string, attachments: McpAttachment[]): Promise<void> {
@@ -787,6 +1040,19 @@ export function createSlackApp(deps: {
       const kind = action.action_id === "route_ask" ? "conversation" : "request";
       await settle(kind === "conversation" ? `<@${slackUserId}> asked for an answer.` : `<@${slackUserId}> asked for a change.`);
       return startAs(kind, { teamId, channel, threadTs: row.threadTs, user, text: row.pendingText });
+    }
+    if (action.action_id === "route_move" || action.action_id === "route_keep") {
+      const row = threadTs ? await threadFor(teamId, channel, threadTs) : null;
+      if (!row || row.kind !== "request" || !row.pendingText) return tell("That's already been answered.");
+      const pending = row.pendingText;
+      await setPending(row, null);
+      if (action.action_id === "route_keep") {
+        return settle(`<@${slackUserId}> kept this request where it is. Reply with what you'd like changed.`);
+      }
+      const post = await resolvePost(user, `post ${Number(value.p)}`);
+      if (post.kind !== "existing") return tell(`Not moved: ${post.kind === "unknown" ? (post.problem ?? "that post can't be found") : "no post named"}.`);
+      await settle(`<@${slackUserId}> moved this request to ${post.label}.`);
+      return moveRequest(row, user, pending, post);
     }
     if (action.action_id === "publish") {
       const postId = Number(value.p);

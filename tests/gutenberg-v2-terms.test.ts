@@ -8,6 +8,7 @@ import {
 } from "@sitepilot/contracts";
 import {
   buildLlmGutenbergV2Plan,
+  GutenbergV2PlanClarification,
   GutenbergV2PlanGenerationError,
   hashGutenbergV2Content,
   hashGutenbergV2Value
@@ -139,6 +140,33 @@ describe("planning categories and tags", () => {
     });
   });
 
+  it("creates a new term only when named under create, and never duplicates one", async () => {
+    const complete = client({
+      postFields: { terms: { post_tag: { create: ["Mountains", "lakes", "mountains "] } } },
+      operations: []
+    });
+    const result = await plan(complete);
+    if (result.plan.operation !== "apply_operations") throw new Error("Expected an update.");
+    // "lakes" is the existing Lakes tag; "Mountains" is new, once.
+    expect(result.plan.postFields?.terms).toEqual({
+      post_tag: [
+        { id: 9, name: "Walking" },
+        { id: 10, name: "Lakes" },
+        { name: "Mountains", new: true }
+      ]
+    });
+    expect(
+      gutenbergV2TermMismatches(result.plan.postFields!.terms!, {
+        category: [],
+        post_tag: [
+          { id: 9, name: "Walking" },
+          { id: 10, name: "Lakes" },
+          { id: 55, name: "Mountains" }
+        ]
+      })
+    ).toEqual([]);
+  });
+
   it("asks the model again about a term that doesn't exist, then fails if it insists", async () => {
     const draft = { postFields: { terms: { post_tag: { add: ["Mountains"] } } }, operations: [] };
     const complete = client(draft, draft);
@@ -171,5 +199,17 @@ describe("planning categories and tags", () => {
     expect(messages[0]!.content).not.toContain("TermChanges");
     expect(messages[0]!.content).toContain("never set postFields.terms");
     expect(JSON.parse(messages[1]!.content).availableTerms).toBeUndefined();
+  });
+});
+
+describe("asking instead of guessing", () => {
+  it("lets the model ask the person a question rather than plan", async () => {
+    const complete = client({ clarify: "Which image do you mean?  This post has none." });
+    await expect(plan(complete)).rejects.toEqual(new GutenbergV2PlanClarification("Which image do you mean? This post has none."));
+    const [messages] = complete.mock.calls[0] as unknown as [Array<{ content: string }>];
+    expect(messages[0]!.content).toContain('{"clarify":');
+    expect(messages[0]!.content).toContain("check source.blockIndex");
+    // A question is not a failed draft: no repair round.
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 });

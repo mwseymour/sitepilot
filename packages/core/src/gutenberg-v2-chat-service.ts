@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   buildLlmGutenbergV2Plan,
   createGutenbergV2ApprovalBinding,
+  GutenbergV2PlanClarification,
   GutenbergV2PlanGenerationError,
   GutenbergV2ServiceError,
   hashGutenbergV2Value,
@@ -15,6 +16,7 @@ import {
   GUTENBERG_V2_SEO_FIELD_LABELS,
   GUTENBERG_V2_TAXONOMIES,
   GUTENBERG_V2_TAXONOMY_LABELS,
+  gutenbergV2TermLabel,
   type GutenbergV2CompiledCandidate,
   type GutenbergV2BlockPlan,
   type GutenbergV2JobRecord,
@@ -29,6 +31,7 @@ import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import type {
   AuditEntryId,
   ChatMessageId,
+  ClarificationRoundId,
   RequestId,
   SiteId
 } from "@sitepilot/domain";
@@ -147,7 +150,7 @@ export function termChangeList(terms: GutenbergV2TermChanges) {
           {
             taxonomy,
             label: GUTENBERG_V2_TAXONOMY_LABELS[taxonomy],
-            value: list.length === 0 ? "None" : list.map((term) => term.name).join(", ")
+            value: list.length === 0 ? "None" : list.map(gutenbergV2TermLabel).join(", ")
           }
         ];
   });
@@ -673,6 +676,7 @@ async function saveRequestStatus(
     | "completed"
     | "failed"
     | "partially_completed"
+    | "clarifying"
 ): Promise<void> {
   const request = await getDatabase().repositories.requests.getById(requestId);
   if (request && request.siteId === siteId) {
@@ -705,6 +709,27 @@ async function explainForOperator(
   } catch {
     return fallback;
   }
+}
+
+/**
+ * The planner asked instead of guessing: the question becomes the request's
+ * clarification, and the person's reply continues the request (see
+ * answerClarificationForRequest).
+ */
+async function askForClarification(siteId: SiteId, requestId: RequestId, question: string): Promise<void> {
+  const timestamp = nowIso();
+  await getDatabase().repositories.clarificationRounds.save({
+    id: randomUUID() as ClarificationRoundId,
+    requestId,
+    siteId,
+    questions: [question],
+    answers: [],
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  await saveRequestStatus(requestId, siteId, "clarifying");
+  await appendV2LifecycleMessage(siteId, requestId, question);
+  await appendV2Audit(siteId, requestId, "clarification_requested", { engine: "gutenberg_v2", question });
 }
 
 async function appendV2LifecycleMessage(
@@ -743,7 +768,8 @@ async function appendV2Audit(
     | "execution_started"
     | "execution_completed"
     | "execution_failed"
-    | "post_status_changed",
+    | "post_status_changed"
+    | "clarification_requested",
   metadata: Record<string, unknown>
 ): Promise<void> {
   const timestamp = nowIso();
@@ -1236,6 +1262,10 @@ export async function generateGutenbergV2Candidate(input: {
     });
     return { ok: true as const, state: toState(mapping, job) };
   } catch (error) {
+    if (error instanceof GutenbergV2PlanClarification) {
+      await askForClarification(input.siteId, input.requestId, error.question);
+      return { ok: true as const, clarifying: error.question };
+    }
     const uncertain = await runtime.runtime.journal
       .get(mapping.executionId)
       .catch(() => null);

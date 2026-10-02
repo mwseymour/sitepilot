@@ -106,7 +106,16 @@ The user decided: everything happens in the chat, with explicit consent, so type
     - `routeSlackMessage` in `apps/server/src/slack-routing.ts` sends a question to `createConversation`, answered in the thread; replies there go to `ask`.
     - When unsure, the thread gets *Answer a question* and *Make a change* buttons (`route_ask`, `route_change`), and the message waits in `slack_threads.pending_text` (`kind = 'choosing'`).
     - `ask` or `change:` at the start forces one.
-    - `slack_threads.kind` is `request`, `conversation` or `choosing`; only requests are swept.
+    - `slack_threads.kind` is `request`, `conversation`, `choosing` or `choosing_post`; only requests are swept. A conversation's `last_notice` holds its latest answer.
+    - A conversation thread stays read-only; a change there gets "send it as a new message", suggesting the post from the last answer (the user agreed on 2 October).
+  - **Which post** (`resolvePost` in `slack.ts`, helpers in `slack-routing.ts`), from the user's live test on 2 October. "Add a table below the image", after a conversation about post 102, made a new draft (post 119), and "I meant post 102" kept editing 119.
+    - Now: a named post, an editor link or a link on the site's own host, "the latest post", or a new draft only for new-content wording. Otherwise the thread asks "Which post is this for?" (`choosing_post`), and the files are re-read from the thread's first message.
+    - Naming another post in a request's thread asks first (`proposeMove`, with *Move to post N* / *Keep* buttons, `route_move` / `route_keep`; the reply waits in `pending_text`). Moving (`moveRequest`) starts the request again on that post with the person's messages so far, and rejects the old preview if the person can approve.
+  - **The planner asks instead of guessing** (all clients, 2 October). The user's rule: when a message is unclear, clarify; never treat a badly typed message as an explicit instruction.
+    - The model may return `{"clarify": "…"}`, for example "below the image" on a new draft (`GutenbergV2PlanClarification` in `gutenberg-v2-plan-generator.ts`).
+    - `generateGutenbergV2Candidate` saves a clarification round, sets the request to `clarifying`, posts the question and returns `{ ok: true, clarifying }`.
+    - MCP shows it as `needs_your_reply`, and Slack posts "SitePilot asks: …". The reply goes through `answerClarificationForRequest` and plans again with "Clarification: …" in the prompt.
+  - **Conversations:** "post" now means post_type `post` (the agent's prompt). The plugin's `find-posts` "any" leaves out attachments (`Post_Query::content_types`; needs the next plugin zip).
   - People connect once with Sign in with WordPress: an ephemeral link to `/slack/connect?token=…`.
   - Images and MP4/WebM videos on a message go into the request (`files:read`, from `files.slack.com` only).
   - A sweeper every 8 seconds posts each open thread's changes: the change list, previews as image blocks (signed links), and Approve and apply / Reject. Notices are keyed so each is posted once.
@@ -198,8 +207,12 @@ The roadmap's write side, first cut: **existing terms only**, posts only.
   - it also records `termsHash` in `writtenState`, and restores the before-state's terms on rollback (refused if the terms changed since);
   - `Editor_Session` puts `terms` in the bridge config and the source snapshot, and `editor-bridge.js` adds it to the capability snapshot.
 - **Review:** `termChanges` in the candidate summary is shown in the app's "Fields and SEO" section, in MCP `request_status` (`changes.terms`), on the claude.ai card and approval prompt, in Slack and in the chat text.
+- **New terms** (2 October, after the first cut):
+    - the model lists `"create": ["Mountains"]` only when the operator wants a new term. A name that exists is that term; others become `{name, new: true}`, shown in review as "Mountains (new)".
+    - `Post_Terms::prepare` checks everything first, then finds or creates each new term (`get_term_by` by name, then `wp_insert_term`, needing `edit_terms`), and returns the IDs. `Commit_Service` writes `stored['termChanges']` and keeps `createdTerms` for cleanup. A retry finds the term it made, so it never duplicates one.
+    - Verification compares new terms by name (`gutenbergV2TermMismatches`).
 - **Not done:**
-  - creating new terms (needs a journal, so a retry never duplicates one);
+  - a site setting to turn new-term creation off, new child categories, and cleaning up unused new terms;
   - custom taxonomies;
   - sites with more than 100 categories or tags (the planner sees only the first 100);
   - showing the terms before the change in review (only the result is shown).
@@ -351,7 +364,8 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
 2. **Verified live on 2 October:** `/admin/people` lists the user, with WordPress role Admin, two claude.ai grants, Slack, and two browser sessions. The older claude.ai grant, without `approve`, is from before the reconnect, and the user can disconnect it. `5e8aa4a` fixed "last used not yet" (now 2026-10-02 10:08 and 2026-10-01 15:50) and the 404 at `/admin`, both checked live.
 3. **Note:** on 2 October the user uploaded the plugin zip a few minutes before the server deploy finished. Any request that failed in that gap can simply be retried. Next time, deploy first.
 4. **Roadmap, next:**
-   - categories and tags, what's left: creating new terms (with a journal), custom taxonomies, more than 100 terms, and showing the terms before the change in review;
+   - categories and tags, what's left: a setting to turn new terms off, custom taxonomies, more than 100 terms, and showing the terms before the change in review;
+   - target resolution from the message in the app and over MCP (Slack has it; the app still uses the Post ID field);
    - more lookups from the registry plan: `query_content`, `get_revisions`, `search_media`, `list_menus`, `find_block_usage`, and recording lookup gaps.
 5. **Still open:**
    - per-site rate limits (MCP plan 6);

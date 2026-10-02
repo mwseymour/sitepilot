@@ -73,7 +73,14 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
     - A question about the site ("what is the last post I created?") is answered in its thread as a read-only Conversation, and replies there ask again.
     - SitePilot decides from the wording (`apps/server/src/slack-routing.ts`). When it can't tell, it asks in the thread with *Answer a question* and *Make a change* buttons, or a typed reply of *ask* or *change*.
     - Starting a message with `ask` or `change:` forces one.
-    - In a conversation, a reply that asks for a change starts that thread's request. In a request's thread, `ask …` gets an answer without touching the request.
+    - A conversation thread stays read-only: a change asked for there gets "send it as a new message", with the post from the last answer suggested ("post 102: …"). In a request's thread, `ask …` gets an answer without touching the request.
+  - **Which post a change is for** (Phase 5 for Slack, 2 October 2026):
+    - a post named in the message ("post 102", an editor link, or a link to the post on the site);
+    - "the latest post";
+    - a new draft only when the message asks for new content ("write a post about…", "a new page");
+    - otherwise SitePilot asks "Which post is this for?" and waits. It never guesses a new draft for "add a table below the image".
+    - "On it" names the post before anything is planned.
+    - Naming another post in a request's thread ("sorry, I meant post 102") moves the request there, with the request so far, and rejects the earlier preview so it can't be applied by mistake.
     - Not done: the `/sitepilot` slash command, which needs the command added in the Slack app settings.
   - **Connecting:** people connect once with Sign in with WordPress. The link goes only to them (ephemeral in channels), and the connect page names the Slack account and the WordPress user it will act as.
   - **Reviewing:** the thread gets the change list, the desktop and mobile previews as image blocks (signed links), and Approve and apply / Reject. A click, signed by Slack with the clicking user, is the approval; only people who can publish can approve. Typing "approved" doesn't approve.

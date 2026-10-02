@@ -138,6 +138,10 @@ async function continueOpenRequest(input: {
     if (!generated.ok) {
       return generated;
     }
+    // The planner asked a question: the request waits for the answer.
+    if ("clarifying" in generated && generated.clarifying !== undefined) {
+      return { ok: true, continued: false };
+    }
     return {
       ok: true,
       continued: true,

@@ -4,6 +4,7 @@ import {
   GUTENBERG_V2_SOURCE_BLOCK,
   GUTENBERG_V2_TAXONOMIES,
   GutenbergV2AcfDataError,
+  gutenbergV2TermKey,
   describeGutenbergV2AcfFields,
   gutenbergV2AcfDataFromFields,
   gutenbergV2BlockPlanSchema,
@@ -18,6 +19,7 @@ import {
   type GutenbergV2PostTerms,
   type GutenbergV2SourceSnapshot,
   type GutenbergV2Taxonomy,
+  type GutenbergV2TermChangeEntry,
   type GutenbergV2TermRef
 } from "@sitepilot/contracts";
 import type {
@@ -157,6 +159,19 @@ export type BuildLlmGutenbergV2PlanResult = {
     provider: string;
   };
 };
+
+/**
+ * The model asked the person a question instead of planning: the request
+ * was unclear, or it refers to something the post doesn't have. Not a
+ * failure; the question goes back to the person, and their answer continues
+ * the request.
+ */
+export class GutenbergV2PlanClarification extends Error {
+  public constructor(public readonly question: string) {
+    super(question);
+    this.name = "GutenbergV2PlanClarification";
+  }
+}
 
 export class GutenbergV2PlanGenerationError extends Error {
   /** Bounded, model-facing descriptions of why the draft was rejected. */
@@ -486,7 +501,7 @@ function termsGuidance(input: BuildLlmGutenbergV2PlanInput): string {
   if (taxonomies.length === 0) {
     return "Categories and tags can't be changed here: never set postFields.terms.\n";
   }
-  return `Categories and tags: TermChanges is {${taxonomies.map((taxonomy) => `"${taxonomy}"?:{"set"?:string[],"add"?:string[],"remove"?:string[]}`).join(",")}} ("category" is categories, "post_tag" is tags). Name terms exactly as listed in availableTerms. "set" gives the whole list the post should end with; "add" and "remove" change the current ones (source.terms); don't mix "set" with "add" or "remove". Only existing terms can be used: never invent one, and if the operator asks for a category or tag that isn't listed, leave it out. A post keeps at least one category. Set terms only when the operator asks about categories or tags. For an existing post where only terms change, return "operations": [].
+  return `Categories and tags: TermChanges is {${taxonomies.map((taxonomy) => `"${taxonomy}"?:{"set"?:string[],"add"?:string[],"remove"?:string[],"create"?:string[]}`).join(",")}} ("category" is categories, "post_tag" is tags). Name existing terms exactly as listed in availableTerms. "set" gives the whole list the post should end with; "add" and "remove" change the current ones (source.terms); don't mix "set" with "add" or "remove". "create" names new terms to make and add, only when the operator asks for a new category or tag, or plainly wants one that isn't listed ("tag it with Mountains" when there is no such tag); otherwise never invent a term. A post keeps at least one category. Set terms only when the operator asks about categories or tags. For an existing post where only terms change, return "operations": [].
 `;
 }
 
@@ -526,6 +541,7 @@ ${
 }`;
 
   return `You generate one SitePilot Gutenberg v2 plan draft. Return one JSON object only, with no markdown or commentary, in this exact shape: ${operationShape}.
+When you can't tell what the operator wants, return {"clarify":"one short question for the operator"} instead of a plan. Ask when the request is a question about the site rather than a change, when it refers to something the ${input.target.operation === "create_draft" ? "new draft can't have yet (it is empty: no images, blocks or text to put things below, after or inside)" : "post doesn't have (check source.blockIndex)"}, or when you would otherwise have to invent what a placeholder stands for. Name what's missing, for example "A new draft has no image yet: which post did you mean, or which image should I add?". Don't ask about wording, layout or details you can reasonably choose yourself, and if the request already holds a Clarification, plan with it.
 A BlockNode is {"ref":string,"name":string,"attributes":object,"children":BlockNode[]}.
 Use only these destination-authorable block names: ${blockNames.join(", ")}.
 Reviewed attribute shapes (objects are strict; omit every field not listed):
@@ -985,14 +1001,7 @@ function withTidySeo(draft: Record<string, unknown>): Record<string, unknown> {
   return { ...draft, postFields: { ...postFields, seo } };
 }
 
-/** Lower case, with punctuation and spacing ignored, for matching term names. */
-function termKey(value: string): string {
-  return value
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/&amp;/g, "&")
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-}
+const termKey = gutenbergV2TermKey;
 
 /**
  * The model names terms; SitePilot matches the names to the site's existing
@@ -1010,7 +1019,7 @@ function draftWithResolvedTerms(
   const { terms: requested, ...otherFields } = postFields;
   const offered = offeredTaxonomies(input);
   const issues: string[] = [];
-  const resolved: Partial<Record<GutenbergV2Taxonomy, GutenbergV2TermRef[]>> = {};
+  const resolved: Partial<Record<GutenbergV2Taxonomy, GutenbergV2TermChangeEntry[]>> = {};
   if (!isRecord(requested)) {
     issues.push('postFields.terms must be an object such as {"post_tag":{"add":["News"]}}.');
   }
@@ -1023,8 +1032,20 @@ function draftWithResolvedTerms(
     const available = input.availableTerms?.[key] ?? [];
     const current =
       input.target.operation === "create_draft" ? [] : (input.target.source.terms?.[key] ?? []);
-    // An array (or an echoed earlier plan's terms) means the whole set.
-    const parts: Record<string, unknown> = Array.isArray(change) ? { set: change } : isRecord(change) ? change : {};
+    // An array (or an echoed earlier plan's terms) means the whole set, and
+    // an echoed new term stays new.
+    const given: Record<string, unknown> = Array.isArray(change) ? { set: change } : isRecord(change) ? { ...change } : {};
+    const echoedNew = Array.isArray(given.set)
+      ? given.set.filter((item) => isRecord(item) && item.new === true && typeof item.name === "string").map((item) => (item as { name: string }).name)
+      : [];
+    const parts: Record<string, unknown> =
+      echoedNew.length > 0
+        ? {
+            ...given,
+            set: (given.set as unknown[]).filter((item) => !(isRecord(item) && item.new === true)),
+            create: [...(Array.isArray(given.create) ? given.create : []), ...echoedNew]
+          }
+        : given;
     if (parts.set !== undefined && (parts.add !== undefined || parts.remove !== undefined)) {
       issues.push(`postFields.terms.${taxonomy}: don't mix "set" with "add" or "remove".`);
       continue;
@@ -1043,7 +1064,7 @@ function draftWithResolvedTerms(
         else
           issues.push(
             candidates.length === 0
-              ? `postFields.terms.${taxonomy}.${operation}: "${String(name ?? id)}" isn't an existing ${taxonomy === "category" ? "category" : "tag"}; use a name from availableTerms, or leave it out.`
+              ? `postFields.terms.${taxonomy}.${operation}: "${String(name ?? id)}" isn't an existing ${taxonomy === "category" ? "category" : "tag"}; use a name from availableTerms, put it under "create" if the operator wants a new one, or leave it out.`
               : `postFields.terms.${taxonomy}.${operation}: "${String(name)}" matches more than one term; leave it out.`
           );
       }
@@ -1057,14 +1078,27 @@ function draftWithResolvedTerms(
       for (const term of match(parts.add, "add")) ids.set(term.id, term);
       for (const term of match(parts.remove, "remove")) ids.delete(term.id);
     }
-    const final = [...ids.values()].sort((a, b) => a.id - b.id);
+    // New terms: a name that already exists is that term, never a duplicate.
+    const created = new Map<string, string>();
+    for (const item of Array.isArray(parts.create) ? parts.create : []) {
+      const name = typeof item === "string" ? item.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+      if (name === "") continue;
+      const existing = available.find((term) => termKey(term.name) === termKey(name));
+      if (existing) ids.set(existing.id, existing);
+      else if (termKey(name) !== "" && !created.has(termKey(name))) created.set(termKey(name), name);
+    }
+    const final: GutenbergV2TermChangeEntry[] = [
+      ...[...ids.values()].sort((a, b) => a.id - b.id),
+      ...[...created.values()].sort((a, b) => a.localeCompare(b)).map((name) => ({ name, new: true as const }))
+    ];
     if (key === "category" && final.length === 0) {
       issues.push("A post keeps at least one category: don't remove them all.");
       continue;
     }
     const unchanged =
-      final.map((term) => term.id).join(",") ===
-      [...current].sort((a, b) => a.id - b.id).map((term) => term.id).join(",");
+      created.size === 0 &&
+      [...ids.keys()].sort((a, b) => a - b).join(",") ===
+        [...current].sort((a, b) => a.id - b.id).map((term) => term.id).join(",");
     // A new draft gets only the terms named; an existing post, any change.
     if (input.target.operation === "create_draft" ? final.length > 0 : !unchanged) {
       resolved[key] = final;
@@ -1299,6 +1333,9 @@ function parseDraft(
       "The planning model JSON must be an object.",
       { issues: ["The top-level JSON value must be an object."] }
     );
+  }
+  if (typeof parsed.clarify === "string" && parsed.clarify.trim() !== "") {
+    throw new GutenbergV2PlanClarification(parsed.clarify.replace(/\s+/g, " ").trim().slice(0, 500));
   }
   let draft: Record<string, unknown> = parsed;
   if (draft.blocks !== undefined) {

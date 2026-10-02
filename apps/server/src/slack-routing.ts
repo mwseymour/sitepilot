@@ -62,3 +62,51 @@ export function routeChoice(reply: string): "conversation" | "request" | null {
   if (/^(?:change|a change|request|make a change|make the change|do it)$/.test(word)) return "request";
   return null;
 }
+
+// -- Which post a change is for ------------------------------------------------
+
+/** A post named by number: "post 102", "page #45", "post ID 7", an editor link or ?p=102. A bare "#2" isn't one. */
+export function mentionedPostId(text: string): number | null {
+  const patterns = [
+    /\b(?:post|page|article|draft)\s*(?:id\s*)?(?:no\.?\s*|number\s*)?#?\s*(\d{1,9})\b/i,
+    /[?&](?:post|p|page_id)=(\d{1,9})\b/i
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+/** Links in the message. Slack sends them as <https://…|label> or <https://…>. */
+export function mentionedLinks(text: string): URL[] {
+  const links: URL[] = [];
+  for (const match of text.matchAll(/<(https?:\/\/[^>|\s]+)(?:\|[^>]*)?>|(https?:\/\/[^\s<>]+)/g)) {
+    try {
+      links.push(new URL(match[1] ?? match[2] ?? ""));
+    } catch {
+      // Not a link after all.
+    }
+  }
+  return links;
+}
+
+/** "Write a post about…", "create a new page", "draft a post": new content, not an edit. */
+export function wantsNewPost(text: string): boolean {
+  return (
+    /\b(?:new|fresh)\s+(?:blog\s+)?(?:post|page|article|draft)\b/i.test(text) ||
+    /\b(?:create|write|draft|compose|start)\s+(?:me\s+|us\s+)?(?:a|an)\s+(?:[\w-]+\s+){0,3}?(?:post|page|article|draft|blog)\b/i.test(text)
+  );
+}
+
+/** "the last post", "my latest page", "the most recent post". */
+export function asksForLatest(text: string): "post" | "page" | null {
+  const match = /\b(?:last|latest|newest|most recent|most recently created)\s+(?:created\s+|published\s+)?(post|page)\b/i.exec(text);
+  return match ? (match[1]!.toLowerCase() as "post" | "page") : null;
+}
+
+/** The one post an answer was about ("post ID 102, titled Wibble"), if it names exactly one. */
+export function onlyPostIdIn(answer: string): number | null {
+  const ids = new Set([...answer.matchAll(/\b(?:post|page)\s*(?:id\s*)?#?\s*(\d{1,9})\b/gi)].map((match) => Number(match[1])));
+  return ids.size === 1 ? [...ids][0]! : null;
+}

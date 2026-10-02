@@ -199,14 +199,20 @@ export type {
 export {
   GUTENBERG_V2_TAXONOMIES,
   GUTENBERG_V2_TAXONOMY_LABELS,
+  gutenbergV2NewTermSchema,
   gutenbergV2PostTermsSchema,
   gutenbergV2TermChangesSchema,
+  gutenbergV2TermKey,
+  gutenbergV2TermLabel,
   gutenbergV2TermMismatches,
   gutenbergV2TermRefSchema,
-  gutenbergV2TermsCapabilitySchema
+  gutenbergV2TermsCapabilitySchema,
+  isGutenbergV2NewTerm
 } from "./gutenberg-v2-terms.js";
 export type {
+  GutenbergV2NewTerm,
   GutenbergV2PostTerms,
+  GutenbergV2TermChangeEntry,
   GutenbergV2TermChanges,
   GutenbergV2TermRef,
   GutenbergV2Taxonomy,

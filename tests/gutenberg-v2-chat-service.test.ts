@@ -27,6 +27,7 @@ import {
   hasGutenbergV2RequestMapping
 } from "../packages/core/src/gutenberg-v2-chat-service.js";
 import { configureGutenbergV2RuntimeFactory } from "../packages/core/src/gutenberg-v2-runtime-service.js";
+import { answerClarificationForRequest } from "../packages/core/src/chat-service.js";
 
 const temporary: string[] = [];
 const databases: ReturnType<typeof initializeDatabase>[] = [];
@@ -591,6 +592,55 @@ describe("desktop Gutenberg v2 chat boundary", () => {
       target: { operation: "replace_content", postType: "post", postId: 42 }
     });
     expect(mismatched).toMatchObject({ code: "runtime_changed" });
+  });
+
+  it("asks the person instead of guessing, and their answer continues the request", async () => {
+    const { database } = setup(true);
+    configureGutenbergV2ProtocolProbe(async () => true);
+    configureFakeRuntime();
+    const question = "A new draft has no image yet: which post did you mean, or which image should I add?";
+    const usage = { inputTokens: 1, outputTokens: 1 };
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({ text: JSON.stringify({ clarify: question }), usage })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          postFields: { title: "Generated" },
+          blocks: [{ ref: "p1", name: "core/paragraph", attributes: { content: "Generated" }, children: [] }]
+        }),
+        usage
+      });
+    configureGutenbergV2PlannerFactory(async () => ({ ok: true as const, model: "test", client: { providerId: "test", complete } }));
+    const target = { operation: "create_draft" as const, postType: "post" as const };
+
+    const asked = await generateGutenbergV2Candidate({ siteId: "site-1" as SiteId, requestId: "request-1" as RequestId, target });
+    expect(asked).toEqual({ ok: true, clarifying: question });
+    const row = database.connection.prepare("SELECT status, thread_id AS threadId FROM requests WHERE id = 'request-1'").get() as {
+      status: string;
+      threadId: string;
+    };
+    expect(row.status).toBe("clarifying");
+    const messages = database.connection
+      .prepare("SELECT body_json AS body FROM chat_messages WHERE request_id = 'request-1'")
+      .all() as Array<{ body: string }>;
+    expect(messages.some((message) => message.body.includes("which post did you mean"))).toBe(true);
+    // Nothing is planned again until the person answers.
+    expect(await generateGutenbergV2Candidate({ siteId: "site-1" as SiteId, requestId: "request-1" as RequestId, target })).toMatchObject({
+      ok: false,
+      code: "request_clarifying"
+    });
+
+    const answered = await answerClarificationForRequest(
+      "site-1" as SiteId,
+      row.threadId as never,
+      "request-1" as RequestId,
+      "Make it a new post with a table and no image."
+    );
+    expect(answered.ok).toBe(true);
+    const planned = await generateGutenbergV2Candidate({ siteId: "site-1" as SiteId, requestId: "request-1" as RequestId, target });
+    expect(planned).toMatchObject({ ok: true, state: { state: "review_ready" } });
+    const [, second] = complete.mock.calls as unknown as Array<[Array<{ content: unknown }>]>;
+    expect(JSON.stringify(second?.[0])).toContain("Clarification:");
   });
 
   it("preserves exact approval, rejection feedback, status and audit transitions", async () => {

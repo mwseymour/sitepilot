@@ -7,7 +7,7 @@ v2 is SitePilot's only content engine. A site stops SitePilot changing content b
 ## How a request runs
 
 1. **Request.** In a Request thread, describe the change and choose the operation: create a draft, replace all content, or apply selected changes to an existing post (by post ID).
-2. **Candidate.** SitePilot plans the content and builds it inside the site's own WordPress editor, using WordPress's block APIs. It rejects anything the editor would not save cleanly.
+2. **Candidate.** SitePilot plans the content and builds it inside the site's own WordPress editor, using WordPress's block APIs. It rejects anything the editor would not save cleanly. When it can't tell what you want, it asks instead of guessing: for example "below the image" on a new draft, which has no image yet. Your reply continues the request.
 3. **Review.** You see desktop and mobile screenshots, the new or changed blocks, any blocks deleted on purpose, and any post field changes. Follow-up messages in the same thread revise the candidate.
 4. **Approve.** The approval is bound to the exact content, fields and media. It expires after 30 minutes.
 5. **Write and verify.** SitePilot uploads the approved media and writes the post in one database transaction. It then reopens the post in a fresh editor and checks every block. A write only counts as successful after that check passes.
@@ -96,7 +96,7 @@ On sites running **Yoast SEO**, a request can set or change a post's SEO fields,
 
 A request can set a post's categories and tags, on its own or together with content ("tag this with Lakes", "move it to Travel").
 
-- **Existing terms only.** SitePilot matches the names in the request to the site's categories and tags (ignoring case and punctuation), outside the model. A name that matches nothing is left out; new terms can't be created yet.
+- **Existing terms, and new ones when asked.** SitePilot matches the names in the request to the site's categories and tags (ignoring case and punctuation), outside the model. A new tag or category is made only when the request asks for one ("tag it with Mountains" when there's no such tag); review shows it as "Mountains (new)". The plugin creates it when it prepares the approved write, reuses a term of that name if one exists by then, and needs the SitePilot user to be allowed to create terms. Otherwise a name that matches nothing is left out.
 - **Review** shows the categories or tags the post ends with, for each one that changes. A post always keeps at least one category.
 - **Approval covers them** like the title and excerpt. If someone changes the post's categories or tags in WordPress after review, the write is refused.
 - **They're written in the same database transaction as the post**, then read back and checked by term ID. A failed check rolls them back to exactly what they were, unless someone has changed them since.
@@ -131,9 +131,9 @@ Planned work for each gap is in the [v2 roadmap](./v2-roadmap.md).
 - **Some ACF field types.** ACF image and file fields take existing media-library IDs only, not attached media. Blocks that store their fields in post meta (`usePostMeta`), or that have a required field of a type v2 cannot fill (such as gallery, user or Google Map), stay kept-only.
 - **Other SEO plugins.** Only Yoast SEO fields can be edited. RankMath and All in One SEO are detected but not written. The social (Open Graph) image cannot be set yet.
 - **Scheduling and private posts.** A post can be published or unpublished (back to draft), but not scheduled or made private.
-- **Choosing the post from the message.** In a Request, "update the last created post" does not pick the post; enter the post ID. Conversations can find it (Phase 5).
+- **Choosing the post from the message.** In the app, a Request's post is chosen with the Post ID field; "update the last created post" doesn't pick it. In Slack, the message names the post ("post 102", its link, "the latest post"), or SitePilot asks which. Conversations can find it.
 - **Large videos.** Uploads over 10 MB need a streaming upload that is not built yet.
 - **Embed previews.** YouTube and Vimeo embeds show as a blank frame in review screenshots, because third-party players are blocked there.
 - **Posts with an invalid or old-format block** that v2 could author cannot be edited until the post is resaved in WordPress.
 - **Other content types.** Only posts and pages are supported, not custom post types. Slug, author and date cannot be edited.
-- **New categories and tags.** Only existing terms can be assigned; creating one needs a journal so a retry never duplicates it.
+- **Settings for new terms.** A site can't yet turn new-term creation off, and a new category is always top-level. A new term left unused by a failed write stays in WordPress (it's recorded in the prepared commit for cleanup).

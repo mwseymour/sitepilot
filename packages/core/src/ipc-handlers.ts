@@ -502,6 +502,14 @@ export function registerSharedIpcHandlers(host: IpcHost): void {
         requestId: req.requestId as RequestId,
         target: req.target
       });
+      // A question back is in the thread; there's no candidate to show yet.
+      if ("clarifying" in result && result.clarifying !== undefined) {
+        return parseResponse(ipcChannels.gutenbergV2GenerateCandidate, {
+          ok: false,
+          code: "needs_clarification",
+          message: result.clarifying
+        });
+      }
       return parseResponse(ipcChannels.gutenbergV2GenerateCandidate, result);
     }
   );

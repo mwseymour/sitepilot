@@ -2,9 +2,11 @@ import { z } from "zod";
 
 /**
  * Categories and tags on posts. A change names the whole set of terms a
- * taxonomy ends with, by term ID: SitePilot matches the model's names to the
- * site's existing terms outside the model, and works out adds and removals
- * against the post's current terms. New terms aren't created yet.
+ * taxonomy ends with: existing terms by ID (SitePilot matches the model's
+ * names to the site's terms outside the model, and works out adds and
+ * removals against the post's current terms), and new terms by name, only
+ * when the request asked to create them. The plugin creates new terms when
+ * it prepares the approved write.
  */
 export const GUTENBERG_V2_TAXONOMIES = ["category", "post_tag"] as const;
 
@@ -27,6 +29,20 @@ export const gutenbergV2TermRefSchema = z
 
 export type GutenbergV2TermRef = z.infer<typeof gutenbergV2TermRefSchema>;
 
+/** A term to create, by name: shown in review as new. */
+export const gutenbergV2NewTermSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    new: z.literal(true)
+  })
+  .strict();
+
+export type GutenbergV2NewTerm = z.infer<typeof gutenbergV2NewTermSchema>;
+
+const termChangeEntrySchema = z.union([gutenbergV2TermRefSchema, gutenbergV2NewTermSchema]);
+
+export type GutenbergV2TermChangeEntry = z.infer<typeof termChangeEntrySchema>;
+
 /** A post's terms, ordered by ID. */
 export const gutenbergV2PostTermsSchema = z
   .object({
@@ -43,8 +59,8 @@ export type GutenbergV2PostTerms = z.infer<typeof gutenbergV2PostTermsSchema>;
  */
 export const gutenbergV2TermChangesSchema = z
   .object({
-    category: z.array(gutenbergV2TermRefSchema).min(1).max(50).optional(),
-    post_tag: z.array(gutenbergV2TermRefSchema).max(50).optional()
+    category: z.array(termChangeEntrySchema).min(1).max(50).optional(),
+    post_tag: z.array(termChangeEntrySchema).max(50).optional()
   })
   .strict()
   .refine(
@@ -67,19 +83,41 @@ export type GutenbergV2TermsCapability = z.infer<
   typeof gutenbergV2TermsCapabilitySchema
 >;
 
-/** Requested taxonomies whose persisted terms differ, compared by ID. */
+export function isGutenbergV2NewTerm(term: GutenbergV2TermChangeEntry): term is GutenbergV2NewTerm {
+  return "new" in term;
+}
+
+/** How a term's name compares: case, spacing and punctuation don't count. */
+export function gutenbergV2TermKey(name: string): string {
+  return name
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/&amp;/g, "&")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
+ * Requested taxonomies whose persisted terms differ: existing terms compared
+ * by ID, new ones by name, and nothing else on the post.
+ */
 export function gutenbergV2TermMismatches(
   changes: GutenbergV2TermChanges,
   persisted: GutenbergV2PostTerms | undefined
 ): GutenbergV2Taxonomy[] {
-  const ids = (terms: readonly GutenbergV2TermRef[] | undefined) =>
-    (terms ?? [])
-      .map((term) => term.id)
-      .sort((a, b) => a - b)
-      .join(",");
-  return GUTENBERG_V2_TAXONOMIES.filter(
-    (taxonomy) =>
-      changes[taxonomy] !== undefined &&
-      (persisted === undefined || ids(changes[taxonomy]) !== ids(persisted[taxonomy]))
-  );
+  return GUTENBERG_V2_TAXONOMIES.filter((taxonomy) => {
+    const requested = changes[taxonomy];
+    if (requested === undefined) return false;
+    const actual = persisted?.[taxonomy];
+    if (actual === undefined || actual.length !== requested.length) return true;
+    return !requested.every((term) =>
+      isGutenbergV2NewTerm(term)
+        ? actual.some((each) => gutenbergV2TermKey(each.name) === gutenbergV2TermKey(term.name))
+        : actual.some((each) => each.id === term.id)
+    );
+  });
+}
+
+/** A term as review shows it: new ones say so. */
+export function gutenbergV2TermLabel(term: GutenbergV2TermChangeEntry): string {
+  return isGutenbergV2NewTerm(term) ? `${term.name} (new)` : term.name;
 }

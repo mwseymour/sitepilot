@@ -480,6 +480,67 @@ async function main(): Promise<void> {
       thread_ts: "150.000001"
     });
     await answeredIn("150.000001", beforeFollowUp);
+    // A change asked for in a conversation gets its own thread.
+    const beforeChange = slackCalls.length;
+    await slackEvent({
+      type: "message",
+      channel_type: "channel",
+      user: "U_E2E",
+      text: "add a table below the image",
+      channel: "C_E2E",
+      ts: "150.000500",
+      thread_ts: "150.000001"
+    });
+    await slackSent(
+      "the new-thread suggestion",
+      (call) => slackCalls.indexOf(call) >= beforeChange && call.body.thread_ts === "150.000001" && String(call.body.text).startsWith("This thread only looks things up"),
+      30_000
+    );
+    // A change that doesn't say which post gets asked, not turned into a draft.
+    await slackEvent({ type: "app_mention", user: "U_E2E", text: "<@UBOT> add a table below the image", channel: "C_E2E", ts: "170.000001" });
+    await slackSent(
+      "the which-post question",
+      (call) => call.method === "chat.postMessage" && call.body.thread_ts === "170.000001" && String(call.body.text).includes("Which post is this for?"),
+      60_000
+    );
+    await slackEvent({
+      type: "message",
+      channel_type: "channel",
+      user: "U_E2E",
+      text: "post 987654321",
+      channel: "C_E2E",
+      ts: "170.000200",
+      thread_ts: "170.000001"
+    });
+    await slackSent(
+      "the unknown post",
+      (call) => call.body.thread_ts === "170.000001" && String(call.body.text).startsWith("SitePilot can't find post 987654321."),
+      60_000
+    );
+    assert(
+      !slackCalls.some((call) => call.body.thread_ts === "170.000001" && String(call.body.text).startsWith("On it")),
+      "A change with no post started a request."
+    );
+    // As a new draft, "below the image" makes the planner ask, not invent an image.
+    await slackEvent({
+      type: "message",
+      channel_type: "channel",
+      user: "U_E2E",
+      text: "new",
+      channel: "C_E2E",
+      ts: "170.000300",
+      thread_ts: "170.000001"
+    });
+    await slackSent(
+      "the new draft request",
+      (call) => call.body.thread_ts === "170.000001" && String(call.body.text).startsWith("On it: a new draft."),
+      60_000
+    );
+    await slackSent(
+      "the planner's question",
+      (call) => call.body.thread_ts === "170.000001" && String(call.body.text).startsWith("SitePilot asks:"),
+      4 * 60_000
+    );
     // When the wording doesn't say, SitePilot asks, and the button decides.
     await slackEvent({ type: "app_mention", user: "U_E2E", text: "<@UBOT> the intro is too long", channel: "C_E2E", ts: "160.000001" });
     const which = await slackSent(
@@ -620,6 +681,36 @@ async function main(): Promise<void> {
         }).trim()
       : "(no wp-cli)";
     assert(slackPostId !== "", "The Slack-approved post isn't published in WordPress.");
+    // Naming another post in a request's thread asks to move it, and the button moves it.
+    await slackEvent({
+      type: "message",
+      channel_type: "channel",
+      user: "U_E2E",
+      text: `sorry, I meant post ${promptPostId}`,
+      channel: "C_E2E",
+      ts: "200.009000",
+      thread_ts: "200.000001"
+    });
+    const moveOffer = await slackSent(
+      "the move question",
+      (call) => call.body.thread_ts === "200.000001" && JSON.stringify(call.body.blocks ?? []).includes('"action_id":"route_move"'),
+      60_000
+    );
+    const moveBlocks = moveOffer.body.blocks as Array<{ type: string; elements?: Array<{ action_id?: string; value?: string }> }>;
+    await click(
+      "route_move",
+      moveBlocks.find((block) => block.type === "actions")?.elements?.find((button) => button.action_id === "route_move")?.value ?? "",
+      moveBlocks,
+      "move"
+    );
+    await slackSent(
+      "the moved request",
+      (call) =>
+        call.body.thread_ts === "200.000001" &&
+        String(call.body.text).startsWith(`Moving this to post ${promptPostId}`) &&
+        String(call.body.text).includes(`On it: changing post ${promptPostId}`),
+      60_000
+    );
 
     // 5. A contributor can request but not approve, apply or change setup.
     // (Editors and authors can publish, so they approve.)

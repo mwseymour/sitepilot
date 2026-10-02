@@ -3,7 +3,15 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { verifySlackSignature } from "../apps/server/src/slack.js";
-import { routeChoice, routeSlackMessage } from "../apps/server/src/slack-routing.js";
+import {
+  asksForLatest,
+  mentionedLinks,
+  mentionedPostId,
+  onlyPostIdIn,
+  routeChoice,
+  routeSlackMessage,
+  wantsNewPost
+} from "../apps/server/src/slack-routing.js";
 
 /** Slack signs every request: SitePilot acts only on ones that check out. */
 describe("Slack request signatures", () => {
@@ -83,5 +91,28 @@ describe("Slack message routing", () => {
     expect(routeChoice("Ask")).toBe("conversation");
     expect(routeChoice("a change.")).toBe("request");
     expect(routeChoice("what about post 5?")).toBeNull();
+  });
+});
+
+/** Which post a change is for: named, linked, the latest, or new; otherwise SitePilot asks. */
+describe("Slack post targets", () => {
+  it("finds a post named by number or editor link, but not a bare #2", () => {
+    expect(mentionedPostId("sorry I meant update post 102")).toBe(102);
+    expect(mentionedPostId("change page #45's intro")).toBe(45);
+    expect(mentionedPostId("post ID 7 needs a table")).toBe(7);
+    expect(mentionedPostId("<https://example.com/wp-admin/post.php?post=91&action=edit|edit>")).toBe(91);
+    expect(mentionedPostId("make heading #2 bold")).toBeNull();
+    expect(mentionedLinks("see <https://example.com/wibble/|Wibble>").map((link) => link.pathname)).toEqual(["/wibble/"]);
+  });
+
+  it("knows new content, the latest post, and the one post an answer was about", () => {
+    expect(wantsNewPost("Create a short draft post titled \"Hello\"")).toBe(true);
+    expect(wantsNewPost("write a post about spring pricing")).toBe(true);
+    expect(wantsNewPost("make a new page for the menu")).toBe(true);
+    expect(wantsNewPost("Add a table below the image")).toBe(false);
+    expect(asksForLatest("add a tag to the latest post")).toBe("post");
+    expect(asksForLatest("add a table")).toBeNull();
+    expect(onlyPostIdIn('The most recently created published post is post ID 102, titled "Wibble".')).toBe(102);
+    expect(onlyPostIdIn("Post 3 and post 4 both mention it.")).toBeNull();
   });
 });

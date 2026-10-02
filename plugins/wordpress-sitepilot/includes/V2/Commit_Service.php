@@ -253,7 +253,7 @@ final class Commit_Service {
 			'serverPreparedFieldsHash' => self::fields_hash( $prepared_fields['title'], $prepared_fields['excerpt'], $prepared_fields['status'] ),
 			...( $featured_media_id > 0 ? array( 'featuredMediaId' => $featured_media_id ) : array() ),
 			...( null !== $seo_changes ? array( 'serverPreparedSeoHash' => Seo_Adapter::hash( array_merge( self::seo_base( $post_id ), $seo_changes ) ) ) : array() ),
-			...( null !== $prepared_terms ? array( 'serverPreparedTermsHash' => Post_Terms::hash( $prepared_terms ) ) : array() ),
+			...( null !== $prepared_terms ? array( 'serverPreparedTermsHash' => Post_Terms::hash( $prepared_terms['after'] ) ) : array() ),
 			// Verification checks this URL stops loading once unpublished.
 			...( 'draft' === $status_to ? array( 'publishedUrl' => (string) get_permalink( (int) $post_id ) ) : array() ),
 			'preparedAt'                => gmdate( 'c', $now ),
@@ -266,6 +266,9 @@ final class Commit_Service {
 			'serverRuntimeFingerprint' => $runtime['fingerprint'],
 			'requestHash'             => hash( 'sha256', Runtime_Fingerprint::canonical_json( $input ) ),
 			'beforeStateRef'          => $before_ref,
+			// The terms by ID, new ones included, and the ones made here: an
+			// unused new term is left for cleanup, like orphaned media.
+			...( null !== $prepared_terms ? array( 'termChanges' => $prepared_terms['changes'], 'createdTerms' => $prepared_terms['created'] ) : array() ),
 		);
 		$key = self::PREPARED_PREFIX . $prepared_id;
 		$old = get_option( $key, null );
@@ -437,8 +440,8 @@ final class Commit_Service {
 
 			// Categories and tags too, after the post row so WordPress's default
 			// category on a new draft is replaced rather than added to.
-			$term_changes = self::requested_terms( $candidate );
-			if ( null !== $term_changes && ! Post_Terms::write( $post_id, $term_changes ) ) {
+			$term_changes = null !== self::requested_terms( $candidate ) ? (array) ( $stored['termChanges'] ?? array() ) : null;
+			if ( null !== $term_changes && ( array() === $term_changes || ! Post_Terms::write( $post_id, $term_changes ) ) ) {
 				throw new \RuntimeException( 'conditional_commit_failed' );
 			}
 			$terms_hash_after = null !== $term_changes ? Post_Terms::current_hash( $post_id ) : '';
