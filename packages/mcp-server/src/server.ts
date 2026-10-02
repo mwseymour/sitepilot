@@ -10,6 +10,7 @@ import {
   type ReadToolDefinition,
   type ReadToolParameter
 } from "@sitepilot/services/read-tool-registry";
+import { mentionsOperatorMedia } from "@sitepilot/services";
 import { z, type ZodTypeAny } from "zod";
 
 import type {
@@ -593,15 +594,18 @@ export function createSitePilotMcpServer(
       })
   );
 
-  server.registerTool(
-    "create_request",
-    {
+  // In apps that show cards, the upload card comes with every new request,
+  // so adding a file never depends on the model calling another tool.
+  const withUploadCard = options.reviewCard !== undefined;
+  const createRequestConfig = {
       title: "Request a change",
       description: [
         "Ask SitePilot to prepare a change to the site: a new draft, an edit to an existing post, or publishing or unpublishing one.",
         "Choose the target deliberately. For a change to an existing post (\"add a table below the image\", \"tag it with…\"), look the post up with find_posts or get_post and pass its post_id with operation edit; use create_draft only when the person asks for new content.",
         "If you can't tell which post they mean, or whether they want a new one, ask them before calling this; never guess.",
-        "You can't attach files here. When the change uses an image or video the person has (for example one they pasted into this chat), create the request, then call add_images: it shows them an upload card to choose the file.",
+        withUploadCard
+          ? "You can't attach files yourself. When the change uses an image or video the person has (for example one they pasted into this chat), tell them to add it on the upload card that appears with the request; add_images shows the card again."
+          : "You can't attach files here: images and videos are added in SitePilot.",
         "Returns a request_id straight away while SitePilot plans the change and builds a preview; poll request_status until it is awaiting_approval, needs_your_reply or needs_attention.",
         "Nothing is written until a person approves the preview in SitePilot.",
         APPROVAL_NOTE
@@ -629,8 +633,18 @@ export function createSitePilotMcpServer(
         idempotentHint: false,
         openWorldHint: false
       }
-    },
-    async ({ site_id, text, target, title }) =>
+  };
+  const createRequest = async ({
+    site_id,
+    text,
+    target,
+    title
+  }: {
+    site_id?: string | undefined;
+    text: string;
+    target?: z.infer<typeof targetSchema> | undefined;
+    title?: string | undefined;
+  }) =>
       withSite("create_request", site_id, async (siteId, caller) => {
         const resolved = toTarget(target);
         if (!resolved.ok) return failure(resolved.code, resolved.message);
@@ -643,11 +657,29 @@ export function createSitePilotMcpServer(
           },
           caller
         );
-        return result.ok
-          ? success(result.status)
-          : failure(result.code, result.message);
-      })
-  );
+        if (!result.ok) return failure(result.code, result.message);
+        if (!withUploadCard) return success(result.status);
+        const ticket = issueUploadTicket({
+          userProfileId: caller.actor?.userProfileId,
+          siteId,
+          requestId: result.status.requestId
+        });
+        const needsMedia = mentionsOperatorMedia(text);
+        return {
+          ...success(
+            result.status,
+            needsMedia ? "This request uses a file the person has: they add it on the upload card shown with it." : undefined
+          ),
+          structuredContent: { siteId, requestId: result.status.requestId, title: result.status.title, needsMedia },
+          // Only the card reads this: its button needs the ticket.
+          _meta: { "sitepilot/upload": { ticket } }
+        };
+      });
+  if (withUploadCard) {
+    registerAppTool(server, "create_request", { ...createRequestConfig, _meta: { ui: { resourceUri: UPLOAD_CARD_URI } } }, createRequest);
+  } else {
+    server.registerTool("create_request", createRequestConfig, createRequest);
+  }
 
   server.registerTool(
     "add_to_request",

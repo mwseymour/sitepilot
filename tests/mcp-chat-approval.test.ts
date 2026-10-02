@@ -217,6 +217,27 @@ describe("approving from a chat app", () => {
     expect(reused.structuredContent).toMatchObject({ code: "upload_ticket_invalid" });
   });
 
+  it("shows the upload card with every new request, prominent when it needs a file", async () => {
+    const backend = approvalBackend();
+    backend.createRequest.mockResolvedValue({ ok: true, status: { ...AWAITING, state: "preparing_preview" } } as never);
+    const client = await connect(backend, { clientName: "claude.ai", actor: PUBLISHER });
+    const { tools } = await client.listTools();
+    expect((tools.find((tool) => tool.name === "create_request")?._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri).toBe(
+      "ui://sitepilot/upload-card.html"
+    );
+    const needs = await client.callTool({
+      name: "create_request",
+      arguments: { text: "Edit post 102 to as the tag: testtag123 and this image below the table", target: { operation: "edit", post_id: 102 } }
+    });
+    expect(needs.structuredContent).toMatchObject({ requestId: "thread-1", needsMedia: true });
+    const ticket = (needs._meta as Record<string, { ticket: string }>)["sitepilot/upload"]?.ticket ?? "";
+    expect(ticket.length).toBeGreaterThan(16);
+    expect(text(needs)).toContain("upload card");
+    expect(text(needs)).not.toContain(ticket);
+    const plain = await client.callTool({ name: "create_request", arguments: { text: "Add the tag Lakes to post 102", target: { operation: "edit", post_id: 102 } } });
+    expect(plain.structuredContent).toMatchObject({ needsMedia: false });
+  });
+
   it("shows the card without buttons to someone who can't publish", async () => {
     const client = await connect(approvalBackend(), {
       actor: { userProfileId: "wp-site-1-9", appRole: "requester", siteRoles: ["request"] }

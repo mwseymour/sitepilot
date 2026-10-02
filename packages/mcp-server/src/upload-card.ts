@@ -79,9 +79,11 @@ function render(result) {
     show();
   };
   input.addEventListener("change", () => { add(Array.from(input.files || [])); input.value = ""; });
-  const zone = el("div", { class: "zone", tabindex: "0", onclick: () => input.click(), onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") input.click(); } },
-    el("strong", {}, "Drop images here, or choose them"),
-    el("span", { class: "muted small" }, "Images, or MP4 and WebM videos, up to 10 MB each")
+  // With a new request: prominent when it needs a file, a small offer otherwise.
+  const compact = data.needsMedia === false;
+  const zone = el("div", { class: compact ? "zone compact" : "zone", tabindex: "0", onclick: () => input.click(), onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") input.click(); } },
+    el("strong", {}, compact ? "Using an image or video? Drop it here, or choose it." : "Drop images here, or choose them"),
+    ...(compact ? [] : [el("span", { class: "muted small" }, "Images, or MP4 and WebM videos, up to 10 MB each")])
   );
   zone.addEventListener("dragover", (event) => { event.preventDefault(); zone.classList.add("over"); });
   zone.addEventListener("dragleave", () => zone.classList.remove("over"));
@@ -114,12 +116,18 @@ function render(result) {
       send.disabled = false;
     }
   });
-  root.append(
-    el("div", { class: "head" }, el("strong", {}, "Add images to: " + (data.title || "the request"))),
-    zone, input, list,
+  const details = el("div", { class: compact ? "details hidden" : "details" },
     el("label", {}, "Note for SitePilot (optional)", note),
-    el("div", { class: "actions" }, send),
-    status
+    el("div", { class: "actions" }, send)
+  );
+  const reveal = () => details.classList.remove("hidden");
+  input.addEventListener("change", reveal);
+  zone.addEventListener("drop", reveal);
+  root.append(
+    ...(compact
+      ? []
+      : [el("div", { class: "head" }, el("strong", {}, data.needsMedia ? "SitePilot needs the image you mentioned: add it here" : "Add images to: " + (data.title || "the request")))]),
+    zone, input, list, details, status
   );
 }
 
@@ -135,6 +143,8 @@ body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-ser
 .muted { color: var(--muted); } .small { font-size: 12px; }
 .zone { border: 1.5px dashed var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 4px; justify-items: center; cursor: pointer; text-align: center; }
 .zone.over, .zone:focus { border-color: var(--accent); outline: none; }
+.zone.compact { padding: 8px; font-size: 13px; } .zone.compact strong { font-weight: 500; }
+.details { display: grid; gap: 10px; }
 .hidden { display: none; }
 .files { display: flex; flex-wrap: wrap; gap: 8px; }
 figure { margin: 0; width: 120px; }

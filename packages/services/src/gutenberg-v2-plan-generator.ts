@@ -1393,10 +1393,33 @@ ${previousText.slice(0, 60_000)}
 Return the complete corrected JSON object only. Keep all requested content; fix only what the issues describe. Use only the supplied media refs; if the request mentions media that was not supplied, omit that media block.`;
 }
 
-// "Add this image below the table", "the attached photo", "use my logo":
-// media the operator is providing, not an image already on the site.
-const OPERATOR_MEDIA =
-  /\b(?:add|insert|use|put|place|include)\s+(?:this|these|the attached|the uploaded|my)\s+(?:image|images|photo|photos|picture|pictures|logo|screenshot|video)\b|\b(?:attached|uploaded)\s+(?:image|images|photo|photos|picture|pictures|logo|screenshot|video)\b|\bth(?:is|ese)\s+(?:image|images|photo|photos|picture|pictures|logo|screenshot)\s+(?:below|above|after|before|under|at|to|in|into|on)\b/i;
+const MEDIA_NOUN = "(?:image|images|photo|photos|picture|pictures|logo|logos|icon|icons|screenshot|screenshots|graphic|video|videos)";
+
+/**
+ * Whether the text adds media the operator is providing: "add this image
+ * below the table", "add the icon image at the end", "use my logo", "the
+ * attached photo". Not "add a table below the image" (the image is where,
+ * not what) or "make that image above the featured image" (one already on
+ * the post).
+ */
+export function mentionsOperatorMedia(text: string): boolean {
+  // A video with a link is an embed, not a file to attach.
+  if (/https?:\/\//i.test(text)) text = text.replace(/\bvideos?\b/gi, "embed");
+  if (new RegExp(`\\b(?:attached|uploaded|pasted|enclosed)\\s+(?:\\w+\\s+)?${MEDIA_NOUN}\\b`, "i").test(text)) return true;
+  // "this image below the table": one being placed, so one being added.
+  if (new RegExp(`\\bth(?:is|ese)\\s+(?:\\w+\\s+)?${MEDIA_NOUN}\\s+(?:below|above|after|before|under|at|to|in|into|on)\\b`, "i").test(text)) return true;
+  const adding = new RegExp(
+    `\\b(?:add|adds|adding|insert|put|place|include|use|upload|drop)\\b((?:\\W+\\w+){0,6}?)\\W+${MEDIA_NOUN}\\b`,
+    "gi"
+  );
+  for (const match of text.matchAll(adding)) {
+    const between = (match[1] ?? "").toLowerCase();
+    // A place ("below the image") or an image already there ("that image").
+    if (/\b(?:below|above|after|before|under|beneath|next|beside|besides|between|near|around|existing|same|current|that|those|featured)\b/.test(between)) continue;
+    return true;
+  }
+  return false;
+}
 
 /**
  * The request adds a file the operator meant to give, and none came with it:
@@ -1404,7 +1427,7 @@ const OPERATOR_MEDIA =
  */
 export function missingOperatorMediaQuestion(input: Pick<BuildLlmGutenbergV2PlanInput, "request" | "media">): string | null {
   const uploaded = (input.media ?? []).some((item) => item.source.kind !== "library_attachment");
-  return !uploaded && OPERATOR_MEDIA.test(input.request)
+  return !uploaded && mentionsOperatorMedia(input.request)
     ? "I don't have the image you mean yet. Please attach it to this request, and I'll place it as you asked."
     : null;
 }

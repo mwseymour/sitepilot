@@ -158,4 +158,44 @@ describe("the upload card", () => {
     expect(errors).toEqual([]);
     await page.close();
   }, 30_000);
+
+  it("stays a small offer with a request that doesn't need a file, until one is chosen", async () => {
+    const page = await browser.newPage();
+    await page.setContent(`<iframe id="card" style="width:700px;height:300px"></iframe>`);
+    await page.evaluate(
+      ({ html }) => {
+        const frame = document.getElementById("card") as HTMLIFrameElement;
+        const reply = (message: unknown) => frame.contentWindow?.postMessage(message, "*");
+        window.addEventListener("message", (event) => {
+          const message = event.data as { id?: number; method?: string; params?: Record<string, unknown> };
+          if (message.method === "ui/initialize") {
+            reply({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { protocolVersion: message.params?.protocolVersion, hostInfo: { name: "test-host", version: "1" }, hostCapabilities: { serverTools: {} }, hostContext: {} }
+            });
+          } else if (message.method === "ui/notifications/initialized") {
+            reply({
+              jsonrpc: "2.0",
+              method: "ui/notifications/tool-result",
+              params: {
+                content: [{ type: "text", text: "{}" }],
+                structuredContent: { siteId: "site-1", requestId: "thread-2", title: "Add a tag", needsMedia: false },
+                _meta: { "sitepilot/upload": { ticket: "ticket-upload-abcdefghijklmn" } }
+              }
+            });
+          }
+        });
+        frame.srcdoc = html;
+      },
+      { html: uploadCardHtml() }
+    );
+    const card = page.frameLocator("#card");
+    await card.getByText("Using an image or video? Drop it here, or choose it.").waitFor({ timeout: 10_000 });
+    expect(await card.getByRole("button", { name: "Add to request" }).isVisible()).toBe(false);
+    const png = Buffer.from(PNG.split(",")[1] ?? "", "base64");
+    await card.locator("input[type=file]").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+    await card.getByRole("button", { name: "Add to request" }).waitFor({ state: "visible", timeout: 5_000 });
+    await page.close();
+  }, 30_000);
 });

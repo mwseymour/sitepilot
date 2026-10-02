@@ -63,6 +63,7 @@ export {
   buildLlmGutenbergV2Plan,
   GutenbergV2PlanClarification,
   GutenbergV2PlanGenerationError,
+  mentionsOperatorMedia,
   missingOperatorMediaQuestion
 } from "./gutenberg-v2-plan-generator.js";
 export type {

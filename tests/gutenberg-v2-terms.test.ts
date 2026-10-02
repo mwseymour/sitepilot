@@ -221,6 +221,8 @@ describe("asking instead of guessing", () => {
     ] as never;
     for (const request of [
       'Add the tag: testtag123 and this image below the table with alt text "hello matt"',
+      "Edit post 102 to as the tag: testtag123 and this image below the table",
+      "Add the tag testtag123 and add the icon image (a dark teal square) at the end of the post, below the table",
       "Use the attached photo as the featured image",
       "add my logo to the footer section"
     ]) {
@@ -229,5 +231,10 @@ describe("asking instead of guessing", () => {
     expect(missingOperatorMediaQuestion({ request: "add this image below the table", media: staged })).toBeNull();
     expect(missingOperatorMediaQuestion({ request: "Make that image above the table the featured image", media: library })).toBeNull();
     expect(missingOperatorMediaQuestion({ request: "Write a post about images on the web" })).toBeNull();
+    // The image as a place, or one already on the post, isn't one being added.
+    expect(missingOperatorMediaQuestion({ request: "add a table below the image with 4 columns", media: library })).toBeNull();
+    expect(missingOperatorMediaQuestion({ request: "add a caption to the existing image", media: library })).toBeNull();
+    // A video with a link is an embed.
+    expect(missingOperatorMediaQuestion({ request: "Add the video https://youtu.be/abc below the intro" })).toBeNull();
   });
 });

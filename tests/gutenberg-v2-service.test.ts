@@ -1061,7 +1061,7 @@ describe("buildLlmGutenbergV2Plan new block types", () => {
       usage: { inputTokens: 1, outputTokens: 1 }
     }));
     const result = await buildLlmGutenbergV2Plan({
-      request: "Add the video and a hero banner.",
+      request: "Add the video https://youtu.be/dQw4w9WgXcQ and a hero banner.",
       siteId: "site-1",
       target: { operation: "create_draft", postType: "post" },
       capabilities: withBlocks(["core/embed", "core/cover", "core/video"]),
