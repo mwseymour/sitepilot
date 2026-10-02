@@ -204,6 +204,28 @@ describe("conversation service", () => {
       expect(result.text).toBe("The last post created is #42.");
     });
 
+    it("offers every registry lookup, so the model can list tags", async () => {
+      complete
+        .mockResolvedValueOnce({
+          text: JSON.stringify({
+            action: "tool",
+            tool: "sitepilot-list-terms",
+            arguments: { taxonomy: "post_tag", limit: 500, parent: "nope", bogus: true }
+          })
+        })
+        .mockResolvedValueOnce({ text: JSON.stringify({ action: "reply", reply: "One tag: walking." }) });
+      callTool.mockResolvedValue(
+        structured({ ok: true, taxonomy: "post_tag", total_matches: 1, truncated: false, terms: [{ term_id: 9, slug: "walking" }] })
+      );
+
+      const result = await reply("What tags are there?");
+
+      const prompt = (complete.mock.calls[0]?.[0] as Array<{ content: string }>)[0]?.content ?? "";
+      expect(prompt).toContain('"sitepilot-list-terms"');
+      expect(callTool).toHaveBeenCalledWith("sitepilot-list-terms", { taxonomy: "post_tag", limit: 100 });
+      expect(result.text).toBe("One tag: walking.");
+    });
+
     it("falls back to the deterministic lookup when the model output is unusable", async () => {
       complete.mockResolvedValue({ text: "{not json" });
       callTool.mockResolvedValue(

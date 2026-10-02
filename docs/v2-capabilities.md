@@ -105,11 +105,12 @@ On sites running **Yoast SEO**, a request can set or change a post's SEO fields,
 
 Conversation threads are read-only research. They can:
 
-- list, count and search posts and pages
+- list, count and search posts and pages, by category or tag
 - find the latest, oldest or random posts, and show IDs, URLs, dates and content
+- list categories and tags, with their post counts (`list_terms`)
 - read an external web page, and turn it into a new Request
 
-They never change the site.
+They never change the site. The same lookups are tools on the SitePilot MCP server, from one registry (`packages/services/src/read-tool-registry.ts`): a lookup added there reaches Conversations and every MCP client.
 
 ## Not yet
 

@@ -207,6 +207,20 @@ async function main(): Promise<void> {
       Array.isArray(found.matches),
       "find_posts returned no matches list."
     );
+    // Categories and tags: the site always has its default category.
+    const categories = jsonOf<{ terms?: Array<{ term_id: number; slug: string; count: number }> }>(
+      await client.callTool({ name: "list_terms", arguments: { site_id: siteId } })
+    );
+    assert(
+      Array.isArray(categories.terms) && categories.terms.length > 0 && typeof categories.terms[0]?.slug === "string",
+      `list_terms returned no categories: ${JSON.stringify(categories).slice(0, 300)}`
+    );
+    const tagged = jsonOf<{ matches?: unknown[] }>(
+      await client.callTool({ name: "find_posts", arguments: { site_id: siteId, tag: "no-such-tag-e2e" } })
+    );
+    assert(Array.isArray(tagged.matches) && tagged.matches.length === 0, "find_posts ignored the tag filter.");
+    const menus = await client.callTool({ name: "list_terms", arguments: { site_id: siteId, taxonomy: "nav_menu" } });
+    assert(menus.isError === true && textOf(menus).includes("invalid_taxonomy"), "list_terms listed a private taxonomy.");
 
     const conversation = jsonOf<{ thread_id: string; answer: string }>(
       await client.callTool({

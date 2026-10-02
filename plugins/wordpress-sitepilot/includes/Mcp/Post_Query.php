@@ -29,6 +29,7 @@ final class Post_Query {
 		$title     = isset( $input['title'] ) ? sanitize_text_field( (string) $input['title'] ) : '';
 		$search    = isset( $input['search'] ) ? sanitize_text_field( (string) $input['search'] ) : '';
 		$category  = isset( $input['category'] ) ? sanitize_title( (string) $input['category'] ) : '';
+		$tag       = isset( $input['tag'] ) ? sanitize_title( (string) $input['tag'] ) : '';
 		$limit     = isset( $input['limit'] ) ? (int) $input['limit'] : 10;
 		$limit     = max( 1, min( 20, $limit ) );
 		$orderby   = isset( $input['orderby'] ) ? (string) $input['orderby'] : 'modified';
@@ -65,6 +66,10 @@ final class Post_Query {
 
 		if ( '' !== $category ) {
 			$args['category_name'] = $category;
+		}
+
+		if ( '' !== $tag ) {
+			$args['tag'] = $tag;
 		}
 
 		return array(
@@ -194,16 +199,9 @@ final class Post_Query {
 	 * @return array<string, mixed>
 	 */
 	private static function format_post_result( \WP_Post $post ): array {
-		$category_names = array_values(
-			array_filter(
-				array_map(
-					static function ( $term ) {
-						return $term instanceof \WP_Term ? (string) $term->slug : null;
-					},
-					get_the_category( $post->ID )
-				)
-			)
-		);
+		$category_names = self::term_slugs( get_the_category( $post->ID ) );
+		$tags           = get_the_tags( $post->ID );
+		$tag_names      = is_array( $tags ) ? self::term_slugs( $tags ) : array();
 
 		return array(
 			'ok'             => true,
@@ -218,8 +216,26 @@ final class Post_Query {
 			'modified_gmt'   => (string) $post->post_modified_gmt,
 			'permalink'      => (string) get_permalink( $post ),
 			'category_slugs' => $category_names,
+			'tag_slugs'      => $tag_names,
 			// SEO plugin fields (Yoast first), for users who can edit the post.
 			...self::seo_fields( (int) $post->ID ),
+		);
+	}
+
+	/**
+	 * @param array<int, mixed> $terms Terms from WordPress.
+	 * @return array<int, string>
+	 */
+	private static function term_slugs( array $terms ): array {
+		return array_values(
+			array_filter(
+				array_map(
+					static function ( $term ) {
+						return $term instanceof \WP_Term ? (string) $term->slug : null;
+					},
+					$terms
+				)
+			)
 		);
 	}
 

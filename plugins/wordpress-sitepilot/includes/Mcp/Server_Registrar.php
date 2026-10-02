@@ -73,6 +73,7 @@ final class Server_Registrar {
 				'sitepilot/site-discovery',
 				'sitepilot/find-posts',
 				'sitepilot/get-post',
+				'sitepilot/list-terms',
 			),
 			array(),
 			array(),

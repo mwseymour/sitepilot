@@ -137,6 +137,7 @@ final class Abilities_Registrar {
 						'title'     => array( 'type' => 'string' ),
 						'search'    => array( 'type' => 'string' ),
 						'category'  => array( 'type' => 'string' ),
+						'tag'       => array( 'type' => 'string' ),
 						'limit'     => array(
 							'type'    => 'integer',
 							'minimum' => 1,
@@ -185,6 +186,57 @@ final class Abilities_Registrar {
 		);
 
 		wp_register_ability(
+			'sitepilot/list-terms',
+			array(
+				'label'               => __( 'List terms', 'sitepilot' ),
+				'description'         => __( 'Lists the terms of a public taxonomy, such as categories or tags, with their IDs, slugs, parents and post counts.', 'sitepilot' ),
+				'category'            => 'sitepilot',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'taxonomy' => array( 'type' => 'string', 'default' => 'category' ),
+						'search'   => array( 'type' => 'string' ),
+						'parent'   => array( 'type' => 'integer', 'minimum' => 0 ),
+						'limit'    => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+							'maximum' => 100,
+							'default' => 50,
+						),
+					),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'ok'            => array( 'type' => 'boolean' ),
+						'taxonomy'      => array( 'type' => 'string' ),
+						'hierarchical'  => array( 'type' => 'boolean' ),
+						'total_matches' => array( 'type' => 'integer' ),
+						'truncated'     => array( 'type' => 'boolean' ),
+						'terms'         => array( 'type' => 'array' ),
+						'error'         => array( 'type' => 'string' ),
+					),
+					'required'   => array( 'ok', 'total_matches', 'truncated', 'terms' ),
+				),
+				'execute_callback'    => static function ( array $input ) {
+					return Term_Query::list_terms( $input );
+				},
+				'permission_callback' => static function ( $input = array() ) {
+					unset( $input );
+					return current_user_can( 'read' );
+				},
+				'meta'                => array(
+					'annotations' => array(
+						'readonly'    => true,
+						'destructive' => false,
+						'idempotent'  => true,
+					),
+				),
+			)
+		);
+
+		wp_register_ability(
 			'sitepilot/get-post',
 			array(
 				'label'               => __( 'Get post', 'sitepilot' ),
@@ -200,6 +252,7 @@ final class Abilities_Registrar {
 						'title'     => array( 'type' => 'string' ),
 						'search'    => array( 'type' => 'string' ),
 						'category'  => array( 'type' => 'string' ),
+						'tag'       => array( 'type' => 'string' ),
 					),
 					'additionalProperties' => false,
 				),
@@ -218,6 +271,7 @@ final class Abilities_Registrar {
 						'modified_gmt'   => array( 'type' => 'string' ),
 						'permalink'      => array( 'type' => 'string' ),
 						'category_slugs' => array( 'type' => 'array' ),
+						'tag_slugs'      => array( 'type' => 'array' ),
 						'seo'            => array( 'type' => 'object' ),
 						'error'          => array( 'type' => 'string' ),
 						'total_matches'  => array( 'type' => 'integer' ),

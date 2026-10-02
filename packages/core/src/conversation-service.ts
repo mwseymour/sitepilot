@@ -8,6 +8,7 @@ import {
 import { extractJsonObject } from "@sitepilot/services";
 import { McpHttpError, normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import {
+  READ_TOOL_REGISTRY,
   findReadToolByAbility,
   sanitizeReadToolArguments
 } from "@sitepilot/services/read-tool-registry";
@@ -38,11 +39,13 @@ type ResponseKind =
   | "created"
   | "modified";
 
-const CONVERSATION_TOOL_NAMES = [
-  "sitepilot-find-posts",
-  "sitepilot-get-post"
-] as const;
-type ConversationToolName = (typeof CONVERSATION_TOOL_NAMES)[number];
+/** The site abilities the agent can call: every registry lookup with a prompt line. */
+const CONVERSATION_TOOL_NAMES: readonly string[] = READ_TOOL_REGISTRY.flatMap((tool) =>
+  tool.source.kind === "ability" && tool.conversationPromptLine !== undefined
+    ? [tool.source.ability]
+    : []
+);
+type ConversationToolName = string;
 
 type ConversationPlan =
   | { mode: "reply"; reply: string }
@@ -354,7 +357,7 @@ const CONVERSATION_AGENT_SYSTEM_PROMPT = [
     (name) => findReadToolByAbility(name)?.conversationPromptLine ?? ""
   ),
   "Use only the argument names listed above; unknown arguments are rejected.",
-  'Respond with exactly one JSON object and nothing else, in one of these shapes: {"action":"tool","tool":"sitepilot-find-posts"|"sitepilot-get-post","arguments":{...}} or {"action":"reply","reply":"..."}.',
+  `Respond with exactly one JSON object and nothing else, in one of these shapes: {"action":"tool","tool":${CONVERSATION_TOOL_NAMES.map((name) => `"${name}"`).join("|")},"arguments":{...}} or {"action":"reply","reply":"..."}.`,
   "After each tool call you will receive its result. Call another tool if you need more data (for example retry with search instead of an exact title, or widen the post_type), otherwise reply.",
   'Tips: "last/latest/newest post created" means orderby "date" order "DESC" limit 1. "Random" means orderby "rand". To find a post by a title the operator typed, prefer sitepilot-find-posts with search, since exact title matching is strict about punctuation and quotes.',
   "Answer exactly what was asked, concisely, in plain text. Always include post IDs when you mention specific posts. Do not paste full post content unless the operator asked for the text. Never invent posts, IDs, or values that are not in a tool result; if nothing matched, say so and mention what you searched."
@@ -414,7 +417,7 @@ async function loadThreadHistory(
 }
 
 function isConversationToolName(value: unknown): value is ConversationToolName {
-  return value === "sitepilot-find-posts" || value === "sitepilot-get-post";
+  return typeof value === "string" && CONVERSATION_TOOL_NAMES.includes(value);
 }
 
 export function sanitizeConversationToolArguments(

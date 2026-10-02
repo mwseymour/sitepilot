@@ -77,6 +77,18 @@ namespace {
 		}
 	}
 
+	if ( ! class_exists( 'WP_Term' ) ) {
+		class WP_Term {
+			public function __construct( public int $term_id, public string $slug, public string $name, public int $parent = 0, public int $count = 0 ) {}
+		}
+	}
+
+	if ( ! class_exists( 'WP_Taxonomy' ) ) {
+		class WP_Taxonomy {
+			public function __construct( public string $name, public bool $public = true, public bool $hierarchical = false ) {}
+		}
+	}
+
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
 			/**
@@ -341,6 +353,40 @@ namespace {
 	function get_the_category( int $post_id ): array {
 		unset( $post_id );
 		return array();
+	}
+
+	function get_the_tags( int $post_id ): array|false {
+		$tags = $GLOBALS['sitepilot_test_post_tags'][ $post_id ] ?? array();
+		return array() === $tags ? false : $tags;
+	}
+
+	function get_taxonomy( string $taxonomy ): WP_Taxonomy|false {
+		$taxonomies = array(
+			'category'            => new WP_Taxonomy( 'category', true, true ),
+			'post_tag'            => new WP_Taxonomy( 'post_tag' ),
+			'wp_pattern_category' => new WP_Taxonomy( 'wp_pattern_category', false ),
+		);
+		return $taxonomies[ $taxonomy ] ?? false;
+	}
+
+	/** Terms from $GLOBALS['sitepilot_test_terms'], filtered as get_terms() would. */
+	function sitepilot_test_matching_terms( array $args ): array {
+		$terms = $GLOBALS['sitepilot_test_terms'][ $args['taxonomy'] ] ?? array();
+		return array_values(
+			array_filter(
+				$terms,
+				static fn ( WP_Term $term ): bool => ( ! isset( $args['search'] ) || false !== stripos( $term->name, $args['search'] ) )
+					&& ( ! isset( $args['parent'] ) || $term->parent === $args['parent'] )
+			)
+		);
+	}
+
+	function get_terms( array $args ): array {
+		return array_slice( sitepilot_test_matching_terms( $args ), 0, $args['number'] ?? null );
+	}
+
+	function wp_count_terms( array $args ): int {
+		return count( sitepilot_test_matching_terms( $args ) );
 	}
 
 	function get_post( int $post_id ): ?WP_Post {
