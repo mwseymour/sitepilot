@@ -601,6 +601,7 @@ export function createSitePilotMcpServer(
         "Ask SitePilot to prepare a change to the site: a new draft, an edit to an existing post, or publishing or unpublishing one.",
         "Choose the target deliberately. For a change to an existing post (\"add a table below the image\", \"tag it with…\"), look the post up with find_posts or get_post and pass its post_id with operation edit; use create_draft only when the person asks for new content.",
         "If you can't tell which post they mean, or whether they want a new one, ask them before calling this; never guess.",
+        "You can't attach files here. When the change uses an image or video the person has (for example one they pasted into this chat), create the request, then call add_images: it shows them an upload card to choose the file.",
         "Returns a request_id straight away while SitePilot plans the change and builds a preview; poll request_status until it is awaiting_approval, needs_your_reply or needs_attention.",
         "Nothing is written until a person approves the preview in SitePilot.",
         APPROVAL_NOTE
@@ -653,7 +654,7 @@ export function createSitePilotMcpServer(
     {
       title: "Add to a request",
       description:
-        "Send a follow-up on an open request: a revision to the preview, extra detail, or the person's answer to SitePilot's question. SitePilot rebuilds the preview when needed. Nothing is written without approval in SitePilot. A request stays on its post: if the person meant a different post (\"I meant post 102\"), don't send it here. Check with them, then start a new create_request for that post with the whole request, and tell them to reject the old preview.",
+        "Send a follow-up on an open request: a revision to the preview, extra detail, or the person's answer to SitePilot's question. SitePilot rebuilds the preview when needed. Nothing is written without approval in SitePilot. It takes text only: for an image or video, call add_images, which shows the person an upload card. A request stays on its post: if the person meant a different post (\"I meant post 102\"), don't send it here. Check with them, then start a new create_request for that post with the whole request, and tell them to reject the old preview.",
       inputSchema: {
         site_id: siteIdParameter,
         request_id: requestIdParameter,

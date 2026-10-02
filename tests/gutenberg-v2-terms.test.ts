@@ -10,6 +10,7 @@ import {
   buildLlmGutenbergV2Plan,
   GutenbergV2PlanClarification,
   GutenbergV2PlanGenerationError,
+  missingOperatorMediaQuestion,
   hashGutenbergV2Content,
   hashGutenbergV2Value
 } from "@sitepilot/services";
@@ -211,5 +212,22 @@ describe("asking instead of guessing", () => {
     expect(messages[0]!.content).toContain("check source.blockIndex");
     // A question is not a failed draft: no repair round.
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for an image the person is adding when none came with the request", () => {
+    const library = [{ ref: "library-104", source: { kind: "library_attachment", attachmentId: 104, checksum: "9".repeat(64) }, alt: "" }] as never;
+    const staged = [
+      { ref: "image-1", source: { kind: "staged_asset", stagedAssetId: "a", checksum: "9".repeat(64), mediaType: "image/png", byteLength: 10 }, alt: "" }
+    ] as never;
+    for (const request of [
+      'Add the tag: testtag123 and this image below the table with alt text "hello matt"',
+      "Use the attached photo as the featured image",
+      "add my logo to the footer section"
+    ]) {
+      expect(missingOperatorMediaQuestion({ request, media: library }), request).toMatch(/attach it/);
+    }
+    expect(missingOperatorMediaQuestion({ request: "add this image below the table", media: staged })).toBeNull();
+    expect(missingOperatorMediaQuestion({ request: "Make that image above the table the featured image", media: library })).toBeNull();
+    expect(missingOperatorMediaQuestion({ request: "Write a post about images on the web" })).toBeNull();
   });
 });

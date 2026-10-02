@@ -371,7 +371,9 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
 4. **Images in claude.ai** (2 October): claude.ai can't hand pasted images to MCP tools.
    - `add_images` now shows an upload card (`packages/mcp-server/src/upload-card.ts`, MCP Apps). The person drops or chooses files (images, or MP4/WebM, up to 6 at 10 MB each).
    - The card sends them with `attach_from_card`, which only the card can call, with a one-use 30-minute ticket bound to the person and the request. That goes to `addToRequest` with the attachments, and the preview is rebuilt.
-   - The server instructions tell Claude to use it. It needs a new chat in claude.ai, and hasn't been tried live yet.
+   - The server instructions, `create_request` and `add_to_request` all tell Claude to use it. It needs a new chat in claude.ai.
+   - The first live try (2 October), before those descriptions: Claude didn't call it, and the planner put the post's own image (media 104) in place of "this image".
+   - Now `missingOperatorMediaQuestion` in the planner asks for the file before planning when a request adds an image the person is providing ("this image below…", "the attached photo", "add my logo") and no uploaded file came with it. The prompt also says a library ref never stands in for one. Checked with the real model: that request asks, and "make that image above the featured image" still reuses the post's image.
 5. **Structure links:** `/r/…` links for the `structure` artifact now answer as a plain-text line diff of the block markup (`apps/server/src/structure-diff.ts`). Before, they answered 404.
 6. **claude.ai:** start a new chat to pick up the updated tool guidance; claude.ai keeps a connector's tools until then. Claude decides question versus change, and which post, itself. The MCP instructions now say:
    - look the post up and use `edit` for an existing post, and `create_draft` only for new content;

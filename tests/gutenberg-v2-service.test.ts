@@ -1201,7 +1201,7 @@ describe("buildLlmGutenbergV2Plan repair", () => {
       });
 
     const result = await buildLlmGutenbergV2Plan({
-      request: "Create a garden post with the attached image.",
+      request: "Create a garden post.",
       siteId: "site-1",
       target: { operation: "create_draft", postType: "post" },
       capabilities: capabilities(),
@@ -1224,7 +1224,7 @@ describe("buildLlmGutenbergV2Plan repair", () => {
 
     await expect(
       buildLlmGutenbergV2Plan({
-        request: "Create a garden post with the attached image.",
+        request: "Create a garden post.",
         siteId: "site-1",
         target: { operation: "create_draft", postType: "post" },
         capabilities: capabilities(),
@@ -1374,7 +1374,7 @@ describe("buildLlmGutenbergV2Plan unsupplied media", () => {
       usage: { inputTokens: 1, outputTokens: 1 }
     }));
     const result = await buildLlmGutenbergV2Plan({
-      request: "Start with the first attached image.",
+      request: "Start with a hero image.",
       siteId: "site-1",
       target: { operation: "create_draft", postType: "post" },
       capabilities: capabilities(),

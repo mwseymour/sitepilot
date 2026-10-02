@@ -62,7 +62,8 @@ export type { ApprovalSigningKey } from "./gutenberg-v2-approval-proof.js";
 export {
   buildLlmGutenbergV2Plan,
   GutenbergV2PlanClarification,
-  GutenbergV2PlanGenerationError
+  GutenbergV2PlanGenerationError,
+  missingOperatorMediaQuestion
 } from "./gutenberg-v2-plan-generator.js";
 export type {
   BuildLlmGutenbergV2PlanInput,
