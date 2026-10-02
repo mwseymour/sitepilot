@@ -368,6 +368,11 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
    - in a request's thread, "I meant post 91" (Move buttons);
    - "tag post 102 with Mountains" (shows "Mountains (new)").
 3. **Note:** on 2 October the user uploaded a plugin zip a few minutes before the server deploy finished. Deploy first, then upload.
+4. **claude.ai:** start a new chat to pick up the updated tool guidance; claude.ai keeps a connector's tools until then. Claude decides question versus change, and which post, itself. The MCP instructions now say:
+   - look the post up and use `edit` for an existing post, and `create_draft` only for new content;
+   - ask when unsure;
+   - a different post means a new request, not `add_to_request`;
+   - pass SitePilot's `needs_your_reply` question to the person instead of answering it.
 4. **Roadmap, next:**
    - categories and tags, what's left: a setting to turn new terms off, custom taxonomies, more than 100 terms, and showing the terms before the change in review;
    - target resolution from the message in the app and over MCP (Slack has it; the app still uses the Post ID field);
