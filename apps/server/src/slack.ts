@@ -534,7 +534,8 @@ export function createSlackApp(deps: {
       return markThread(row, notice, true);
     }
     if (status.state === "completed") {
-      const notice = `completed:${status.requestId}:${status.result?.postId ?? ""}`;
+      // One thread can finish more than once: a draft, then publishing it.
+      const notice = `completed:${status.target?.operation ?? ""}:${status.result?.postId ?? ""}:${status.updatedAt}`;
       if (row.lastNotice === notice) return;
       const editLink = status.result?.editUrl ? ` <${status.result.editUrl}|Open it in WordPress>` : "";
       const published = status.target?.operation === "publish";
@@ -568,15 +569,17 @@ export function createSlackApp(deps: {
       return markThread(row, notice, false);
     }
     if (status.state === "rejected") {
-      const notice = `rejected:${status.requestId}`;
+      const notice = `rejected:${status.updatedAt}`;
       if (row.lastNotice === notice) return;
       await post("Rejected. Nothing was written to the site. Reply in this thread to try something else.");
       return markThread(row, notice, false);
     }
     if (status.state === "needs_attention") {
-      const notice = `attention:${status.failure?.code ?? status.updatedAt}`;
+      const notice = `attention:${status.updatedAt}`;
       if (row.lastNotice === notice) return;
-      await post(`SitePilot couldn't finish this: ${status.failure?.message ?? status.summary} Reply in this thread to try again.`);
+      // SitePilot's own explanation, as the app shows it, not the technical error.
+      const explained = [...status.recentMessages].reverse().find((message) => message.from !== "you")?.text;
+      await post(`${explained ?? status.failure?.message ?? status.summary}\n\nReply in this thread to try again.`);
       return markThread(row, notice, false);
     }
   }
@@ -640,24 +643,17 @@ export function createSlackApp(deps: {
     if (action.action_id === "publish") {
       const postId = Number(value.p);
       if (!Number.isInteger(postId) || postId < 1) return tell("This button doesn't say which post to publish.");
-      if (!threadTs) return tell("Publish from the request's thread.");
-      const created = await deps.backend.createRequest(
-        {
-          siteId: user.siteId,
-          text: "Publish this post.",
-          target: { operation: "publish", postType: value.t === "page" ? "page" : "post", postId }
-        },
+      const row = threadTs ? await threadFor(teamId, channel, threadTs) : null;
+      if (!row) return tell("Publish from the request's thread.");
+      // In the same SitePilot request thread, as typing "publish it" there
+      // would: SitePilot publishes the post this thread wrote, as its own
+      // approved step.
+      const added = await deps.backend.addToRequest(
+        { siteId: row.siteId, requestId: row.requestId, text: "Publish it." },
         callerFor(user)
       );
-      if (!created.ok) return tell(`Not done: ${created.message}`);
-      await saveThread({
-        teamId,
-        channelId: channel,
-        threadTs,
-        siteId: user.siteId,
-        requestId: created.status.requestId,
-        wordpressUserId: user.wordpressUserId
-      });
+      if (!added.ok) return tell(`Not done: ${added.message}`);
+      await reopenThread(row);
       return settle(`Publishing requested by <@${slackUserId}>. SitePilot will ask for approval in this thread.`);
     }
   }

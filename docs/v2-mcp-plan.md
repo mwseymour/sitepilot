@@ -63,12 +63,20 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
     - A chat message such as "approved" never approves: in the hosted app, on the desktop and over MCP, it gets a pointer to the Approve button and the preview isn't rebuilt.
     - Preview links are signed and open without signing in, for 24 hours (`/r/<token>`). They're in `request_status`, in the approval prompt and in `get_review_artifact`.
   - Not done: the admin area (role overrides, unlinking and revoking for other people), and per-site rate limits.
+- **Phase 7 (in part), the Slack app** (`apps/server/src/slack.ts`, migration 006), running inside the hosted server rather than as a separate service:
+  - **Starting a request:** mention @SitePilot in a channel, or DM it. Each request lives in its Slack thread, and replies in the thread revise it or answer SitePilot's questions. Images and MP4/WebM videos on a message go into the request (`files:read`, from Slack's file host only).
+  - **Connecting:** people connect once with Sign in with WordPress. The link goes only to them (ephemeral in channels), and the connect page names the Slack account and the WordPress user it will act as.
+  - **Reviewing:** the thread gets the change list, the desktop and mobile previews as image blocks (signed links), and Approve and apply / Reject. A click, signed by Slack with the clicking user, is the approval; only people who can publish can approve. Typing "approved" doesn't approve.
+  - **Finishing:** "Done" comes with the post's link and a Publish it button, which continues the same request as a publish, approved the same way.
+  - **Mechanics:** `/slack/events` and `/slack/interactions` check Slack's signature and timestamp and answer at once. A sweeper posts each open thread's changes and survives restarts. It's off until `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` are set.
+  - Tested live in the Berkshire Devs workspace (#sitepilot-chat) on 1–2 October 2026, and in the hosted E2E against a stand-in Slack API.
 - **Tests:** `npm run test:e2e:hosted` runs the server on a disposable local Postgres against the MAMP site. It covers:
   - connecting the site;
   - signing in through a real browser;
   - the app's API refusing desktop-only and signed-out calls;
   - a token and MCP lookups;
   - an OAuth connection, as claude.ai makes one: discovery, registration, sign-in and consent in a browser, a scoped token (a lookup works, `create_request` is refused), one-use codes, remembered consent, refresh, and Disconnect;
+  - Slack, against a stand-in Slack API: connecting, a request with its review, a typed "approved" doing nothing, Approve, Publish it, and Approve again, to a published post;
   - a request in the app through review, approval and apply, to a draft in WordPress.
 
 ## Goals

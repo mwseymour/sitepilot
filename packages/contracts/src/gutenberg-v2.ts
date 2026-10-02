@@ -2520,7 +2520,27 @@ export const gutenbergV2SourceSnapshotSchema = z
           })
           .strict()
       )
-      .max(GUTENBERG_V2_LIMITS.maxBlocks)
+      .max(GUTENBERG_V2_LIMITS.maxBlocks),
+    /**
+     * Images already in the post (and its featured image), read in the
+     * editor, so a request can reuse them: "make that image the featured
+     * image". Each is a media library attachment with its file's checksum.
+     */
+    libraryMedia: z
+      .array(
+        z
+          .object({
+            attachmentId: positiveIntegerSchema,
+            checksum: sha256Schema,
+            url: urlSchema,
+            alt: z.string().max(2_000),
+            mediaType: z.string().regex(/^image\//).max(100),
+            featured: z.boolean().optional()
+          })
+          .strict()
+      )
+      .max(GUTENBERG_V2_LIMITS.maxMediaItems)
+      .optional()
   })
   .strict();
 

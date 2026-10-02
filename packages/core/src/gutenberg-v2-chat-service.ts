@@ -1045,6 +1045,16 @@ export async function generateGutenbergV2Candidate(input: {
             postType: input.target.postType,
             postId: input.target.postId
           });
+    // Images already in the post can be reused, for example as the
+    // featured image, without attaching them again.
+    for (const item of statusChange ? [] : (source?.libraryMedia ?? [])) {
+      if (media.some((existing) => existing.source.checksum === item.checksum)) continue;
+      media.push({
+        ref: `library-${item.attachmentId}`,
+        source: { kind: "library_attachment" as const, attachmentId: item.attachmentId, checksum: item.checksum },
+        alt: item.alt
+      } as unknown as (typeof media)[number]);
+    }
     if (
       source &&
       (source.siteId !== input.siteId ||

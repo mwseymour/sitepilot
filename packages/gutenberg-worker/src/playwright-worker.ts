@@ -1128,7 +1128,70 @@ body *:has(${captureSelector}) {
           throw new Error("sitepilotV2.readSource is unavailable");
         return bridge.readSource();
       });
-      return gutenbergV2SourceSnapshotSchema.parse(raw);
+      const snapshot = gutenbergV2SourceSnapshotSchema.parse(raw);
+      const libraryMedia = await this.#readLibraryMedia(page).catch(() => []);
+      // Reusable images are a convenience: anything odd about them never
+      // stops the source being read.
+      const withLibrary = gutenbergV2SourceSnapshotSchema.safeParse({ ...snapshot, libraryMedia });
+      return libraryMedia.length > 0 && withLibrary.success ? withLibrary.data : snapshot;
+    });
+  }
+
+  /**
+   * The images already in the open post and its featured image, with the
+   * checksum of each attachment's file, so a request can reuse them. Read in
+   * the editor as the session user; files on another origin are skipped.
+   * (No named functions inside evaluate: the bundler would wrap them in a
+   * helper the page doesn't have.)
+   */
+  async #readLibraryMedia(page: Page): Promise<unknown[]> {
+    return page.evaluate(async () => {
+      const wp = (globalThis as unknown as {
+        wp?: {
+          data?: { select(store: string): Record<string, (...args: unknown[]) => unknown> | undefined };
+          apiFetch?: (options: { path: string }) => Promise<Record<string, unknown>>;
+        };
+      }).wp;
+      const editorBlocks = (wp?.data?.select("core/block-editor")?.getBlocks?.() ?? []) as Array<{
+        name: string;
+        attributes?: Record<string, unknown>;
+        innerBlocks?: unknown[];
+      }>;
+      const featured = Number(wp?.data?.select("core/editor")?.getEditedPostAttribute?.("featured_media") ?? 0);
+      const ids = new Set<number>();
+      if (Number.isInteger(featured) && featured > 0) ids.add(featured);
+      const stack = [...editorBlocks];
+      while (stack.length > 0) {
+        const block = stack.pop();
+        if (!block) continue;
+        const id = Number(block.attributes?.id ?? block.attributes?.mediaId ?? 0);
+        if (/^core\/(?:image|cover|media-text)$/.test(block.name) && Number.isInteger(id) && id > 0) ids.add(id);
+        stack.push(...((block.innerBlocks ?? []) as typeof editorBlocks));
+      }
+      const here = (globalThis as unknown as { location: { href: string; origin: string } }).location;
+      const found: Array<Record<string, unknown>> = [];
+      for (const id of [...ids].slice(0, 20)) {
+        try {
+          const media = await wp?.apiFetch?.({ path: `/wp/v2/media/${id}?context=edit` });
+          const url = String(media?.source_url ?? "");
+          const mediaType = String(media?.mime_type ?? "");
+          if (!mediaType.startsWith("image/") || new URL(url, here.href).origin !== here.origin) continue;
+          const response = await fetch(url, { credentials: "same-origin" });
+          if (!response.ok) continue;
+          const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await response.arrayBuffer()));
+          found.push({
+            attachmentId: id,
+            checksum: Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+            url,
+            alt: String(media?.alt_text ?? "").slice(0, 2000),
+            mediaType,
+            ...(id === featured ? { featured: true } : {})
+          });
+        } catch {
+          // Unreadable media is simply not offered.
+        }
+      }
+      return found;
     });
   }
 

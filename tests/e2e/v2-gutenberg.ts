@@ -2516,6 +2516,20 @@ async function main(): Promise<void> {
       source.blockIndex.length === expectedNodeCount,
       `Native source index returned ${source.blockIndex.length}/${expectedNodeCount}: ${JSON.stringify(source.blockIndex.slice(0, 30).map(({ path, name }) => ({ path, name })))}`
     );
+    // The post's images are offered for reuse ("make that image the featured
+    // image"), each with its attachment file's checksum.
+    const imageRefs = new Set(
+      creationPlan.media
+        .filter((entry) => entry.source.kind === "staged_asset" && entry.source.mediaType.startsWith("image/"))
+        .map((entry) => entry.ref)
+    );
+    for (const bound of firstMediaBinding.mapping.filter((entry) => imageRefs.has(entry.ref))) {
+      const offered = source.libraryMedia?.find((item) => item.attachmentId === bound.attachmentId);
+      assert(
+        offered?.checksum === bound.finalChecksum,
+        `The source didn't offer image ${bound.attachmentId} for reuse: ${JSON.stringify(source.libraryMedia ?? [])}`
+      );
+    }
     const updateExecution = `execution-${randomUUID()}`;
     const updateTitle = `${title}-V2-UPDATE`;
     const updateCandidate = await service.compileCandidate({

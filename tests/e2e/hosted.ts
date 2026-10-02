@@ -500,18 +500,60 @@ async function main(): Promise<void> {
       "application/x-www-form-urlencoded"
     );
     await slackSent("the approved review", (call) => call.method === "response/approve" && String(call.body.text).startsWith("Approved by"), 60_000);
-    await slackSent(
+    const slackDone = await slackSent(
       "Done in Slack",
       (call) => call.method === "chat.postMessage" && call.body.thread_ts === "200.000001" && String(call.body.text).startsWith("Done."),
       6 * 60_000
     );
+    // Publish it, in the same SitePilot request: its own review, approved the same way.
+    const doneBlocks = slackDone.body.blocks as Array<{ type: string; elements?: Array<{ action_id?: string; value?: string }> }>;
+    const publishValue = doneBlocks.find((block) => block.type === "actions")?.elements?.find((button) => button.action_id === "publish")?.value;
+    assert(publishValue, `The Done message has no Publish button: ${JSON.stringify(slackDone.body)}`);
+    const reviewsBefore = slackCalls.filter((call) => JSON.stringify(call.body.blocks ?? []).includes('"action_id":"approve"')).length;
+    const click = (action: string, value: string, blocks: unknown, responsePath: string) =>
+      slackPost(
+        "/slack/interactions",
+        new URLSearchParams({
+          payload: JSON.stringify({
+            type: "block_actions",
+            team: { id: "T_E2E" },
+            user: { id: "U_E2E" },
+            channel: { id: "C_E2E" },
+            message: { ts: "9999.000002", thread_ts: "200.000001", blocks },
+            response_url: `http://127.0.0.1:18997/response/${responsePath}`,
+            actions: [{ action_id: action, value }]
+          })
+        }).toString(),
+        "application/x-www-form-urlencoded"
+      );
+    await click("publish", publishValue, doneBlocks, "publish");
+    await slackSent("the publish request", (call) => call.method === "response/publish" && String(call.body.text).startsWith("Publishing requested"), 60_000);
+    const publishReview = await waitFor(
+      "the publish review",
+      async () =>
+        slackCalls.filter((call) => call.body.thread_ts === "200.000001" && JSON.stringify(call.body.blocks ?? []).includes('"action_id":"approve"'))[
+          reviewsBefore
+        ] ?? null,
+      6 * 60_000
+    );
+    const publishBlocks = publishReview.body.blocks as typeof reviewBlocks;
+    const approvePublish = publishBlocks.find((block) => block.type === "actions")?.elements?.find((button) => button.action_id === "approve")?.value ?? "";
+    await click("approve", approvePublish, publishBlocks, "approve-publish");
+    await slackSent(
+      "Published in Slack",
+      (call) =>
+        call.method === "chat.postMessage" &&
+        call.body.thread_ts === "200.000001" &&
+        JSON.stringify(call.body.blocks ?? []).includes("Published. Written to the site and verified."),
+      6 * 60_000
+    );
     const slackPostId = E2E_WP_PATH
-      ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=draft", `--title=${slackTitle}`, "--field=ID"], {
+      ? execFileSync("wp", ["post", "list", "--post_type=post", "--post_status=publish", `--title=${slackTitle}`, "--field=ID"], {
           cwd: E2E_WP_PATH,
           encoding: "utf8"
         }).trim()
       : "(no wp-cli)";
-    assert(slackPostId !== "", "The Slack-approved draft isn't in WordPress.");
+    assert(slackPostId !== "", "The Slack-approved post isn't published in WordPress.");
 
     // 5. A contributor can request but not approve, apply or change setup.
     // (Editors and authors can publish, so they approve.)
@@ -582,7 +624,7 @@ async function main(): Promise<void> {
           postId,
           promptPostId,
           slackPostId,
-          manualCleanup: `Delete drafts ${postId}, ${promptPostId} and ${slackPostId} from the MAMP site.`
+          manualCleanup: `Delete drafts ${postId} and ${promptPostId}, and published post ${slackPostId}, from the MAMP site.`
         },
         null,
         2

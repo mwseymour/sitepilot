@@ -218,9 +218,20 @@ export function ChatPage({
   }, [editingThreadId, selectedThreadId, threads]);
 
   // Once an update exists, the composer shows the operation it was built for.
+  // Moving to a thread without one starts from the default again, rather than
+  // keeping the last thread's (say, Publish for another post).
   const v2Target = gutenbergV2State?.target;
+  const composerFromThreadRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!v2Target) return;
+    if (!v2Target) {
+      if (composerFromThreadRef.current !== null && composerFromThreadRef.current !== currentThreadRef.current) {
+        composerFromThreadRef.current = null;
+        setGutenbergV2Operation("create_draft");
+        setGutenbergV2PostId("");
+      }
+      return;
+    }
+    composerFromThreadRef.current = currentThreadRef.current;
     setGutenbergV2PostType(v2Target.postType);
     if (v2Target.operation === "create_draft") {
       setGutenbergV2Operation("create_draft");
