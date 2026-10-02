@@ -61,7 +61,8 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
     - Approving applies at once. Publishing and unpublishing are their own requests, approved the same way.
     - It needs the `approve` OAuth scope, which the consent page offers only to people who can publish. The decision is audited with its channel (`approval_prompt` or `review_card`) and signed with the site's approval key as before.
     - A chat message such as "approved" never approves: in the hosted app, on the desktop and over MCP, it gets a pointer to the Approve button and the preview isn't rebuilt.
-    - Preview links are signed and open without signing in, for 24 hours (`/r/<token>`). They're in `request_status`, in the approval prompt and in `get_review_artifact`.
+    - Preview links are signed and open without signing in, for 24 hours (`/r/<token>`). They're in `request_status`, in the approval prompt and in `get_review_artifact`. The structure link answers as a plain-text diff of the block markup.
+    - Images and videos, in apps that show cards: `add_images` shows an upload card where the person chooses files. The card sends them with `attach_from_card` (only the card can call it, with a one-use ticket), and they go into the request like a reply with attachments. The model can't pass files the person pasted.
   - The admin area, at `/admin/people`, for the site's WordPress administrators (2 October 2026). It lists everyone who has signed in, with their WordPress role, connected apps, personal tokens, Slack link and app sessions.
     - **Role override** (migration 007): approver, requester, read only, or no access, set per person. It wins over the WordPress role at every lookup (sessions, tokens, OAuth and Slack), so it applies at once. "No access" turns everything off, signing in included. WordPress administrators can't be overridden.
     - **Disconnect an app, revoke a token, unlink Slack, or sign someone out everywhere.**

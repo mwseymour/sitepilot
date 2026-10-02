@@ -17,7 +17,7 @@ let appBundle: string | undefined;
  * from elsewhere, so the package's self-contained build is inlined, with its
  * final export list turned into a local object.
  */
-function inlineAppBundle(): string {
+export function inlineAppBundle(): string {
   if (appBundle !== undefined) return appBundle;
   const require = createRequire(import.meta.url);
   const source = readFileSync(require.resolve("@modelcontextprotocol/ext-apps/app-with-deps"), "utf8");

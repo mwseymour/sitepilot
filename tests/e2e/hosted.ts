@@ -390,6 +390,14 @@ async function main(): Promise<void> {
       `The signed preview link didn't open without signing in (${preview.status} ${previewLink}).`
     );
     assert((await fetch(`${previewLink}x`)).status === 404, "An altered preview link worked.");
+    // The structure link reads as a text diff of the block markup.
+    const structureLink = waiting.reviewArtifacts?.find((artifact) => artifact.kind === "structure_diff")?.url ?? "";
+    const structure = await fetch(structureLink);
+    const structureText = await structure.text();
+    assert(
+      structure.ok && (structure.headers.get("content-type") ?? "").startsWith("text/plain") && structureText.includes("Block markup"),
+      `The structure link didn't open as text (${structure.status}): ${structureText.slice(0, 200)}`
+    );
     const asked = await codex.callTool({ name: "ask_to_approve", arguments: { request_id: promptRequest.requestId } });
     assert(!asked.isError && prompted.includes(promptTitle), `ask_to_approve: ${JSON.stringify(asked.content).slice(0, 400)}`);
     await waitFor(

@@ -35,6 +35,7 @@ import {
 } from "./http.js";
 import { clientDisplayName, isOAuthPath, type SitePilotOAuthProvider } from "./oauth.js";
 import type { ReviewLinks } from "./review-links.js";
+import { structureDiffText } from "./structure-diff.js";
 import type { SlackApp } from "./slack.js";
 import {
   accountPage,
@@ -400,6 +401,13 @@ export function createRoutes(deps: RoutesDependencies) {
       clientName: HOSTED_APP_CLIENT_NAME,
       actor: { userProfileId: "review-link", appRole: "read_only_auditor", siteRoles: ["audit_only"] }
     });
+    if (result.ok && result.artifact.mimeType === "application/json") {
+      // The structure artifact: what changes in the block markup, as text.
+      return send(response, 200, structureDiffText(Buffer.from(result.artifact.dataBase64, "base64").toString("utf8")), {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store"
+      });
+    }
     if (!result.ok || !result.artifact.mimeType.startsWith("image/")) {
       return send(response, 404, "That preview isn't available any more.", { "content-type": "text/plain; charset=utf-8" });
     }

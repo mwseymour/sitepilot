@@ -166,6 +166,57 @@ describe("approving from a chat app", () => {
     expect(reused.structuredContent).toMatchObject({ code: "approval_ticket_invalid" });
   });
 
+  it("lets the person add images on the upload card, with a one-use ticket", async () => {
+    const backend = approvalBackend();
+    backend.addToRequest.mockResolvedValue({ ok: true, status: { ...AWAITING, state: "preparing_preview" } } as never);
+    const requester = { userProfileId: "wp-site-1-9", appRole: "requester", siteRoles: ["request"] };
+    const client = await connect(backend, { clientName: "claude.ai", actor: requester });
+    const { tools } = await client.listTools();
+    expect((tools.find((tool) => tool.name === "attach_from_card")?._meta as { ui?: { visibility?: string[] } })?.ui?.visibility).toEqual([
+      "app"
+    ]);
+
+    const shown = await client.callTool({ name: "add_images", arguments: { request_id: "thread-1", note: "below the table" } });
+    expect(shown.structuredContent).toMatchObject({ requestId: "thread-1", title: AWAITING.title, note: "below the table" });
+    const ticket = (shown._meta as Record<string, { ticket: string }>)["sitepilot/upload"]?.ticket ?? "";
+    expect(ticket.length).toBeGreaterThan(16);
+    expect(text(shown)).not.toContain(ticket);
+
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+    const file = { file_name: "logo.png", media_type: "image/png", data_url: png };
+    const someoneElse = await connect(backend, { actor: { ...requester, userProfileId: "wp-site-1-7" } });
+    const stolen = await someoneElse.callTool({ name: "attach_from_card", arguments: { request_id: "thread-1", ticket, files: [file] } });
+    expect(stolen.structuredContent).toMatchObject({ code: "upload_ticket_invalid" });
+
+    const again = await client.callTool({ name: "add_images", arguments: { request_id: "thread-1" } });
+    const fresh = (again._meta as Record<string, { ticket: string }>)["sitepilot/upload"]?.ticket ?? "";
+    const mislabelled = await client.callTool({
+      name: "attach_from_card",
+      arguments: { request_id: "thread-1", ticket: fresh, files: [{ ...file, media_type: "image/jpeg" }] }
+    });
+    expect(mislabelled.structuredContent).toMatchObject({ code: "schema_invalid" });
+    expect(backend.addToRequest).not.toHaveBeenCalled();
+
+    const third = await client.callTool({ name: "add_images", arguments: { request_id: "thread-1" } });
+    const ticket3 = (third._meta as Record<string, { ticket: string }>)["sitepilot/upload"]?.ticket ?? "";
+    const added = await client.callTool({
+      name: "attach_from_card",
+      arguments: { request_id: "thread-1", ticket: ticket3, files: [file], note: "Add it below the table." }
+    });
+    expect(text(added)).toContain("Added 1 file");
+    expect(backend.addToRequest).toHaveBeenCalledWith(
+      {
+        siteId: "site-1",
+        requestId: "thread-1",
+        text: "Add it below the table.",
+        attachments: [{ fileName: "logo.png", mediaType: "image/png", sizeBytes: 68, dataUrl: png }]
+      },
+      expect.anything()
+    );
+    const reused = await client.callTool({ name: "attach_from_card", arguments: { request_id: "thread-1", ticket: ticket3, files: [file] } });
+    expect(reused.structuredContent).toMatchObject({ code: "upload_ticket_invalid" });
+  });
+
   it("shows the card without buttons to someone who can't publish", async () => {
     const client = await connect(approvalBackend(), {
       actor: { userProfileId: "wp-site-1-9", appRole: "requester", siteRoles: ["request"] }
