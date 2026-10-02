@@ -71,13 +71,13 @@ function withProviderKeysFromEnvironment(storage: SecureStorage): SecureStorage 
   };
 }
 
-/** Review previews and staged media are kept in the database for 30 days. */
-const STORED_FILE_DAYS = 30;
+/** Review previews and staged media are kept in the database for 72 hours. */
+const STORED_FILE_HOURS = 72;
 
 function pruneOldStoredFiles(sql: SqlConnection): void {
-  void pruneStoredFiles(sql, new Date(Date.now() - STORED_FILE_DAYS * 24 * 60 * 60 * 1000))
+  void pruneStoredFiles(sql, new Date(Date.now() - STORED_FILE_HOURS * 60 * 60 * 1000))
     .then((removed) => {
-      if (removed > 0) console.log(`Removed ${removed} stored file(s) older than ${STORED_FILE_DAYS} days.`);
+      if (removed > 0) console.log(`Removed ${removed} stored file(s) older than ${STORED_FILE_HOURS} hours.`);
     })
     .catch((error: unknown) => console.log(`Pruning stored files failed: ${String(error)}`));
 }
@@ -119,9 +119,9 @@ const connecting = connectWithRetry({
   log: (message) => console.log(message)
 }).then((connected) => {
   if (!connected) return null;
-  // At startup, then daily for a container that stays up.
+  // At startup, then hourly for a container that stays up.
   pruneOldStoredFiles(connected.database.sql);
-  setInterval(() => pruneOldStoredFiles(connected.database.sql), 24 * 60 * 60 * 1000).unref();
+  setInterval(() => pruneOldStoredFiles(connected.database.sql), 60 * 60 * 1000).unref();
   configureRuntimeContext({
     userDataPath: dataDirectory,
     database: connected.database,

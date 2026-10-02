@@ -39,7 +39,7 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
     - Site setup calls need the admin role. Approving and applying need a WordPress role that can publish, as on the desktop.
   - Sign-in, connecting the site, the account page (tokens) and the admin area are server-rendered. The simple request pages that were at `/requests` were removed on 2 October 2026, since the app replaces them. A server built without the interface says so at `/`.
   - The Playwright worker runs in the same container, with headless Chromium in the image. The planner key comes from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; the Copilot adapter is still the gate for production.
-  - Review files and staged media are written to the container's disk and copied to Postgres (`stored_files`, migration 004), so a deploy doesn't lose the previews of requests waiting for approval. Copies older than 30 days are deleted at startup and daily.
+  - Review files and staged media are written to the container's disk and copied to Postgres (`stored_files`, migration 004), so a deploy doesn't lose the previews of requests waiting for approval. Copies older than 72 hours are deleted at startup and hourly.
   - Not done: Supabase Storage for large media, signed review links, and a separate worker service.
 - **Phase 6 (in part):**
   - Sign in with WordPress (6.1): the plugin's confirm page and signed, two-minute, one-use assertion, returned only to the callback the client registered. Roles come from WordPress capabilities at every sign-in.

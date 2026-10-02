@@ -54,7 +54,7 @@ The user's working preferences:
 - **Durable files on the server:** review previews and staged media are written to the container's disk and copied to `stored_files`. They're read back from there when a deploy has wiped the disk.
   - The code is `packages/services/src/stored-file-mirror.ts`, and the optional `mirror` argument on `FileGutenbergV2ReviewArtifactStore` and `FileGutenbergV2StagedAssetStore`.
   - Core turns it on only when `sql.dialect === "postgres"`.
-  - Copies older than 30 days are deleted at startup and daily (`pruneStoredFiles`, called from `apps/server/src/index.ts`).
+  - Copies older than 72 hours are deleted at startup and hourly (`pruneStoredFiles`, called from `apps/server/src/index.ts`). The user chose 72 hours on 2 October.
 - **Secrets on the server** are AES-256-GCM under `SITEPILOT_SECRETS_KEY` (`packages/services/src/sql-secure-storage.ts`). Provider keys come from the `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables.
 - **REST roots:** `packages/plugin-protocol/src/rest-root.ts` builds every REST URL from the site's own REST root.
 
