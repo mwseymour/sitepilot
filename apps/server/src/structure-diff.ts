@@ -7,11 +7,38 @@
 const MAX_LINES = 4_000;
 const CONTEXT = 3;
 
+type TermEntry = { name?: string; new?: boolean };
+
 type Structure = {
   operation?: string;
   before?: { postId?: number; fields?: { title?: string }; rawContent?: string } | null;
-  after?: { plan?: { postFields?: { title?: string } }; serializedContent?: string };
+  after?: {
+    plan?: {
+      postFields?: {
+        title?: string;
+        excerpt?: string;
+        featuredMediaRef?: string;
+        seo?: Record<string, string>;
+        terms?: { category?: TermEntry[]; post_tag?: TermEntry[] };
+      };
+    };
+    serializedContent?: string;
+  };
 };
+
+/** The post fields the request changes, one line each. */
+function fieldLines(structure: Structure): string[] {
+  const fields = structure.after?.plan?.postFields ?? {};
+  const names = (terms: TermEntry[]) =>
+    terms.length === 0 ? "none" : terms.map((term) => `${term.name ?? "?"}${term.new ? " (new)" : ""}`).join(", ");
+  return [
+    ...(fields.excerpt !== undefined ? [`Excerpt: ${fields.excerpt || "(cleared)"}`] : []),
+    ...(fields.featuredMediaRef !== undefined ? [`Featured image: ${fields.featuredMediaRef}`] : []),
+    ...Object.entries(fields.seo ?? {}).map(([field, value]) => `SEO ${field}: ${value || "(cleared)"}`),
+    ...(fields.terms?.category ? [`Categories: ${names(fields.terms.category)}`] : []),
+    ...(fields.terms?.post_tag ? [`Tags: ${names(fields.terms.post_tag)}`] : [])
+  ];
+}
 
 /** Block markup split so each block comment starts a line. */
 function lines(markup: string): string[] {
@@ -78,6 +105,7 @@ export function structureDiffText(json: string, requestTitle?: string): string {
     `SitePilot review${requestTitle ? `: ${requestTitle}` : ""}`,
     before?.postId ? `Changes to post ${before.postId} (${structure.operation ?? "edit"}).` : "A new draft.",
     ...(afterTitle !== undefined && afterTitle !== beforeTitle ? [`Title: ${beforeTitle ? `“${beforeTitle}” → ` : ""}“${afterTitle}”`] : []),
+    ...fieldLines(structure),
     "",
     'Block markup, "-" removed and "+" added:',
     ""
@@ -88,5 +116,6 @@ export function structureDiffText(json: string, requestTitle?: string): string {
     return [...header, "(Too long to compare here: the new content follows.)", "", ...newLines].join("\n");
   }
   const diff = lineDiff(oldLines, newLines);
-  return [...header, ...(diff.length > 0 ? diff : ["(No change to the content.)"])].join("\n") + "\n";
+  const changed = diff.some((line) => line.startsWith("-") || line.startsWith("+"));
+  return [...header, ...(changed ? diff : ["(No change to the content.)"])].join("\n") + "\n";
 }

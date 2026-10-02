@@ -29,5 +29,18 @@ describe("review structure as text", () => {
     expect(text).toContain("  <!-- wp:paragraph --><p>Hello</p>");
     expect(text).not.toMatch(/^- /m);
     expect(structureDiffText("not json")).toBe("This review's structure couldn't be read.");
+    // A tags-only change says so, and lists the tags.
+    const tagsOnly = structureDiffText(
+      JSON.stringify({
+        operation: "apply_operations",
+        before: { postId: 102, fields: { title: "Wibble" }, rawContent: "<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->" },
+        after: {
+          plan: { postFields: { terms: { post_tag: [{ id: 9, name: "Walking" }, { name: "test123", new: true }] } } },
+          serializedContent: "<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->"
+        }
+      })
+    );
+    expect(tagsOnly).toContain("Tags: Walking, test123 (new)");
+    expect(tagsOnly).toContain("(No change to the content.)");
   });
 });
