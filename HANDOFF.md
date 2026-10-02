@@ -1,6 +1,10 @@
 # Handoff: hosted SitePilot (Railway + Supabase)
 
-Updated 2 October 2026, about 11:30 BST. Branch: `main`. Last pushed commit: `7388582` (library alt text for new images). Another session was editing branding files in the same working tree on 2 October (plugin `Admin/Brand.php`, server pages, renderer styles): stage files explicitly and leave theirs alone.
+Updated 2 October 2026, about 12:30 BST. Branch: `main`. Last pushed commit: `7388582` (library alt text for new images). Committed locally, **not pushed** (waiting for the user's OK, see Next steps):
+
+- `4d07a82`: the branding session's logo commit. It also swept in `docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip` and `.phpunit.result.cache`.
+- `b89d57e`: the admin area, `/requests` removed, `stored_files` pruning and the composer fix.
+- `e88bd53`: `list_terms` and the tag filter.
 
 ## Goal
 
@@ -49,7 +53,7 @@ The user's working preferences:
 - **Durable files on the server:** review previews and staged media are written to the container's disk and copied to `stored_files`. They're read back from there when a deploy has wiped the disk.
   - The code is `packages/services/src/stored-file-mirror.ts`, and the optional `mirror` argument on `FileGutenbergV2ReviewArtifactStore` and `FileGutenbergV2StagedAssetStore`.
   - Core turns it on only when `sql.dialect === "postgres"`.
-  - Nothing removes old rows yet.
+  - Copies older than 30 days are deleted at startup and daily (`pruneStoredFiles`, called from `apps/server/src/index.ts`).
 - **Secrets on the server** are AES-256-GCM under `SITEPILOT_SECRETS_KEY` (`packages/services/src/sql-secure-storage.ts`). Provider keys come from the `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables.
 - **REST roots:** `packages/plugin-protocol/src/rest-root.ts` builds every REST URL from the site's own REST root.
 
@@ -119,13 +123,13 @@ The user decided: everything happens in the chat, with explicit consent, so type
 - Core offers each as a `library-<id>` media ref (`library_attachment`), and the planner prompt says never to put a URL where a media ref belongs.
 - **Verified live:** Wibble (post 102) got its featured image this way.
 
-### Library alt text (`7388582`, plugin zip not yet on the live site)
+### Library alt text (`7388582`, live: the user uploaded the zip on 2 October)
 
 - **The report:** on Wibble (post 102), the alt text change didn't show on the front end. The body image had it (`alt` in the image block); the featured image had `alt=""`.
 - **Why:** WordPress takes a featured image's alt from the media library (`_wp_attachment_image_alt`), and SitePilot uploaded images without setting it.
 - **Fix:** `Media_Service` keeps the approved alt in the staged intent and sets `_wp_attachment_image_alt` on **new** image attachments (`library_alt()`). Existing attachments aren't changed, since that field is shared wherever the image is used.
 - **Tests:** PHPUnit 89 passed; `npm run test:e2e:v2` passed, checking each new image's library alt via `libraryMedia` (MAMP attachments 5488–5501 have theirs).
-- **Rollout:** production zip at `~/Downloads/wordpress-sitepilot-library-alt-fix.zip`, for the user to upload. Wibble's existing image still needs its alt set once in Media Library.
+- **Rollout:** the user uploaded the production zip on 2 October. Wibble's existing image still needs its alt set once in Media Library.
 - **Decided (2 October):** follow WordPress's default. The library alt is set when an image is uploaded; later alt edits change only the image block, as in the block editor.
 
 ### Hosted server (`apps/server`)
@@ -141,15 +145,43 @@ The user decided: everything happens in the chat, with explicit consent, so type
     - The services check approve rights for approving and applying.
     - Handler errors answer `{ ok: false, code: "internal_error" }`.
   - Kept: `/auth/*`, `/sites/connect` (only `SITEPILOT_SITE_URL`), `/account` (tokens), `/mcp` and `/healthz`.
-  - The simple HTML request pages at `/requests` remain as a fallback. There, approve applies at once.
+  - `/admin/people`: the admin area (below).
+  - The simple `/requests` pages were removed on 2 October. A signed-in visit to `/` on a server without the interface build answers 503, saying so.
 - **The Dockerfile** builds the server and the renderer (`npm run build:renderer -w @sitepilot/desktop`), and installs headless Chromium.
 - **The MCP approval hint** names the hosted app's address (the `approvalHint` option on `createDesktopMcpBackend`).
+
+### Admin area (`b89d57e`, not pushed yet)
+
+- **`/admin/people`**, for the site's WordPress administrators (`appRole === "admin"`, from `manage_options`). It's linked from the account page and the header of the server pages. The React app doesn't know the person's role, so it has no link of its own.
+- **What it lists:** everyone who has signed in (`wordpress_identities`), with their WordPress role, connected OAuth apps, personal tokens, Slack link and active app sessions.
+- **Role override** (migration 007: `role_override`, `role_override_by`, `role_override_at`):
+  - approver, requester, read only, or no access;
+  - `toUser()` in `apps/server/src/auth.ts` applies it at every lookup (session, `spt_` token, OAuth via `userFor`, Slack via `userFor`), so it takes effect at once;
+  - "no access" makes every lookup return null. `linkIdentity` returns null too, and sign-in says so;
+  - WordPress administrators can't be overridden (`setRoleOverride` skips `app_role = 'admin'`);
+  - signing in again refreshes the WordPress role and keeps the override.
+- **Actions:** disconnect an app, revoke a token, unlink Slack, sign out everywhere (`endSessionsFor`). Each change is audited as `access_changed` (new audit event type), with the admin as the actor and the person's login.
+- `oauth.connectedApps/disconnect`, `slack.linkedSlackAccounts/disconnect` and `auth.listApiTokens/revokeApiToken` take a `PersonRef` (`siteId`, `wordpressUserId`), so the admin area reuses them for other people.
+- **Also changed:**
+  - the account page shows the role's name and "(set by a site admin)";
+  - the consent page describes the `approve` scope when it's offered, instead of saying the app can't approve.
+
+### Chat composer fix (`b89d57e`)
+
+After Send, `onSubmitPrompt` reloaded the bundle with its stale `loadBundle`, whose `lastRequestId` was still null. That cleared the bundle the effect had just loaded, so a new request's composer showed "New request" instead of "Change this request". Whether it broke depended on timing. `loadBundle` now takes the request ID, and the send path passes the one it just got. The hosted E2E caught it.
+
+### Lookups: `list_terms` (`e88bd53`, plugin zip not yet on the live site)
+
+- **Plugin:** `sitepilot/list-terms` (`includes/Mcp/Term_Query.php`), read-only. It lists a public taxonomy's terms (category by default, or `post_tag`): ID, slug, name, parent and count, with search, parent and a limit of 1–100. Private taxonomies are refused (`invalid_taxonomy`). It's listed in `Server_Registrar`.
+- **Tags:** `find-posts` and `get-post` take `tag`, and `get-post` returns `tag_slugs`.
+- **Registry:** a `list_terms` entry. The Conversations agent builds its tool list from every registry entry with a `conversationPromptLine` (`CONVERSATION_TOOL_NAMES` in `conversation-service.ts`), so a new lookup needs only a plugin ability and a registry entry.
+- **Rollout:** production zip `~/Downloads/wordpress-sitepilot-list-terms.zip` (from `e88bd53`, 445 KB, 150 files, no PHPUnit; it includes the branding plugin changes). Until it's uploaded, `list_terms` fails on the live site with a lookup error, and nothing else changes.
 
 ### Plugin (`plugins/wordpress-sitepilot`)
 
 - Sign in with WordPress, and the editor write guard fix for `wp_global_styles` and `wp_navigation`, as before.
 - **New in `2ee894f`:** `assets/js/editor-bridge.js` checks again, for up to 10 seconds, that each preview image is placed and decoded. Before, it checked once and could fail with "preview image … did not load". This was seen once in the content suite.
-- **The live plugin** is the production zip of `066cf10` (media permissions), uploaded by the user on 1 October. The library alt fix needs the next zip.
+- **The live plugin** is the production zip of `7388582` (library alt), uploaded by the user on 2 October. `list_terms` and the branding need the next zip (above).
 
 ### Deployment (live)
 
@@ -205,7 +237,7 @@ The user decided: everything happens in the chat, with explicit consent, so type
 - `npm run test:e2e:content` (about 15 minutes) only when the engine and chat both change;
 - `npm run test:e2e:all` only before a release or when asked. `tests/e2e/run-suite.ts` prints each script's time, runs `v2-acf` alongside the MAMP scripts, and skips `v2-long-post` unless `SITEPILOT_E2E_LONG_POST=1`.
 
-Latest results: vitest with Postgres 326 passed; PHPUnit 89 passed (with the alt fix).
+Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with Postgres 329 passed, plus the new conversation test; PHPUnit 93 passed; `npm run test:e2e:hosted` passed (with the admin area steps); `npm run test:e2e:mcp` passed (with `list_terms`); `npm run test:e2e:smoke` passed (2 of 2).
 
 **Last full pass, at `2ee894f`:**
 
@@ -225,9 +257,8 @@ Latest results: vitest with Postgres 326 passed; PHPUnit 89 passed (with the alt
 
 ### Leave these alone
 
-- `docs/v2-roadmap.md` holds someone else's edit. Never commit it.
-- `plugins/wordpress-sitepilot.zip` is untracked, made by the user.
-- `plugins/wordpress-sitepilot/.phpunit.result.cache` shows as modified. Leave it out of commits.
+- `docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip` and `.phpunit.result.cache` were all committed in `4d07a82` by the branding session, against the earlier rule. Ask the user before pushing that commit or removing them.
+- `plugins/wordpress-sitepilot/.phpunit.result.cache` changes on every PHPUnit run. Leave it out of commits.
 - Commit the build-info files (`*.tsbuildinfo`); the user tracks them.
 - Dev scripts live in `.sitepilot-test-artifacts/hosted-dev/` (git-ignored):
   - `serve.mts`: a local hosted server on fresh Postgres, connected to MAMP and signed in;
@@ -283,15 +314,14 @@ Latest results: vitest with Postgres 326 passed; PHPUnit 89 passed (with the alt
 
 ## Next steps
 
-1. **Roll out the library alt fix:** the user uploads `~/Downloads/wordpress-sitepilot-library-alt-fix.zip` (built from `7388582`; no branding changes in it).
-2. **Clean up test content** (only with the user's OK; these are drafts):
-   - live: posts 19 and 41, requests labelled `AUTOMATED-TEST-HOSTED-LIVE-*`, and media 52 and 53 (unused, 403);
-   - MAMP drafts 4006, 4015, 4033, 4153, 4318, 4578 and 4587, plus earlier ones;
-   - the MAMP users `sitepilot-e2e-editor` (unused now) and `sitepilot-e2e-contributor` (reused by the E2E).
-3. **Decide about the simple HTML request pages** (`/requests` in `apps/server/src/pages.ts` and `routes.ts`). The React app replaces them, but they also cover a missing renderer build.
-4. **Prune `stored_files`:** for example, delete rows older than 30 days at startup.
+1. **Push and deploy:** the user's OK to push `4d07a82`, `b89d57e` and `e88bd53` (the first carries the branding session's stray files). Then wait for `/healthz` to show the commit. Migration 007 runs at startup.
+2. **Check the admin area live** in the user's Chrome: `/admin/people` lists the user. The account page links to it.
+3. **Upload the plugin zip** for `list_terms` and the branding: `~/Downloads/wordpress-sitepilot-list-terms.zip`.
+4. **Roadmap, next:**
+   - categories and tags, the write side (`docs/v2-roadmap.md`, "Categories and tags"): discovery of taxonomies per post type, `postFields.terms` in the contract, matching names to terms outside the model, commit with `wp_set_object_terms`, readback, rollback and review. `list_terms` and the tag filter, the read side, are done;
+   - more lookups from the registry plan: `query_content`, `get_revisions`, `search_media`, `list_menus`, `find_block_usage`, and recording lookup gaps.
 5. **Still open:**
-   - the admin area (Phase 6.1): role overrides, unlinking and revoking for other people;
+   - per-site rate limits (MCP plan 6);
    - an "Add images" upload in the claude.ai card;
    - trying Codex's approval prompt against the live server;
    - the Copilot planner (the production LLM gate);
@@ -300,6 +330,8 @@ Latest results: vitest with Postgres 326 passed; PHPUnit 89 passed (with the alt
    - the $5 Railway usage limit after the Hobby upgrade.
 
 ## Rules to keep
+
+- **Test content stays.** The user said on 2 October that every artifact in the test sites can stay. Don't propose cleaning up test posts, media, requests or users.
 
 - **Never enter passwords, API keys, registration codes or tokens into web forms,** and never print them. The user enters secrets in Railway and Supabase.
   - The one exception is local test sites: the E2E sets a random password for its own test user with wp-cli.
