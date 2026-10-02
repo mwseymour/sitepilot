@@ -436,6 +436,16 @@ export function createSlackApp(deps: {
    * latest post, or a new draft when it asks for new content. Anything else
    * is unknown, and the thread asks rather than guessing.
    */
+  /** Whether the post is live now. False when it can't be read, so the button still shows. */
+  async function isPublished(user: SignedInUser, postId: number): Promise<boolean> {
+    const getPost = findReadTool("get_post");
+    if (!getPost) return false;
+    const found = await deps.backend
+      .lookup({ siteId: user.siteId, tool: getPost, args: { post_id: postId } }, callerFor(user))
+      .catch(() => null);
+    return found?.ok === true && (found.result as Record<string, unknown>).post_status === "publish";
+  }
+
   /** Links to the site itself; a link elsewhere is content, not a post to change. */
   async function siteLinks(user: SignedInUser, text: string): Promise<URL[]> {
     const links = mentionedLinks(text);
@@ -935,7 +945,9 @@ export function createSlackApp(deps: {
       const published = status.target?.operation === "publish";
       const canPublish =
         status.result?.postId !== undefined &&
-        (status.target?.operation === "create_draft" || status.target?.operation === "edit" || status.target?.operation === "replace");
+        (status.target?.operation === "create_draft" || status.target?.operation === "edit" || status.target?.operation === "replace") &&
+        // An edit to a live post is live already: nothing to publish.
+        !(await isPublished(owner, status.result.postId));
       await post(`Done. Written to the site and verified.`, [
         {
           type: "section",
