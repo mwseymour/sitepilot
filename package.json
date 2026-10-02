@@ -36,6 +36,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate:v2-block-manifest": "tsx scripts/generate-v2-block-manifest.ts",
+    "generate:brand-assets": "tsx scripts/generate-brand-assets.ts",
     "test:e2e:hosted": "node scripts/check-node-version.mjs && node scripts/prepare-node-sqlite.mjs && tsx tests/e2e/hosted.ts"
   },
   "devDependencies": {

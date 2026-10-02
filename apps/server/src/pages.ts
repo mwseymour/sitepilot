@@ -14,7 +14,7 @@ const STYLE = `
 @media (prefers-color-scheme:dark){:root{--fg:#f0f0f1;--muted:#a7aaad;--line:#3c434a;--accent:#72aee6;--bg:#1d2327;--card:#2c3338}}
 *{box-sizing:border-box}body{margin:0;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--fg);background:var(--bg)}
 header{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;padding:.75rem 1rem;border-bottom:1px solid var(--line)}
-header strong{margin-right:auto}main{max-width:52rem;margin:0 auto;padding:1rem}
+header strong{margin-right:auto;display:flex;align-items:center;gap:.5rem}main{max-width:52rem;margin:0 auto;padding:1rem}
 a{color:var(--accent)}.muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:1rem;margin:1rem 0}
 input,textarea,select{font:inherit;width:100%;padding:.5rem;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 textarea{min-height:7rem}label{display:block;margin:.75rem 0 .25rem;font-weight:600}
@@ -24,14 +24,19 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem;bo
 img.preview{max-width:100%;border:1px solid var(--line);border-radius:6px}code,pre{font:14px ui-monospace,Menlo,monospace;overflow-wrap:anywhere;white-space:pre-wrap}
 .state{display:inline-block;padding:.1rem .5rem;border-radius:999px;border:1px solid var(--line);font-size:.875rem}.error{color:#d63638}`;
 
+/** The SitePilot mark. The source is assets/brand/sitepilot-mark.svg. */
+const MARK = `<svg viewBox="0 0 64 64" width="24" height="24" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#0e6a61"/><path d="M36 21h-8a7 7 0 0 0 0 14h6a7 7 0 0 1 0 14H19" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M36.5 13.5 46.5 21l-10 7.5Z" fill="#f2862e" stroke="#f2862e" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
+
+const ICONS = `<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/sitepilot-mark.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
+
 export function layout(title: string, body: string, user?: SignedInUser | null): string {
   const nav = user
     ? `<a href="/">Open SitePilot</a><a href="/account">${e(user.displayName)}</a>
        <form class="inline" method="post" action="/auth/sign-out"><button class="secondary" type="submit">Sign out</button></form>`
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${e(title)} · SitePilot</title><style>${STYLE}</style></head>
-<body><header><strong>SitePilot</strong>${nav}</header><main>${body}</main></body></html>`;
+<title>${e(title)} · SitePilot</title>${ICONS}<style>${STYLE}</style></head>
+<body><header><strong>${MARK}SitePilot</strong>${nav}</header><main>${body}</main></body></html>`;
 }
 
 export function messagePage(title: string, message: string, user?: SignedInUser | null): string {

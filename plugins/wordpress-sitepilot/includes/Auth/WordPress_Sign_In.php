@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace SitePilot\Auth;
 
+use SitePilot\Admin\Brand;
 use SitePilot\Registration\Store;
 
 /**
@@ -64,7 +65,7 @@ final class WordPress_Sign_In {
 		header( 'Cache-Control: no-store' );
 		echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . esc_html__( 'Sign in to SitePilot', 'sitepilot' ) . '</title>';
 		echo '<style>body{font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#1d2327}button,a.button{font:inherit;padding:.5rem 1rem;margin-right:.5rem}</style></head><body>';
-		echo '<h1>' . esc_html__( 'Sign in to SitePilot', 'sitepilot' ) . '</h1>';
+		echo Brand::heading( __( 'Sign in to SitePilot', 'sitepilot' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Brand::heading escapes the text.
 		/* translators: 1: the SitePilot client's name, 2: the WordPress user's display name, 3: their login. */
 		echo '<p>' . esc_html( sprintf( __( '%1$s wants to sign you in as %2$s (%3$s).', 'sitepilot' ), $name, $user->display_name, $user->user_login ) ) . '</p>';
 		echo '<p>' . esc_html__( 'It will see your name, email address and what you can do on this site, such as whether you can publish.', 'sitepilot' ) . '</p>';

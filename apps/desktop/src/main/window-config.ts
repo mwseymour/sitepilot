@@ -28,6 +28,11 @@ export function resolveRendererEntry(): string {
   return join(__dirname, "..", "renderer", "index.html");
 }
 
+/** The Dock icon for development runs; packaged builds use build/icon.icns. */
+export function resolveDevDockIcon(): string {
+  return join(__dirname, "..", "..", "build", "icon-macos.png");
+}
+
 export interface WorkAreaSize {
   width: number;
   height: number;

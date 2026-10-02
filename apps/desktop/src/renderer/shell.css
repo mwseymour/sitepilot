@@ -197,6 +197,19 @@
   padding: 0.85rem 0.75rem 0.75rem;
 }
 
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.4rem 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.rail-brand img {
+  flex: 0 0 auto;
+}
+
 .rail-top {
   position: relative;
   display: flex;
@@ -494,6 +507,7 @@
   flex-direction: column;
 }
 
+.workspace-grid.is-sidebar-collapsed .rail-brand-name,
 .workspace-grid.is-sidebar-collapsed .rail-switcher-copy,
 .workspace-grid.is-sidebar-collapsed .rail-switcher-button > .rail-icon,
 .workspace-grid.is-sidebar-collapsed .rail-search-label,
@@ -505,6 +519,7 @@
   display: none;
 }
 
+.workspace-grid.is-sidebar-collapsed .rail-brand,
 .workspace-grid.is-sidebar-collapsed .rail-switcher-button,
 .workspace-grid.is-sidebar-collapsed .rail-search {
   justify-content: center;

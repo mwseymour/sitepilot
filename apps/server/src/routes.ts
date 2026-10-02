@@ -85,6 +85,9 @@ const RETURN_PATH = /^\/(?:oauth\/consent\?request=[A-Za-z0-9_-]+|slack\/connect
 
 const WORKSPACE_ID = "workspace-1";
 
+/** The logo files at the root, where browsers and claude.ai look for a favicon. */
+const BRAND_FILES = new Set(["/favicon.ico", "/sitepilot-mark.svg", "/apple-touch-icon.png"]);
+
 /** The connected site. One site per deployment, as the build spec says. */
 async function connectedSite() {
   const sites = await getDatabase().repositories.sites.listByWorkspaceId(
@@ -492,6 +495,10 @@ export function createRoutes(deps: RoutesDependencies) {
     const reviewLink = /^\/r\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(path);
     if (deps.reviewLinks && reviewLink && method === "GET") {
       return reviewLinkImage(response, deps.reviewLinks, reviewLink[1] as string).then(() => true);
+    }
+    if (deps.app && BRAND_FILES.has(path) && method === "GET") {
+      if (!deps.app.serveFile(response, path)) send(response, 404, "Not found", { "content-type": "text/plain" });
+      return true;
     }
     if (deps.app && path.startsWith("/assets/") && method === "GET") {
       if (!deps.app.serveFile(response, path)) send(response, 404, "Not found", { "content-type": "text/plain" });

@@ -16,6 +16,7 @@ async function start(user: { appRole: string; siteRoles: string[] }): Promise<st
   mkdirSync(join(directory, "assets"));
   writeFileSync(join(directory, "index.html"), "<!doctype html><div id=root></div>");
   writeFileSync(join(directory, "assets", "index-abc.js"), "console.log(1)");
+  writeFileSync(join(directory, "favicon.ico"), "icon");
   const app = createAppShell({ appVersion: "0.1.0", directory });
   server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -45,6 +46,10 @@ describe("the hosted app shell", () => {
     const asset = await fetch(`${base}/assets/index-abc.js`);
     expect(asset.headers.get("content-type")).toContain("text/javascript");
     expect(asset.headers.get("cache-control")).toContain("immutable");
+    // The favicon keeps its name, so it isn't cached for good.
+    const icon = await fetch(`${base}/favicon.ico`);
+    expect(icon.headers.get("content-type")).toBe("image/x-icon");
+    expect(icon.headers.get("cache-control")).toBe("public, max-age=86400");
     expect((await fetch(`${base}/assets/..%2f..%2fpackage.json`)).status).toBe(404);
     expect((await fetch(`${base}/assets/missing.js`)).status).toBe(404);
   });

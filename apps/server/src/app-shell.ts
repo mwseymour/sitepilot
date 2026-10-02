@@ -46,6 +46,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".ico": "image/x-icon",
   ".jpg": "image/jpeg",
   ".woff2": "font/woff2",
   ".json": "application/json",
@@ -77,7 +78,10 @@ export function createAppShell(input: { appVersion: string; directory?: string }
         "content-type": CONTENT_TYPES[extname(file)] ?? "application/octet-stream",
         ...(relative === "index.html"
           ? { "content-security-policy": APP_CSP, "cache-control": "no-store" }
-          : { "cache-control": "public, max-age=31536000, immutable" })
+          : relative.startsWith("assets/")
+            ? { "cache-control": "public, max-age=31536000, immutable" }
+            : // Icons keep their names, so a new logo shows within a day.
+              { "cache-control": "public, max-age=86400" })
       });
       return true;
     },

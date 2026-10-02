@@ -8,6 +8,7 @@ import {
 } from "./mcp-server-service.js";
 import {
   createMainWindowOptions,
+  resolveDevDockIcon,
   resolveRendererEntry
 } from "./window-config.js";
 
@@ -41,6 +42,9 @@ function registerLifecycle(): void {
   registerIpcHandlers();
 
   void app.whenReady().then(async () => {
+    if (process.platform === "darwin" && !app.isPackaged) {
+      app.dock?.setIcon(resolveDevDockIcon());
+    }
     await createMainWindow();
     // A failed start is reported in Settings, not as a launch error.
     void startMcpServerIfEnabled(app.getVersion()).catch(() => undefined);

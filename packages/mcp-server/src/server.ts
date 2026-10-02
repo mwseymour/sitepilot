@@ -19,6 +19,7 @@ import type {
   McpResult,
   SitePilotMcpBackend
 } from "./backend.js";
+import { SITEPILOT_ICON_PNG } from "./brand-icon.js";
 import { REVIEW_CARD_URI, reviewCardHtml } from "./review-card.js";
 
 export const SITEPILOT_MCP_SERVER_NAME = "sitepilot";
@@ -287,7 +288,13 @@ export function createSitePilotMcpServer(
 ): McpServer {
   const { backend } = options;
   const server = new McpServer(
-    { name: SITEPILOT_MCP_SERVER_NAME, version: options.version },
+    {
+      name: SITEPILOT_MCP_SERVER_NAME,
+      title: "SitePilot",
+      version: options.version,
+      // Clients that show server icons, such as Claude, use this one.
+      icons: [{ src: SITEPILOT_ICON_PNG, mimeType: "image/png", sizes: ["128x128"] }]
+    },
     {
       instructions: [
         "SitePilot manages one or more WordPress sites.",

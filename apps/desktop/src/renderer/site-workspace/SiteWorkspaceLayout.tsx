@@ -306,6 +306,10 @@ function SiteWorkspaceChrome(): ReactElement {
       className={`workspace-grid${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}
     >
       <aside className="workspace-side rail">
+        <div className="rail-brand">
+          <img src="./sitepilot-mark.svg" alt="" width={22} height={22} />
+          <span className="rail-brand-name">SitePilot</span>
+        </div>
         <div className="rail-top">
           <SiteSwitcher
             currentSiteId={siteId}

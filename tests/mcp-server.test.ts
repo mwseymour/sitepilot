@@ -72,6 +72,20 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
 }
 
 describe("SitePilot MCP server", () => {
+  it("introduces itself with SitePilot's name and icon", async () => {
+    const client = await connect(fakeBackend());
+    expect(client.getServerVersion()).toMatchObject({
+      name: "sitepilot",
+      title: "SitePilot",
+      icons: [
+        {
+          mimeType: "image/png",
+          src: expect.stringMatching(/^data:image\/png;base64,/)
+        }
+      ]
+    });
+  });
+
   it("registers only lookups and request-workflow tools", async () => {
     const client = await connect(fakeBackend());
     const { tools } = await client.listTools();

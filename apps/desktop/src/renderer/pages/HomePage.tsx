@@ -39,6 +39,7 @@ export function HomePage(): ReactElement {
   return (
     <main className="app-shell home-shell">
       <section className="hero-card">
+        <img className="hero-mark" src="./sitepilot-mark.svg" alt="" width={44} height={44} />
         <p className="eyebrow">SitePilot</p>
         <h1>Workspaces</h1>
         <p className="lede">

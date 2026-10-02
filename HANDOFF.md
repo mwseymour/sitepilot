@@ -1,0 +1,316 @@
+# Handoff: hosted SitePilot (Railway + Supabase)
+
+Updated 2 October 2026, about 11:30 BST. Branch: `main`. Last pushed commit: `7388582` (library alt text for new images). Another session was editing branding files in the same working tree on 2 October (plugin `Admin/Brand.php`, server pages, renderer styles): stage files explicitly and leave theirs alone.
+
+## Goal
+
+Run SitePilot as a hosted service alongside the standalone desktop app, from one repo:
+
+- The desktop app (`apps/desktop`, Electron) stays standalone on local SQLite. Don't make it depend on the server.
+- The hosted server (`apps/server`) runs the same services on Supabase Postgres, deployed on Railway. It manages one WordPress site.
+- People sign in with WordPress. Roles come from WordPress capabilities:
+  - anyone who can publish (authors, editors, admins) approves;
+  - contributors make requests.
+- **The whole workflow works in chat apps** (claude.ai, Codex, Claude Code, Slack): request, see the desktop and mobile previews in the chat, then approve, apply and publish there.
+- **Approval only by explicit consent the model can't fake:** a button click or the app's own prompt. Typing "approve" never approves, in chat apps or in the hosted app, where the right-hand panel buttons are still needed.
+- **The hosted app looks and works like the Electron app.** The user did design work on the desktop interface. This is now done: the server serves the same React build (see below).
+
+The user's working preferences:
+
+- Build lean, and don't over-engineer.
+- Implement the whole batch first, then test once at the end.
+- Commit, then push to `main` to deploy (Railway deploys `main`).
+- End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- "Break nothing."
+
+## Current progress
+
+### Architecture (all committed and pushed)
+
+- **`packages/core` (`@sitepilot/core/<module>`)** holds the shared services: requests, chat, conversations, the v2 engine glue, the MCP backend, registration, discovery and settings. Core reads its database, secure storage and data folder only from `configureRuntimeContext` (`packages/core/src/runtime-context.ts`).
+  - The desktop wires SQLite, Electron safeStorage and its user-data folder (`apps/desktop/src/main/desktop-runtime.ts`).
+  - The server wires Postgres (`apps/server/src/index.ts`).
+- **The app's IPC handlers are shared.** `packages/core/src/ipc-handlers.ts` exports `registerSharedIpcHandlers(host)`, with 47 of the 50 channels.
+  - Electron registers them with `ipcMain` (`apps/desktop/src/main/ipc.ts`), plus the three local MCP server channels, which are desktop only.
+  - The server answers them at `POST /api/ipc/:channel` (`apps/server/src/app-shell.ts`).
+- **One API client for both:** `createSitePilotDesktopApi(transport)` in `packages/contracts/src/desktop-api.ts`.
+  - The preload uses `ipcRenderer.invoke`.
+  - In a browser, `apps/desktop/src/renderer/main.tsx` uses `fetch('/api/ipc/<channel>')` and sets `window.sitePilotHosted`.
+  - `apps/desktop/src/renderer/hosted.ts` (`isHostedApp()`) hides desktop-only parts: Add site, All sites, provider keys, the local MCP server, plugin trust, supported-blocks indexing, and export and import. It adds "Account and tokens" and "Sign out" to the site menu.
+  - In hosted mode the home page opens the one connected site.
+- **`packages/sql` (`@sitepilot/sql`)** is one async SQL interface for SQLite and Postgres, with `@name` parameters. Shared SQL must be portable.
+- **Postgres** (`packages/repositories/src/postgres.ts`) uses the `sitepilot` schema, with the API roles revoked. Migrations:
+  - 001: core schema;
+  - 002: encrypted secrets;
+  - 003: sign-in tables;
+  - 004: `stored_files`;
+  - 005: OAuth;
+  - 006: Slack (`slack_links`, `slack_threads`).
+- **Durable files on the server:** review previews and staged media are written to the container's disk and copied to `stored_files`. They're read back from there when a deploy has wiped the disk.
+  - The code is `packages/services/src/stored-file-mirror.ts`, and the optional `mirror` argument on `FileGutenbergV2ReviewArtifactStore` and `FileGutenbergV2StagedAssetStore`.
+  - Core turns it on only when `sql.dialect === "postgres"`.
+  - Nothing removes old rows yet.
+- **Secrets on the server** are AES-256-GCM under `SITEPILOT_SECRETS_KEY` (`packages/services/src/sql-secure-storage.ts`). Provider keys come from the `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variables.
+- **REST roots:** `packages/plugin-protocol/src/rest-root.ts` builds every REST URL from the site's own REST root.
+
+### OAuth for remote MCP (`4284b0d`, live)
+
+- `apps/server/src/oauth.ts`: `SitePilotOAuthProvider`, behind the MCP SDK's `mcpAuthRouter`, mounted with Express for those paths only (`isOAuthPath`). Migration 005 holds clients, pending authorizations, codes, consents and tokens.
+- **Flow:**
+  1. `/mcp` answers 401 with `resource_metadata`.
+  2. The client registers itself (open registration; https redirect URIs, or http on localhost).
+  3. `/authorize` → `/oauth/consent` → Sign in with WordPress. The `sp_return` cookie brings the person back to the consent page.
+  4. Allow → a one-use code → `/token`.
+- **Consent page CSP:** its `form-action` includes the redirect origin, because Chrome applies `form-action` to the redirect after the post.
+- **Tokens:**
+  - access `spa_…`, 1 hour, bound to `/mcp`;
+  - refresh `spr_…`, 30 days, rotating, with reuse ending the grant;
+  - personal `spt_…` tokens still work.
+- **Scopes** (in `packages/mcp-server` `TOOL_SCOPES`): `request` covers `create_request` and `add_to_request`; `review` covers `get_review_artifact`; everything else needs `read`.
+- **Audit:** the client name comes from the registration (`clientDisplayName`). claude.ai is recognised by its `claude.ai` or `claude.com` callback.
+- **Limits:** `/mcp` allows 120 calls a minute per person, in memory.
+- **Verified live:** the discovery metadata, and 400 errors from `/token` and `/authorize` behind Railway's proxy.
+- **Verified live:** the user's claude.ai (Free plan) connects with OAuth, and runs requests, the review card and publishing.
+
+### Approving from chat apps (`0ba3b0e`, live)
+
+The user decided: everything happens in the chat, with explicit consent, so typed text never approves.
+
+- **`ask_to_approve`** (MCP elicitation, for Codex and Claude Code; Codex 0.145 supports it). SitePilot asks in the app's own prompt, showing what changes and the preview links. Only the answer "approve" in that prompt approves, and approving applies at once.
+- **`show_review`**, claude.ai's inline card (MCP Apps, `packages/mcp-server/src/review-card.ts`). It has the previews and Approve and apply / Reject buttons.
+  - The buttons call `decide_from_card`, which only the card can call (`visibility: ["app"]`), with a one-use, 30-minute ticket bound to the person and that preview, delivered in the result's `_meta`.
+  - The `@modelcontextprotocol/ext-apps@1.7.5` client is inlined into the card, inside its own block because the minified bundle shares the module scope.
+  - `tests/review-card-browser.test.ts` runs the card in a minimal host.
+- **Publishing** is a publish request, approved the same way.
+- **Core** (`createDesktopMcpBackend({ chatApproval: true })`, hosted only): `approvalSubject` and `decideForPerson`. The desktop's local MCP server has no approval tools.
+- **The `approve` scope** is granted at consent only to people who can publish (`grantableScopes`). **Existing connections need reconnecting to get it.**
+- **Signed preview links:** `/r/<payload>.<hmac>` (`apps/server/src/review-links.ts`), 24 hours, no sign-in, with a key derived from `SITEPILOT_SECRETS_KEY`.
+- **Typed approvals** (`APPROVAL_LIKE_REPLY` in `request-ingress-service.ts`) are answered with `TYPED_APPROVAL_REPLY`, and the preview isn't rebuilt.
+- **Verified live on 1 October,** by the user in claude.ai on the Free plan, after reconnecting with `approve` and starting a new chat:
+  - `show_review` rendered the card;
+  - the Approve button approved a publish request;
+  - **post 91** ("Dynamic Search Ads and AI Max…") is published on dev.mattseymour.co.uk.
+- **Also live:** the card puts its buttons first, scrolls long previews (max 420px high) and follows the apply until it's done (`289fe42`).
+- **Not yet tried live:** Codex's prompt against the live server. The hosted E2E covers the prompt path locally.
+- **Gotchas:**
+  - claude.ai keeps a connector's tool list until a new chat.
+  - Disconnecting in claude.ai doesn't revoke SitePilot's tokens; the account page lists the old grant until you disconnect it there.
+
+### Slack (`34bfe1f`, `7730ab6`, `8480605`, live)
+
+- **Code:** `apps/server/src/slack.ts`, inside the hosted server, without Bolt. Off until `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` are set in Railway (both set by the user).
+- **Routes:** `/slack/events` and `/slack/interactions` check Slack's v0 signature and a 5-minute timestamp window, then answer at once. Both sit before the same-origin check in `routes.ts`. Every request is logged, with why one was refused.
+- **Flow:**
+  - Mention @SitePilot in a channel, or DM it. Each request lives in its Slack thread; replies revise it.
+  - People connect once with Sign in with WordPress: an ephemeral link to `/slack/connect?token=…`.
+  - Images and MP4/WebM videos on a message go into the request (`files:read`, from `files.slack.com` only).
+  - A sweeper every 8 seconds posts each open thread's changes: the change list, previews as image blocks (signed links), and Approve and apply / Reject. Notices are keyed so each is posted once.
+  - Only a button click by someone who can publish approves. Typing "approved" doesn't.
+  - "Done" has the post's link and a Publish it button. Publish continues the **same** request with `addToRequest("Publish it.")`, approved the same way (`8480605`; before, it started a new request).
+  - When SitePilot needs attention, the thread gets SitePilot's latest message in plain words.
+- **Slack app settings:** Event Subscriptions (request URL `/slack/events`), Interactivity (`/slack/interactions`), bot scopes including `files:read`. Reinstall after adding a scope.
+- **Verified live** on 1–2 October in the Berkshire Devs workspace (#sitepilot-chat, free plan): connect, a request with images, review, approve, Done and Publish.
+- **Gotcha:** a "signature didn't match" log means the Signing Secret in Railway is wrong; re-pasting it fixed it.
+
+### Reusing a post's images (`8480605`, live)
+
+- "Make that image the featured image" failed with "Unknown media ref: https://…png": the planner had no way to name an image already on the post.
+- The worker's `readSource` now adds `libraryMedia` to the source snapshot (attachment ID, SHA-256 of the file, URL, alt, media type, featured), read in the editor with `wp.apiFetch` and `crypto.subtle`.
+- Core offers each as a `library-<id>` media ref (`library_attachment`), and the planner prompt says never to put a URL where a media ref belongs.
+- **Verified live:** Wibble (post 102) got its featured image this way.
+
+### Library alt text (`7388582`, plugin zip not yet on the live site)
+
+- **The report:** on Wibble (post 102), the alt text change didn't show on the front end. The body image had it (`alt` in the image block); the featured image had `alt=""`.
+- **Why:** WordPress takes a featured image's alt from the media library (`_wp_attachment_image_alt`), and SitePilot uploaded images without setting it.
+- **Fix:** `Media_Service` keeps the approved alt in the staged intent and sets `_wp_attachment_image_alt` on **new** image attachments (`library_alt()`). Existing attachments aren't changed, since that field is shared wherever the image is used.
+- **Tests:** PHPUnit 89 passed; `npm run test:e2e:v2` passed, checking each new image's library alt via `libraryMedia` (MAMP attachments 5488–5501 have theirs).
+- **Rollout:** production zip at `~/Downloads/wordpress-sitepilot-library-alt-fix.zip`, for the user to upload. Wibble's existing image still needs its alt set once in Media Library.
+- **Decided (2 October):** follow WordPress's default. The library alt is set when an image is uploaded; later alt edits change only the image block, as in the block editor.
+
+### Hosted server (`apps/server`)
+
+- **Routes (`src/routes.ts`):**
+  - `/` serves the React app when signed in, and the sign-in page otherwise. Sign-in returns to `/`.
+  - `/assets/*` serves the renderer build (`apps/desktop/dist/renderer`, or `SITEPILOT_APP_DIR`).
+  - `POST /api/ipc/:channel` (`src/app-shell.ts`):
+    - needs a session (401 otherwise) and a same-origin request (403 otherwise);
+    - runs as that person (`asHostedUser`);
+    - refuses desktop-only channels with 404 `not_available`;
+    - refuses site setup channels with 403 unless the person is an admin. Deleting a thread needs approve rights.
+    - The services check approve rights for approving and applying.
+    - Handler errors answer `{ ok: false, code: "internal_error" }`.
+  - Kept: `/auth/*`, `/sites/connect` (only `SITEPILOT_SITE_URL`), `/account` (tokens), `/mcp` and `/healthz`.
+  - The simple HTML request pages at `/requests` remain as a fallback. There, approve applies at once.
+- **The Dockerfile** builds the server and the renderer (`npm run build:renderer -w @sitepilot/desktop`), and installs headless Chromium.
+- **The MCP approval hint** names the hosted app's address (the `approvalHint` option on `createDesktopMcpBackend`).
+
+### Plugin (`plugins/wordpress-sitepilot`)
+
+- Sign in with WordPress, and the editor write guard fix for `wp_global_styles` and `wp_navigation`, as before.
+- **New in `2ee894f`:** `assets/js/editor-bridge.js` checks again, for up to 10 seconds, that each preview image is placed and decoded. Before, it checked once and could fail with "preview image … did not load". This was seen once in the content suite.
+- **The live plugin** is the production zip of `066cf10` (media permissions), uploaded by the user on 1 October. The library alt fix needs the next zip.
+
+### Deployment (live)
+
+- **Railway:**
+  - project "amused-imagination", service `sitepilot-server`, EU West;
+  - deploys `main`, about 4–5 minutes a build;
+  - configured in the dashboard only (`RAILWAY_DOCKERFILE_PATH=apps/server/Dockerfile`);
+  - **watch paths** (Settings → Build). A push that changes nothing here is "SKIPPED":
+    - `/apps/server/**`, `/packages/**`, `/package.json` and `/package-lock.json`;
+    - added on 1 October because the image builds the interface: `/apps/desktop/src/renderer/**`, `/apps/desktop/index.html`, `/apps/desktop/package.json` and `/apps/desktop/vite.config.ts`.
+    - The Builder field may show "Railpack (Default)" while a build runs. The build log still says "load build definition from apps/server/Dockerfile".
+  - public domain `https://sitepilot-server-production.up.railway.app`. `/healthz` shows the commit, the database (4 migrations, TLS verified) and the secrets status.
+  - Variables, names only: `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `SITEPILOT_PG_CA_CERT`, `SITEPILOT_SECRETS_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `OPENAI_API_KEY`, `SITEPILOT_SITE_URL=https://dev.mattseymour.co.uk`, `RAILWAY_DOCKERFILE_PATH`, `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET`.
+  - The Trial had about $4.96 left on 2 October. Idle costs about a cent or two a night.
+- **Supabase:** project ref `goacdvgipyprqxjibdec`, Frankfurt, Free plan, Session pooler.
+- **Live test site:** `https://dev.mattseymour.co.uk`, WordPress 7.1.2 on LiteSpeed. It's connected to the hosted server, and the user (`mattseymour`, admin) is signed in to the hosted app in their Chrome.
+
+### Verified live on 1 October
+
+- **In the simple pages:**
+  - an edit to post 19, with a revision ("Ask for a change"), then approved and applied. WordPress shows the revised paragraph, and the post is still a draft.
+  - a rejected request (nothing written);
+  - a vague request, which the planner turned into a draft rather than asking a question; rejected.
+- **MCP over the internet**, with a token created and revoked in the browser:
+  - `list_sites`;
+  - `create_request` → `request_status` → awaiting approval;
+  - `get_review_artifact` returned the PNG;
+  - after revoking, the next call got 401.
+- **In the React app on Railway:**
+  - it opens on the live site, with the full history;
+  - a revision on the MCP request rebuilt its preview, then it was rejected with a reason;
+  - a new request went through preview, approve and apply to **post 41, a verified draft**.
+- **After deploying `86ed6ae`,** the then-pending MCP request lost its preview, before the mirror existed. The app disabled Approve and Reject ("refresh before deciding"), which is the safe behaviour.
+- **Mirror check passed:** see "Persistence check" below.
+- **On `edd6eb2`:**
+  - Settings shows "App 0.1.0 · hosted · protocol 1.0.0".
+  - MCP `request_status` gives the approval hint "Open SitePilot at https://sitepilot-server-production.up.railway.app, open the request and approve it there."
+  - That request ("hint-8b14") was rejected in the app, and its token revoked (401 afterwards).
+- **Nothing is left pending on the live site.** Every test request is done or rejected.
+- **The user's own test, "Full complex"** (a long post with two images and SEO fields):
+  - **First attempt:** it previewed and was approved, then applying failed with "Bound media attachment-1 is unavailable or exceeds the 10 MB verification limit".
+  - **Cause:** the plugin installs staged media with `tempnam()` (owner-only, 0600) and `rename()`. The LiteSpeed host serves uploads as a different user, so the files answered 403 even to a browser.
+  - **Fix (`066cf10`):** `Media_Service::make_readable_like_uploads()` gives the file its folder's permissions without execute bits, as WordPress does, on every bind. The worker's error now names the HTTP status.
+  - **Rollout:** the user uploaded the production zip. A retry, by a reply that rebuilt the candidate, went through to **post 67, a verified draft**, with media 61 and 62 served 200.
+  - **Left over:** media 52 and 53 from the failed run still answer 403. Nothing uses them; the user can delete them.
+
+### Tests
+
+**Policy (2 October):** the user stopped a full-suite run as far too long. Run the narrowest script that covers a change:
+
+- `npm run test:e2e:hosted` (about 5–6 minutes) for the server, OAuth, MCP over HTTP and Slack (a stand-in Slack API);
+- `npm run test:e2e:v2` (about 10 minutes) for the engine and plugin;
+- `npm run test:e2e:content` (about 15 minutes) only when the engine and chat both change;
+- `npm run test:e2e:all` only before a release or when asked. `tests/e2e/run-suite.ts` prints each script's time, runs `v2-acf` alongside the MAMP scripts, and skips `v2-long-post` unless `SITEPILOT_E2E_LONG_POST=1`.
+
+Latest results: vitest with Postgres 326 passed; PHPUnit 89 passed (with the alt fix).
+
+**Last full pass, at `2ee894f`:**
+
+- `npm run typecheck`: clean.
+- vitest with Postgres: 310 passed. New tests:
+  - `tests/server-app-shell.test.ts`;
+  - `tests/stored-file-mirror-postgres.test.ts`.
+- PHPUnit: 87 passed.
+- `npm run test:e2e:hosted` passed. It now drives the React app:
+  - sign-in lands in the app;
+  - `site.register` gets 404, and a signed-out call gets 401;
+  - Start request → Send → Approve this update → Apply → "Completed and verified";
+  - a contributor (`sitepilot-e2e-contributor`, created on MAMP with wp-cli and a random password each run) is refused approve, execute and `site.confirmConfig`, and is shown as a requester.
+- `npm run test:e2e:content`: 5 of 5 passed.
+  - `v2-gutenberg` failed once with the preview image flake. It passed when rerun alone, and in the full suite after the bridge fix.
+- `npm run test:e2e:all` at `edd6eb2`: 10 of 10 passed, with nothing skipped. That covers onboarding, chat, gutenberg, MCP, render check, status, SEO, ACF, long post and hosted. It left MAMP drafts 4578 (long post) and 4587 (hosted).
+
+### Leave these alone
+
+- `docs/v2-roadmap.md` holds someone else's edit. Never commit it.
+- `plugins/wordpress-sitepilot.zip` is untracked, made by the user.
+- `plugins/wordpress-sitepilot/.phpunit.result.cache` shows as modified. Leave it out of commits.
+- Commit the build-info files (`*.tsbuildinfo`); the user tracks them.
+- Dev scripts live in `.sitepilot-test-artifacts/hosted-dev/` (git-ignored):
+  - `serve.mts`: a local hosted server on fresh Postgres, connected to MAMP and signed in;
+  - `shots.mts`: screenshots plus failed IPC calls;
+  - `flow.mts` and `approve.mts`: drive a request;
+  - `channels.mts`: checks every IPC channel is registered.
+
+## What worked
+
+- **Driving the user's signed-in Chrome** with `mcp__Control_Chrome__*`.
+  - `open_url` with `new_tab: false` navigates the *active* tab, which may not be the one you meant. Prefer `execute_javascript` with `location.href = …` on a known `tab_id`.
+  - Scripts run in an **isolated world**. The DOM is shared, but page globals (`wp`, `window.sitePilotHosted`, CodeMirror instances) aren't visible. To reach them, append a `<script>` element and write the result to a DOM attribute.
+  - Async results don't come back: store them in `window.__x`, then read it in a second call.
+  - React inputs need the native value setter plus an `InputEvent`. Click buttons with `dispatchEvent(new MouseEvent('click', {bubbles: true}))`.
+- **Live plugin file changes without a zip:** use Plugins → Plugin File Editor.
+  1. Hash the current file in the page.
+  2. Apply the patch inside the page, with an injected script.
+  3. Check that the result hash equals the repo file.
+  4. Click Update File.
+  5. Fetch the served file and hash it.
+  This costs only the patch's size in tokens. A full zip passed in base64 would cost hundreds of thousands.
+- **The plugin zip needs `vendor/`** (the MCP adapter, loaded by `sitepilot.php`). Build a production zip:
+  1. rsync the plugin to a temp folder, without vendor, tests and `phpunit.xml`;
+  2. run `composer install --no-dev --optimize-autoloader`;
+  3. zip it.
+  This gives about 440 KB and 149 files, with no PHPUnit. The last one is in the session scratchpad as `wordpress-sitepilot.zip`.
+- **Testing hosted MCP in the browser,** so tokens never enter the transcript. Run the JS from the `/healthz` page, which has no page CSP.
+- **Screenshots of the hosted app locally:** `serve.mts` and `shots.mts` (above), then read the PNGs.
+- **Waiting for a deploy:** loop on `curl …/healthz` until `commit` matches.
+
+## What didn't work
+
+- **Docker builds locally:** Docker Hub metadata hung ("load metadata for node:22-bookworm-slim"). Railway builds the image itself, and a failed build leaves the running deployment in place.
+- **Playwright clicks and waits have no timeout by default.** `getByText(...).first()` waited forever on a hidden `<pre>` with the same text. Use `.filter({ visible: true })`.
+- **Named functions inside `page.evaluate`:** tsx/esbuild adds a `__name` helper that the page doesn't have (`ReferenceError: __name is not defined`). Use anonymous functions, or wrap one as `[fn][0]!`.
+- **Playwright route interception** doesn't catch redirected requests. The hosted E2E uses a real local callback server for OAuth.
+- **Slack's web app** won't open a tab from a synthetic click on the Connect button. The user clicks it.
+- **Testing "editor = requester":** WordPress editors and authors have `publish_posts`, so they approve. Use a contributor for requester tests.
+- **Top-level await in `.ts` scripts run with tsx** is compiled to CommonJS and fails. Name them `.mts`.
+- Earlier ones still apply:
+  - `railway.json` is ignored for new services;
+  - don't complete Railway's bot check;
+  - no full-screen screenshots;
+  - the simple pages' CSP blocks in-page fetch;
+  - stage files explicitly (`git add -u` once swept in `docs/v2-roadmap.md`);
+  - no foreground `sleep` over 20 seconds.
+
+## Persistence check (passed)
+
+1. "AUTOMATED-TEST-HOSTED-LIVE-persist-5d2e" was created on `2ee894f` and left awaiting approval.
+2. After the `edd6eb2` deploy (a new container, started 12:33 UTC), its desktop and mobile previews still loaded from Postgres, with Approve and Reject enabled.
+3. It was then rejected on purpose.
+
+## Next steps
+
+1. **Roll out the library alt fix:** the user uploads `~/Downloads/wordpress-sitepilot-library-alt-fix.zip` (built from `7388582`; no branding changes in it).
+2. **Clean up test content** (only with the user's OK; these are drafts):
+   - live: posts 19 and 41, requests labelled `AUTOMATED-TEST-HOSTED-LIVE-*`, and media 52 and 53 (unused, 403);
+   - MAMP drafts 4006, 4015, 4033, 4153, 4318, 4578 and 4587, plus earlier ones;
+   - the MAMP users `sitepilot-e2e-editor` (unused now) and `sitepilot-e2e-contributor` (reused by the E2E).
+3. **Decide about the simple HTML request pages** (`/requests` in `apps/server/src/pages.ts` and `routes.ts`). The React app replaces them, but they also cover a missing renderer build.
+4. **Prune `stored_files`:** for example, delete rows older than 30 days at startup.
+5. **Still open:**
+   - the admin area (Phase 6.1): role overrides, unlinking and revoking for other people;
+   - an "Add images" upload in the claude.ai card;
+   - trying Codex's approval prompt against the live server;
+   - the Copilot planner (the production LLM gate);
+   - desktop release CI;
+   - Supabase Storage for large media, if `stored_files` grows;
+   - the $5 Railway usage limit after the Hobby upgrade.
+
+## Rules to keep
+
+- **Never enter passwords, API keys, registration codes or tokens into web forms,** and never print them. The user enters secrets in Railway and Supabase.
+  - The one exception is local test sites: the E2E sets a random password for its own test user with wp-cli.
+- **Plugin updates on the live site:** the user has allowed you to update the plugin.
+  - **JS and CSS:** the Plugin File Editor with a hash check works.
+  - **PHP:** the editor's save failed on this host, with "An error occurred while saving your changes". WordPress checks PHP edits with a request back to the site, and reverts the file when that check fails. The user uploads a production zip instead.
+  - **Don't deploy the server while the user is applying a request.** A restart cuts off the background apply.
+- **Don't run E2E against the shared MAMP site while another session uses it.** Check with `ps aux | grep tests/e2e`.
+- **Sync the local test sites' plugin copies before E2E:** rsync `plugins/wordpress-sitepilot/` to `/Users/mattseymour/Desktop/Test dev/wp-content/plugins/wordpress-sitepilot/` and `/Users/mattseymour/Desktop/playground/web/app/plugins/wordpress-sitepilot/`, excluding vendor, tests, composer.lock and `.phpunit.result.cache`.
+- **Use Node 22:** put `$HOME/.nvm/versions/node/v22.22.3/bin` first on PATH. After running the Electron app, run `node scripts/prepare-node-sqlite.mjs` before vitest.
+- **Packages load from `dist`:** rebuild with `npx tsc -b apps/desktop/tsconfig.main.json apps/server/tsconfig.json` and `npm run build:renderer -w @sitepilot/desktop` before E2E.
+- **Test environment for the Postgres tests and the hosted E2E:**
+  - `SITEPILOT_TEST_POSTGRES_URL=postgres://postgres@127.0.0.1:55432/sitepilot_test` (`docker start sitepilot-pg-test`);
+  - `SITEPILOT_E2E_WP_PATH="/Users/mattseymour/Desktop/Test dev"`.

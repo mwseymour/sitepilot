@@ -1,3 +1,5 @@
+<img src="./assets/brand/sitepilot-mark.svg" width="72" alt="SitePilot logo">
+
 # SitePilot
 
 SitePilot is a local-first desktop control plane for WordPress sites. The product combines an Electron app, shared TypeScript packages, and a thin WordPress companion plugin so operators can plan, approve, execute, and audit site changes through typed workflows instead of unrestricted admin access.

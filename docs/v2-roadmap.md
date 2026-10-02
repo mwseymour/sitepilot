@@ -10,6 +10,7 @@ Status: planned, 25 September 2026. This is the forward-looking list for the Gut
 | Item | Plan | Size |
 | --- | --- | --- |
 | ACF follow-ups: attached media for image and file fields, `usePostMeta` storage, more field types | [Below](#acf-follow-ups) | M |
+| Third-party blocks, set up per site by an admin | [Below](#third-party-blocks-set-up-per-site) | L |
 | SEO fields (Yoast first) | [Expansion plan, Phase 3](./v2-expansion-plan.md#phase-3-seo-fields) | M |
 | Publish, unpublish and schedule | [Expansion plan, Phase 4](./v2-expansion-plan.md#phase-4-publish-and-unpublish) | M |
 | Choosing a request's post from the message | [Expansion plan, Phase 5](./v2-expansion-plan.md#phase-5-resolving-a-requests-target-from-text-sm) | S–M |
@@ -17,6 +18,7 @@ Status: planned, 25 September 2026. This is the forward-looking list for the Gut
 | Lookup registry and extensible conversations | [Below](#lookup-registry-and-extensible-conversations) | M–L |
 | SitePilot MCP server (Slack, Claude, Codex) | [MCP and Slack plan](./v2-mcp-plan.md), [v2 build, 9.1](./v2-build.md#91-sitepilot-mcp-server) and [below](#mcp-server) | L |
 | Streaming upload for videos over 10 MB | [Below](#large-media-uploads) | M |
+| Staging sites, with promotion to live (idea) | [Below](#staging-sites-and-promotion-to-live) | L |
 
 **Shared prerequisite.** SEO fields, and categories and tags, both need non-string post fields. Today `requestedPostFields()` in `packages/services/src/gutenberg-v2-content-service.ts` keeps string values only. They also need a staleness hash separate from `fields_hash`. Do that contract work once, for both.
 
@@ -25,7 +27,7 @@ Status: planned, 25 September 2026. This is the forward-looking list for the Gut
 2. Categories and tags together with SEO, since they share a prerequisite.
 3. Publishing and target resolution.
 4. The MCP server, then the Slack app as its client.
-5. ACF follow-ups and large media uploads, as sites need them.
+5. ACF follow-ups, third-party blocks and large media uploads, as sites need them.
 
 ## Categories and tags
 
@@ -133,7 +135,81 @@ ACF blocks are discovered, authored from the site's field definitions, and enabl
 - **Attached media for ACF image and file fields.** Today these fields take existing media-library IDs only. The fix is to bind them through `mediaRef` like core images: upload after approval, then checksum-verify.
 - **`usePostMeta` storage.** Blocks that keep their fields in post meta stay kept-only. Writing them needs the post-meta path from the shared prerequisite above.
 - **More field types.** A block with a required gallery, user, Google Map or similar field stays kept-only until that field type has a reviewed shape.
-- **Other third-party blocks.** Plugin blocks other than ACF blocks are kept safely but cannot be authored. The read-only **Test third-party blocks** diagnostic (probe, placement, settings and content usage) is built; next is a reviewed definition per block, starting with Yoast FAQ, plus the same per-site save-and-reopen test ACF blocks use.
+- **Other third-party blocks.** See [Third-party blocks, set up per site](#third-party-blocks-set-up-per-site).
+
+## Third-party blocks, set up per site
+
+Planned, 2 October 2026. Plugin blocks other than ACF blocks (for example a table of contents block, Yoast's FAQ and How-to blocks, or WooCommerce blocks) are kept untouched today. Yoast SEO fields can be edited, but Yoast's blocks can't.
+
+Each site has its own plugins, and one server will run many sites, so supporting a block must not need a code change or a deploy. A site admin sets the block up for that site in the app, the way ACF blocks already work.
+
+**Why not a definition in code for each block.** Core blocks are the same on every site, so their rules live in code (`GUTENBERG_V2_SUPPORT_MATRIX` and `BLOCK_ATTRIBUTE_GUIDANCE`), and a new one ships with a deploy and a plugin update. Third-party blocks differ from site to site, and they change when their plugin updates. ACF already works per site:
+- the block's definition comes from the site;
+- the test runs on the site;
+- the plugin keeps the result (`sitepilot_v2_block_fixtures`).
+
+**Where the definition lives: on the site.** The plugin stores each definition and its test result in WordPress options, not in the SitePilot database:
+- The plugin makes the final check when writing (`Block_Policy::authorable_blocks()`), so it has to hold the list anyway.
+- The desktop app and the hosted app read the same list.
+- A server running many sites needs no per-site code or settings.
+- A server bug can't make a site accept a block that the site hasn't passed.
+
+### What the admin does
+
+1. Open **Diagnostics** and run **Test third-party blocks**. A block that builds cleanly shows **Set up**.
+2. Check the definition SitePilot drafted from the test, change it if needed, and save it.
+3. Run the block's test. When it passes, requests can write the block on that site.
+4. If the block's plugin updates and its registered settings change, the block goes back to kept-only until someone runs the test again.
+
+In the hosted app, setting up and testing blocks is limited to admins, like the other diagnostics (`ADMIN_ONLY` in `apps/server/src/app-shell.ts`).
+
+### The definition (M)
+
+The existing probe and usage scan give most of it: each block's settings (type, allowed values, defaults), where it can go, how it renders, and up to three stored examples.
+
+- **Purpose:** one line for the planner on what the block is for and when to use it. It's drafted from the block's title and description, and the admin confirms it.
+- **Settings:** each one is either:
+  - **set by requests:** the planner may set it, within its type and allowed values;
+  - **fixed:** always its default, or a value the admin picks;
+  - **set by the block:** left for the block's own editor code to fill, such as a contents block's list of headings. The probe's `changes_when_edited` result shows which settings behave like this.
+- **Children:** none, any authorable blocks, or a list. This comes from the block's `allowedBlocks` and whether it holds inner blocks.
+- **Fingerprint:** a hash of the block's registered settings and its plugin's version, like ACF's `schemaHash`.
+- **Top-level blocks only at first.** Blocks that can only go inside another block wait until their parent can be set up.
+
+The definition is saved through a new signed plugin route, from a new admin-only channel in the app. The plugin returns definitions and their test status from `/block-definitions` (next to `acfBlocks`), and passes them to the editor bridge in `Block_Policy::bridge_config()`.
+
+### The per-site test (M)
+
+Widen the ACF test to these blocks: `runBlockFixtures` (`packages/gutenberg-worker/src/runtime.ts`), the bridge's `blockFixture` and the plugin's `record_fixture`.
+
+- Build the block in the site's own editor with a sample value in every "set by requests" setting. Then save it, reopen it, save it through WordPress and render it, as for ACF.
+- Settings marked "set by the block" may change when the block is inserted. Any other change fails the test.
+- The plugin repeats the checks it can make itself, and records the result with the fingerprint. A pass adds the block to the site's reviewed list.
+- A changed fingerprint (the plugin updated, or its settings changed) turns the block back to kept-only, as a changed field group does for ACF.
+
+### Planning and writing (M)
+
+- `gutenbergV2SupportPolicy` treats any block with a passing definition on the site as `fixture_required`, as it already does for `acf/` names. No block name is added to `GUTENBERG_V2_SUPPORT_MATRIX`.
+- `Block_Policy::reviewed_blocks()` and `authorable_blocks()` include third-party blocks that passed. The bridge then reports them as `author_when_reviewed`, and the commit policy accepts them.
+- The planner's instructions for the block are built from the stored definition (purpose, settings and children), like `acfGuidance` in `packages/services/src/gutenberg-v2-plan-generator.ts`.
+- Before review, SitePilot checks the planner's settings against the definition:
+  - A value outside a setting's type or allowed values goes back to the planner once to correct, and then fails, as for ACF fields.
+  - Fixed settings are filled in by SitePilot, and "set by the block" settings by the block's own editor code, never by the planner.
+- The block is built in the site's editor like any other, so its own code runs. The preview, approval and readback cover exactly what it produced.
+
+### Ready-made definitions (S, optional)
+
+- For blocks many clients use, such as Yoast's FAQ and How-to blocks or common WooCommerce blocks, SitePilot can ship a ready-made definition that fills in the review form. The block still needs its per-site test.
+- When one server runs several sites, a definition reviewed on one site can be offered to another site that has the same block with the same fingerprint.
+
+### Open questions
+
+- **Blocks built from the rest of the post,** such as a table of contents:
+  - When a later request changes the headings, should SitePilot let the block refresh itself?
+  - How does that fit the rule that blocks a request doesn't touch stay byte-for-byte?
+- **Settings that hold markup or rich text:** allow them, or keep them fixed at first?
+- **Who can set up a block:** only site admins, as for the other diagnostics, or anyone who can publish?
+- **Server-rendered blocks with no saved markup:** is the render check enough for them, or do some need more?
 
 ## Large media uploads
 
@@ -150,3 +226,20 @@ Verification stays the same: checksum, container signature and served type.
 - **Embed previews.** Show the video's title and thumbnail in review screenshots, instead of a blank frame.
 - **More core blocks:** verse, file, audio, social links.
 - **Review:** a computed structural diff, alongside the stored before and after.
+
+## Staging sites and promotion to live
+
+Idea, logged 1 October 2026 and not yet planned. People connect a staging copy of a site alongside the live site. They create, edit and publish on staging, share it for feedback or visual sign-off, and then SitePilot replicates the change on live.
+
+- **Linked sites.** A live site can have a staging site linked to it. Both are registered the usual way, and the link records which one is live.
+- **Work happens on staging.** Requests plan, approve, apply and publish on staging, the same way they work today.
+- **Share for feedback.** The staging URL of a post can go to people who don't use SitePilot, so they can comment or give visual sign-off before anything reaches live.
+- **Promote to live.** After sign-off, SitePilot replays the same change on live: blocks, fields, SEO, terms and media. It goes to the matching live post, or creates one, and live gets its own approval, verification and rollback.
+
+Open questions:
+- How to match posts, media and terms between the two sites when their IDs differ.
+- What to do when the live post has changed since staging was copied from it. The usual staleness check against live may be enough.
+- Whether promotion replays the approved plan or copies the saved result from staging.
+- Whether a staging sign-off counts as the approval for live, or live always needs its own. Either way, the approval stays in SitePilot.
+- Whether reviewers record feedback and sign-off in SitePilot, for example from a review link, or only on the staging site.
+- What happens when staging is refreshed from live and the links between posts on the two sites stop matching.

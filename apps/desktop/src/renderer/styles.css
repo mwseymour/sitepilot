@@ -1459,6 +1459,11 @@ summary:focus-visible {
   letter-spacing: 0.15em;
 }
 
+.hero-mark {
+  display: block;
+  margin-bottom: 1rem;
+}
+
 h1 {
   letter-spacing: -0.035em;
 }

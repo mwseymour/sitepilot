@@ -79,7 +79,7 @@ final class Settings_Page {
 		$reg_code     = Registration_Code::current();
 
 		echo '<div class="wrap">';
-		echo '<h1>' . esc_html__( 'SitePilot', 'sitepilot' ) . '</h1>';
+		echo Brand::heading( __( 'SitePilot', 'sitepilot' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Brand::heading escapes the text.
 		self::render_notice();
 		echo '<p>' . esc_html__( 'SitePilot connects this site to the SitePilot desktop app. Protocol metadata and MCP endpoints are exposed only to authenticated users where required.', 'sitepilot' ) . '</p>';
 		echo '<h2>' . esc_html__( 'Endpoints', 'sitepilot' ) . '</h2>';
