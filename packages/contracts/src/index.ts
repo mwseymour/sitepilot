@@ -196,6 +196,22 @@ export type {
   GutenbergV2SeoField,
   GutenbergV2SeoValues
 } from "./gutenberg-v2-seo.js";
+export {
+  GUTENBERG_V2_TAXONOMIES,
+  GUTENBERG_V2_TAXONOMY_LABELS,
+  gutenbergV2PostTermsSchema,
+  gutenbergV2TermChangesSchema,
+  gutenbergV2TermMismatches,
+  gutenbergV2TermRefSchema,
+  gutenbergV2TermsCapabilitySchema
+} from "./gutenberg-v2-terms.js";
+export type {
+  GutenbergV2PostTerms,
+  GutenbergV2TermChanges,
+  GutenbergV2TermRef,
+  GutenbergV2Taxonomy,
+  GutenbergV2TermsCapability
+} from "./gutenberg-v2-terms.js";
 export type {
   GutenbergV2AcfBlockDefinition,
   GutenbergV2AcfDataOptions,

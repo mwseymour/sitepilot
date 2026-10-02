@@ -85,7 +85,11 @@ namespace {
 
 	if ( ! class_exists( 'WP_Taxonomy' ) ) {
 		class WP_Taxonomy {
-			public function __construct( public string $name, public bool $public = true, public bool $hierarchical = false ) {}
+			public object $cap;
+
+			public function __construct( public string $name, public bool $public = true, public bool $hierarchical = false ) {
+				$this->cap = (object) array( 'assign_terms' => 'post_tag' === $name ? 'assign_post_tags' : 'assign_categories' );
+			}
 		}
 	}
 
@@ -387,6 +391,32 @@ namespace {
 
 	function wp_count_terms( array $args ): int {
 		return count( sitepilot_test_matching_terms( $args ) );
+	}
+
+	function is_object_in_taxonomy( string $object_type, string $taxonomy ): bool {
+		return 'post' === $object_type && in_array( $taxonomy, array( 'category', 'post_tag' ), true );
+	}
+
+	function get_term( int $term_id, string $taxonomy = '' ): ?WP_Term {
+		foreach ( $GLOBALS['sitepilot_test_terms'][ $taxonomy ] ?? array() as $term ) {
+			if ( $term->term_id === $term_id ) {
+				return $term;
+			}
+		}
+		return null;
+	}
+
+	/** Assignments live in $GLOBALS['sitepilot_test_object_terms'][ $post_id ][ $taxonomy ] as term IDs. */
+	function wp_get_object_terms( int $post_id, string $taxonomy ): array {
+		$ids = $GLOBALS['sitepilot_test_object_terms'][ $post_id ][ $taxonomy ] ?? array();
+		return array_values( array_filter( array_map( static fn ( int $id ): ?WP_Term => get_term( $id, $taxonomy ), $ids ) ) );
+	}
+
+	function wp_set_object_terms( int $post_id, array $ids, string $taxonomy, bool $append = false ): array {
+		$GLOBALS['sitepilot_test_object_terms'][ $post_id ][ $taxonomy ] = $append
+			? array_values( array_unique( array_merge( $GLOBALS['sitepilot_test_object_terms'][ $post_id ][ $taxonomy ] ?? array(), $ids ) ) )
+			: array_values( $ids );
+		return $ids;
 	}
 
 	function get_post( int $post_id ): ?WP_Post {

@@ -13,13 +13,19 @@ import {
   GUTENBERG_V2_APPROVAL_MAX_TTL_MS,
   GUTENBERG_V2_SEO_FIELDS,
   GUTENBERG_V2_SEO_FIELD_LABELS,
+  GUTENBERG_V2_TAXONOMIES,
+  GUTENBERG_V2_TAXONOMY_LABELS,
   type GutenbergV2CompiledCandidate,
   type GutenbergV2BlockPlan,
   type GutenbergV2JobRecord,
+  type GutenbergV2PostTerms,
   type GutenbergV2SeoChanges,
   type GutenbergV2SourceSnapshot,
+  type GutenbergV2Taxonomy,
+  type GutenbergV2TermChanges,
   type ImageAttachmentPayload
 } from "@sitepilot/contracts";
+import { normalizeMcpToolResult } from "@sitepilot/mcp-client";
 import type {
   AuditEntryId,
   ChatMessageId,
@@ -58,6 +64,7 @@ import {
 import { createGutenbergV2DesktopRuntime } from "./gutenberg-v2-runtime-service.js";
 import { loadPlannerPreferences } from "./planner-preferences-service.js";
 import { fetchSiteUrl } from "./site-fetch.js";
+import { createMcpClientForSite } from "./site-mcp-client.js";
 
 const targetSchema = z.discriminatedUnion("operation", [
   z.object({
@@ -130,6 +137,22 @@ const WRITTEN_STATES = new Set([
   "rollback_conflict",
   "manual_intervention_required"
 ]);
+/** The terms each changed taxonomy ends with, for review. */
+export function termChangeList(terms: GutenbergV2TermChanges) {
+  return GUTENBERG_V2_TAXONOMIES.flatMap((taxonomy) => {
+    const list = terms[taxonomy];
+    return list === undefined
+      ? []
+      : [
+          {
+            taxonomy,
+            label: GUTENBERG_V2_TAXONOMY_LABELS[taxonomy],
+            value: list.length === 0 ? "None" : list.map((term) => term.name).join(", ")
+          }
+        ];
+  });
+}
+
 function seoChangeList(seo: GutenbergV2SeoChanges) {
   return GUTENBERG_V2_SEO_FIELDS.flatMap((field) => {
     const value = seo[field];
@@ -169,6 +192,33 @@ function statusPlan(
     status: { to: target.status },
     media: []
   };
+}
+
+/**
+ * The site's categories and tags (up to 100 of each), for the planner to
+ * match the model's names against. Undefined when they can't be read: the
+ * planner then doesn't offer terms.
+ */
+async function availableTermsFor(siteId: string): Promise<GutenbergV2PostTerms | undefined> {
+  try {
+    const mcp = await createMcpClientForSite(siteId as SiteId);
+    if (!mcp.ok) return undefined;
+    const list = async (taxonomy: GutenbergV2Taxonomy) => {
+      const result = normalizeMcpToolResult(
+        await mcp.client.callTool("sitepilot-list-terms", { taxonomy, limit: 100 })
+      );
+      if (result.ok !== true || !Array.isArray(result.terms)) throw new Error("list-terms failed");
+      return result.terms.flatMap((term: unknown) => {
+        const { term_id: id, name } = (term ?? {}) as { term_id?: unknown; name?: unknown };
+        return typeof id === "number" && id > 0 && typeof name === "string" && name.trim() !== ""
+          ? [{ id, name: name.trim().slice(0, 200) }]
+          : [];
+      });
+    };
+    return { category: await list("category"), post_tag: await list("post_tag") };
+  } catch {
+    return undefined;
+  }
 }
 
 function previousPlanFrom(
@@ -515,6 +565,11 @@ function toState(mapping: Mapping, job: GutenbergV2JobRecord) {
               ? {}
               : {
                   seoChanges: seoChangeList(candidate.requestedPostFields.seo)
+                }),
+            ...(candidate.requestedPostFields.terms === undefined
+              ? {}
+              : {
+                  termChanges: termChangeList(candidate.requestedPostFields.terms)
                 }),
             ...(candidate.requestedPostFields.featuredMediaRef === undefined
               ? {}
@@ -1109,11 +1164,16 @@ export async function generateGutenbergV2Candidate(input: {
             };
       const planner = await choosePlanner(input.siteId);
       if (!planner.ok) return planner;
+      const availableTerms =
+        input.target.postType === "post" && capabilities.terms !== undefined
+          ? await availableTermsFor(input.siteId)
+          : undefined;
       const planned = await buildLlmGutenbergV2Plan({
         request: request.userPrompt,
         siteId: input.siteId,
         target,
         capabilities,
+        ...(availableTerms === undefined ? {} : { availableTerms }),
         ...(media.length > 0 ? { media } : {}),
         ...(referenceImages.length > 0 ? { referenceImages } : {}),
         ...(revision === undefined ? {} : { revision }),

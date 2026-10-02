@@ -1,6 +1,8 @@
 import {
   GUTENBERG_V2_SEO_FIELDS,
   GUTENBERG_V2_SEO_FIELD_LABELS,
+  GUTENBERG_V2_TAXONOMIES,
+  GUTENBERG_V2_TAXONOMY_LABELS,
   type GutenbergV2CompiledCandidate,
   type GutenbergV2ExecutionResult,
   type GutenbergV2JobRecord,
@@ -69,6 +71,17 @@ function seoLines(candidate: GutenbergV2CompiledCandidate): string[] {
       : [
           `${GUTENBERG_V2_SEO_FIELD_LABELS[field]}: ${value === "" ? "cleared (plugin default)" : clip(value)}`
         ];
+  });
+}
+
+function termLines(candidate: GutenbergV2CompiledCandidate): string[] {
+  const terms = candidate.requestedPostFields.terms;
+  if (terms === undefined) return [];
+  return GUTENBERG_V2_TAXONOMIES.flatMap((taxonomy) => {
+    const list = terms[taxonomy];
+    return list === undefined
+      ? []
+      : [`${GUTENBERG_V2_TAXONOMY_LABELS[taxonomy]}: ${list.length === 0 ? "none" : clip(list.map((term) => term.name).join(", "))}`];
   });
 }
 
@@ -172,6 +185,7 @@ export function candidateReadyReport(input: {
           `Featured image: ${featuredImageLabel(candidate)} (${candidate.requestedPostFields.featuredMediaRef})`
         ]),
     ...seoLines(candidate),
+    ...termLines(candidate),
     `Content: ${changeSummary(candidate)}; destination editor validation ${candidate.validation.outcome} (${candidate.validation.observedBlockCount}/${candidate.validation.expectedBlockCount} blocks).`,
     ...(input.revisionNote === undefined
       ? []
@@ -440,6 +454,15 @@ export function friendlyCandidateReady(input: {
           )
             .map((field) => GUTENBERG_V2_SEO_FIELD_LABELS[field].toLowerCase())
             .join(", ")}.`
+        ]),
+    ...(input.candidate.requestedPostFields.terms === undefined
+      ? []
+      : [
+          `It sets the ${GUTENBERG_V2_TAXONOMIES.filter(
+            (taxonomy) => input.candidate.requestedPostFields.terms?.[taxonomy] !== undefined
+          )
+            .map((taxonomy) => GUTENBERG_V2_TAXONOMY_LABELS[taxonomy].toLowerCase())
+            .join(" and ")}.`
         ]),
     "Check the preview, then approve it, or reply here with anything you want changed. Nothing is saved until you approve and apply it.",
     ...(input.notices ?? [])

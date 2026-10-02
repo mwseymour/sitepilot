@@ -392,6 +392,8 @@ final class Editor_Session {
 					'blockPolicy'              => Block_Policy::bridge_config(),
 					// The SEO plugin v2 can write here, if any, and its fields.
 					'seo'                      => \SitePilot\Seo\Seo_Adapter::describe(),
+					// The categories and tags v2 can set on this post type, if any.
+					'terms'                    => Post_Terms::describe( (string) $post->post_type ),
 					'source'                   => array(
 						'postId'      => $post_id,
 						'postType'    => (string) $post->post_type,
@@ -408,6 +410,7 @@ final class Editor_Session {
 						'fieldsHash'  => hash( 'sha256', Runtime_Fingerprint::canonical_json( array( 'excerpt' => (string) $post->post_excerpt, 'status' => (string) $post->post_status, 'title' => (string) $post->post_title ), true ) ),
 						'blockTreeFingerprint' => hash( 'sha256', Runtime_Fingerprint::canonical_json( parse_blocks( (string) $post->post_content ) ) ),
 						...self::source_seo( $post_id ),
+						...( null !== Post_Terms::describe( (string) $post->post_type ) ? array( 'terms' => Post_Terms::read( $post_id ) ) : array() ),
 						'publicUrl'   => self::public_url( $post ),
 					),
 				)

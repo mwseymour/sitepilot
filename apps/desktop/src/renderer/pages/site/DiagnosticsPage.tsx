@@ -160,7 +160,7 @@ function CapabilitiesSection({
           </div>
           <div>
             <dt>Post fields</dt>
-            <dd>Title, excerpt, featured image, publish and unpublish</dd>
+            <dd>Title, excerpt, featured image, categories and tags, publish and unpublish</dd>
           </div>
         </dl>
         <p className="muted small-print">
@@ -169,8 +169,8 @@ function CapabilitiesSection({
           these on purpose, but never edits them.
         </p>
         <p className="muted small-print">
-          <strong>Not yet:</strong> categories and tags, scheduling, private
-          posts, custom post types, slug, author and date.
+          <strong>Not yet:</strong> new categories and tags, scheduling,
+          private posts, custom post types, slug, author and date.
         </p>
       </div>
     </section>

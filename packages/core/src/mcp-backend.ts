@@ -413,6 +413,14 @@ export function createDesktopMcpBackend(
                 : {}),
               ...(candidate.featuredImage
                 ? { featuredImage: candidate.featuredImage.label }
+                : {}),
+              ...(candidate.termChanges
+                ? {
+                    terms: candidate.termChanges.map((change) => ({
+                      label: change.label,
+                      value: change.value
+                    }))
+                  }
                 : {})
             },
             reviewArtifacts: candidate.reviewArtifacts.map((artifact) => ({

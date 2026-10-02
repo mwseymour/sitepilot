@@ -837,6 +837,18 @@ const gutenbergV2CandidateSummarySchema = z.object({
     .object({ label: z.string().max(2_000) })
     .strict()
     .optional(),
+  /** Categories and tags the post ends with, for each taxonomy that changes. */
+  termChanges: z
+    .array(
+      z
+        .object({
+          taxonomy: z.string().min(1),
+          label: z.string().min(1),
+          value: z.string()
+        })
+        .strict()
+    )
+    .optional(),
   validation: gutenbergV2ValidationReportSchema,
   /** Empty only for a publish or unpublish, which renders nothing new. */
   reviewArtifacts: z.array(gutenbergV2ArtifactReferenceSchema).max(3)

@@ -45,6 +45,7 @@ const status: Step = {
   env: wpPathEnv
 };
 const seo: Step = { script: "v2-seo", skipReason: needsWpPath, env: wpPathEnv };
+const terms: Step = { script: "v2-terms", skipReason: needsWpPath, env: wpPathEnv };
 const renderCheck: Step = {
   script: "v2-render-check",
   skipReason: needsWpPath,
@@ -96,7 +97,7 @@ const hosted: Step = {
 const SUITES: Record<string, Step[]> = {
   smoke: [onboarding, chat],
   content: [onboarding, chat, engine, mcp, renderCheck],
-  all: [onboarding, chat, engine, mcp, renderCheck, status, seo, acf, longPost, hosted]
+  all: [onboarding, chat, engine, mcp, renderCheck, status, seo, terms, acf, longPost, hosted]
 };
 
 type Outcome = {

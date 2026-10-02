@@ -117,6 +117,7 @@ function reviewView(siteId: string, status: McpRequestStatus) {
     if (status.changes.excerpt) changes.push(status.changes.excerpt);
     for (const item of status.changes.seo ?? []) changes.push(`${item.label}: ${item.value}`);
     if (status.changes.featuredImage) changes.push(`Featured image: ${status.changes.featuredImage}`);
+    for (const item of status.changes.terms ?? []) changes.push(`${item.label}: ${item.value}`);
   }
   const previews = (status.reviewArtifacts ?? [])
     .filter((artifact) => artifact.kind === "preview" && artifact.url)

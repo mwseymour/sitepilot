@@ -235,6 +235,10 @@
       // The SEO plugin whose fields v2 can write on this site, if any.
       ...(config.seo && typeof config.seo === "object"
         ? { seo: config.seo }
+        : {}),
+      // The categories and tags v2 can set on this post type, if any.
+      ...(config.terms && typeof config.terms === "object"
+        ? { terms: config.terms }
         : {})
     };
     snapshot.fingerprint = await sha256({ ...snapshot, capturedAt: undefined });

@@ -11,6 +11,11 @@ import {
   gutenbergV2SeoChangesSchema,
   gutenbergV2SeoValuesSchema
 } from "./gutenberg-v2-seo.js";
+import {
+  gutenbergV2PostTermsSchema,
+  gutenbergV2TermChangesSchema,
+  gutenbergV2TermsCapabilitySchema
+} from "./gutenberg-v2-terms.js";
 
 export const GUTENBERG_V2_SCHEMA_VERSION = "sitepilot.block-plan/v2" as const;
 
@@ -1132,7 +1137,9 @@ const postFieldChangesSchema = z
     excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
     featuredMediaRef: featuredMediaRefSchema.optional(),
     /** SEO plugin fields; approved, written, verified and rolled back with the post. */
-    seo: gutenbergV2SeoChangesSchema.optional()
+    seo: gutenbergV2SeoChangesSchema.optional(),
+    /** Categories and tags, as the set each changed taxonomy ends with. */
+    terms: gutenbergV2TermChangesSchema.optional()
   })
   .strict()
   .refine(
@@ -1140,7 +1147,8 @@ const postFieldChangesSchema = z
       value.title !== undefined ||
       value.excerpt !== undefined ||
       value.featuredMediaRef !== undefined ||
-      value.seo !== undefined,
+      value.seo !== undefined ||
+      value.terms !== undefined,
     { message: "At least one post field change is required." }
   );
 
@@ -1233,6 +1241,7 @@ const createDraftPlanSchema = z
         excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
         featuredMediaRef: featuredMediaRefSchema.optional(),
         seo: gutenbergV2SeoChangesSchema.optional(),
+        terms: gutenbergV2TermChangesSchema.optional(),
         status: z.literal("draft")
       })
       .strict(),
@@ -1874,7 +1883,9 @@ export const gutenbergV2EditorCapabilitySnapshotSchema = z
       })
       .strict(),
     blocks: z.array(gutenbergV2CapabilityBlockSchema).max(2_000),
-    seo: gutenbergV2SeoCapabilitySchema.optional()
+    seo: gutenbergV2SeoCapabilitySchema.optional(),
+    /** Categories and tags the editor can set; older plugins leave this out. */
+    terms: gutenbergV2TermsCapabilitySchema.optional()
   })
   .strict();
 
@@ -1897,7 +1908,9 @@ const sourceStateSchema = z
     contentHash: sha256Schema.optional(),
     affectedFieldsHash: sha256Schema,
     /** Hash of the post's SEO values, when the candidate changes them. */
-    affectedSeoHash: sha256Schema.optional()
+    affectedSeoHash: sha256Schema.optional(),
+    /** Hash of the post's categories and tags, when the candidate changes them. */
+    affectedTermsHash: sha256Schema.optional()
   })
   .strict();
 
@@ -1907,6 +1920,7 @@ const requestedPostFieldsSchema = z
     excerpt: z.string().max(GUTENBERG_V2_LIMITS.maxTextLength).optional(),
     featuredMediaRef: featuredMediaRefSchema.optional(),
     seo: gutenbergV2SeoChangesSchema.optional(),
+    terms: gutenbergV2TermChangesSchema.optional(),
     status: z.literal("draft").optional()
   })
   .strict();
@@ -2025,6 +2039,7 @@ export const gutenbergV2ApprovalBindingSchema = z
     sourceContentHash: sha256Schema.optional(),
     sourceRevision: identifierSchema.optional(),
     affectedSeoHash: sha256Schema.optional(),
+    affectedTermsHash: sha256Schema.optional(),
     capabilityFingerprint: sha256Schema,
     mediaManifestHash: sha256Schema
   })
@@ -2303,6 +2318,8 @@ export const gutenbergV2PreparedCommitSchema = z
     featuredMediaId: positiveIntegerSchema.optional(),
     /** Hash of the SEO values the commit must leave, when it changes them. */
     serverPreparedSeoHash: sha256Schema.optional(),
+    /** Hash of the categories and tags the commit must leave, when it changes them. */
+    serverPreparedTermsHash: sha256Schema.optional(),
     /** For an unpublish: the URL that was public before the change. */
     publishedUrl: urlSchema.optional(),
     preparedAt: isoTimestampSchema,
@@ -2495,6 +2512,8 @@ export const gutenbergV2SourceSnapshotSchema = z
     fieldsHash: sha256Schema,
     /** Current SEO values, when the site has a supported SEO plugin. */
     seo: gutenbergV2SeoValuesSchema.optional(),
+    /** Current categories and tags, when the editor can set them. */
+    terms: gutenbergV2PostTermsSchema.optional(),
     /** The URL the post has, or will have once published. */
     publicUrl: urlSchema.optional(),
     blockTreeFingerprint: sha256Schema,
@@ -2650,6 +2669,8 @@ export const gutenbergV2ReadbackSchema = z
     featuredMediaId: nonNegativeIntegerSchema.optional(),
     seo: gutenbergV2SeoValuesSchema.optional(),
     seoHash: sha256Schema.optional(),
+    terms: gutenbergV2PostTermsSchema.optional(),
+    termsHash: sha256Schema.optional(),
     /** The post's current permalink. */
     permalink: urlSchema.optional()
   })

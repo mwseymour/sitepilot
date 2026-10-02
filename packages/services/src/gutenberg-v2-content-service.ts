@@ -35,7 +35,8 @@ import {
   type GutenbergV2ValidationIssue,
   type GutenbergV2ValidationReport,
   gutenbergV2SupportPolicy,
-  gutenbergV2SeoMismatches
+  gutenbergV2SeoMismatches,
+  gutenbergV2TermMismatches
 } from "@sitepilot/contracts";
 
 import {
@@ -314,15 +315,32 @@ function requestedPostFields(
   plan: GutenbergV2BlockPlan
 ): GutenbergV2CompiledCandidate["requestedPostFields"] {
   if (!("postFields" in plan) || plan.postFields === undefined) return {};
-  const { seo, ...fields } = plan.postFields;
+  const { seo, terms, ...fields } = plan.postFields;
   return {
     ...Object.fromEntries(
       Object.entries(fields).filter(
         (entry): entry is [string, string] => typeof entry[1] === "string"
       )
     ),
-    ...(seo === undefined ? {} : { seo })
+    ...(seo === undefined ? {} : { seo }),
+    ...(terms === undefined ? {} : { terms })
   };
+}
+
+// The requested categories and tags read back, and the post's whole set of
+// terms is what the server prepared.
+function termsMatch(
+  job: GutenbergV2JobRecord,
+  readback: GutenbergV2Readback
+): boolean {
+  const requested = job.candidate?.requestedPostFields.terms;
+  if (requested === undefined) return true;
+  return (
+    readback.terms !== undefined &&
+    readback.termsHash === hashGutenbergV2Value(readback.terms) &&
+    readback.termsHash === job.preparedCommit?.serverPreparedTermsHash &&
+    gutenbergV2TermMismatches(requested, readback.terms).length === 0
+  );
 }
 
 // Every requested SEO field reads back as approved, and the whole SEO state
@@ -359,6 +377,9 @@ function approvalBinding(
     ...(candidate.sourceState.affectedSeoHash === undefined
       ? {}
       : { affectedSeoHash: candidate.sourceState.affectedSeoHash }),
+    ...(candidate.sourceState.affectedTermsHash === undefined
+      ? {}
+      : { affectedTermsHash: candidate.sourceState.affectedTermsHash }),
     ...(source
       ? {
           sourceContentHash: source.sourceContentHash,
@@ -573,6 +594,12 @@ export class GutenbergV2ContentService {
           "The post's SEO fields could not be read, so they cannot be changed."
         );
       }
+      if (fields.terms !== undefined && source && source.terms === undefined) {
+        throw new GutenbergV2ServiceError(
+          "stale_source",
+          "The post's categories and tags could not be read, so they cannot be changed."
+        );
+      }
       // An SEO change is bound to the SEO values it was planned against, so
       // a later edit in the SEO plugin makes the candidate stale.
       const sourceState = source
@@ -583,7 +610,12 @@ export class GutenbergV2ContentService {
             affectedFieldsHash: hashGutenbergV2Value(source.fields),
             ...(fields.seo === undefined || source.seo === undefined
               ? {}
-              : { affectedSeoHash: hashGutenbergV2Value(source.seo) })
+              : { affectedSeoHash: hashGutenbergV2Value(source.seo) }),
+            // Likewise categories and tags: a later change to them in
+            // WordPress makes the candidate stale.
+            ...(fields.terms === undefined || source.terms === undefined
+              ? {}
+              : { affectedTermsHash: hashGutenbergV2Value(source.terms) })
           }
         : { affectedFieldsHash: hashGutenbergV2Value({}) };
       const candidate = gutenbergV2CompiledCandidateSchema.parse({
@@ -1128,6 +1160,7 @@ export class GutenbergV2ContentService {
       readback.fieldsHash === job.persistedFieldsHash &&
       readback.fieldsHash === job.preparedCommit?.serverPreparedFieldsHash &&
       seoMatches(job, readback) &&
+      termsMatch(job, readback) &&
       report.contentPreservation.checked.includes("post_fields");
     const renderFailure =
       report.outcome === "valid" && hashesMatch
@@ -1498,6 +1531,19 @@ export class GutenbergV2ContentService {
       throw new GutenbergV2ServiceError(
         "schema_invalid",
         "This site has no supported SEO plugin (Yoast SEO), so SEO fields cannot be changed."
+      );
+    }
+    const terms = "postFields" in plan ? plan.postFields?.terms : undefined;
+    const settable = capabilities.terms?.taxonomies ?? [];
+    if (
+      terms !== undefined &&
+      (plan.target.postType !== "post" ||
+        (terms.category !== undefined && !settable.includes("category")) ||
+        (terms.post_tag !== undefined && !settable.includes("post_tag")))
+    ) {
+      throw new GutenbergV2ServiceError(
+        "schema_invalid",
+        "Categories and tags can only be set on posts, with a SitePilot plugin that supports them."
       );
     }
     const destination = new Map(
@@ -1875,12 +1921,12 @@ export class GutenbergV2ContentService {
     )
       ? approvedReport.contentPreservation.checked
       : [...approvedReport.contentPreservation.checked, "post_fields" as const];
-    // The featured image is verified by attachment ID in the worker, not as
-    // a text field here.
+    // The featured image, SEO, and categories and tags are verified in the
+    // worker, not as text fields here.
     const mismatchedFields = Object.entries(expectedFields).filter(
       ([field, expected]) =>
         field !== "featuredMediaRef" &&
-        expected !== undefined &&
+        typeof expected === "string" &&
         readback.fields[field as keyof typeof readback.fields] !== expected
     );
     const workerIssues =

@@ -658,11 +658,13 @@ export function GutenbergV2CandidatePanel({
   });
   const fields = candidate.candidate?.requestedPostFields;
   const seoChanges = candidate.candidate?.seoChanges ?? [];
+  const termChanges = candidate.candidate?.termChanges ?? [];
   const hasFieldChanges =
     Boolean(fields?.title) ||
     Boolean(fields?.excerpt) ||
     Boolean(candidate.candidate?.featuredImage) ||
-    seoChanges.length > 0;
+    seoChanges.length > 0 ||
+    termChanges.length > 0;
   const validationValid = candidate.candidate?.validation.outcome === "valid";
   const shownPreview =
     previews.find(({ reference }) => (reference.viewport ?? "desktop") === viewport) ??
@@ -836,6 +838,12 @@ export function GutenbergV2CandidatePanel({
                   <dd>{fields.excerpt}</dd>
                 </div>
               ) : null}
+              {termChanges.map((change) => (
+                <div key={change.taxonomy}>
+                  <dt>{change.label}</dt>
+                  <dd>{change.value}</dd>
+                </div>
+              ))}
               {seoChanges.map((change) => (
                 <div key={change.field}>
                   <dt>{change.label}</dt>

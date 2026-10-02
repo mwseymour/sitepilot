@@ -92,6 +92,17 @@ On sites running **Yoast SEO**, a request can set or change a post's SEO fields,
 - **Only plain text is accepted**: no HTML, line breaks or double spaces, so what you approve is exactly what WordPress stores.
 - Conversations can read a post's SEO fields ("what's the meta description on post 946?").
 
+## Categories and tags
+
+A request can set a post's categories and tags, on its own or together with content ("tag this with Lakes", "move it to Travel").
+
+- **Existing terms only.** SitePilot matches the names in the request to the site's categories and tags (ignoring case and punctuation), outside the model. A name that matches nothing is left out; new terms can't be created yet.
+- **Review** shows the categories or tags the post ends with, for each one that changes. A post always keeps at least one category.
+- **Approval covers them** like the title and excerpt. If someone changes the post's categories or tags in WordPress after review, the write is refused.
+- **They're written in the same database transaction as the post**, then read back and checked by term ID. A failed check rolls them back to exactly what they were, unless someone has changed them since.
+- Posts only (pages have no categories or tags), with a plugin from 2 October 2026 or later. The planner sees up to 100 categories and 100 tags.
+- Conversations can list categories and tags, and filter posts by either (`list_terms`).
+
 ## Media
 
 - **Images:** JPEG, PNG, WebP and GIF, attached in the chat or already in the media library.
@@ -124,4 +135,5 @@ Planned work for each gap is in the [v2 roadmap](./v2-roadmap.md).
 - **Large videos.** Uploads over 10 MB need a streaming upload that is not built yet.
 - **Embed previews.** YouTube and Vimeo embeds show as a blank frame in review screenshots, because third-party players are blocked there.
 - **Posts with an invalid or old-format block** that v2 could author cannot be edited until the post is resaved in WordPress.
-- **Other content types.** Only posts and pages are supported, not custom post types. Categories, tags, slug, author and date cannot be edited.
+- **Other content types.** Only posts and pages are supported, not custom post types. Slug, author and date cannot be edited.
+- **New categories and tags.** Only existing terms can be assigned; creating one needs a journal so a retry never duplicates it.

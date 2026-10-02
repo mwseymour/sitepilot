@@ -129,6 +129,15 @@ final class Commit_Service {
 				return self::error( 'schema_invalid', 'An SEO change to an existing post must be bound to its current SEO fields.', 400 );
 			}
 		}
+		$term_changes = self::requested_terms( $candidate );
+		if ( null !== $term_changes ) {
+			if ( 'create_draft' !== $operation && '' === (string) ( $candidate['sourceState']['affectedTermsHash'] ?? '' ) ) {
+				return self::error( 'schema_invalid', 'A category or tag change to an existing post must be bound to its current terms.', 400 );
+			}
+			if ( ! self::terms_transactional() ) {
+				return self::error( 'conditional_commit_failed', 'The WordPress term tables do not support the transactional commit.', 503 );
+			}
+		}
 		if ( 'create_draft' === $operation ) {
 			$post_type = sanitize_key( (string) ( $candidate['intent']['target']['postType'] ?? '' ) );
 			$empty_fields_hash = hash( 'sha256', Runtime_Fingerprint::canonical_json( array(), true ) );
@@ -192,6 +201,17 @@ final class Commit_Service {
 				'status'  => $status_to ?? (string) $source_post->post_status,
 			);
 		}
+		// The terms the post ends with, checked against the site's own terms.
+		$prepared_terms = null;
+		if ( null !== $term_changes ) {
+			if ( 'post' !== $post_type ) {
+				return self::error( 'schema_invalid', 'Categories and tags can only be set on posts.', 400 );
+			}
+			$prepared_terms = Post_Terms::prepare( $term_changes, $post_id );
+			if ( is_string( $prepared_terms ) ) {
+				return self::error( 'schema_invalid', $prepared_terms, 422 );
+			}
+		}
 		// The featured image must be one of the approved, bound media items.
 		$featured_media_id = 0;
 		$featured_ref      = $candidate['requestedPostFields']['featuredMediaRef'] ?? null;
@@ -233,6 +253,7 @@ final class Commit_Service {
 			'serverPreparedFieldsHash' => self::fields_hash( $prepared_fields['title'], $prepared_fields['excerpt'], $prepared_fields['status'] ),
 			...( $featured_media_id > 0 ? array( 'featuredMediaId' => $featured_media_id ) : array() ),
 			...( null !== $seo_changes ? array( 'serverPreparedSeoHash' => Seo_Adapter::hash( array_merge( self::seo_base( $post_id ), $seo_changes ) ) ) : array() ),
+			...( null !== $prepared_terms ? array( 'serverPreparedTermsHash' => Post_Terms::hash( $prepared_terms ) ) : array() ),
 			// Verification checks this URL stops loading once unpublished.
 			...( 'draft' === $status_to ? array( 'publishedUrl' => (string) get_permalink( (int) $post_id ) ) : array() ),
 			'preparedAt'                => gmdate( 'c', $now ),
@@ -414,6 +435,17 @@ final class Commit_Service {
 				throw new \RuntimeException( 'conditional_commit_failed' );
 			}
 
+			// Categories and tags too, after the post row so WordPress's default
+			// category on a new draft is replaced rather than added to.
+			$term_changes = self::requested_terms( $candidate );
+			if ( null !== $term_changes && ! Post_Terms::write( $post_id, $term_changes ) ) {
+				throw new \RuntimeException( 'conditional_commit_failed' );
+			}
+			$terms_hash_after = null !== $term_changes ? Post_Terms::current_hash( $post_id ) : '';
+			if ( null !== $term_changes && ! hash_equals( (string) ( $prepared['serverPreparedTermsHash'] ?? '' ), $terms_hash_after ) ) {
+				throw new \RuntimeException( 'conditional_commit_failed' );
+			}
+
 			$row_after = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID = %d", $post_id ), ARRAY_A );
 			if ( ! is_array( $row_after ) ) {
 				throw new \RuntimeException( 'conditional_commit_failed' );
@@ -430,6 +462,7 @@ final class Commit_Service {
 				'revision'    => self::revision_identifier( $post_id, $row_after ),
 				'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
 				...( '' !== $seo_hash_after ? array( 'seoHash' => $seo_hash_after ) : array() ),
+				...( '' !== $terms_hash_after ? array( 'termsHash' => $terms_hash_after ) : array() ),
 			);
 			self::update_option_row( $before_key, $before_record );
 			$receipt = array(
@@ -522,6 +555,7 @@ final class Commit_Service {
 			'fieldsHash'    => self::fields_hash( (string) $post->post_title, (string) $post->post_excerpt, (string) $post->post_status ),
 			'featuredMediaId' => (int) get_post_thumbnail_id( $post_id ),
 			...self::seo_readback( $post_id ),
+			...self::terms_readback( $post ),
 			'permalink'     => (string) get_permalink( $post_id ),
 		);
 	}
@@ -574,6 +608,8 @@ final class Commit_Service {
 				|| ( array_key_exists( 'featuredMediaId', $written ) && (int) $written['featuredMediaId'] !== (int) get_post_thumbnail_id( $post_id ) )
 				// SEO fields someone edited after the write are never overwritten.
 				|| ( isset( $written['seoHash'] ) && ! hash_equals( (string) $written['seoHash'], Seo_Adapter::current_hash( $post_id ) ) )
+				// So are categories and tags.
+				|| ( isset( $written['termsHash'] ) && ! hash_equals( (string) $written['termsHash'], Post_Terms::current_hash( $post_id ) ) )
 			) {
 				$wpdb->query( 'ROLLBACK' );
 				return array( 'schemaVersion' => 'sitepilot.recover-response/v2', 'outcome' => 'conflict', 'evidenceRef' => $before_ref );
@@ -614,6 +650,9 @@ final class Commit_Service {
 				}
 			}
 			if ( isset( $written['seoHash'] ) && is_array( $before['seo_meta'] ?? null ) && ! Seo_Adapter::restore( $post_id, $before['seo_meta'] ) ) {
+				throw new \RuntimeException( 'rollback_failed' );
+			}
+			if ( isset( $written['termsHash'] ) && is_array( $before['terms'] ?? null ) && ! Post_Terms::restore( $post_id, $before['terms'] ) ) {
 				throw new \RuntimeException( 'rollback_failed' );
 			}
 			$restored_row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID = %d FOR UPDATE", $post_id ), ARRAY_A );
@@ -700,6 +739,9 @@ final class Commit_Service {
 		if ( isset( $candidate['sourceState']['affectedSeoHash'] ) ) {
 			$expected['affectedSeoHash'] = (string) $candidate['sourceState']['affectedSeoHash'];
 		}
+		if ( isset( $candidate['sourceState']['affectedTermsHash'] ) ) {
+			$expected['affectedTermsHash'] = (string) $candidate['sourceState']['affectedTermsHash'];
+		}
 		foreach ( $expected as $key => $value ) {
 			if ( ! isset( $binding[ $key ] ) || ! is_string( $binding[ $key ] ) || ! hash_equals( $value, $binding[ $key ] ) ) {
 				return self::error( 'approval_invalid', "Approval binding field {$key} does not match the candidate.", 409 );
@@ -750,6 +792,9 @@ final class Commit_Service {
 		if ( isset( $candidate['sourceState']['affectedSeoHash'] ) && ! hash_equals( (string) $candidate['sourceState']['affectedSeoHash'], Seo_Adapter::current_hash( $post_id ) ) ) {
 			return self::error( 'stale_source', 'The source SEO fields changed before preparation.', 409 );
 		}
+		if ( isset( $candidate['sourceState']['affectedTermsHash'] ) && ! hash_equals( (string) $candidate['sourceState']['affectedTermsHash'], Post_Terms::current_hash( $post_id ) ) ) {
+			return self::error( 'stale_source', 'The post\'s categories or tags changed before preparation.', 409 );
+		}
 		$expected = $candidate['intent']['target']['expectedFields'] ?? array();
 		foreach ( array( 'title' => (string) $post->post_title, 'excerpt' => (string) $post->post_excerpt ) as $key => $value ) {
 			if ( isset( $expected[ $key ]['valueHash'] ) && ! hash_equals( (string) $expected[ $key ]['valueHash'], self::value_hash( $value ) ) ) {
@@ -777,6 +822,9 @@ final class Commit_Service {
 			return 'stale_source';
 		}
 		if ( isset( $candidate['sourceState']['affectedSeoHash'] ) && ! hash_equals( (string) $candidate['sourceState']['affectedSeoHash'], Seo_Adapter::current_hash( (int) $row['ID'] ) ) ) {
+			return 'stale_source';
+		}
+		if ( isset( $candidate['sourceState']['affectedTermsHash'] ) && ! hash_equals( (string) $candidate['sourceState']['affectedTermsHash'], Post_Terms::current_hash( (int) $row['ID'] ) ) ) {
 			return 'stale_source';
 		}
 		$expected = $candidate['intent']['target']['expectedFields'] ?? array();
@@ -988,6 +1036,7 @@ final class Commit_Service {
 			'post_status'   => (string) $row['post_status'],
 			'_thumbnail_id' => isset( $row['ID'] ) ? (int) get_post_thumbnail_id( (int) $row['ID'] ) : 0,
 			'seo_meta'      => isset( $row['ID'] ) && Seo_Adapter::active() ? Seo_Adapter::raw_meta( (int) $row['ID'] ) : null,
+			'terms'         => isset( $row['ID'], $row['post_type'] ) && null !== Post_Terms::describe( (string) $row['post_type'] ) ? Post_Terms::read( (int) $row['ID'] ) : null,
 		);
 	}
 
@@ -1011,6 +1060,33 @@ final class Commit_Service {
 		$base = array_fill_keys( Seo_Adapter::FIELDS, '' );
 		$base['indexing'] = 'default';
 		return $base;
+	}
+
+	/** @param array<string, mixed> $candidate @return array<string, mixed>|null */
+	private static function requested_terms( array $candidate ): ?array {
+		$terms = $candidate['requestedPostFields']['terms'] ?? null;
+		return is_array( $terms ) && ! empty( $terms ) ? $terms : null;
+	}
+
+	/** Term assignments roll back with the post only on InnoDB tables. */
+	private static function terms_transactional(): bool {
+		global $wpdb;
+		foreach ( array( $wpdb->term_relationships, $wpdb->term_taxonomy ) as $table ) {
+			$row = $wpdb->get_row( $wpdb->prepare( 'SHOW TABLE STATUS WHERE Name = %s', $table ), ARRAY_A );
+			if ( ! is_array( $row ) || 'INNODB' !== strtoupper( (string) ( $row['Engine'] ?? '' ) ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @return array<string, mixed> */
+	private static function terms_readback( \WP_Post $post ): array {
+		if ( null === Post_Terms::describe( (string) $post->post_type ) ) {
+			return array();
+		}
+		$terms = Post_Terms::read( (int) $post->ID );
+		return array( 'terms' => $terms, 'termsHash' => Post_Terms::hash( $terms ) );
 	}
 
 	/** @return array<string, mixed> */

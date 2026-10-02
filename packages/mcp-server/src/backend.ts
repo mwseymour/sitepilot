@@ -82,6 +82,8 @@ export type McpRequestStatus = {
     excerpt?: string;
     seo?: Array<{ label: string; value: string }>;
     featuredImage?: string;
+    /** Categories and tags the post ends with, per changed taxonomy. */
+    terms?: Array<{ label: string; value: string }>;
   };
   /** On the hosted server, each has a signed link that opens without signing in. */
   reviewArtifacts?: Array<{ id: string; kind: string; url?: string }>;

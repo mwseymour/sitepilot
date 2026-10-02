@@ -460,6 +460,7 @@ export function createSlackApp(deps: {
       if (status.changes.excerpt) lines.push(status.changes.excerpt);
       for (const item of status.changes.seo ?? []) lines.push(`${item.label}: ${item.value}`);
       if (status.changes.featuredImage) lines.push(`Featured image: ${status.changes.featuredImage}`);
+      for (const item of status.changes.terms ?? []) lines.push(`${item.label}: ${item.value}`);
     }
     const previews = (status.reviewArtifacts ?? []).filter((artifact) => artifact.kind === "preview" && artifact.url);
     const value = JSON.stringify({ r: status.requestId, c: candidateId });

@@ -5,6 +5,7 @@ Updated 2 October 2026, about 12:30 BST. Branch: `main`. Last pushed commit: `73
 - `4d07a82`: the branding session's logo commit. It also swept in `docs/v2-roadmap.md`, `plugins/wordpress-sitepilot.zip` and `.phpunit.result.cache`.
 - `b89d57e`: the admin area, `/requests` removed, `stored_files` pruning and the composer fix.
 - `e88bd53`: `list_terms` and the tag filter.
+- The commit after it: categories and tags on posts (below).
 
 ## Goal
 
@@ -175,7 +176,39 @@ After Send, `onSubmitPrompt` reloaded the bundle with its stale `loadBundle`, wh
 - **Plugin:** `sitepilot/list-terms` (`includes/Mcp/Term_Query.php`), read-only. It lists a public taxonomy's terms (category by default, or `post_tag`): ID, slug, name, parent and count, with search, parent and a limit of 1–100. Private taxonomies are refused (`invalid_taxonomy`). It's listed in `Server_Registrar`.
 - **Tags:** `find-posts` and `get-post` take `tag`, and `get-post` returns `tag_slugs`.
 - **Registry:** a `list_terms` entry. The Conversations agent builds its tool list from every registry entry with a `conversationPromptLine` (`CONVERSATION_TOOL_NAMES` in `conversation-service.ts`), so a new lookup needs only a plugin ability and a registry entry.
-- **Rollout:** production zip `~/Downloads/wordpress-sitepilot-list-terms.zip` (from `e88bd53`, 445 KB, 150 files, no PHPUnit; it includes the branding plugin changes). Until it's uploaded, `list_terms` fails on the live site with a lookup error, and nothing else changes.
+- **Rollout:** in the categories-and-tags zip (below).
+
+### Categories and tags on posts (committed after `e88bd53`, plugin zip not yet on the live site)
+
+The roadmap's write side, first cut: **existing terms only**, posts only.
+
+- **Contract** (`packages/contracts/src/gutenberg-v2-terms.ts`):
+  - `postFields.terms` is `{category?, post_tag?}`, each the **whole set the taxonomy ends with**, as `{id, name}` sorted by ID. A post keeps at least one category.
+  - Wired into `requestedPostFields` (so `requestedFieldsHash` covers it), `sourceState.affectedTermsHash` and the approval binding (`affectedTermsHash`).
+  - Also: the capability snapshot's `terms.taxonomies` (the gate; older plugins leave it out), the source snapshot's `terms`, the prepared commit's `serverPreparedTermsHash`, and the readback's `terms` and `termsHash`.
+- **Planner** (`gutenberg-v2-plan-generator.ts`):
+  - The model writes `{"post_tag":{"add":["Lakes"]}}` (or `set` or `remove`) by name.
+  - `draftWithResolvedTerms` matches names to `availableTerms`, ignoring case and punctuation, and computes the final set against `source.terms`. Unchanged taxonomies are dropped.
+  - Unknown or ambiguous names go back to the model as repair issues, and fail the plan if it insists.
+  - Terms are offered only on posts, with `capabilities.terms`, and when `availableTerms` was read.
+- **Chat service:** `availableTermsFor` reads up to 100 categories and 100 tags with the `list_terms` lookup (`sitepilot-list-terms`) before planning. If that fails, terms aren't offered.
+- **Plugin** (`includes/V2/Post_Terms.php`):
+  - describe, read, hash, prepare, write and restore;
+  - `Commit_Service` checks the terms at prepare (they must exist, the service user needs `assign_terms`, and InnoDB term tables are required), checks `affectedTermsHash` in both source checks, and writes with `wp_set_object_terms` after the post row in the same transaction;
+  - it also records `termsHash` in `writtenState`, and restores the before-state's terms on rollback (refused if the terms changed since);
+  - `Editor_Session` puts `terms` in the bridge config and the source snapshot, and `editor-bridge.js` adds it to the capability snapshot.
+- **Review:** `termChanges` in the candidate summary is shown in the app's "Fields and SEO" section, in MCP `request_status` (`changes.terms`), on the claude.ai card and approval prompt, in Slack and in the chat text.
+- **Not done:**
+  - creating new terms (needs a journal, so a retry never duplicates one);
+  - custom taxonomies;
+  - sites with more than 100 categories or tags (the planner sees only the first 100);
+  - showing the terms before the change in review (only the result is shown).
+- **Tests:**
+  - PHPUnit 98, including `PostTermsTest` with a PHP–TypeScript hash check;
+  - vitest 336, including `gutenberg-v2-terms.test.ts`;
+  - `npm run test:e2e:v2-terms` (new, in `all`): create with terms, tags only, stale refusal, rollback, rollback conflict, plus a real-model step with `SITEPILOT_TERMS_LLM=1`. It passed with the model step: it added the real tag and left out a made-up one;
+  - the content suite (5 of 5), the SEO E2E and the hosted E2E passed.
+- **Rollout:** production zip `~/Downloads/wordpress-sitepilot-terms.zip` (448 KB, 151 files, no PHPUnit; it has `list_terms`, categories and tags, and the branding). Until it's uploaded, the live editor reports no `terms` capability, so the planner doesn't offer them and `list_terms` fails as a lookup. Nothing else changes.
 
 ### Plugin (`plugins/wordpress-sitepilot`)
 
@@ -316,9 +349,9 @@ Latest results (2 October, about 12:30): `npm run typecheck` clean; vitest with 
 
 1. **Push and deploy:** the user's OK to push `4d07a82`, `b89d57e` and `e88bd53` (the first carries the branding session's stray files). Then wait for `/healthz` to show the commit. Migration 007 runs at startup.
 2. **Check the admin area live** in the user's Chrome: `/admin/people` lists the user. The account page links to it.
-3. **Upload the plugin zip** for `list_terms` and the branding: `~/Downloads/wordpress-sitepilot-list-terms.zip`.
+3. **Upload the plugin zip, only after the deploy:** `~/Downloads/wordpress-sitepilot-terms.zip`, for `list_terms`, categories and tags, and the branding. The order matters. The new plugin adds `terms` to the editor's capability and source snapshots, and the live server's strict schemas would refuse those until the categories-and-tags commit is deployed. A new server with the old plugin is fine. Then try "tag post N with X" live.
 4. **Roadmap, next:**
-   - categories and tags, the write side (`docs/v2-roadmap.md`, "Categories and tags"): discovery of taxonomies per post type, `postFields.terms` in the contract, matching names to terms outside the model, commit with `wp_set_object_terms`, readback, rollback and review. `list_terms` and the tag filter, the read side, are done;
+   - categories and tags, what's left: creating new terms (with a journal), custom taxonomies, more than 100 terms, and showing the terms before the change in review;
    - more lookups from the registry plan: `query_content`, `get_revisions`, `search_media`, `list_menus`, `find_block_usage`, and recording lookup gaps.
 5. **Still open:**
    - per-site rate limits (MCP plan 6);
