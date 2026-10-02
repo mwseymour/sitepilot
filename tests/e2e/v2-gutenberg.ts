@@ -2517,17 +2517,23 @@ async function main(): Promise<void> {
       `Native source index returned ${source.blockIndex.length}/${expectedNodeCount}: ${JSON.stringify(source.blockIndex.slice(0, 30).map(({ path, name }) => ({ path, name })))}`
     );
     // The post's images are offered for reuse ("make that image the featured
-    // image"), each with its attachment file's checksum.
-    const imageRefs = new Set(
+    // image"), each with its attachment file's checksum. Each new image has
+    // its approved alt text in the media library too, which WordPress uses
+    // for a featured image.
+    const imageAlts = new Map(
       creationPlan.media
         .filter((entry) => entry.source.kind === "staged_asset" && entry.source.mediaType.startsWith("image/"))
-        .map((entry) => entry.ref)
+        .map((entry) => [entry.ref, entry.alt ?? ""])
     );
-    for (const bound of firstMediaBinding.mapping.filter((entry) => imageRefs.has(entry.ref))) {
+    for (const bound of firstMediaBinding.mapping.filter((entry) => imageAlts.has(entry.ref))) {
       const offered = source.libraryMedia?.find((item) => item.attachmentId === bound.attachmentId);
       assert(
         offered?.checksum === bound.finalChecksum,
         `The source didn't offer image ${bound.attachmentId} for reuse: ${JSON.stringify(source.libraryMedia ?? [])}`
+      );
+      assert(
+        offered.alt === (imageAlts.get(bound.ref) ?? "").trim(),
+        `Image ${bound.attachmentId} has library alt "${offered.alt}", not its approved "${imageAlts.get(bound.ref)}".`
       );
     }
     const updateExecution = `execution-${randomUUID()}`;

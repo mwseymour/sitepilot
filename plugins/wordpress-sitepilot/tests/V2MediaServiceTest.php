@@ -28,6 +28,18 @@ final class V2MediaServiceTest extends TestCase {
 		$this->assertFalse( $method->invoke( null, 'video/quicktime', 'video/quicktime' ) );
 	}
 
+	public function test_new_images_get_their_alt_text_in_the_media_library(): void {
+		$method = new ReflectionMethod( Media_Service::class, 'library_alt' );
+		$method->setAccessible( true );
+
+		$this->assertSame(
+			array( '_wp_attachment_image_alt' => 'A yellow music page' ),
+			$method->invoke( null, array( 'alt' => ' A yellow music page ', 'mediaType' => 'image/png' ) )
+		);
+		$this->assertSame( array(), $method->invoke( null, array( 'alt' => '', 'mediaType' => 'image/png' ) ) );
+		$this->assertSame( array(), $method->invoke( null, array( 'alt' => 'Clip', 'mediaType' => 'video/mp4' ) ) );
+	}
+
 	public function test_installed_media_is_readable_like_other_uploads(): void {
 		$folder = sys_get_temp_dir() . '/sitepilot-media-' . bin2hex( random_bytes( 4 ) );
 		mkdir( $folder, 0755 );

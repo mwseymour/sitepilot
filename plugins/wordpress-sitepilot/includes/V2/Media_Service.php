@@ -294,6 +294,7 @@ final class Media_Service {
 					'mediaType'     => $media_type,
 					'byteLength'    => $byte_length,
 					'fileName'      => $file_name,
+					'alt'           => (string) $alt,
 					'postName'      => 'sitepilot-v2-' . substr( $binding_id, 0, 48 ),
 					'absoluteFile'  => trailingslashit( (string) $uploads['path'] ) . $stored_name,
 					'url'           => trailingslashit( (string) $uploads['url'] ) . rawurlencode( $stored_name ),
@@ -375,6 +376,21 @@ final class Media_Service {
 			$status = 'idempotency_conflict' === $code ? 409 : ( 'permission_denied' === $code ? 403 : ( 'media_changed' === $code ? 422 : 503 ) );
 			return self::error( $code, 'The media binding could not be completed or safely reconciled.', $status );
 		}
+	}
+
+	/**
+	 * The media library's alt text for a new image, from the approved alt.
+	 * WordPress uses it wherever the image appears outside a block, such as
+	 * a featured image; image blocks carry their own.
+	 *
+	 * @param array<string, mixed> $intent
+	 * @return array<string, string>
+	 */
+	private static function library_alt( array $intent ): array {
+		$alt = trim( sanitize_text_field( (string) ( $intent['alt'] ?? '' ) ) );
+		return '' !== $alt && str_starts_with( (string) ( $intent['mediaType'] ?? '' ), 'image/' )
+			? array( '_wp_attachment_image_alt' => $alt )
+			: array();
 	}
 
 	/** @param array<string, mixed> $intent @return array<string, mixed>|\WP_Error */
@@ -475,7 +491,7 @@ final class Media_Service {
 						'_sitepilot_v2_media_checksum'    => (string) $intent['checksum'],
 						'_sitepilot_v2_original_file'     => $file,
 						'_sitepilot_v2_original_url'      => (string) $intent['url'],
-					),
+					) + self::library_alt( $intent ),
 				),
 				$file,
 				0,
