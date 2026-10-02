@@ -199,11 +199,14 @@ describe("approving from a chat app", () => {
 
     const third = await client.callTool({ name: "add_images", arguments: { request_id: "thread-1" } });
     const ticket3 = (third._meta as Record<string, { ticket: string }>)["sitepilot/upload"]?.ticket ?? "";
+    // While SitePilot is still preparing the request, the files wait for it.
+    backend.addToRequest.mockResolvedValueOnce({ ok: false, code: "request_busy", message: "Busy." } as never);
     const added = await client.callTool({
       name: "attach_from_card",
       arguments: { request_id: "thread-1", ticket: ticket3, files: [file], note: "Add it below the table." }
     });
     expect(text(added)).toContain("Added 1 file");
+    expect(backend.addToRequest).toHaveBeenCalledTimes(2);
     expect(backend.addToRequest).toHaveBeenCalledWith(
       {
         siteId: "site-1",

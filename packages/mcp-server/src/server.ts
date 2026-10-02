@@ -74,11 +74,15 @@ function issueUploadTicket(ticket: Omit<UploadTicket, "expiresAt">): string {
   return id;
 }
 
-function takeUploadTicket(id: string): UploadTicket | null {
+/** The ticket, still unspent: it's spent only once the files are added. */
+function peekUploadTicket(id: string): UploadTicket | null {
   const ticket = uploadTickets.get(id);
-  uploadTickets.delete(id);
   return ticket && ticket.expiresAt > Date.now() ? ticket : null;
 }
+
+/** While SitePilot is preparing the request, the card's files wait (about 40 seconds at most). */
+const UPLOAD_BUSY_RETRIES = 20;
+const UPLOAD_BUSY_DELAY_MS = 2_000;
 
 /**
  * One-use tickets the review card's buttons need: issued only in the card's
@@ -1074,13 +1078,19 @@ export function createSitePilotMcpServer(
       },
       async ({ site_id, request_id, ticket, files, note }) =>
         withSite("attach_from_card", site_id, async (siteId, caller) => {
-          const issued = takeUploadTicket(ticket);
-          if (
-            !issued ||
-            issued.siteId !== siteId ||
-            issued.requestId !== request_id ||
-            issued.userProfileId !== caller.actor?.userProfileId
-          ) {
+          const issued = peekUploadTicket(ticket);
+          const refused = !issued
+            ? "unknown, used or expired"
+            : issued.siteId !== siteId
+              ? "for another site"
+              : issued.requestId !== request_id
+                ? "for another request"
+                : issued.userProfileId !== caller.actor?.userProfileId
+                  ? "for another person"
+                  : null;
+          if (refused) {
+            // Why, for the server log; never the ticket itself.
+            console.log(`Upload card refused: ticket ${refused}.`);
             return failure("upload_ticket_invalid", "This upload card has expired or was already used. Ask for a new one.");
           }
           const attachments: McpAttachment[] = [];
@@ -1092,16 +1102,29 @@ export function createSitePilotMcpServer(
             }
             attachments.push({ fileName: file.file_name, mediaType: file.media_type, sizeBytes: bytes, dataUrl: file.data_url });
           }
-          const added = await backend.addToRequest(
-            {
-              siteId,
-              requestId: request_id,
-              text: note ?? (attachments.length === 1 ? "Use the attached file." : "Use the attached files."),
-              attachments
-            },
-            caller
-          );
-          if (!added.ok) return failure(added.code, added.message);
+          const add = () =>
+            backend.addToRequest(
+              {
+                siteId,
+                requestId: request_id,
+                text: note ?? (attachments.length === 1 ? "Use the attached file." : "Use the attached files."),
+                attachments
+              },
+              caller
+            );
+          let added = await add();
+          for (let attempt = 0; !added.ok && added.code === "request_busy" && attempt < UPLOAD_BUSY_RETRIES; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, UPLOAD_BUSY_DELAY_MS));
+            added = await add();
+          }
+          // Not added: the card keeps its ticket, so trying again works.
+          if (!added.ok) {
+            return failure(
+              added.code,
+              added.code === "request_busy" ? "SitePilot is still preparing this request. Try again in a moment." : added.message
+            );
+          }
+          uploadTickets.delete(ticket);
           return {
             content: [
               {
