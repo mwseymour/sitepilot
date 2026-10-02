@@ -510,6 +510,15 @@ ALTER TABLE wordpress_identities ADD COLUMN role_override TEXT;
 ALTER TABLE wordpress_identities ADD COLUMN role_override_by TEXT;
 ALTER TABLE wordpress_identities ADD COLUMN role_override_at TEXT;
 ${REVOKE_API_ROLES}`
+  },
+  {
+    id: "008_slack_conversations",
+    description:
+      "Slack threads can hold a Conversation (request_id is then its thread ID), or a message waiting for the person to say whether it's a question or a change.",
+    sql: `
+ALTER TABLE slack_threads ADD COLUMN kind TEXT NOT NULL DEFAULT 'request';
+ALTER TABLE slack_threads ADD COLUMN pending_text TEXT;
+${REVOKE_API_ROLES}`
   }
 ];
 

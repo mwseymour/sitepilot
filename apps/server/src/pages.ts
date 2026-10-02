@@ -142,7 +142,7 @@ export function accountPage(input: {
          ? ""
          : `<h2>Slack</h2>${
              input.slackAccounts > 0
-               ? `<p>Your Slack account is connected: mention @SitePilot in Slack to make a request.</p>
+               ? `<p>Your Slack account is connected: mention @SitePilot in Slack to ask about the site or make a change.</p>
                   <form method="post" action="/account/slack/disconnect"><button class="secondary" type="submit">Disconnect Slack</button></form>`
                : `<p class="muted">Not connected. Mention @SitePilot in Slack, and it will give you a link to connect.</p>`
            }`

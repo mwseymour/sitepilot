@@ -9,9 +9,10 @@
  *    and consent, scoped tokens, refresh, and disconnecting.
  * 4. Make a request in the app (the desktop interface, served by the
  *    server), approve and apply it there, and see it in WordPress.
- * 4c. Slack, against a stand-in for Slack's API: connecting, a request in a
- *    thread with its previews and buttons, a typed "approved" doing nothing,
- *    and Approve applying it.
+ * 4c. Slack, against a stand-in for Slack's API: connecting; a question
+ *    answered in its thread, with a follow-up; a message that could be
+ *    either, settled with a button; a request in a thread with its previews
+ *    and buttons, a typed "approved" doing nothing, and Approve applying it.
  * 5. Sign in as a WordPress contributor (can edit, can't publish): a
  *    requester, refused approving and site setup. Then the admin area: the
  *    contributor can't open it; the admin makes them an approver, turns
@@ -449,6 +450,64 @@ async function main(): Promise<void> {
     assert((await page.content()).includes("Connect Slack to SitePilot?"), "No Slack connect page.");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByText("Go back to Slack").waitFor();
+    // A question is answered in its thread, read-only; a reply asks again.
+    const answeredIn = (threadTs: string, after = 0) =>
+      slackSent(
+        `an answer in thread ${threadTs}`,
+        (call) =>
+          slackCalls.indexOf(call) >= after &&
+          call.method === "chat.postMessage" &&
+          call.body.thread_ts === threadTs &&
+          JSON.stringify(call.body.blocks ?? []).includes('"type":"section"') &&
+          !String(call.body.text).startsWith("SitePilot couldn't"),
+        90_000
+      );
+    await slackEvent({ type: "app_mention", user: "U_E2E", text: "<@UBOT> what is the latest post?", channel: "C_E2E", ts: "150.000001" });
+    const firstAnswer = await answeredIn("150.000001");
+    assert(JSON.stringify(firstAnswer.body.blocks).includes("Reply here to ask more"), "A question wasn't answered as a conversation.");
+    assert(
+      !slackCalls.some((call) => call.body.thread_ts === "150.000001" && String(call.body.text).startsWith("On it")),
+      "A question started a request."
+    );
+    const beforeFollowUp = slackCalls.length;
+    await slackEvent({
+      type: "message",
+      channel_type: "channel",
+      user: "U_E2E",
+      text: "and how many pages are there?",
+      channel: "C_E2E",
+      ts: "150.000300",
+      thread_ts: "150.000001"
+    });
+    await answeredIn("150.000001", beforeFollowUp);
+    // When the wording doesn't say, SitePilot asks, and the button decides.
+    await slackEvent({ type: "app_mention", user: "U_E2E", text: "<@UBOT> the intro is too long", channel: "C_E2E", ts: "160.000001" });
+    const which = await slackSent(
+      "the question-or-change buttons",
+      (call) => call.method === "chat.postMessage" && call.body.thread_ts === "160.000001" && JSON.stringify(call.body.blocks ?? []).includes('"action_id":"route_ask"'),
+      30_000
+    );
+    const whichBlocks = which.body.blocks as Array<{ type: string; elements?: Array<{ action_id?: string; value?: string }> }>;
+    const askValue = whichBlocks.find((block) => block.type === "actions")?.elements?.find((button) => button.action_id === "route_ask")?.value ?? "";
+    const beforeChoice = slackCalls.length;
+    await slackPost(
+      "/slack/interactions",
+      new URLSearchParams({
+        payload: JSON.stringify({
+          type: "block_actions",
+          team: { id: "T_E2E" },
+          user: { id: "U_E2E" },
+          channel: { id: "C_E2E" },
+          message: { ts: "9999.000003", thread_ts: "160.000001", blocks: whichBlocks },
+          response_url: "http://127.0.0.1:18997/response/route",
+          actions: [{ action_id: "route_ask", value: askValue }]
+        })
+      }).toString(),
+      "application/x-www-form-urlencoded"
+    );
+    await slackSent("the settled choice", (call) => call.method === "response/route" && String(call.body.text).includes("asked for an answer"), 30_000);
+    await answeredIn("160.000001", beforeChoice);
+
     // A request in a thread: its review, with previews and buttons.
     const slackTitle = `AUTOMATED-TEST-HOSTED-SLACK-${randomUUID().slice(0, 8)}`;
     await slackEvent({

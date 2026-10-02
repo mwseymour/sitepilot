@@ -102,6 +102,11 @@ The user decided: everything happens in the chat, with explicit consent, so type
 - **Routes:** `/slack/events` and `/slack/interactions` check Slack's v0 signature and a 5-minute timestamp window, then answer at once. Both sit before the same-origin check in `routes.ts`. Every request is logged, with why one was refused.
 - **Flow:**
   - Mention @SitePilot in a channel, or DM it. Each request lives in its Slack thread; replies revise it.
+  - **Questions** (2 October, migration 008):
+    - `routeSlackMessage` in `apps/server/src/slack-routing.ts` sends a question to `createConversation`, answered in the thread; replies there go to `ask`.
+    - When unsure, the thread gets *Answer a question* and *Make a change* buttons (`route_ask`, `route_change`), and the message waits in `slack_threads.pending_text` (`kind = 'choosing'`).
+    - `ask` or `change:` at the start forces one.
+    - `slack_threads.kind` is `request`, `conversation` or `choosing`; only requests are swept.
   - People connect once with Sign in with WordPress: an ephemeral link to `/slack/connect?token=…`.
   - Images and MP4/WebM videos on a message go into the request (`files:read`, from `files.slack.com` only).
   - A sweeper every 8 seconds posts each open thread's changes: the change list, previews as image blocks (signed links), and Approve and apply / Reject. Notices are keyed so each is posted once.

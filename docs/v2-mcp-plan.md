@@ -69,6 +69,12 @@ The hosted server runs on Railway (`apps/server`) with Supabase Postgres. It run
   - Not done: per-site rate limits.
 - **Phase 7 (in part), the Slack app** (`apps/server/src/slack.ts`, migration 006), running inside the hosted server rather than as a separate service:
   - **Starting a request:** mention @SitePilot in a channel, or DM it. Each request lives in its Slack thread, and replies in the thread revise it or answer SitePilot's questions. Images and MP4/WebM videos on a message go into the request (`files:read`, from Slack's file host only).
+  - **Asking a question** (2 October 2026, migration 008):
+    - A question about the site ("what is the last post I created?") is answered in its thread as a read-only Conversation, and replies there ask again.
+    - SitePilot decides from the wording (`apps/server/src/slack-routing.ts`). When it can't tell, it asks in the thread with *Answer a question* and *Make a change* buttons, or a typed reply of *ask* or *change*.
+    - Starting a message with `ask` or `change:` forces one.
+    - In a conversation, a reply that asks for a change starts that thread's request. In a request's thread, `ask …` gets an answer without touching the request.
+    - Not done: the `/sitepilot` slash command, which needs the command added in the Slack app settings.
   - **Connecting:** people connect once with Sign in with WordPress. The link goes only to them (ephemeral in channels), and the connect page names the Slack account and the WordPress user it will act as.
   - **Reviewing:** the thread gets the change list, the desktop and mobile previews as image blocks (signed links), and Approve and apply / Reject. A click, signed by Slack with the clicking user, is the approval; only people who can publish can approve. Typing "approved" doesn't approve.
   - **Finishing:** "Done" comes with the post's link and a Publish it button, which continues the same request as a publish, approved the same way.

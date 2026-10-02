@@ -7,11 +7,14 @@ import type { SqlConnection } from "@sitepilot/sql";
 
 import type { AuthStore, PersonRef, SignedInUser } from "./auth.js";
 import { escapeHtml as e, readBody, send, sendHtml } from "./http.js";
+import { routeChoice, routeSlackMessage } from "./slack-routing.js";
 
 /**
- * SitePilot in Slack: mention @SitePilot (or DM it) to make a request. The
- * request's thread gets its previews, Approve and Reject buttons, questions
- * and the result. People connect their Slack account once, by signing in with
+ * SitePilot in Slack: mention @SitePilot (or DM it) to ask about the site or
+ * to make a request. A question gets its answer in the thread (a read-only
+ * Conversation); a request's thread gets its previews, Approve and Reject
+ * buttons, questions and the result. When the wording doesn't say which, the
+ * thread asks. Starting with "ask" or "change:" forces one. People connect their Slack account once, by signing in with
  * WordPress, and act with their WordPress role.
  *
  * Approval is a click on Approve, which Slack signs with who clicked. Typing
@@ -53,15 +56,28 @@ function md(value: string): string {
 
 type SlackBlock = Record<string, unknown>;
 
+type ThreadKind = "request" | "conversation" | "choosing";
+
 type ThreadRow = {
   teamId: string;
   channelId: string;
   threadTs: string;
   siteId: string;
+  /** The SitePilot request, or the Conversation's thread ID; empty while choosing. */
   requestId: string;
   wordpressUserId: number;
   lastNotice: string | null;
+  kind: ThreadKind;
+  /** While choosing: the message waiting for "a question or a change?". */
+  pendingText: string | null;
 };
+
+const THREAD_COLUMNS = `team_id AS "teamId", channel_id AS "channelId", thread_ts AS "threadTs", site_id AS "siteId",
+  request_id AS "requestId", wordpress_user_id AS "wordpressUserId", last_notice AS "lastNotice",
+  kind, pending_text AS "pendingText"`;
+
+/** Slack's section blocks take up to 3,000 characters. */
+const MAX_SECTION = 2_900;
 
 const OPERATION_LABELS: Record<string, string> = {
   create_draft: "New draft",
@@ -280,7 +296,7 @@ export function createSlackApp(deps: {
       .run({ ...target, siteId: user.siteId, wordpressUserId: user.wordpressUserId, now: new Date().toISOString() });
     await slack("chat.postMessage", {
       channel: target.slackUserId,
-      text: `You're connected to SitePilot as ${user.displayName}. Mention @SitePilot in a channel, or message me here, to make a request.`
+      text: `You're connected to SitePilot as ${user.displayName}. Mention @SitePilot in a channel, or message me here, to ask about the site or to make a change.`
     }).catch(() => undefined);
     sendHtml(response, 200, page("Connected", "<h1>Connected</h1><p>Go back to Slack and mention @SitePilot again.</p>"));
   }
@@ -307,24 +323,26 @@ export function createSlackApp(deps: {
     return (
       (await deps.sql
         .prepare<{ teamId: string; channelId: string; threadTs: string }, ThreadRow>(
-          `SELECT team_id AS "teamId", channel_id AS "channelId", thread_ts AS "threadTs", site_id AS "siteId",
-             request_id AS "requestId", wordpress_user_id AS "wordpressUserId", last_notice AS "lastNotice"
+          `SELECT ${THREAD_COLUMNS}
            FROM slack_threads WHERE team_id = @teamId AND channel_id = @channelId AND thread_ts = @threadTs`
         )
         .get({ teamId, channelId, threadTs })) ?? null
     );
   }
 
-  async function saveThread(row: Omit<ThreadRow, "lastNotice">): Promise<void> {
+  /** Records what the Slack thread holds now. Only requests are swept for updates. */
+  async function saveThread(row: Omit<ThreadRow, "lastNotice" | "pendingText"> & { pendingText?: string }): Promise<void> {
     const now = new Date().toISOString();
     await deps.sql
       .prepare(
-        `INSERT INTO slack_threads (team_id, channel_id, thread_ts, site_id, request_id, wordpress_user_id, last_notice, open, created_at, updated_at)
-         VALUES (@teamId, @channelId, @threadTs, @siteId, @requestId, @wordpressUserId, NULL, 1, @now, @now)
+        `INSERT INTO slack_threads (team_id, channel_id, thread_ts, site_id, request_id, wordpress_user_id, last_notice, open,
+           kind, pending_text, created_at, updated_at)
+         VALUES (@teamId, @channelId, @threadTs, @siteId, @requestId, @wordpressUserId, NULL, @open, @kind, @pendingText, @now, @now)
          ON CONFLICT (team_id, channel_id, thread_ts) DO UPDATE SET request_id = @requestId,
-           wordpress_user_id = @wordpressUserId, last_notice = NULL, open = 1, updated_at = @now`
+           wordpress_user_id = @wordpressUserId, last_notice = NULL, open = @open, kind = @kind,
+           pending_text = @pendingText, updated_at = @now`
       )
-      .run({ ...row, now });
+      .run({ ...row, pendingText: row.pendingText ?? null, open: row.kind === "request" ? 1 : 0, now });
   }
 
   async function markThread(row: ThreadRow, notice: string, open: boolean): Promise<void> {
@@ -374,13 +392,131 @@ export function createSlackApp(deps: {
       threadTs: input.threadTs,
       siteId: input.user.siteId,
       requestId: created.status.requestId,
-      wordpressUserId: input.user.wordpressUserId
+      wordpressUserId: input.user.wordpressUserId,
+      kind: "request"
     });
     await slack("chat.postMessage", {
       channel: input.channel,
       thread_ts: input.threadTs,
       text: "On it. SitePilot is planning the change and building a preview; it'll appear in this thread. Reply here to change anything."
     });
+  }
+
+  type ThreadStart = { teamId: string; channel: string; threadTs: string; user: SignedInUser; text: string };
+
+  /** A question's answer, with what to do next on the first one. */
+  function answerBlocks(answer: string, first: boolean): SlackBlock[] {
+    const body = answer.trim() || "SitePilot had nothing to say to that.";
+    return [
+      { type: "section", text: { type: "mrkdwn", text: md(body.length > MAX_SECTION ? `${body.slice(0, MAX_SECTION)}…` : body) } },
+      ...(first
+        ? [
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: "Reply here to ask more; this only looks things up. To change something, send a new message, or start one with *change:*"
+                }
+              ]
+            }
+          ]
+        : [])
+    ];
+  }
+
+  /** A read-only question about the site, answered in the thread. */
+  async function startConversation(input: ThreadStart, record = true): Promise<void> {
+    const created = await deps.backend.createConversation(
+      { siteId: input.user.siteId, question: input.text },
+      callerFor(input.user)
+    );
+    if (!created.ok) {
+      await slack("chat.postMessage", { channel: input.channel, thread_ts: input.threadTs, text: `SitePilot couldn't look that up: ${created.message}` });
+      return;
+    }
+    if (record) {
+      await saveThread({
+        teamId: input.teamId,
+        channelId: input.channel,
+        threadTs: input.threadTs,
+        siteId: input.user.siteId,
+        requestId: created.threadId,
+        wordpressUserId: input.user.wordpressUserId,
+        kind: "conversation"
+      });
+    }
+    await slack("chat.postMessage", {
+      channel: input.channel,
+      thread_ts: input.threadTs,
+      text: created.answer.slice(0, 3_000),
+      blocks: answerBlocks(created.answer, record),
+      unfurl_links: false
+    });
+  }
+
+  /** The wording didn't say: ask, with a button for each. */
+  async function askWhich(input: ThreadStart): Promise<void> {
+    await saveThread({
+      teamId: input.teamId,
+      channelId: input.channel,
+      threadTs: input.threadTs,
+      siteId: input.user.siteId,
+      requestId: "",
+      wordpressUserId: input.user.wordpressUserId,
+      kind: "choosing",
+      pendingText: input.text
+    });
+    const value = JSON.stringify({ t: input.threadTs });
+    await slack("chat.postMessage", {
+      channel: input.channel,
+      thread_ts: input.threadTs,
+      text: "Do you want an answer about the site, or a change to it?",
+      blocks: [
+        { type: "section", text: { type: "mrkdwn", text: "Do you want an answer about the site, or a change to it?" } },
+        {
+          type: "actions",
+          elements: [
+            { type: "button", text: { type: "plain_text", text: "Answer a question" }, action_id: "route_ask", value },
+            { type: "button", text: { type: "plain_text", text: "Make a change" }, action_id: "route_change", value }
+          ]
+        },
+        { type: "context", elements: [{ type: "mrkdwn", text: "Or reply *ask* or *change*. A change still needs approving before anything is written." }] }
+      ]
+    });
+  }
+
+  /** Starts what a message turned out to be, in its thread. */
+  async function startAs(kind: "conversation" | "request", input: ThreadStart, attachments: McpAttachment[] = []): Promise<void> {
+    return kind === "conversation" ? startConversation(input) : startRequest({ ...input, attachments });
+  }
+
+  /** A reply in a thread SitePilot already answered. */
+  async function replyIn(row: ThreadRow, user: SignedInUser, text: string, attachments: McpAttachment[]): Promise<void> {
+    const start: ThreadStart = { teamId: row.teamId, channel: row.channelId, threadTs: row.threadTs, user, text };
+    const route = routeSlackMessage(text, { hasAttachments: attachments.length > 0 });
+    if (row.kind === "choosing") {
+      const choice = routeChoice(text);
+      if (choice) return startAs(choice, { ...start, text: row.pendingText ?? text });
+      // A new message instead of an answer: work that one out.
+      return route.kind === "unsure" ? askWhich({ ...start, text: route.text }) : startAs(route.kind, { ...start, text: route.text }, attachments);
+    }
+    if (row.kind === "conversation") {
+      // A change asked for in a conversation becomes this thread's request.
+      if (route.kind === "request") return startRequest({ ...start, text: route.text, attachments });
+      const asked = await deps.backend.ask({ siteId: row.siteId, threadId: row.requestId, question: text }, callerFor(user));
+      await slack("chat.postMessage", {
+        channel: row.channelId,
+        thread_ts: row.threadTs,
+        text: asked.ok ? asked.answer.slice(0, 3_000) : `SitePilot couldn't look that up: ${asked.message}`,
+        ...(asked.ok ? { blocks: answerBlocks(asked.answer, false) } : {}),
+        unfurl_links: false
+      });
+      return;
+    }
+    // In a request's thread, "ask …" gets an answer without touching the request.
+    if (route.kind === "conversation" && route.forced) return startConversation({ ...start, text: route.text }, false);
+    return reply(row, user, text, attachments);
   }
 
   async function reply(row: ThreadRow, user: SignedInUser, text: string, attachments: McpAttachment[]): Promise<void> {
@@ -447,8 +583,12 @@ export function createSlackApp(deps: {
         text: `SitePilot couldn't use ${skipped.join(", ")}.`
       }).catch(() => undefined);
     }
-    if (existing) return reply(existing, user, text, attachments);
-    return startRequest({ teamId, channel: event.channel, threadTs, user, text, attachments });
+    if (existing) return replyIn(existing, user, text, attachments);
+    const start: ThreadStart = { teamId, channel: event.channel, threadTs, user, text };
+    const route = routeSlackMessage(text, { hasAttachments: attachments.length > 0 });
+    console.log(`Slack: new thread, ${route.kind}${route.kind !== "unsure" && route.forced ? " (asked for)" : ""}.`);
+    if (route.kind === "unsure") return askWhich(start);
+    return startAs(route.kind, { ...start, text: route.text }, attachments);
   }
 
   function reviewBlocks(status: McpRequestStatus, candidateId: string): SlackBlock[] {
@@ -494,9 +634,8 @@ export function createSlackApp(deps: {
     try {
       const rows = await deps.sql
         .prepare<Record<string, never>, ThreadRow>(
-          `SELECT team_id AS "teamId", channel_id AS "channelId", thread_ts AS "threadTs", site_id AS "siteId",
-             request_id AS "requestId", wordpress_user_id AS "wordpressUserId", last_notice AS "lastNotice"
-           FROM slack_threads WHERE open = 1 ORDER BY updated_at DESC LIMIT 50`
+          `SELECT ${THREAD_COLUMNS}
+           FROM slack_threads WHERE open = 1 AND kind = 'request' ORDER BY updated_at DESC LIMIT 50`
         )
         .all({});
       for (const row of rows) {
@@ -641,6 +780,13 @@ export function createSlackApp(deps: {
           ? `Approved by <@${slackUserId}>. SitePilot is applying it now.`
           : `Rejected by <@${slackUserId}>. Nothing was written.`
       );
+    }
+    if (action.action_id === "route_ask" || action.action_id === "route_change") {
+      const row = threadTs ? await threadFor(teamId, channel, threadTs) : null;
+      if (!row || row.kind !== "choosing" || !row.pendingText) return tell("That's already been answered.");
+      const kind = action.action_id === "route_ask" ? "conversation" : "request";
+      await settle(kind === "conversation" ? `<@${slackUserId}> asked for an answer.` : `<@${slackUserId}> asked for a change.`);
+      return startAs(kind, { teamId, channel, threadTs: row.threadTs, user, text: row.pendingText });
     }
     if (action.action_id === "publish") {
       const postId = Number(value.p);
